@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SentinelEdge</title>
+    <meta
+      name="description"
+      content="SentinelEdge is a Rust-first edge security runtime scaffold for anomaly detection, policy-driven response, and verifiable auditability."
+    >
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    >
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Rust edge security runtime</p>
+        <div class="hero-grid">
+          <section>
+            <h1>SentinelEdge turns a research blueprint into a runnable systems prototype.</h1>
+            <p class="lede">
+              The current milestone ships an adaptive detector, a battery-aware response engine,
+              an auditable decision chain, and a documented roadmap for the deeper research work.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#status">See current status</a>
+              <a class="button secondary" href="#roadmap">Browse the roadmap</a>
+            </div>
+          </section>
+          <aside class="hero-panel">
+            <p class="panel-label">Current milestone</p>
+            <div id="milestone-metrics" class="metric-grid"></div>
+          </aside>
+        </div>
+      </header>
+
+      <main>
+        <section id="status" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">What ships now</p>
+            <h2>Implemented foundation</h2>
+          </div>
+          <div id="implemented-grid" class="card-grid"></div>
+        </section>
+
+        <section class="section accent-band">
+          <div class="section-heading">
+            <p class="eyebrow">Runtime loop</p>
+            <h2>From telemetry to action in four steps</h2>
+          </div>
+          <div class="pipeline">
+            <article class="pipeline-step">
+              <span>01</span>
+              <h3>Ingest</h3>
+              <p>Typed telemetry parsing from CSV traces for repeatable test runs.</p>
+            </article>
+            <article class="pipeline-step">
+              <span>02</span>
+              <h3>Detect</h3>
+              <p>EWMA-like baseline learning converts drift across multiple signals into an anomaly score.</p>
+            </article>
+            <article class="pipeline-step">
+              <span>03</span>
+              <h3>Respond</h3>
+              <p>Policy logic maps threat severity to mitigation while respecting battery constraints.</p>
+            </article>
+            <article class="pipeline-step">
+              <span>04</span>
+              <h3>Audit</h3>
+              <p>A chained run log preserves a forensics trail for every detection and response decision.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="roadmap" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Backlog</p>
+            <h2>Next engineering moves</h2>
+          </div>
+          <div id="backlog-list" class="stacked-list"></div>
+        </section>
+
+        <section class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Research tracks</p>
+            <h2>Blueprint status</h2>
+          </div>
+          <div id="tracks-grid" class="track-grid"></div>
+        </section>
+
+        <section class="section footer-card">
+          <p class="eyebrow">Repository guidance</p>
+          <h2>Docs live in the repo, the site tells the public story.</h2>
+          <p>
+            The working documentation is maintained in <code>docs/</code>, while this static site
+            stays focused on the current build status and the roadmap shape. That keeps the repo
+            honest about what is implemented versus what is still research.
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
