@@ -4,36 +4,57 @@ const metrics = [
   { value: "3", label: "CLI commands ready" },
 ];
 
+const ribbon = [
+  {
+    title: "Runnable now",
+    body: "The repo compiles, tests, and analyzes repeatable telemetry traces today.",
+  },
+  {
+    title: "Honest scope",
+    body: "Implemented, scaffolded, and future work are clearly separated across docs and code.",
+  },
+  {
+    title: "Built to grow",
+    body: "The current runtime is small on purpose, so deeper research tracks can land cleanly.",
+  },
+];
+
 const implemented = [
   {
+    size: "wide",
     title: "Adaptive Detector",
     body:
-      "A rolling baseline tracks normal telemetry and turns sudden drift into an explainable anomaly score.",
+      "A rolling baseline tracks normal telemetry and turns sudden drift into an explainable anomaly score across CPU, memory, temperature, bandwidth, authentication failures, and integrity drift.",
   },
   {
+    size: "compact",
     title: "Policy Engine",
     body:
-      "Threat scores become concrete mitigation actions, with battery-aware fallbacks to preserve uptime on constrained devices.",
+      "Threat scores become concrete mitigation actions, softened when battery is constrained.",
   },
   {
+    size: "compact",
     title: "Audit Chain",
     body:
-      "Every run emits a chained forensic log so detection and response decisions can be replayed and inspected.",
+      "Every detection and response step is written into a chained forensic log for replay and inspection.",
   },
   {
+    size: "tall",
     title: "Trace Analysis",
     body:
-      "The runtime ingests repeatable CSV traces so we can test attack scenarios before wiring up live device feeds.",
+      "CSV telemetry traces make attack scenarios easy to replay, compare, and test before connecting live device feeds.",
   },
   {
+    size: "tall",
     title: "Docs + Backlog",
     body:
-      "Implemented, scaffolded, and future work are tracked explicitly so the repo stays grounded in reality.",
+      "Architecture, getting started, status, backlog, and the research-track map keep the repository grounded in what actually exists.",
   },
   {
-    title: "Pages Site",
+    size: "wide",
+    title: "Pages Presence",
     body:
-      "A static public-facing summary mirrors the repo status and gives the project a clean GitHub Pages landing page.",
+      "The GitHub Pages site now presents the current milestone with a clearer visual hierarchy and a more public-facing narrative.",
   },
 ];
 
@@ -41,22 +62,22 @@ const backlog = [
   {
     title: "Persist learned baselines",
     body:
-      "Store and reload adaptive baselines so the runtime improves over multiple sessions instead of relearning from scratch.",
+      "Store and reload adaptive baselines so the runtime improves across sessions instead of relearning from scratch.",
   },
   {
     title: "Real device action adapters",
     body:
-      "Replace abstract actions with pluggable implementations for rate limiting, process isolation, and rollback hooks.",
+      "Replace abstract response labels with pluggable implementations for throttling, service isolation, and rollback hooks.",
   },
   {
     title: "Cryptographic audit upgrades",
     body:
-      "Swap the prototype digest chain for production-grade cryptographic checkpoints and signatures.",
+      "Swap the prototype digest chain for stronger cryptographic checkpoints and signed audit anchors.",
   },
   {
-    title: "Prepare the research subset",
+    title: "Choose the first research subset",
     body:
-      "Select which advanced blueprint tracks graduate from concept status into the first paper-quality implementation wave.",
+      "Decide which advanced blueprint tracks move from idea status into the first deeper implementation wave.",
   },
 ];
 
@@ -109,11 +130,21 @@ function renderMetrics() {
   });
 }
 
+function renderRibbon() {
+  const root = document.querySelector("#status-ribbon");
+  ribbon.forEach((item) => {
+    const article = document.createElement("article");
+    article.className = "ribbon-item";
+    article.innerHTML = `<strong>${item.title}</strong><p>${item.body}</p>`;
+    root.appendChild(article);
+  });
+}
+
 function renderImplemented() {
   const root = document.querySelector("#implemented-grid");
   implemented.forEach((item, index) => {
     const article = document.createElement("article");
-    article.className = "feature-card";
+    article.className = `feature-card ${item.size}`;
     article.style.animationDelay = `${index * 70}ms`;
     article.innerHTML = `<h3>${item.title}</h3><p>${item.body}</p>`;
     root.appendChild(article);
@@ -124,7 +155,7 @@ function renderBacklog() {
   const root = document.querySelector("#backlog-list");
   backlog.forEach((item) => {
     const article = document.createElement("article");
-    article.className = "stacked-item";
+    article.className = "timeline-item";
     article.innerHTML = `<strong>${item.title}</strong><p>${item.body}</p>`;
     root.appendChild(article);
   });
@@ -146,6 +177,7 @@ function renderTracks() {
 }
 
 renderMetrics();
+renderRibbon();
 renderImplemented();
 renderBacklog();
 renderTracks();

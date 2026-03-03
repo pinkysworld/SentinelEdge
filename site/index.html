@@ -20,62 +20,127 @@
   </head>
   <body>
     <div class="page-shell">
-      <header class="hero">
-        <p class="eyebrow">Rust edge security runtime</p>
-        <div class="hero-grid">
-          <section>
-            <h1>SentinelEdge turns a research blueprint into a runnable systems prototype.</h1>
-            <p class="lede">
-              The current milestone ships an adaptive detector, a battery-aware response engine,
-              an auditable decision chain, and a documented roadmap for the deeper research work.
-            </p>
-            <div class="hero-actions">
-              <a class="button primary" href="#status">See current status</a>
-              <a class="button secondary" href="#roadmap">Browse the roadmap</a>
-            </div>
-          </section>
-          <aside class="hero-panel">
-            <p class="panel-label">Current milestone</p>
-            <div id="milestone-metrics" class="metric-grid"></div>
-          </aside>
-        </div>
+      <div class="ambient-grid" aria-hidden="true"></div>
+
+      <header class="masthead">
+        <a class="brand" href="#">
+          <span class="brand-mark">SE</span>
+          <span class="brand-copy">
+            <strong>SentinelEdge</strong>
+            <span>Edge-native security runtime</span>
+          </span>
+        </a>
+        <nav class="top-nav" aria-label="Primary">
+          <a href="#status">Status</a>
+          <a href="#runtime">Runtime</a>
+          <a href="#roadmap">Backlog</a>
+          <a href="#tracks">Tracks</a>
+        </nav>
+        <div class="masthead-pill">Milestone 01</div>
       </header>
 
       <main>
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Rust edge security runtime</p>
+            <h1>Security logic that fits on the edge, with the roadmap still visible.</h1>
+            <p class="lede">
+              SentinelEdge now has a concrete Rust foundation: adaptive anomaly scoring,
+              battery-aware mitigation, chained run forensics, and a public roadmap that clearly
+              separates shipped systems work from future research.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#status">See current status</a>
+              <a class="button secondary" href="#roadmap">Browse the backlog</a>
+            </div>
+            <div class="command-strip">
+              <span class="command-label">Try it</span>
+              <code>cargo run -- analyze examples/credential_storm.csv</code>
+            </div>
+          </div>
+
+          <aside class="hero-stack">
+            <section class="console-card" aria-label="Prototype summary">
+              <div class="window-topbar">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <p class="console-title">Prototype loop</p>
+              <pre>ingest trace        ready
+score anomalies    active
+apply policy       battery-aware
+append audit       chained</pre>
+              <div class="console-footer">
+                <span>Single-binary foundation</span>
+                <span>Research roadmap intact</span>
+              </div>
+            </section>
+
+            <section class="hero-panel">
+              <p class="panel-label">Current milestone</p>
+              <div id="milestone-metrics" class="metric-grid"></div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="signal-band">
+          <div class="signal-band-copy">
+            <p class="eyebrow">What changed</p>
+            <h2>From concept list to a shaped project.</h2>
+          </div>
+          <div id="status-ribbon" class="status-ribbon"></div>
+        </section>
+
         <section id="status" class="section">
           <div class="section-heading">
             <p class="eyebrow">What ships now</p>
             <h2>Implemented foundation</h2>
+            <p class="section-intro">
+              The current repo is intentionally modest and runnable: enough to prove the control
+              loop, enough documentation to keep the claims honest.
+            </p>
           </div>
-          <div id="implemented-grid" class="card-grid"></div>
+          <div id="implemented-grid" class="bento-grid"></div>
         </section>
 
-        <section class="section accent-band">
+        <section id="runtime" class="section accent-shell">
           <div class="section-heading">
             <p class="eyebrow">Runtime loop</p>
-            <h2>From telemetry to action in four steps</h2>
+            <h2>Four stages, one readable path</h2>
           </div>
-          <div class="pipeline">
-            <article class="pipeline-step">
-              <span>01</span>
-              <h3>Ingest</h3>
-              <p>Typed telemetry parsing from CSV traces for repeatable test runs.</p>
-            </article>
-            <article class="pipeline-step">
-              <span>02</span>
-              <h3>Detect</h3>
-              <p>EWMA-like baseline learning converts drift across multiple signals into an anomaly score.</p>
-            </article>
-            <article class="pipeline-step">
-              <span>03</span>
-              <h3>Respond</h3>
-              <p>Policy logic maps threat severity to mitigation while respecting battery constraints.</p>
-            </article>
-            <article class="pipeline-step">
-              <span>04</span>
-              <h3>Audit</h3>
-              <p>A chained run log preserves a forensics trail for every detection and response decision.</p>
-            </article>
+          <div class="runtime-layout">
+            <div class="runtime-note">
+              <p class="runtime-kicker">Design principle</p>
+              <h3>Make the first milestone useful, not theatrical.</h3>
+              <p>
+                The runtime is deliberately compact: parse telemetry, detect drift, choose a
+                response, then write a forensic trail. It is not pretending to already have the
+                zero-knowledge, formal methods, or swarm logic the research agenda aims for.
+              </p>
+            </div>
+            <div class="pipeline">
+              <article class="pipeline-step">
+                <span>01</span>
+                <h3>Ingest</h3>
+                <p>Typed telemetry parsing keeps replay scenarios deterministic and easy to compare.</p>
+              </article>
+              <article class="pipeline-step">
+                <span>02</span>
+                <h3>Detect</h3>
+                <p>A rolling baseline converts cross-signal drift into an explainable anomaly score.</p>
+              </article>
+              <article class="pipeline-step">
+                <span>03</span>
+                <h3>Respond</h3>
+                <p>Policy logic scales mitigation based on severity while accounting for battery limits.</p>
+              </article>
+              <article class="pipeline-step">
+                <span>04</span>
+                <h3>Audit</h3>
+                <p>A chained run log preserves what happened, why it happened, and how the runtime reacted.</p>
+              </article>
+            </div>
           </div>
         </section>
 
@@ -84,24 +149,23 @@
             <p class="eyebrow">Backlog</p>
             <h2>Next engineering moves</h2>
           </div>
-          <div id="backlog-list" class="stacked-list"></div>
+          <div id="backlog-list" class="timeline-list"></div>
         </section>
 
-        <section class="section">
+        <section id="tracks" class="section">
           <div class="section-heading">
             <p class="eyebrow">Research tracks</p>
-            <h2>Blueprint status</h2>
+            <h2>Blueprint status map</h2>
           </div>
           <div id="tracks-grid" class="track-grid"></div>
         </section>
 
         <section class="section footer-card">
           <p class="eyebrow">Repository guidance</p>
-          <h2>Docs live in the repo, the site tells the public story.</h2>
+          <h2>Docs stay in the repo. The site stays crisp.</h2>
           <p>
-            The working documentation is maintained in <code>docs/</code>, while this static site
-            stays focused on the current build status and the roadmap shape. That keeps the repo
-            honest about what is implemented versus what is still research.
+            The working documentation lives in <code>docs/</code>. This page is the public-facing
+            snapshot: what exists, what is credible today, and what is still ahead of us.
           </p>
         </section>
       </main>
