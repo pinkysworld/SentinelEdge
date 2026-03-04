@@ -15,8 +15,8 @@
       rel="stylesheet"
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=2">
-    <script defer src="app.js?v=2"></script>
+    <link rel="stylesheet" href="styles.css?v=3">
+    <script defer src="app.js?v=3"></script>
   </head>
   <body>
     <div class="page-shell">
@@ -33,6 +33,7 @@
         <nav class="top-nav" aria-label="Primary">
           <a href="#status">Status</a>
           <a href="#runtime">Runtime</a>
+          <a href="#docs">Docs</a>
           <a href="#roadmap">Backlog</a>
           <a href="#tracks">Tracks</a>
         </nav>
@@ -51,7 +52,7 @@
             </p>
             <div class="hero-actions">
               <a class="button primary" href="#status">See current status</a>
-              <a class="button secondary" href="#roadmap">Browse the backlog</a>
+              <a class="button secondary" href="#tracks">Browse research tracks</a>
             </div>
             <div class="command-strip">
               <span class="command-label">Try it</span>
@@ -144,10 +145,26 @@ append audit       chained</pre>
           </div>
         </section>
 
+        <section id="docs" class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Documentation</p>
+            <h2>Architecture, modules, and guides</h2>
+            <p class="section-intro">
+              Full working documentation lives in <code>docs/</code> in the repository. The cards
+              below cover the most important reference points — click any to expand.
+            </p>
+          </div>
+          <div id="docs-grid" class="docs-grid"></div>
+        </section>
+
         <section id="roadmap" class="section">
           <div class="section-heading">
             <p class="eyebrow">Backlog</p>
             <h2>Next engineering moves</h2>
+            <p class="section-intro">
+              Four concrete tasks for Milestone 02 — each one makes the prototype more honest and
+              more capable.
+            </p>
           </div>
           <div id="backlog-list" class="timeline-list"></div>
         </section>
@@ -157,16 +174,18 @@ append audit       chained</pre>
             <p class="eyebrow">Research tracks</p>
             <h2>Blueprint status map</h2>
             <p class="section-intro">
-              These are the anchor research directions behind SentinelEdge. Each card explains the
-              idea, why it matters to the system, and what the current prototype actually covers.
+              25 research directions behind SentinelEdge — grouped by theme. Each card explains the
+              idea, why it matters, and what the prototype covers today. Click any card to expand
+              the full detail.
             </p>
           </div>
           <div class="track-legend" aria-label="Research track legend">
-            <span class="badge foundation">Foundation = runnable core exists</span>
-            <span class="badge scaffolded">Scaffolded = semantics exist, mechanism does not</span>
-            <span class="badge planned">Planned = documented next step</span>
+            <span class="badge foundation">Foundation — runnable core exists</span>
+            <span class="badge scaffolded">Scaffolded — semantics exist, mechanism does not</span>
+            <span class="badge planned">Planned — documented next step</span>
+            <span class="badge future">Future — intentionally deferred</span>
           </div>
-          <div id="tracks-grid" class="track-grid"></div>
+          <div id="tracks-grid"></div>
         </section>
 
         <section class="section footer-card">
