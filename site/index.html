@@ -3,200 +3,399 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SentinelEdge</title>
+    <title>SentinelEdge — Edge Security Runtime</title>
     <meta
       name="description"
-      content="SentinelEdge is a Rust-first edge security runtime scaffold for anomaly detection, policy-driven response, and verifiable auditability."
+      content="SentinelEdge is a Rust-based edge security runtime for adaptive anomaly detection, policy-driven mitigation, and verifiable audit on resource-constrained devices."
     >
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=3">
-    <script defer src="app.js?v=3"></script>
+    <link rel="stylesheet" href="styles.css?v=4">
+    <script defer src="app.js?v=4"></script>
   </head>
   <body>
-    <div class="page-shell">
-      <div class="ambient-grid" aria-hidden="true"></div>
 
-      <header class="masthead">
-        <a class="brand" href="#">
-          <span class="brand-mark">SE</span>
-          <span class="brand-copy">
-            <strong>SentinelEdge</strong>
-            <span>Edge-native security runtime</span>
-          </span>
+    <!-- ── Navigation ──────────────────────────────────────────────── -->
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="#">
+          <span class="nav-logo">SE</span>
+          <span class="nav-title">SentinelEdge</span>
         </a>
-        <nav class="top-nav" aria-label="Primary">
-          <a href="#status">Status</a>
-          <a href="#runtime">Runtime</a>
-          <a href="#docs">Docs</a>
-          <a href="#roadmap">Backlog</a>
-          <a href="#tracks">Tracks</a>
-        </nav>
-        <div class="masthead-pill">Milestone 01</div>
-      </header>
 
-      <main>
-        <section class="hero">
-          <div class="hero-copy">
-            <p class="eyebrow">Rust edge security runtime</p>
-            <h1>Security logic that fits on the edge, with the roadmap still visible.</h1>
-            <p class="lede">
-              SentinelEdge now has a concrete Rust foundation: adaptive anomaly scoring,
-              battery-aware mitigation, chained run forensics, and a public roadmap that clearly
-              separates shipped systems work from future research.
-            </p>
-            <div class="hero-actions">
-              <a class="button primary" href="#status">See current status</a>
-              <a class="button secondary" href="#tracks">Browse research tracks</a>
-            </div>
-            <div class="command-strip">
-              <span class="command-label">Try it</span>
-              <code>cargo run -- analyze examples/credential_storm.csv</code>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+
+        <div class="nav-links" id="nav-links">
+          <a href="#overview" class="nav-link active" data-section="overview">Overview</a>
+
+          <div class="nav-dropdown">
+            <button class="nav-link nav-dropdown-trigger" aria-expanded="false">
+              Technical<svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+            </button>
+            <div class="nav-dropdown-menu">
+              <a href="#architecture" data-section="architecture">Architecture</a>
+              <a href="#pipeline" data-section="pipeline">Runtime Pipeline</a>
+              <a href="#modules" data-section="modules">Module Map</a>
             </div>
           </div>
 
-          <aside class="hero-stack">
-            <section class="console-card" aria-label="Prototype summary">
-              <div class="window-topbar">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <p class="console-title">Prototype loop</p>
-              <pre>ingest trace        ready
-score anomalies    active
-apply policy       battery-aware
-append audit       chained</pre>
-              <div class="console-footer">
-                <span>Single-binary foundation</span>
-                <span>Research roadmap intact</span>
-              </div>
-            </section>
+          <a href="#status" class="nav-link" data-section="status">Status</a>
 
-            <section class="hero-panel">
-              <p class="panel-label">Current milestone</p>
-              <div id="milestone-metrics" class="metric-grid"></div>
-            </section>
-          </aside>
-        </section>
-
-        <section class="signal-band">
-          <div class="signal-band-copy">
-            <p class="eyebrow">What changed</p>
-            <h2>From concept list to a shaped project.</h2>
+          <div class="nav-dropdown">
+            <button class="nav-link nav-dropdown-trigger" aria-expanded="false">
+              Roadmap<svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+            </button>
+            <div class="nav-dropdown-menu">
+              <a href="#backlog" data-section="backlog">Engineering Backlog</a>
+              <a href="#tracks" data-section="tracks">Research Tracks</a>
+            </div>
           </div>
-          <div id="status-ribbon" class="status-ribbon"></div>
-        </section>
 
-        <section id="status" class="section">
-          <div class="section-heading">
-            <p class="eyebrow">What ships now</p>
-            <h2>Implemented foundation</h2>
-            <p class="section-intro">
-              The current repo is intentionally modest and runnable: enough to prove the control
-              loop, enough documentation to keep the claims honest.
+          <a href="#start" class="nav-link" data-section="start">Getting Started</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+
+      <!-- ── Hero / Overview ──────────────────────────────────────── -->
+      <section id="overview" class="section hero-section">
+        <div class="container">
+          <div class="hero-grid">
+            <div class="hero-text">
+              <p class="label">Edge Security Runtime · Rust</p>
+              <h1>SentinelEdge</h1>
+              <p class="hero-subtitle">
+                Adaptive anomaly detection, energy-aware mitigation, and tamper-evident
+                forensics for resource-constrained devices — packaged as a single Rust binary
+                with no cloud dependency.
+              </p>
+              <p class="hero-description">
+                This project explores how far a lightweight, self-contained runtime can go
+                toward providing meaningful security guarantees at the network edge. The current
+                prototype implements the core detect–respond–audit loop across six telemetry
+                dimensions. The broader research agenda — zero-knowledge attestation, swarm
+                coordination, post-quantum log integrity — is documented in twenty-five
+                tracks but deliberately deferred until the foundation is stable enough to
+                support it honestly.
+              </p>
+              <div class="hero-cta">
+                <a href="#architecture" class="btn btn-primary">Architecture</a>
+                <a href="#tracks" class="btn btn-outline">Research Tracks</a>
+                <a href="#start" class="btn btn-ghost">Quick Start →</a>
+              </div>
+              <div class="terminal-snippet">
+                <span class="terminal-prompt">$</span>
+                <code>cargo run -- analyze examples/credential_storm.csv</code>
+              </div>
+            </div>
+
+            <aside class="hero-aside">
+              <div class="stat-card">
+                <div class="stat-header">Project at a Glance</div>
+                <div class="stat-grid" id="stats-grid"></div>
+              </div>
+
+              <div class="console-preview">
+                <div class="console-chrome"><span></span><span></span><span></span></div>
+                <pre class="console-output"><span class="c-dim">$</span> cargo run -- analyze credential_storm.csv
+
+<span class="c-label">ingest</span>    8 samples parsed
+<span class="c-label">detect</span>    rolling baseline updated
+<span class="c-label">respond</span>   battery-aware policy applied
+<span class="c-label">audit</span>     chained log → var/last-run.audit.log
+
+<span class="c-ok">✓</span> pipeline complete — 4 anomalies flagged</pre>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Architecture ──────────────────────────────────────────── -->
+      <section id="architecture" class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Architecture</p>
+            <h2>System Design</h2>
+            <p class="section-desc">
+              The runtime follows a four-stage control loop. Each stage maps to a separate Rust
+              module with a narrow interface. The goal for this milestone was a correct, testable
+              pipeline — not feature breadth.
             </p>
           </div>
-          <div id="implemented-grid" class="bento-grid"></div>
-        </section>
-
-        <section id="runtime" class="section accent-shell">
-          <div class="section-heading">
-            <p class="eyebrow">Runtime loop</p>
-            <h2>Four stages, one readable path</h2>
+          <div class="arch-flow" id="arch-flow">
+            <div class="arch-stage">
+              <div class="arch-num">1</div>
+              <h3>Ingest</h3>
+              <p>Parse typed telemetry samples from CSV. Validate field ranges. Maintain deterministic replay semantics so test scenarios are reproducible.</p>
+              <span class="arch-module">telemetry.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">2</div>
+              <h3>Detect</h3>
+              <p>Maintain a rolling EWMA baseline across six signal dimensions (CPU, memory, temperature, bandwidth, auth failures, integrity drift). Compute a weighted anomaly score with human-readable explanations for each contributing signal.</p>
+              <span class="arch-module">detector.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">3</div>
+              <h3>Respond</h3>
+              <p>Map the anomaly score to one of four threat levels (nominal, elevated, severe, critical) and a corresponding response action. Degrade gracefully when battery state is constrained.</p>
+              <span class="arch-module">policy.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">4</div>
+              <h3>Audit</h3>
+              <p>Append every detection-and-response decision to a chained, hash-linked log. Each entry references the previous, forming a verifiable sequence that can be inspected after the fact.</p>
+              <span class="arch-module">audit.rs</span>
+            </div>
           </div>
-          <div class="runtime-layout">
-            <div class="runtime-note">
-              <p class="runtime-kicker">Design principle</p>
-              <h3>Make the first milestone useful, not theatrical.</h3>
+        </div>
+      </section>
+
+      <!-- ── Runtime Pipeline Detail ──────────────────────────────── -->
+      <section id="pipeline" class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Runtime Detail</p>
+            <h2>Pipeline Internals</h2>
+            <p class="section-desc">
+              Telemetry is processed one sample at a time — this mirrors real-time constraints
+              on edge hardware where batch processing is not always available. Below is a closer
+              look at what each stage does and what it deliberately leaves out.
+            </p>
+          </div>
+          <div class="detail-grid" id="pipeline-details"></div>
+        </div>
+      </section>
+
+      <!-- ── Module Map ────────────────────────────────────────────── -->
+      <section id="modules" class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Source</p>
+            <h2>Module Map</h2>
+            <p class="section-desc">
+              Five Rust source files. The prototype is small on purpose — complexity gets added
+              when the research justifies it, not before.
+            </p>
+          </div>
+          <div class="module-table">
+            <div class="module-row module-header-row">
+              <span>Module</span>
+              <span>Responsibility</span>
+              <span>Tracks</span>
+            </div>
+            <div class="module-row">
+              <code>telemetry.rs</code>
+              <span>Input parsing, field validation, typed sample records</span>
+              <span class="module-tracks">—</span>
+            </div>
+            <div class="module-row">
+              <code>detector.rs</code>
+              <span>EWMA baseline, multi-signal anomaly scoring, explanation generation</span>
+              <span class="module-tracks">R01, R05</span>
+            </div>
+            <div class="module-row">
+              <code>policy.rs</code>
+              <span>Threat-level mapping, response selection, battery-aware degradation</span>
+              <span class="module-tracks">R06, R09</span>
+            </div>
+            <div class="module-row">
+              <code>audit.rs</code>
+              <span>Chained audit entries, hash linking, tamper-evident log structure</span>
+              <span class="module-tracks">R10, R11</span>
+            </div>
+            <div class="module-row">
+              <code>runtime.rs</code>
+              <span>Orchestration, CLI commands, summary rendering</span>
+              <span class="module-tracks">—</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Implementation Status ──────────────────────────────────── -->
+      <section id="status" class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Implementation</p>
+            <h2>Current Status</h2>
+            <p class="section-desc">
+              The project is in a "foundation laid" state. The control loop runs, the
+              tests pass, and the documentation accounts for scope honestly. Three categories
+              below — no ambiguity about what is real versus what is planned.
+            </p>
+          </div>
+
+          <div class="status-columns">
+            <div class="status-col">
+              <div class="status-col-header implemented">
+                <span class="status-dot"></span>Implemented
+              </div>
+              <ul class="status-list" id="status-implemented"></ul>
+            </div>
+            <div class="status-col">
+              <div class="status-col-header scaffolded">
+                <span class="status-dot"></span>Scaffolded
+              </div>
+              <ul class="status-list" id="status-scaffolded"></ul>
+            </div>
+            <div class="status-col">
+              <div class="status-col-header deferred">
+                <span class="status-dot"></span>Not Yet Implemented
+              </div>
+              <ul class="status-list" id="status-deferred"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Engineering Backlog ────────────────────────────────────── -->
+      <section id="backlog" class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Roadmap</p>
+            <h2>Engineering Backlog</h2>
+            <p class="section-desc">
+              Concrete tasks grouped by phase. Phase 0 is complete. The recommended build order
+              is runtime hardening → device actions → verifiability — each phase makes the claims
+              from the previous one more credible.
+            </p>
+          </div>
+          <div id="backlog-phases"></div>
+        </div>
+      </section>
+
+      <!-- ── Research Tracks ───────────────────────────────────────── -->
+      <section id="tracks" class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Research Agenda</p>
+            <h2>Blueprint Tracks</h2>
+            <p class="section-desc">
+              Twenty-five research directions, grouped by theme. Each track states the research
+              question, its practical relevance, and what — if anything — the current prototype
+              covers. Status labels are meant literally: "foundation" = runnable code;
+              "scaffolded" = hooks exist, mechanism does not; "planned" and "future" = exactly
+              what they sound like.
+            </p>
+          </div>
+
+          <div class="track-legend">
+            <span class="track-badge foundation">Foundation</span>
+            <span class="track-badge scaffolded">Scaffolded</span>
+            <span class="track-badge planned">Planned</span>
+            <span class="track-badge future">Future</span>
+          </div>
+
+          <div class="track-filter">
+            <button class="filter-btn active" data-filter="all">All&nbsp;(25)</button>
+            <button class="filter-btn" data-filter="foundation">Foundation</button>
+            <button class="filter-btn" data-filter="scaffolded">Scaffolded</button>
+            <button class="filter-btn" data-filter="planned">Planned</button>
+            <button class="filter-btn" data-filter="future">Future</button>
+          </div>
+
+          <div id="tracks-container"></div>
+        </div>
+      </section>
+
+      <!-- ── Getting Started ───────────────────────────────────────── -->
+      <section id="start" class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Setup</p>
+            <h2>Getting Started</h2>
+            <p class="section-desc">
+              Requirements: a stable Rust toolchain (1.75+). No external services, no database,
+              no cloud account.
+            </p>
+          </div>
+
+          <div class="start-grid">
+            <div class="start-card">
+              <h3>Build</h3>
+              <div class="code-block"><code>cargo build</code></div>
+            </div>
+            <div class="start-card">
+              <h3>Run the demo trace</h3>
+              <div class="code-block"><code>cargo run -- demo</code></div>
+              <p>Runs a short built-in telemetry sequence. Audit output goes to <code>var/demo.audit.log</code>.</p>
+            </div>
+            <div class="start-card">
+              <h3>Analyze a scenario</h3>
+              <div class="code-block"><code>cargo run -- analyze examples/credential_storm.csv</code></div>
+              <p>Full ingest → detect → respond → audit pipeline on the included credential-storm trace.</p>
+            </div>
+            <div class="start-card">
+              <h3>Run tests</h3>
+              <div class="code-block"><code>cargo test</code></div>
+            </div>
+            <div class="start-card">
+              <h3>Formatted report</h3>
+              <div class="code-block"><code>cargo run -- report examples/credential_storm.csv</code></div>
+            </div>
+            <div class="start-card">
+              <h3>Implementation snapshot</h3>
+              <div class="code-block"><code>cargo run -- status</code></div>
+            </div>
+          </div>
+
+          <div class="csv-format">
+            <h3>Expected CSV Format</h3>
+            <p>The telemetry parser expects this header row:</p>
+            <div class="code-block code-block-wide">
+              <code>timestamp_ms,cpu_load_pct,memory_load_pct,temperature_c,network_kbps,auth_failures,battery_pct,integrity_drift</code>
+            </div>
+            <div class="field-grid" id="field-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Footer ────────────────────────────────────────────────── -->
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-grid">
+            <div class="footer-col footer-about">
+              <span class="nav-logo footer-logo">SE</span>
               <p>
-                The runtime is deliberately compact: parse telemetry, detect drift, choose a
-                response, then write a forensic trail. It is not pretending to already have the
-                zero-knowledge, formal methods, or swarm logic the research agenda aims for.
+                SentinelEdge is an open research project. Working documentation lives in
+                <code>docs/</code> inside the repository. This site is a public-facing snapshot
+                of the current milestone.
               </p>
             </div>
-            <div class="pipeline">
-              <article class="pipeline-step">
-                <span>01</span>
-                <h3>Ingest</h3>
-                <p>Typed telemetry parsing keeps replay scenarios deterministic and easy to compare.</p>
-              </article>
-              <article class="pipeline-step">
-                <span>02</span>
-                <h3>Detect</h3>
-                <p>A rolling baseline converts cross-signal drift into an explainable anomaly score.</p>
-              </article>
-              <article class="pipeline-step">
-                <span>03</span>
-                <h3>Respond</h3>
-                <p>Policy logic scales mitigation based on severity while accounting for battery limits.</p>
-              </article>
-              <article class="pipeline-step">
-                <span>04</span>
-                <h3>Audit</h3>
-                <p>A chained run log preserves what happened, why it happened, and how the runtime reacted.</p>
-              </article>
+            <div class="footer-col">
+              <h4>Sections</h4>
+              <a href="#overview">Overview</a>
+              <a href="#architecture">Architecture</a>
+              <a href="#status">Status</a>
+              <a href="#backlog">Backlog</a>
+              <a href="#tracks">Research Tracks</a>
+              <a href="#start">Getting Started</a>
+            </div>
+            <div class="footer-col">
+              <h4>Resources</h4>
+              <a href="#modules">Module Map</a>
+              <a href="#pipeline">Pipeline Detail</a>
             </div>
           </div>
-        </section>
-
-        <section id="docs" class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Documentation</p>
-            <h2>Architecture, modules, and guides</h2>
-            <p class="section-intro">
-              Full working documentation lives in <code>docs/</code> in the repository. The cards
-              below cover the most important reference points — click any to expand.
-            </p>
+          <div class="footer-bottom">
+            <p>SentinelEdge · Milestone 01 · March 2026</p>
           </div>
-          <div id="docs-grid" class="docs-grid"></div>
-        </section>
+        </div>
+      </footer>
 
-        <section id="roadmap" class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Backlog</p>
-            <h2>Next engineering moves</h2>
-            <p class="section-intro">
-              Four concrete tasks for Milestone 02 — each one makes the prototype more honest and
-              more capable.
-            </p>
-          </div>
-          <div id="backlog-list" class="timeline-list"></div>
-        </section>
-
-        <section id="tracks" class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Research tracks</p>
-            <h2>Blueprint status map</h2>
-            <p class="section-intro">
-              25 research directions behind SentinelEdge — grouped by theme. Each card explains the
-              idea, why it matters, and what the prototype covers today. Click any card to expand
-              the full detail.
-            </p>
-          </div>
-          <div class="track-legend" aria-label="Research track legend">
-            <span class="badge foundation">Foundation — runnable core exists</span>
-            <span class="badge scaffolded">Scaffolded — semantics exist, mechanism does not</span>
-            <span class="badge planned">Planned — documented next step</span>
-            <span class="badge future">Future — intentionally deferred</span>
-          </div>
-          <div id="tracks-grid"></div>
-        </section>
-
-        <section class="section footer-card">
-          <p class="eyebrow">Repository guidance</p>
-          <h2>Docs stay in the repo. The site stays crisp.</h2>
-          <p>
-            The working documentation lives in <code>docs/</code>. This page is the public-facing
-            snapshot: what exists, what is credible today, and what is still ahead of us.
-          </p>
-        </section>
-      </main>
-    </div>
+    </main>
   </body>
 </html>

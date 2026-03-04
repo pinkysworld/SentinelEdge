@@ -1,590 +1,679 @@
-// ── Data ─────────────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════════
+   SentinelEdge — Site Logic v4
+   Data-driven rendering. Researcher tone. No marketing fluff.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-const metrics = [
-  { value: "5", label: "prototype features shipped" },
-  { value: "25", label: "blueprint tracks documented" },
-  { value: "3", label: "CLI commands ready" },
+// ── Project Data ──────────────────────────────────────────────────────────────
+
+const stats = [
+  { value: "5",  label: "core runtime modules" },
+  { value: "6",  label: "telemetry dimensions" },
+  { value: "25", label: "research tracks mapped" },
+  { value: "3",  label: "CLI commands available" },
 ];
 
-const ribbon = [
+const pipelineDetails = [
   {
-    title: "Runnable now",
-    body: "The repo compiles, tests, and analyzes repeatable telemetry traces today.",
+    num: "01",
+    title: "Telemetry Ingestion",
+    body: "CSV rows are parsed into typed TelemetrySample records. Each field (CPU, memory, temperature, bandwidth, auth failures, integrity drift) is validated against expected ranges. The parser is deterministic, which means the same input file always produces the same internal state — useful for regression testing and scenario comparison.",
+    note: "JSONL ingestion is backlogged (T011) but not yet implemented."
   },
   {
-    title: "Honest scope",
-    body: "Implemented, scaffolded, and future work are clearly separated across docs and code.",
+    num: "02",
+    title: "Adaptive Anomaly Detection",
+    body: "An EWMA-style rolling baseline tracks normal behaviour for each signal dimension. Incoming samples are compared against this baseline; deviations are weighted by dimension and combined into a single anomaly score. The detector also emits human-readable explanations identifying which signals contributed most — operators should not have to guess why a score is high.",
+    note: "No continual learning, replay buffers, or differential privacy yet — that is R01's longer-term scope."
   },
   {
-    title: "Built to grow",
-    body: "The current runtime is small on purpose, so deeper research tracks can land cleanly.",
-  },
-];
-
-const implemented = [
-  {
-    size: "wide",
-    tag: "detector.rs",
-    title: "Adaptive Detector",
-    body: "A rolling baseline tracks normal telemetry and turns sudden drift into an explainable anomaly score across CPU, memory, temperature, bandwidth, authentication failures, and integrity drift.",
+    num: "03",
+    title: "Policy-Driven Response",
+    body: "The anomaly score is mapped to one of four threat levels: nominal, elevated, severe, critical. Each level triggers a corresponding response action (observe, rate-limit, quarantine, rollback-and-escalate). When the device battery is low, the policy engine automatically downgrades expensive actions to preserve device availability — the assumption being that a dead device is worse than a slightly softer response.",
+    note: "Response actions are labels today. Pluggable device adapters for real enforcement are in Phase 2 (T020–T023)."
   },
   {
-    size: "compact",
-    tag: "policy.rs",
-    title: "Policy Engine",
-    body: "Threat scores become concrete mitigation actions, softened when battery is constrained.",
-  },
-  {
-    size: "compact",
-    tag: "audit.rs",
-    title: "Audit Chain",
-    body: "Every detection and response step is written into a chained forensic log for replay and inspection.",
-  },
-  {
-    size: "tall",
-    tag: "runtime.rs",
-    title: "Trace Analysis",
-    body: "CSV telemetry traces make attack scenarios easy to replay, compare, and test before connecting live device feeds.",
-  },
-  {
-    size: "tall",
-    tag: "docs/",
-    title: "Docs + Backlog",
-    body: "Architecture, getting started, status, backlog, and the research-track map keep the repository grounded in what actually exists.",
-  },
-  {
-    size: "wide",
-    tag: "site/",
-    title: "Pages Presence",
-    body: "The GitHub Pages site presents the current milestone with a clearer visual hierarchy and a more public-facing narrative.",
+    num: "04",
+    title: "Audit Trail",
+    body: "Every detection-and-response decision is appended to a chained log. Each entry includes a hash of the previous entry, forming a linked sequence that makes retroactive tampering detectable. The trail is written to disk in a human-readable format so it can be inspected with standard tools.",
+    note: "The hash chain is a prototype digest — production-grade cryptographic signatures are backlogged in Phase 3 (T030–T031)."
   },
 ];
 
-const docItems = [
+const statusData = {
+  implemented: [
+    "Rust project scaffold with runnable CLI (demo, analyze, status, report)",
+    "Typed telemetry ingestion from CSV with field validation",
+    "Adaptive EWMA-based anomaly scoring across six signal dimensions",
+    "Human-readable anomaly explanations per scoring decision",
+    "Threat-level classification and response-action selection",
+    "Battery-aware graceful degradation of mitigation actions",
+    "Tamper-evident chained audit log written to disk",
+    "GitHub Pages deployment with CI workflow",
+    "Documentation: architecture, getting started, backlog, research tracks",
+  ],
+  scaffolded: [
+    "Integrity-drift handling as a precursor to poisoning detection (R05)",
+    "Rollback-and-escalate action semantics — the decision exists but real rollback does not (R10)",
+    "Verifiable logging structure — hash chain present, production cryptography is not (R11)",
+    "Research-track status accounting across all 25 blueprint items",
+  ],
+  deferred: [
+    "Continual learning, replay buffers, on-device model training",
+    "Differential privacy guarantees",
+    "Zero-knowledge proofs (Halo2, zk-SNARKs)",
+    "Formal rule verification / TLA+ export",
+    "Swarm or cross-device coordination protocols",
+    "Quantum-walk anomaly propagation modeling",
+    "Secure MPC / private set intersection",
+    "Post-quantum signatures and hardware roots of trust",
+    "Wasm-based extensible policy plugins",
+    "Supply-chain firmware attestation",
+    "Energy-harvesting archival scheduling",
+  ],
+};
+
+const backlogPhases = [
   {
-    title: "Architecture",
-    icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="10" y="2" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="10" y="10" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.5"/></svg>`,
-    summary: "Four-stage pipeline: Ingest → Detect → Respond → Audit. Five Rust modules with clear responsibility boundaries.",
-    sections: [
-      {
-        label: "Runtime pipeline",
-        body: "CSV samples are parsed into typed TelemetrySample records. An AnomalyDetector maintains an EWMA-like baseline for normal behaviour. Deviations across CPU, memory, temperature, bandwidth, auth failures, and integrity drift are weighted into a single anomaly score. A PolicyEngine maps that score into a threat level and response action. Battery state can soften heavy-handed actions. Every decision is appended to a tamper-evident chained audit log.",
-      },
-      {
-        label: "Module map",
-        items: [
-          { name: "src/telemetry.rs", desc: "Input parsing and sample validation" },
-          { name: "src/detector.rs", desc: "Adaptive scoring logic and anomaly explanations" },
-          { name: "src/policy.rs", desc: "Response mapping: nominal / elevated / severe / critical" },
-          { name: "src/audit.rs", desc: "Tamper-evident run log chaining" },
-          { name: "src/runtime.rs", desc: "Orchestration, summaries, and CLI-facing report rendering" },
-        ],
-      },
+    id: "phase-0",
+    tag: "Phase 0",
+    tagClass: "done",
+    title: "Foundation (complete)",
+    tasks: [
+      { id: "T001", title: "Bootstrap Rust package and module layout", done: true },
+      { id: "T002", title: "CSV telemetry ingestion and validation", done: true },
+      { id: "T003", title: "Adaptive multi-signal anomaly detector", done: true },
+      { id: "T004", title: "Policy engine with battery-aware mitigation", done: true },
+      { id: "T005", title: "Chained audit log for run forensics", done: true },
+      { id: "T006", title: "Baseline documentation and GitHub Pages site", done: true },
     ],
   },
   {
-    title: "Getting Started",
-    icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-    summary: "Clone the repo, run the example trace, inspect the audit output. Requires only a stable Rust toolchain.",
-    sections: [
-      {
-        label: "Prerequisites",
-        body: "Stable Rust toolchain (1.75+). No external dependencies beyond cargo.",
-      },
-      {
-        label: "Three commands to start",
-        items: [
-          { name: "cargo run -- analyze examples/credential_storm.csv", desc: "Run the full pipeline on the sample trace" },
-          { name: "cargo test", desc: "Run the test suite" },
-          { name: "cargo run -- report examples/credential_storm.csv", desc: "Print the formatted audit report" },
-        ],
-      },
+    id: "phase-1",
+    tag: "Phase 1",
+    tagClass: "next",
+    title: "Runtime Hardening",
+    tasks: [
+      { id: "T010", title: "TOML/JSON configuration loading", desc: "Externalise thresholds, battery policies, and output paths into a config file." },
+      { id: "T011", title: "JSONL telemetry ingestion", desc: "Support structured JSON input alongside CSV." },
+      { id: "T012", title: "Structured JSON reports for SIEM ingestion", desc: "Machine-readable output for integration with existing monitoring stacks." },
+      { id: "T013", title: "Persist and reload learned baselines", desc: "Store baselines between runs so the detector improves across sessions." },
+      { id: "T014", title: "Richer anomaly features", desc: "Add process count, disk pressure, and sensor drift windows." },
+      { id: "T015", title: "Deterministic test fixtures", desc: "Replayable benign and adversarial traces for regression testing." },
     ],
   },
   {
-    title: "Research Tracks",
-    icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-    summary: "25 blueprint tracks from adaptive detection to quantum-resistant audit logs — with honest implementation status for each.",
-    link: "#tracks",
-    linkLabel: "Browse all 25 tracks →",
+    id: "phase-2",
+    tag: "Phase 2",
+    tagClass: "next",
+    title: "Device Actions",
+    tasks: [
+      { id: "T020", title: "Pluggable device action adapters", desc: "Replace abstract response labels with real trait-based implementations." },
+      { id: "T021", title: "Throttle, quarantine, and isolate implementations", desc: "Concrete response actions behind a pluggable interface." },
+      { id: "T022", title: "Rollback checkpoints", desc: "Configuration and model state snapshots for real recovery." },
+      { id: "T023", title: "Forensic bundle exporter", desc: "Audit log combined with summarised evidence for post-incident review." },
+    ],
   },
   {
-    title: "Status & Backlog",
-    icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M9 6v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-    summary: "What ships today, what is scaffolded, and what comes next. The backlog is public and always up to date.",
-    link: "#roadmap",
-    linkLabel: "See next engineering moves →",
-  },
-];
-
-const backlog = [
-  {
-    tag: "M02",
-    title: "Persist learned baselines",
-    body: "Store and reload adaptive baselines so the runtime improves across sessions instead of relearning from scratch.",
+    id: "phase-3",
+    tag: "Phase 3",
+    tagClass: "later",
+    title: "Verifiability",
+    tasks: [
+      { id: "T030", title: "Cryptographic digest chain", desc: "Replace the prototype hash chain with proper cryptographic checksums." },
+      { id: "T031", title: "Signed audit checkpoints", desc: "Periodic signed anchors in the audit stream." },
+      { id: "T032", title: "Proof-carrying update metadata", desc: "Metadata hooks for future ZK integration." },
+      { id: "T033", title: "Formally checkable response policy", desc: "Model the policy engine as a verifiable state machine." },
+    ],
   },
   {
-    tag: "M02",
-    title: "Real device action adapters",
-    body: "Replace abstract response labels with pluggable implementations for throttling, service isolation, and rollback hooks.",
+    id: "phase-4",
+    tag: "Phase 4",
+    tagClass: "later",
+    title: "Edge Learning",
+    tasks: [
+      { id: "T040", title: "Bounded replay buffer", desc: "Sliding telemetry window for local model retraining." },
+      { id: "T041", title: "Baseline adaptation controls", desc: "Freeze, decay, and retrain options for the EWMA baseline." },
+      { id: "T042", title: "Broader poisoning heuristics", desc: "Beyond integrity_drift — spectral analysis and statistical tests." },
+      { id: "T043", title: "FP/FN benchmark harnesses", desc: "Measure false-positive and false-negative tradeoffs systematically." },
+    ],
   },
   {
-    tag: "M02",
-    title: "Cryptographic audit upgrades",
-    body: "Swap the prototype digest chain for stronger cryptographic checkpoints and signed audit anchors.",
-  },
-  {
-    tag: "M02",
-    title: "Choose the first research subset",
-    body: "Decide which advanced blueprint tracks move from idea status into the first deeper implementation wave.",
+    id: "phase-5",
+    tag: "Phase 5",
+    tagClass: "later",
+    title: "Research Expansion",
+    tasks: [
+      { id: "T050", title: "Select first research paper subset", desc: "Decide which blueprint tracks move into the first deeper implementation round." },
+      { id: "T051", title: "Swarm coordination protocol sketch", desc: "Design doc for R03/R08/R15/R23 cross-device communication." },
+      { id: "T052", title: "Wasm extension surface specification", desc: "Define the sandboxed plugin API for R17." },
+      { id: "T053", title: "Supply-chain attestation inputs", desc: "Specify attestation data flows for R20." },
+      { id: "T054", title: "Post-quantum logging upgrade path", desc: "Define migration strategy for R11/R21." },
+    ],
   },
 ];
 
 const trackGroups = [
   {
     id: "detection",
-    label: "Core detection & fusion",
+    label: "Core Detection & Fusion",
     tracks: [
       {
-        code: "R01",
-        title: "Adaptive anomaly detection",
-        status: "foundation",
-        body: "Let the edge runtime learn a changing local baseline instead of relying on fixed thresholds or cloud retraining.",
-        idea: "Adaptive multi-signal scoring with a rolling EWMA-like baseline across CPU, memory, temperature, bandwidth, auth failures, and integrity drift.",
-        matters: "Edge devices drift over time, so adaptive on-device learning is essential for detection to stay useful.",
-        state: "Adaptive multi-signal scoring exists. Missing: replay buffer, continual learning loop, differential privacy, and proof-carrying updates.",
+        code: "R01", status: "foundation",
+        title: "Adaptive Anomaly Detection with Continual Learning",
+        summary: "On-device adaptive scoring that learns local baselines rather than relying on fixed thresholds or periodic cloud retraining.",
+        idea: "TinyML-style continual learning with replay buffer, Laplace noise for differential privacy, and Halo2 circuits for update integrity proofs.",
+        matters: "Edge devices drift over time. A static detector becomes unreliable within weeks of deployment in most real environments.",
+        state: "Adaptive multi-signal EWMA scoring is implemented. Missing: replay buffer, continual learning loop, differential privacy, and proof-carrying updates.",
       },
       {
-        code: "R02",
-        title: "Formal verification of detection rules",
-        status: "planned",
-        body: "Represent the detection policy as a formally specified state machine and validate runtime behaviour against that specification.",
-        idea: "Statically verified detection logic with runtime conformance checking against a formal rule model.",
-        matters: "Moves the system from 'heuristically works' toward 'we can state and check what correctness means.'",
+        code: "R02", status: "planned",
+        title: "Formal Verification of Detection Rules",
+        summary: "Represent detection logic as a formally specified state machine and verify runtime conformance against that specification.",
+        idea: "Embedded TLA+-to-Rust model checker with a zk-SNARK for rule-satisfaction proofs.",
+        matters: "Shifts the correctness argument from 'it seems to work' to 'we can state and check what correctness means.'",
         state: "No formal rule model or runtime checker exists yet.",
       },
       {
-        code: "R03",
-        title: "Cross-device swarm intelligence",
-        status: "future",
-        body: "Let multiple devices share partial threat signals and collectively detect patterns that any one node would miss.",
-        idea: "Privacy-preserving aggregation of low-confidence evidence across a device fleet.",
-        matters: "Many real attacks only become obvious when evidence is aggregated across a fleet.",
-        state: "No cross-device communication in the prototype.",
+        code: "R03", status: "future",
+        title: "Cross-Device Swarm Intelligence",
+        summary: "Privacy-preserving collaborative detection where devices share partial threat signals without exposing raw telemetry.",
+        idea: "Private set intersection combined with federated averaging and ZK proofs of honest participation.",
+        matters: "Many real attacks only become visible when low-confidence evidence is aggregated across a fleet.",
+        state: "No cross-device communication exists in the prototype.",
       },
       {
-        code: "R04",
-        title: "Quantum-inspired propagation modeling",
-        status: "future",
-        body: "Use quantum-walk-inspired models to predict how suspicious behaviour may spread through a mesh or dependency graph.",
-        idea: "Predictive threat-spread modeling using quantum-walk mathematics on device topology graphs.",
-        matters: "Turns SentinelEdge from purely reactive detection toward predictive isolation planning.",
+        code: "R04", status: "future",
+        title: "Quantum-Walk Propagation Modeling",
+        summary: "Use classical simulation of quantum walks to predict how anomalies spread through mesh topologies.",
+        idea: "Discrete-time quantum walk simulation on device topology graphs with learned damping factors.",
+        matters: "Would shift SentinelEdge from purely reactive detection toward predictive isolation planning.",
         state: "No propagation graph or predictive spread model exists yet.",
       },
       {
-        code: "R05",
-        title: "Poisoning detection hooks",
-        status: "scaffolded",
-        body: "Detect when the local model or policy has been tampered with and force recovery to a known-good state.",
-        idea: "Spectral poisoning analysis with trusted checkpoints and verifiable recovery.",
-        matters: "A detector that can be poisoned without noticing is a weak security primitive.",
-        state: "integrity_drift signal and critical escalation exist. Missing: poisoning analysis, trusted checkpoints, and real recovery.",
+        code: "R05", status: "scaffolded",
+        title: "Model Poisoning Detection and Recovery",
+        summary: "Detect when the local model or policy has been tampered with, then recover to a verified safe state.",
+        idea: "Spectral poisoning analysis combined with Merkle-rooted model checkpoints and cryptographic recovery proofs.",
+        matters: "A detector that can be poisoned without noticing is a fundamentally weak security primitive.",
+        state: "The integrity_drift signal and forced critical escalation exist. Missing: spectral analysis, trusted checkpoints, and real recovery logic.",
       },
     ],
   },
   {
     id: "response",
-    label: "Response & mitigation",
+    label: "Response & Mitigation",
     tracks: [
       {
-        code: "R06",
-        title: "Energy-aware mitigation",
-        status: "scaffolded",
-        body: "Choose mitigations that respect both security urgency and the device's remaining energy budget, then prove the action matched policy.",
-        idea: "Formally verifiable energy-proportional isolation with graceful degradation.",
-        matters: "Edge security cannot assume desktop-class power or cooling.",
-        state: "Energy-aware downgrade logic exists. Missing: real isolation adapters and proof mechanisms.",
+        code: "R06", status: "scaffolded",
+        title: "Energy-Aware Verifiable Isolation",
+        summary: "Select mitigations that respect both security urgency and the device energy budget, with proofs that the action matched policy.",
+        idea: "Priority queue with energy cost model plus a proof circuit for compliance verification.",
+        matters: "Edge security cannot assume desktop-class power or cooling. The mitigation has to fit the device.",
+        state: "Energy-aware downgrade logic exists. Missing: real isolation adapters and formal proof mechanisms.",
       },
       {
-        code: "R07",
-        title: "Self-healing network reconfiguration",
-        status: "planned",
-        body: "After isolating compromised nodes, automatically repair the network topology while preserving security invariants.",
-        idea: "Topology-aware self-repair with zero-knowledge proofs of restoration integrity.",
-        matters: "Isolation without recovery can turn defence into self-inflicted outage.",
+        code: "R07", status: "planned",
+        title: "Self-Healing Network Reconfiguration",
+        summary: "After isolating compromised nodes, automatically repair the network topology while preserving security invariants.",
+        idea: "Graph repair algorithms with zk-SNARK proofs that the new configuration maintains stated invariants.",
+        matters: "Isolation without recovery turns defensive action into self-inflicted outage.",
         state: "No topology model or repair engine exists yet.",
       },
       {
-        code: "R08",
-        title: "Privacy-preserving coordinated response",
-        status: "future",
-        body: "Let devices coordinate a shared defence action without exposing raw local telemetry.",
-        idea: "Secure multi-party computation for cross-device response coordination.",
-        matters: "Fleet response becomes more useful when it does not require centralised visibility.",
+        code: "R08", status: "future",
+        title: "Privacy-Preserving Coordinated Response",
+        summary: "Let devices coordinate defensive actions (e.g., collective quarantine) without revealing individual sensor data.",
+        idea: "Secure multi-party computation adapted for low-power device constraints.",
+        matters: "Fleet-level response becomes practical when it does not require a centralised view of everything.",
         state: "No secure multi-party coordination path exists yet.",
       },
       {
-        code: "R09",
-        title: "Adaptive response strength",
-        status: "foundation",
-        body: "Map detection confidence and local constraints into different response intensities rather than a single fixed action.",
-        idea: "Continuous response scaling: observe → rate-limit → quarantine → rollback-and-escalate.",
-        matters: "Prevents overreaction on benign spikes and underreaction on truly dangerous events.",
+        code: "R09", status: "foundation",
+        title: "Adaptive Response Strength",
+        summary: "Map detection confidence and local constraints into different response intensities rather than a single fixed action.",
+        idea: "Continuous response scaling: observe → rate-limit → quarantine → rollback-and-escalate, shaped by a learned policy with energy penalty.",
+        matters: "Prevents overreaction on benign spikes and underreaction on genuinely dangerous events.",
         state: "Threat score and battery state already shape the response chosen by the runtime.",
       },
       {
-        code: "R10",
-        title: "Rollback semantics",
-        status: "scaffolded",
-        body: "Restore device state to a known-safe checkpoint and preserve a verifiable record of what was changed.",
-        idea: "Snapshot-based state recovery with cryptographic proof of restoration.",
+        code: "R10", status: "scaffolded",
+        title: "Verifiable Rollback and Forensic Recovery",
+        summary: "Restore device state to a known-safe checkpoint and preserve a verifiable record of what was changed.",
+        idea: "Merkle-based snapshotting with ZK range proofs for restoration integrity.",
         matters: "Recovery is far more credible when it can be replayed and audited after the incident.",
-        state: "Rollback is a policy action and the audit trail is present. Missing: state snapshots and restore logic.",
+        state: "Rollback is a policy action and the audit trail records it. Missing: actual state snapshots and restore logic.",
       },
     ],
   },
   {
     id: "audit",
-    label: "Verifiability & audit",
+    label: "Verifiability & Audit",
     tracks: [
       {
-        code: "R11",
-        title: "Verifiable logging",
-        status: "scaffolded",
-        body: "Make the event history tamper-evident and signed with algorithms that remain viable in a post-quantum setting.",
-        idea: "Post-quantum cryptographic audit log with selective disclosure.",
-        matters: "'Verifiable security' depends on the evidence trail remaining trustworthy.",
-        state: "Chained audit trail exists. Missing: cryptographic and post-quantum signatures.",
+        code: "R11", status: "scaffolded",
+        title: "Post-Quantum Secure Audit Logs",
+        summary: "Tamper-evident event logs signed with algorithms that remain viable in a post-quantum setting.",
+        idea: "Hybrid classical + PQ signature scheme (Dilithium/Falcon) with a seamless in-place upgrade path.",
+        matters: "The entire 'verifiable security' claim depends on the evidence trail remaining trustworthy long-term.",
+        state: "The audit chain structure exists. No cryptographic or post-quantum signatures are implemented.",
       },
       {
-        code: "R12",
-        title: "Zero-knowledge device state proof",
-        status: "future",
-        body: "Prove that a device was in a particular historical state without disclosing the underlying sensitive data.",
-        idea: "ZK-SNARK-based historical state attestation for privacy-preserving audits.",
-        matters: "Allows audits and incident response without exposing full device contents.",
-        state: "No historical state proof machinery yet.",
+        code: "R12", status: "future",
+        title: "Zero-Knowledge Device State Proof",
+        summary: "Prove that a device was in a particular historical state without disclosing the underlying data.",
+        idea: "Recursive zk-SNARKs over Merkle history for privacy-preserving attestation.",
+        matters: "Allows audits and incident response without exposing full device contents to the auditor.",
+        state: "No historical state proof machinery exists yet.",
       },
       {
-        code: "R13",
-        title: "Regulatory-compliant verifiable export",
-        status: "planned",
-        body: "Export only the subset of logs or evidence required for a regulator while proving the rest was not altered.",
-        idea: "Selective disclosure log export with redaction proofs.",
-        matters: "Many real deployments need auditability and privacy at the same time.",
+        code: "R13", status: "planned",
+        title: "Regulatory-Compliant Selective Disclosure",
+        summary: "Export only the subset of logs a regulator requires while proving the rest was not altered.",
+        idea: "zk-SNARK-based log redaction with integrity proofs.",
+        matters: "Many deployments need to satisfy auditability and privacy constraints simultaneously.",
         state: "No selective disclosure export flow exists yet.",
       },
       {
-        code: "R14",
-        title: "Energy-harvesting archival scheduler",
-        status: "future",
-        body: "Defer expensive archival work until harvested energy is available, such as solar or scavenged power.",
-        idea: "Energy-aware deferral of expensive storage operations based on harvest prediction.",
-        matters: "Long-lived remote edge devices often operate under severe energy constraints.",
-        state: "No archival scheduler yet.",
+        code: "R14", status: "future",
+        title: "Energy-Harvesting Archival Scheduling",
+        summary: "Defer expensive archival operations until harvested energy (solar, scavenged) is available.",
+        idea: "Predictive harvesting model combined with deferred compaction scheduling.",
+        matters: "Long-lived remote edge devices often operate under severe, variable energy constraints.",
+        state: "No archival scheduler exists yet.",
       },
       {
-        code: "R15",
-        title: "Cross-device threat intelligence sharing",
-        status: "future",
-        body: "Let nodes share threat indicators with proof of provenance and integrity.",
-        idea: "Signed, provenance-verifiable threat indicator exchange protocol.",
-        matters: "Shared signatures become more trustworthy when receivers can verify their source.",
+        code: "R15", status: "future",
+        title: "Cross-Device Threat Intelligence Sharing",
+        summary: "Share anonymised threat indicators across devices with proof of provenance and integrity.",
+        idea: "Privacy-preserving set union with signed, verifiable provenance chains.",
+        matters: "Shared threat signatures become more valuable when receivers can verify their origin.",
         state: "No threat-intelligence exchange protocol exists yet.",
       },
     ],
   },
   {
     id: "advanced",
-    label: "Advanced & forward-looking",
+    label: "Advanced & Forward-Looking",
     tracks: [
       {
-        code: "R16",
-        title: "Hardware root-of-trust integration",
-        status: "planned",
-        body: "Bind critical keys or trust anchors to TPM, secure enclave, or similar hardware where available.",
-        idea: "Hardware-attested trust anchors via TPM or secure enclave integration.",
-        matters: "The runtime becomes harder to subvert when its root secrets are not just files on disk.",
+        code: "R16", status: "planned",
+        title: "Hardware Root-of-Trust Integration",
+        summary: "Bind critical keys or trust anchors to TPM / secure enclave hardware where available.",
+        idea: "Conditional compilation with hardware-attested key storage and a software fallback path.",
+        matters: "The runtime becomes substantially harder to subvert when root secrets are not just files on disk.",
         state: "No hardware-attestation path exists yet.",
       },
       {
-        code: "R17",
-        title: "Wasm-based extensible policies",
-        status: "planned",
-        body: "Let users ship custom detection or response logic as sandboxed Wasm modules.",
-        idea: "Sandboxed, user-authored detection and response plugins via WebAssembly.",
-        matters: "Opens the project to extension without requiring forks of the core runtime.",
+        code: "R17", status: "planned",
+        title: "Wasm-Based Extensible Policies",
+        summary: "Let operators ship custom detection or response logic as sandboxed WebAssembly modules.",
+        idea: "Sandboxed Wasm interpreter with resource accounting and energy compliance verification.",
+        matters: "Opens the project to domain-specific extension without forking the core runtime.",
         state: "No Wasm policy surface or sandbox exists yet.",
       },
       {
-        code: "R18",
-        title: "Energy-proportional model quantization",
-        status: "future",
-        body: "Adjust model precision to save energy, while proving the detector stayed within an acceptable accuracy envelope.",
-        idea: "Adaptive quantization with verifiable accuracy bounds.",
-        matters: "Edge deployments often need to trade precision for power without losing trust in the result.",
-        state: "Prototype does not include quantized models.",
+        code: "R18", status: "future",
+        title: "Energy-Proportional Model Quantization",
+        summary: "Adjust model precision dynamically to save energy while proving accuracy stayed above a threshold.",
+        idea: "Quantization-aware training combined with ZK accuracy proofs.",
+        matters: "Edge deployments routinely trade precision for power. The question is whether you can do that without losing trust in the result.",
+        state: "The prototype does not include quantized models.",
       },
       {
-        code: "R19",
-        title: "Causal false-positive reduction",
-        status: "future",
-        body: "Use lightweight causal models to distinguish actual threats from noisy correlations.",
-        idea: "Causal inference layer to filter noisy anomaly signals from real threats.",
-        matters: "False positives are one of the fastest ways to make operators stop trusting a detector.",
+        code: "R19", status: "future",
+        title: "Causal False-Positive Reduction",
+        summary: "Use lightweight causal inference to distinguish real threats from noisy correlations.",
+        idea: "Tiny on-device causal graph inference for anomaly signal filtering.",
+        matters: "False positives are one of the fastest ways to erode operator trust in any detection system.",
         state: "No causal inference layer exists yet.",
       },
       {
-        code: "R20",
-        title: "Verifiable supply-chain attestation",
-        status: "planned",
-        body: "Prove that the running firmware and model artifacts match a known-good build or vendor-signed release.",
-        idea: "Firmware and model provenance verification at startup.",
-        matters: "Strengthens trust before runtime detection even begins.",
+        code: "R20", status: "planned",
+        title: "Supply-Chain Firmware Attestation",
+        summary: "Prove that the running firmware and model artifacts match a known-good vendor-signed build.",
+        idea: "Remote attestation combined with Merkle root verification of the binary.",
+        matters: "Strengthens trust at the base layer — before runtime detection even begins.",
         state: "No firmware or model attestation path exists yet.",
       },
       {
-        code: "R21",
-        title: "Quantum-resistant key rotation",
-        status: "future",
-        body: "Rotate keys periodically using post-quantum-safe primitives without burning too much device energy.",
-        idea: "Energy-efficient post-quantum key lifecycle management.",
-        matters: "Key hygiene is essential, but heavy cryptography can be expensive on small devices.",
-        state: "Prototype has no key lifecycle subsystem.",
+        code: "R21", status: "future",
+        title: "Quantum-Resistant Key Rotation",
+        summary: "Periodic key rotation using post-quantum algorithms, optimised for battery life.",
+        idea: "Key ratcheting combined with energy-aware scheduling of expensive PQ operations.",
+        matters: "Key hygiene matters, but heavy cryptography can be prohibitively expensive on small devices.",
+        state: "The prototype has no key lifecycle subsystem.",
       },
       {
-        code: "R22",
-        title: "Cross-platform binary self-optimisation",
-        status: "future",
-        body: "Let the runtime specialise itself for different target architectures and energy profiles.",
-        idea: "Architecture-aware JIT optimisation for heterogeneous edge hardware.",
-        matters: "The project is edge-oriented, so hardware diversity is part of the challenge.",
-        state: "No architecture-specific specialisation logic yet.",
+        code: "R22", status: "future",
+        title: "Cross-Platform Binary Self-Optimisation",
+        summary: "Let the runtime specialise itself for different target architectures and energy profiles.",
+        idea: "JIT-like architecture-aware specialisation for heterogeneous edge hardware.",
+        matters: "The project targets edge devices, so hardware diversity is part of the problem space.",
+        state: "No architecture-specific specialisation logic exists yet.",
       },
       {
-        code: "R23",
-        title: "Verifiable swarm defence coordination",
-        status: "future",
-        body: "Let multiple devices vote or coordinate on defensive action and prove the tally was honest.",
-        idea: "Byzantine-fault-tolerant collective defence with verifiable tally proofs.",
-        matters: "Collective defence becomes much stronger when no single node has to be blindly trusted.",
-        state: "No multi-device voting or swarm defence layer yet.",
+        code: "R23", status: "future",
+        title: "Verifiable Swarm Defence Coordination",
+        summary: "Multiple devices vote on threats with ZK-verifiable tallying, so no single node must be blindly trusted.",
+        idea: "Threshold signatures combined with privacy-preserving voting and Byzantine-fault-tolerant coordination.",
+        matters: "Collective defence becomes practical when individual participants cannot be forced to lie undetectably.",
+        state: "No multi-device voting or swarm defence layer exists yet.",
       },
       {
-        code: "R24",
-        title: "Energy-harvesting posture adjustment",
-        status: "future",
-        body: "Adapt cryptographic or defensive intensity based on predicted near-term energy availability.",
-        idea: "Predictive energy-aware security posture scheduling.",
-        matters: "A node with scarce harvested power may need a different posture than one with abundant power.",
-        state: "No energy forecasting or posture scheduler yet.",
+        code: "R24", status: "future",
+        title: "Energy-Harvesting Posture Adjustment",
+        summary: "Adapt cryptographic or defensive intensity based on predicted near-term energy availability.",
+        idea: "Predictive energy-aware security posture scheduling with formal trade-off guarantees.",
+        matters: "A node on scarce harvested power needs a different security posture than one with mains power.",
+        state: "No energy forecasting or posture scheduler exists yet.",
       },
       {
-        code: "R25",
-        title: "Long-term evolutionary model improvement",
-        status: "future",
-        body: "Let local models improve over months using bounded evolutionary search instead of one-shot training.",
-        idea: "Bounded evolutionary model optimisation for long-term self-improvement.",
-        matters: "The longest-horizon path toward self-improving edge detection without cloud dependence.",
-        state: "No long-horizon model adaptation system yet.",
+        code: "R25", status: "future",
+        title: "Evolutionary Model Improvement",
+        summary: "On-device bounded evolutionary search for long-term detection model improvement without cloud dependency.",
+        idea: "Genetic algorithms with ZK fitness proofs, operating on a months-long timescale.",
+        matters: "The longest-horizon path toward self-improving edge detection without permanent cloud reliance.",
+        state: "No long-horizon model adaptation system exists yet.",
       },
     ],
   },
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const csvFields = [
+  { name: "timestamp_ms", desc: "Monotonically increasing sample time" },
+  { name: "cpu_load_pct", desc: "CPU load, 0–100" },
+  { name: "memory_load_pct", desc: "Memory usage, 0–100" },
+  { name: "temperature_c", desc: "Operating temperature, °C" },
+  { name: "network_kbps", desc: "Observed throughput (kbps)" },
+  { name: "auth_failures", desc: "Failed auth attempts per window" },
+  { name: "battery_pct", desc: "Battery level, 0–100" },
+  { name: "integrity_drift", desc: "Model/config drift, 0–1" },
+];
 
-function chevronSVG() {
-  return `<svg class="btn-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-    <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>`;
-}
+// ── Rendering ─────────────────────────────────────────────────────────────────
 
-function wireExpand(btn, container, openLabel, closeLabel) {
-  btn.addEventListener("click", () => {
-    const isOpen = container.classList.toggle("open");
-    btn.setAttribute("aria-expanded", String(isOpen));
-    btn.querySelector(".btn-label").textContent = isOpen ? closeLabel : openLabel;
+function renderStats() {
+  const el = document.getElementById("stats-grid");
+  if (!el) return;
+  stats.forEach(s => {
+    const div = document.createElement("div");
+    div.className = "stat-item";
+    div.innerHTML = `<span class="stat-value">${s.value}</span><span class="stat-label">${s.label}</span>`;
+    el.appendChild(div);
   });
 }
 
-// ── Renderers ─────────────────────────────────────────────────────────────────
-
-function renderMetrics() {
-  const root = document.querySelector("#milestone-metrics");
-  metrics.forEach((metric) => {
-    const article = document.createElement("article");
-    article.className = "metric";
-    article.innerHTML = `<strong>${metric.value}</strong><span>${metric.label}</span>`;
-    root.appendChild(article);
-  });
-}
-
-function renderRibbon() {
-  const root = document.querySelector("#status-ribbon");
-  ribbon.forEach((item) => {
-    const article = document.createElement("article");
-    article.className = "ribbon-item";
-    article.innerHTML = `<strong>${item.title}</strong><p>${item.body}</p>`;
-    root.appendChild(article);
-  });
-}
-
-function renderImplemented() {
-  const root = document.querySelector("#implemented-grid");
-  implemented.forEach((item, index) => {
-    const article = document.createElement("article");
-    article.className = `feature-card ${item.size}`;
-    article.style.animationDelay = `${index * 70}ms`;
-    article.innerHTML = `
-      <div class="card-top-row">
-        <h3>${item.title}</h3>
-        <span class="card-tag">${item.tag}</span>
-      </div>
-      <p>${item.body}</p>
+function renderPipelineDetails() {
+  const el = document.getElementById("pipeline-details");
+  if (!el) return;
+  pipelineDetails.forEach((d, i) => {
+    const card = document.createElement("div");
+    card.className = "detail-card";
+    card.style.setProperty("--stagger", `${i * 80}ms`);
+    card.setAttribute("data-delay", "");
+    card.innerHTML = `
+      <h3><span class="detail-num">${d.num}</span>${d.title}</h3>
+      <p>${d.body}</p>
+      ${d.note ? `<p class="detail-note">${d.note}</p>` : ""}
     `;
-    root.appendChild(article);
+    el.appendChild(card);
   });
 }
 
-function renderDocs() {
-  const root = document.querySelector("#docs-grid");
-  if (!root) return;
-
-  docItems.forEach((doc, index) => {
-    const article = document.createElement("article");
-    article.className = "doc-card";
-    article.style.animationDelay = `${index * 70}ms`;
-
-    let sectionsHTML = "";
-    if (doc.sections) {
-      doc.sections.forEach((section) => {
-        if (section.items) {
-          const listItems = section.items
-            .map((it) => `<li><code>${it.name}</code><span>${it.desc}</span></li>`)
-            .join("");
-          sectionsHTML += `
-            <div class="doc-section">
-              <p class="doc-section-label">${section.label}</p>
-              <ul class="doc-section-list">${listItems}</ul>
-            </div>`;
-        } else {
-          sectionsHTML += `
-            <div class="doc-section">
-              <p class="doc-section-label">${section.label}</p>
-              <p class="doc-section-body">${section.body}</p>
-            </div>`;
-        }
-      });
-    }
-
-    const hasExpand = !!doc.sections;
-    const hasLink = !!doc.link;
-
-    article.innerHTML = `
-      <div class="doc-card-icon">${doc.icon}</div>
-      <h3>${doc.title}</h3>
-      <p class="doc-card-summary">${doc.summary}</p>
-      ${hasLink ? `<a class="doc-card-link" href="${doc.link}">${doc.linkLabel}</a>` : ""}
-      ${hasExpand ? `
-        <button class="expand-btn" aria-expanded="false">
-          <span class="btn-label">View details</span>${chevronSVG()}
-        </button>
-        <div class="expandable doc-detail">
-          <div class="expandable-inner">${sectionsHTML}</div>
-        </div>` : ""}
-    `;
-
-    root.appendChild(article);
-
-    if (hasExpand) {
-      const btn = article.querySelector(".expand-btn");
-      wireExpand(btn, article, "View details", "Hide details");
-    }
+function renderStatus() {
+  const lists = {
+    implemented: document.getElementById("status-implemented"),
+    scaffolded: document.getElementById("status-scaffolded"),
+    deferred: document.getElementById("status-deferred"),
+  };
+  Object.entries(statusData).forEach(([key, items]) => {
+    const ul = lists[key];
+    if (!ul) return;
+    items.forEach(text => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      ul.appendChild(li);
+    });
   });
 }
 
 function renderBacklog() {
-  const root = document.querySelector("#backlog-list");
-  backlog.forEach((item) => {
-    const article = document.createElement("article");
-    article.className = "timeline-item";
-    article.innerHTML = `
-      <div class="timeline-item-header">
-        <strong>${item.title}</strong>
-        <span class="card-tag">${item.tag}</span>
+  const el = document.getElementById("backlog-phases");
+  if (!el) return;
+  backlogPhases.forEach((phase, i) => {
+    const block = document.createElement("div");
+    block.className = "phase-block";
+    block.style.setProperty("--stagger", `${i * 80}ms`);
+    block.setAttribute("data-delay", "");
+
+    const taskHTML = phase.tasks.map(t => {
+      const completed = t.done ? " completed" : "";
+      const descHTML = t.desc ? `<p>${t.desc}</p>` : "";
+      return `
+        <div class="task-item${completed}">
+          <span class="task-id">${t.id}</span>
+          <div class="task-content">
+            <strong>${t.title}</strong>
+            ${descHTML}
+          </div>
+        </div>`;
+    }).join("");
+
+    block.innerHTML = `
+      <div class="phase-header">
+        <span class="phase-tag ${phase.tagClass}">${phase.tag}</span>
+        <span class="phase-title">${phase.title}</span>
       </div>
-      <p>${item.body}</p>
+      <div class="task-list">${taskHTML}</div>
     `;
-    root.appendChild(article);
+    el.appendChild(block);
   });
 }
 
-function renderTrackGroups() {
-  const root = document.querySelector("#tracks-grid");
-  if (!root) return;
+function chevronSVG() {
+  return `<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
 
-  trackGroups.forEach((group) => {
+function renderTracks() {
+  const container = document.getElementById("tracks-container");
+  if (!container) return;
+
+  trackGroups.forEach(group => {
     const groupEl = document.createElement("div");
     groupEl.className = "track-group";
 
-    const countLabel = group.tracks.length === 1 ? "1 track" : `${group.tracks.length} tracks`;
+    const count = group.tracks.length;
     groupEl.innerHTML = `
       <div class="track-group-header">
         <span class="track-group-label">${group.label}</span>
-        <span class="track-group-count">${countLabel}</span>
+        <span class="track-group-count">${count} track${count !== 1 ? "s" : ""}</span>
       </div>
-      <div class="track-group-grid" id="group-${group.id}"></div>
+      <div class="track-group-grid" id="tg-${group.id}"></div>
     `;
+    container.appendChild(groupEl);
 
-    root.appendChild(groupEl);
+    const grid = groupEl.querySelector(`#tg-${group.id}`);
+    group.tracks.forEach((track, i) => {
+      const card = document.createElement("article");
+      card.className = "track-card";
+      card.dataset.status = track.status;
+      card.style.setProperty("--stagger", `${i * 60}ms`);
+      card.setAttribute("data-delay", "");
 
-    const grid = groupEl.querySelector(`#group-${group.id}`);
-    group.tracks.forEach((track, index) => {
-      const article = document.createElement("article");
-      article.className = "track-card";
-      article.style.animationDelay = `${index * 60}ms`;
-
-      article.innerHTML = `
-        <div class="badge ${track.status}">${track.code} · ${track.status}</div>
+      card.innerHTML = `
+        <span class="track-badge ${track.status}">${track.code} · ${track.status}</span>
         <h3>${track.title}</h3>
-        <p class="track-why">${track.body}</p>
-        <button class="expand-btn" aria-expanded="false">
-          <span class="btn-label">View details</span>${chevronSVG()}
+        <p class="track-summary">${track.summary}</p>
+        <button class="track-expand-btn" aria-expanded="false">
+          <span>Details</span>${chevronSVG()}
         </button>
-        <div class="expandable track-detail">
-          <div class="expandable-inner">
-            <dl class="track-detail-dl">
-              <div>
-                <dt>Research idea</dt>
-                <dd>${track.idea}</dd>
-              </div>
-              <div>
-                <dt>Why it matters</dt>
-                <dd>${track.matters}</dd>
-              </div>
-              <div>
-                <dt>Current prototype</dt>
-                <dd>${track.state}</dd>
-              </div>
+        <div class="track-detail">
+          <div class="track-detail-inner">
+            <dl class="track-dl">
+              <div><dt>Research idea</dt><dd>${track.idea}</dd></div>
+              <div><dt>Why it matters</dt><dd>${track.matters}</dd></div>
+              <div><dt>Current prototype</dt><dd>${track.state}</dd></div>
             </dl>
           </div>
         </div>
       `;
 
-      grid.appendChild(article);
+      grid.appendChild(card);
 
-      const btn = article.querySelector(".expand-btn");
-      wireExpand(btn, article, "View details", "Hide details");
+      // Expand / collapse
+      const btn = card.querySelector(".track-expand-btn");
+      btn.addEventListener("click", () => {
+        const isOpen = card.classList.toggle("open");
+        btn.setAttribute("aria-expanded", String(isOpen));
+        btn.querySelector("span").textContent = isOpen ? "Close" : "Details";
+      });
     });
   });
 }
 
+function renderFields() {
+  const el = document.getElementById("field-grid");
+  if (!el) return;
+  csvFields.forEach(f => {
+    const div = document.createElement("div");
+    div.className = "field-item";
+    div.innerHTML = `<code>${f.name}</code><span>${f.desc}</span>`;
+    el.appendChild(div);
+  });
+}
+
+// ── Track Filtering ───────────────────────────────────────────────────────────
+
+function initFilters() {
+  const buttons = document.querySelectorAll(".filter-btn");
+  const cards = document.querySelectorAll(".track-card");
+
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const filter = btn.dataset.filter;
+      buttons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      cards.forEach(card => {
+        if (filter === "all" || card.dataset.status === filter) {
+          card.classList.remove("hidden");
+        } else {
+          card.classList.add("hidden");
+        }
+      });
+    });
+  });
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+function initNav() {
+  const nav = document.getElementById("site-nav");
+  const toggle = document.getElementById("nav-toggle");
+  const links = document.getElementById("nav-links");
+
+  // Mobile toggle
+  if (toggle && links) {
+    toggle.addEventListener("click", () => {
+      const open = links.classList.toggle("open");
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+  }
+
+  // Dropdown triggers (mobile)
+  document.querySelectorAll(".nav-dropdown-trigger").forEach(trigger => {
+    trigger.addEventListener("click", (e) => {
+      // On mobile, toggle the dropdown
+      if (window.innerWidth <= 768) {
+        e.preventDefault();
+        const dropdown = trigger.closest(".nav-dropdown");
+        dropdown.classList.toggle("open");
+      }
+    });
+  });
+
+  // Close mobile menu when a link is clicked
+  document.querySelectorAll(".nav-dropdown-menu a, .nav-links > .nav-link").forEach(link => {
+    link.addEventListener("click", () => {
+      if (links) links.classList.remove("open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  // Active section tracking on scroll
+  const sections = document.querySelectorAll("section[id]");
+  const allNavLinks = document.querySelectorAll("[data-section]");
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        allNavLinks.forEach(l => l.classList.remove("active"));
+        const match = document.querySelector(`[data-section="${id}"]`);
+        if (match) match.classList.add("active");
+      }
+    });
+  }, { rootMargin: "-30% 0px -60% 0px" });
+
+  sections.forEach(s => observer.observe(s));
+
+  // Shrink nav on scroll
+  let lastScroll = 0;
+  window.addEventListener("scroll", () => {
+    const scrollY = window.scrollY;
+    if (scrollY > 80) {
+      nav.classList.add("scrolled");
+    } else {
+      nav.classList.remove("scrolled");
+    }
+    lastScroll = scrollY;
+  }, { passive: true });
+}
+
+// ── Scroll Reveal ─────────────────────────────────────────────────────────────
+
+function initScrollReveal() {
+  const targets = document.querySelectorAll(
+    ".section-header, .arch-stage, .detail-card, .status-col, .phase-block, " +
+    ".track-group, .start-card, .csv-format, .stat-card, .console-preview"
+  );
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("revealed");
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1 });
+
+  targets.forEach(t => {
+    t.style.opacity = "0";
+    t.style.transform = "translateY(16px)";
+    t.style.transition = "opacity 500ms ease, transform 500ms ease";
+    const delay = t.style.getPropertyValue("--stagger");
+    if (delay) t.style.transitionDelay = delay;
+    observer.observe(t);
+  });
+}
+
+// ── Revealed class ────────────────────────────────────────────────────────────
+
+const style = document.createElement("style");
+style.textContent = `.revealed { opacity: 1 !important; transform: translateY(0) !important; }`;
+document.head.appendChild(style);
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-renderMetrics();
-renderRibbon();
-renderImplemented();
-renderDocs();
-renderBacklog();
-renderTrackGroups();
+document.addEventListener("DOMContentLoaded", () => {
+  renderStats();
+  renderPipelineDetails();
+  renderStatus();
+  renderBacklog();
+  renderTracks();
+  renderFields();
+  initFilters();
+  initNav();
+  // Small delay to let elements render before observing
+  requestAnimationFrame(() => initScrollReveal());
+});
