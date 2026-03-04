@@ -15,8 +15,8 @@
       rel="stylesheet"
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css">
-    <script defer src="app.js"></script>
+    <link rel="stylesheet" href="styles.css?v=2">
+    <script defer src="app.js?v=2"></script>
   </head>
   <body>
     <div class="page-shell">
@@ -156,6 +156,15 @@ append audit       chained</pre>
           <div class="section-heading">
             <p class="eyebrow">Research tracks</p>
             <h2>Blueprint status map</h2>
+            <p class="section-intro">
+              These are the anchor research directions behind SentinelEdge. Each card explains the
+              idea, why it matters to the system, and what the current prototype actually covers.
+            </p>
+          </div>
+          <div class="track-legend" aria-label="Research track legend">
+            <span class="badge foundation">Foundation = runnable core exists</span>
+            <span class="badge scaffolded">Scaffolded = semantics exist, mechanism does not</span>
+            <span class="badge planned">Planned = documented next step</span>
           </div>
           <div id="tracks-grid" class="track-grid"></div>
         </section>

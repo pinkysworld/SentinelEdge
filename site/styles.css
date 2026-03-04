@@ -679,6 +679,13 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.track-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -705,6 +712,26 @@ h3 {
 .badge.future {
   color: var(--ink);
   background: rgba(20, 42, 51, 0.08);
+}
+
+.track-card h3 {
+  margin-top: 12px;
+}
+
+.track-card .track-why {
+  margin-top: 10px;
+}
+
+.track-card .track-now {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(20, 42, 51, 0.08);
+  font-size: 0.92rem;
+}
+
+.track-card .track-now strong {
+  display: inline;
+  margin: 0;
 }
 
 .footer-card h2 {

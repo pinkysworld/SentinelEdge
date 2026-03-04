@@ -86,37 +86,55 @@ const tracks = [
     code: "R01",
     title: "Adaptive anomaly detection",
     status: "foundation",
-    body: "Runnable baseline and multi-signal scoring exist; continual learning and privacy-preserving updates do not.",
+    body:
+      "This track aims to let the edge runtime learn a changing local baseline instead of relying on static thresholds.",
+    detail:
+      "The current prototype already scores cross-signal drift, but it does not yet do continual learning, differential privacy, or proof-carrying model updates.",
   },
   {
     code: "R05",
     title: "Poisoning detection hooks",
     status: "scaffolded",
-    body: "Integrity drift is modeled and can trigger critical responses, but full poisoning analysis is still ahead.",
+    body:
+      "This track focuses on detecting when the detector itself has been manipulated and forcing recovery to a trusted state.",
+    detail:
+      "Today we only model integrity drift and escalation semantics; spectral poisoning analysis, trusted checkpoints, and real rollback are not implemented yet.",
   },
   {
     code: "R06",
     title: "Energy-aware mitigation",
     status: "scaffolded",
-    body: "Battery-sensitive action scaling is implemented; verifiable isolation is still planned.",
+    body:
+      "This track makes response actions proportional to both threat level and the device's remaining energy budget.",
+    detail:
+      "Battery-sensitive action scaling exists now, but device isolation is still abstract and there is no formal proof that the response was correct.",
   },
   {
     code: "R09",
     title: "Adaptive response strength",
     status: "foundation",
-    body: "Threat score and battery state already shape the response chosen by the runtime.",
+    body:
+      "This track is about choosing a softer or stronger response automatically rather than hard-coding one mitigation path.",
+    detail:
+      "The prototype already maps anomaly score plus battery state into observe, rate-limit, quarantine, or rollback-and-escalate decisions.",
   },
   {
     code: "R10",
     title: "Rollback semantics",
     status: "scaffolded",
-    body: "The policy can demand rollback-and-escalate, but device snapshots and restore logic are not built yet.",
+    body:
+      "This track targets forensic recovery: after a suspected compromise, the device should return to a known-safe state and prove it.",
+    detail:
+      "Right now the policy can request rollback-and-escalate and the audit trail records that intent, but snapshots, restore logic, and recovery proofs are still missing.",
   },
   {
     code: "R11",
     title: "Verifiable logging",
     status: "scaffolded",
-    body: "A chained audit trail exists now; post-quantum signatures remain future work.",
+    body:
+      "This track turns the system's event history into evidence that can be inspected later without trusting plain text logs.",
+    detail:
+      "A chained audit trail exists today, but it is still a prototype digest chain rather than signed, post-quantum-ready audit infrastructure.",
   },
 ];
 
@@ -170,7 +188,8 @@ function renderTracks() {
     article.innerHTML = `
       <div class="badge ${track.status}">${track.code} · ${track.status}</div>
       <h3>${track.title}</h3>
-      <p>${track.body}</p>
+      <p class="track-why">${track.body}</p>
+      <p class="track-now"><strong>Current prototype:</strong> ${track.detail}</p>
     `;
     root.appendChild(article);
   });
