@@ -237,18 +237,18 @@ h3 {
 
 h1 {
   max-width: 10ch;
-  font-family: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
-  font-size: clamp(2.15rem, 3.9vw, 3.8rem);
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(2rem, 3.35vw, 3.25rem);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
 h2 {
   max-width: 12ch;
-  font-family: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
-  font-size: clamp(1.75rem, 2.8vw, 2.7rem);
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(1.6rem, 2.25vw, 2.25rem);
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.025em;
 }
 
 h3 {
