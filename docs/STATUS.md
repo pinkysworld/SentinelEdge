@@ -20,16 +20,22 @@ Updated: 2026-03-12
 - Structured JSON reports for SIEM ingestion (full and JSONL streaming)
 - Baseline persistence and reload between runs
 - Deterministic test fixtures: benign baseline, credential storm, slow escalation, low-battery attack
+- Proof-carrying update metadata with SHA-256 binding digests (T032)
+- Formally checkable policy state machine with transition validation and trace export (T033)
+- Bounded replay buffer for telemetry windows with descriptive statistics (T040)
+- Baseline adaptation controls: normal, frozen, and decay modes (T041)
+- Poisoning heuristics: mean-shift detection, variance spike, drift accumulation, auth-burst patterns (T042)
+- FP/FN benchmark harness with precision, recall, F1, and accuracy metrics (T043)
 - Static GitHub Pages site and deployment workflow
 - Documentation index, architecture notes, backlog, and research-track mapping
-- 25 automated tests covering all modules
+- 45 automated tests covering all modules
 
 ## Partially scaffolded
 
-- Integrity-drift handling as a precursor to poisoning detection and recovery logic
+- Integrity-drift handling as a precursor to full spectral poisoning recovery
 - Rollback-and-escalate action semantics (decision and checkpoint exist; real device state restore does not)
-- Proof-carrying update metadata (backlogged for T032)
-- Formally checkable response policy state machine (backlogged for T033)
+- ZK proof integration in proof-carrying metadata (digest binding exists, Halo2/SNARK deferred)
+- TLA+/Alloy export from the policy state machine (model exists, export deferred)
 - Research-track status accounting for all 25 blueprint items
 
 ## Not implemented yet
@@ -48,4 +54,4 @@ Updated: 2026-03-12
 
 ## Practical milestone summary
 
-The repository has completed Phases 0–2 and partially completed Phase 3. It now provides a functional edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, and SIEM integration support. The advanced research agenda (differential privacy, ZK proofs, swarm coordination, formal verification) remains ahead.
+The repository has completed Phases 0–4 fully. It now provides a functional edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a formally checkable policy state machine, poisoning heuristics, and benchmark tooling. The advanced research agenda (differential privacy, ZK proofs, swarm coordination, formal verification export) remains ahead.

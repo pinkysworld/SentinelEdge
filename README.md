@@ -2,13 +2,18 @@
 
 SentinelEdge is a Rust-first edge security runtime scaffold for privacy-aware anomaly detection, policy-driven response, and verifiable auditability on constrained devices.
 
-The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/blueprint.md) sketches 25 ambitious tracks. The codebase now covers Phases 0–2 and partial Phase 3 of the engineering backlog:
+The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/blueprint.md) sketches 25 ambitious tracks. The codebase now covers Phases 0–4 of the engineering backlog:
 
 - a configurable Rust runtime for multi-signal anomaly scoring across 8 dimensions
 - an energy-aware response policy engine with pluggable device action adapters
 - SHA-256 cryptographic audit chain with signed checkpoints and chain verification
 - rollback checkpoints, forensic evidence bundles, and structured JSON/JSONL SIEM output
 - TOML/JSON configuration, JSONL telemetry ingestion, and baseline persistence
+- proof-carrying update metadata with SHA-256 binding and verification
+- formally checkable policy state machine with legal transition validation
+- bounded replay buffer with windowed statistics for continual learning
+- poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst)
+- FP/FN benchmark harness with precision, recall, F1, and accuracy metrics
 - project docs, backlog tracking, test fixtures, and an accompanying GitHub Pages site
 
 ## What ships today
@@ -22,6 +27,12 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - **SIEM integration:** structured JSON reports and JSONL streaming output for alert events.
 - **Forensic export:** evidence bundles combining audit log, run summary, and checkpoint history.
 - **Baseline persistence:** learned baselines can be saved and reloaded across runs.
+- **Proof-carrying updates:** every baseline change is bound to a SHA-256 proof linking prior state, transform, and post state.
+- **Policy state machine:** an explicit state machine records and validates all threat-level transitions with formally defined legal rules.
+- **Replay buffer:** bounded ring buffer retains recent telemetry for windowed statistical analysis and poisoning detection.
+- **Adaptation controls:** detector baseline updates can be frozen, decayed, or reset to contain suspected poisoning.
+- **Poisoning heuristics:** four statistical heuristics analyze replay buffers for data manipulation attempts.
+- **Benchmark harness:** labeled datasets can be scored for true/false positive/negative rates, precision, recall, and F1.
 - **Operator-facing docs:** architecture, getting-started, backlog, and track-by-track implementation status in [`docs/`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/README.md).
 
 ## Quick start
@@ -69,7 +80,7 @@ cargo test
 ## Repository layout
 
 ```text
-src/                  Rust runtime (11 modules)
+src/                  Rust runtime (16 modules)
 examples/             Sample telemetry traces (CSV + JSONL)
 docs/                 Design notes, backlog, and status documentation
 site/                 Static GitHub Pages site

@@ -6,10 +6,10 @@
 // ── Project Data ──────────────────────────────────────────────────────────────
 
 const stats = [
-  { value: "11", label: "core runtime modules" },
+  { value: "16", label: "core runtime modules" },
   { value: "8",  label: "telemetry dimensions" },
   { value: "25", label: "research tracks mapped" },
-  { value: "5",  label: "CLI commands available" },
+  { value: "45", label: "automated tests" },
 ];
 
 const pipelineDetails = [
@@ -22,8 +22,8 @@ const pipelineDetails = [
   {
     num: "02",
     title: "Adaptive Anomaly Detection",
-    body: "An EWMA-style rolling baseline tracks normal behaviour for each signal dimension. Incoming samples are compared against this baseline; deviations are weighted by dimension and combined into a single anomaly score. The detector also emits human-readable explanations identifying which signals contributed most. Baselines can be persisted to disk and restored across sessions for long-running deployments.",
-    note: "No continual learning, replay buffers, or differential privacy yet — that is R01's longer-term scope."
+    body: "An EWMA-style rolling baseline tracks normal behaviour for each signal dimension. Incoming samples are compared against this baseline; deviations are weighted by dimension and combined into a single anomaly score. The detector also emits human-readable explanations identifying which signals contributed most. Baselines can be persisted to disk and restored across sessions for long-running deployments. Adaptation controls allow freezing, decaying, or resetting baselines during suspected poisoning.",
+    note: "Adaptation modes (Normal, Frozen, Decay) are implemented (T041). Continual learning and differential privacy remain R01 scope."
   },
   {
     num: "03",
@@ -45,12 +45,30 @@ const pipelineDetails = [
   },
   {
     num: "06",
+    title: "Proof-Carrying Updates",
+    body: "Every baseline state change is bound to a SHA-256 proof linking prior state, transform description, and post state. A ProofRegistry accumulates and batch-verifies all proofs in a session, providing cryptographic evidence that no update was silently tampered with.",
+    note: "ZK proof placeholder exists for future Halo2/SNARK integration (T032)."
+  },
+  {
+    num: "07",
+    title: "Policy State Machine",
+    body: "An explicit state machine records and validates all threat-level transitions against formally defined legal rules. Escalation, de-escalation, and battery downgrade transitions are each constrained to legal paths. The full transition trace is exportable for future TLA+/Alloy verification.",
+    note: "Legal transition rules are defined and enforced at runtime. Formal model checker integration remains future work (T033)."
+  },
+  {
+    num: "08",
+    title: "Replay Buffer & Poisoning Analysis",
+    body: "A bounded replay buffer retains recent telemetry in a ring buffer for windowed statistical analysis. Four poisoning heuristics — mean shift detection, variance spike, drift accumulation, and auth burst pattern analysis — scan the buffer for signs of data manipulation.",
+    note: "Poisoning analysis is implemented (T042). Automated recovery from detected poisoning is future scope."
+  },
+  {
+    num: "09",
     title: "Audit Trail",
     body: "Every detection-and-response decision is appended to a SHA-256-chained audit log. Each entry includes a cryptographic hash of the previous entry, forming a linked sequence that makes retroactive tampering detectable. Signed audit checkpoints are inserted at configurable intervals. The entire chain can be verified end-to-end.",
     note: "SHA-256 digest chain and signed checkpoints are implemented (T030–T031). Post-quantum signatures remain deferred."
   },
   {
-    num: "07",
+    num: "10",
     title: "Output & Reporting",
     body: "Structured JSON reports can be generated for SIEM integration. JSONL alert streams provide real-time event output. The init-config command generates a TOML configuration template, and the status command provides a live implementation snapshot.",
     note: "Five CLI commands: demo, analyze, report, init-config, status."
@@ -73,23 +91,28 @@ const statusData = {
     "SHA-256 cryptographic digest chain in audit log",
     "Signed audit checkpoints at configurable intervals",
     "Structured JSON reports for SIEM integration",
+    "Proof-carrying update metadata with SHA-256 binding and verification",
+    "Formally checkable policy state machine with legal transition validation",
+    "Bounded replay buffer with windowed statistics",
+    "Baseline adaptation controls (freeze, decay, reset)",
+    "Four poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst)",
+    "FP/FN benchmark harness with precision, recall, F1, and accuracy",
     "Deterministic test fixtures (benign, escalation, low-battery, credential-storm)",
     "GitHub Pages deployment with CI workflow",
     "Documentation: architecture, getting started, backlog, research tracks",
   ],
   scaffolded: [
-    "Integrity-drift and poisoning detection — signal exists, spectral analysis does not (R05)",
+    "ZK proof placeholder in proof-carrying metadata — Halo2/SNARK deferred (R12)",
+    "TLA+/Alloy export stubs in state machine — formal checker integration deferred (R02)",
     "Checkpoint state restoration — snapshots captured, restore not yet wired (R10)",
     "Post-quantum audit signatures — SHA-256 chain in place, PQ signatures deferred (R11)",
-    "Proof-carrying update metadata — hooks planned, ZK integration deferred (T032)",
-    "Formally checkable response policy — state machine model not yet extracted (T033)",
     "Research-track status accounting across all 25 blueprint items",
   ],
   deferred: [
     "Continual learning, replay buffers, on-device model training",
     "Differential privacy guarantees",
     "Zero-knowledge proofs (Halo2, zk-SNARKs)",
-    "Formal rule verification / TLA+ export",
+    "Formal rule verification / TLA+ model checking",
     "Swarm or cross-device coordination protocols",
     "Quantum-walk anomaly propagation modeling",
     "Secure MPC / private set intersection",
@@ -144,31 +167,31 @@ const backlogPhases = [
   {
     id: "phase-3",
     tag: "Phase 3",
-    tagClass: "next",
-    title: "Verifiability (partial)",
+    tagClass: "done",
+    title: "Verifiability (complete)",
     tasks: [
       { id: "T030", title: "Cryptographic digest chain (SHA-256)", done: true },
       { id: "T031", title: "Signed audit checkpoints", done: true },
-      { id: "T032", title: "Proof-carrying update metadata", desc: "Metadata hooks for future ZK integration." },
-      { id: "T033", title: "Formally checkable response policy", desc: "Model the policy engine as a verifiable state machine." },
+      { id: "T032", title: "Proof-carrying update metadata", done: true },
+      { id: "T033", title: "Formally checkable response policy", done: true },
     ],
   },
   {
     id: "phase-4",
     tag: "Phase 4",
-    tagClass: "later",
-    title: "Edge Learning",
+    tagClass: "done",
+    title: "Edge Learning (complete)",
     tasks: [
-      { id: "T040", title: "Bounded replay buffer", desc: "Sliding telemetry window for local model retraining." },
-      { id: "T041", title: "Baseline adaptation controls", desc: "Freeze, decay, and retrain options for the EWMA baseline." },
-      { id: "T042", title: "Broader poisoning heuristics", desc: "Beyond integrity_drift — spectral analysis and statistical tests." },
-      { id: "T043", title: "FP/FN benchmark harnesses", desc: "Measure false-positive and false-negative tradeoffs systematically." },
+      { id: "T040", title: "Bounded replay buffer", done: true },
+      { id: "T041", title: "Baseline adaptation controls", done: true },
+      { id: "T042", title: "Broader poisoning heuristics", done: true },
+      { id: "T043", title: "FP/FN benchmark harnesses", done: true },
     ],
   },
   {
     id: "phase-5",
     tag: "Phase 5",
-    tagClass: "later",
+    tagClass: "next",
     title: "Research Expansion",
     tasks: [
       { id: "T050", title: "Select first research paper subset", desc: "Decide which blueprint tracks move into the first deeper implementation round." },
@@ -191,15 +214,15 @@ const trackGroups = [
         summary: "On-device adaptive scoring that learns local baselines rather than relying on fixed thresholds or periodic cloud retraining.",
         idea: "TinyML-style continual learning with replay buffer, Laplace noise for differential privacy, and Halo2 circuits for update integrity proofs.",
         matters: "Edge devices drift over time. A static detector becomes unreliable within weeks of deployment in most real environments.",
-        state: "Adaptive multi-signal EWMA scoring is implemented. Missing: replay buffer, continual learning loop, differential privacy, and proof-carrying updates.",
+        state: "Adaptive multi-signal EWMA scoring is implemented with a bounded replay buffer providing windowed statistics. Adaptation controls (freeze, decay, reset) support safe baseline management. Missing: continual learning loop, differential privacy, and proof-carrying updates.",
       },
       {
-        code: "R02", status: "planned",
+        code: "R02", status: "scaffolded",
         title: "Formal Verification of Detection Rules",
         summary: "Represent detection logic as a formally specified state machine and verify runtime conformance against that specification.",
         idea: "Embedded TLA+-to-Rust model checker with a zk-SNARK for rule-satisfaction proofs.",
         matters: "Shifts the correctness argument from 'it seems to work' to 'we can state and check what correctness means.'",
-        state: "No formal rule model or runtime checker exists yet.",
+        state: "A PolicyStateMachine records and validates all threat-level transitions against formally defined legal rules. Transition traces are exportable for future TLA+/Alloy model checking. Missing: actual TLA+/Alloy integration.",
       },
       {
         code: "R03", status: "future",
@@ -218,12 +241,12 @@ const trackGroups = [
         state: "No propagation graph or predictive spread model exists yet.",
       },
       {
-        code: "R05", status: "scaffolded",
+        code: "R05", status: "foundation",
         title: "Model Poisoning Detection and Recovery",
         summary: "Detect when the local model or policy has been tampered with, then recover to a verified safe state.",
         idea: "Spectral poisoning analysis combined with Merkle-rooted model checkpoints and cryptographic recovery proofs.",
         matters: "A detector that can be poisoned without noticing is a fundamentally weak security primitive.",
-        state: "The integrity_drift signal and forced critical escalation exist. Missing: spectral analysis, trusted checkpoints, and real recovery logic.",
+        state: "Four poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst) analyze replay buffers for manipulation attempts. Adaptation controls allow freezing baselines during suspected poisoning. Missing: verified checkpoint rollback and recovery proofs.",
       },
     ],
   },
@@ -261,7 +284,7 @@ const trackGroups = [
         summary: "Map detection confidence and local constraints into different response intensities rather than a single fixed action.",
         idea: "Continuous response scaling: observe → rate-limit → quarantine → rollback-and-escalate, shaped by a learned policy with energy penalty.",
         matters: "Prevents overreaction on benign spikes and underreaction on genuinely dangerous events.",
-        state: "Threat score and battery state shape response selection. Pluggable adapters dispatch concrete actions through a composable chain.",
+        state: "Threat score and battery state shape response selection. Pluggable adapters dispatch concrete actions through a composable chain. Adaptation mode controls (Normal, Frozen, Decay) further refine detector sensitivity.",
       },
       {
         code: "R10", status: "foundation",
@@ -269,7 +292,7 @@ const trackGroups = [
         summary: "Restore device state to a known-safe checkpoint and preserve a verifiable record of what was changed.",
         idea: "Merkle-based snapshotting with ZK range proofs for restoration integrity.",
         matters: "Recovery is far more credible when it can be replayed and audited after the incident.",
-        state: "Rollback checkpoints capture detector state on severe/critical events. Forensic bundle exporter produces human-readable evidence reports. Missing: Merkle proofs and actual state restoration.",
+        state: "Rollback checkpoints capture detector state on severe/critical events. Forensic bundle exporter produces human-readable evidence reports. Proof-carrying updates bind every baseline change with SHA-256 cryptographic evidence. Missing: Merkle proofs and actual state restoration.",
       },
     ],
   },
@@ -299,7 +322,7 @@ const trackGroups = [
         summary: "Export only the subset of logs a regulator requires while proving the rest was not altered.",
         idea: "zk-SNARK-based log redaction with integrity proofs.",
         matters: "Many deployments need to satisfy auditability and privacy constraints simultaneously.",
-        state: "Forensic bundle exports provide structured evidence subsets. ZK-based redaction proofs remain deferred.",
+        state: "Forensic bundle exports provide structured evidence subsets. FP/FN benchmark harness enables precision/recall/F1 measurement for regulatory compliance evidence. ZK-based redaction proofs remain deferred.",
       },
       {
         code: "R14", status: "future",

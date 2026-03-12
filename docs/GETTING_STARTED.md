@@ -61,6 +61,8 @@ cargo run -- status
 cargo test
 ```
 
+The test suite currently includes 45 tests covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints, forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, and benchmark scoring.
+
 ## Telemetry CSV format
 
 The parser supports both the legacy 8-column format and the extended 10-column format.

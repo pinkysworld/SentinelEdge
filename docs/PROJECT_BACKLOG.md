@@ -27,19 +27,19 @@ This backlog is designed for small, concrete follow-up tasks.
 - [x] T022: Add rollback checkpoints for configuration and model state.
 - [x] T023: Add a forensic bundle exporter (audit log + summarized evidence).
 
-## Phase 3 - Verifiability (partial)
+## Phase 3 - Verifiability (completed)
 
 - [x] T030: Replace the prototype hash chain with a cryptographic digest chain.
 - [x] T031: Add signed audit checkpoints.
-- [ ] T032: Define proof-carrying update metadata for future ZK integration.
-- [ ] T033: Model the response policy as a formally checkable state machine.
+- [x] T032: Define proof-carrying update metadata for future ZK integration.
+- [x] T033: Model the response policy as a formally checkable state machine.
 
-## Phase 4 - Edge learning
+## Phase 4 - Edge learning (completed)
 
-- [ ] T040: Add a bounded replay buffer for telemetry windows.
-- [ ] T041: Add incremental baseline adaptation controls (freeze, decay, retrain).
-- [ ] T042: Add poisoning heuristics beyond `integrity_drift`.
-- [ ] T043: Add benchmark harnesses for false-positive / false-negative tradeoffs.
+- [x] T040: Add a bounded replay buffer for telemetry windows.
+- [x] T041: Add incremental baseline adaptation controls (freeze, decay, retrain).
+- [x] T042: Add poisoning heuristics beyond `integrity_drift`.
+- [x] T043: Add benchmark harnesses for false-positive / false-negative tradeoffs.
 
 ## Phase 5 - Research blueprint expansion
 
@@ -51,6 +51,4 @@ This backlog is designed for small, concrete follow-up tasks.
 
 ## Recommended next build order
 
-1. T032-T033 to finish making the "verifiable" claims technically rigorous.
-2. T040-T043 to start on-device learning and quality benchmarks.
-3. T050-T054 to bridge the gap from prototype to research publication.
+1. T050-T054 to bridge the gap from prototype to research publication.

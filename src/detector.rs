@@ -81,10 +81,30 @@ pub struct AnomalySignal {
     pub reasons: Vec<String>,
 }
 
+/// Controls how the detector updates its learned baseline (T041).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AdaptationMode {
+    /// Normal EWMA-based learning (default).
+    Normal,
+    /// Freeze the baseline — evaluate but never update.
+    Frozen,
+    /// Decay the baseline toward a neutral midpoint at the given rate
+    /// per sample. Useful for slowly "forgetting" to detect gradual
+    /// poisoning.
+    Decay(f32),
+}
+
+impl Default for AdaptationMode {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
 pub struct AnomalyDetector {
     config: DetectorConfig,
     baseline: Option<TelemetryBaseline>,
     observed_samples: usize,
+    adaptation: AdaptationMode,
 }
 
 impl Default for AnomalyDetector {
@@ -99,7 +119,24 @@ impl AnomalyDetector {
             config,
             baseline: None,
             observed_samples: 0,
+            adaptation: AdaptationMode::Normal,
         }
+    }
+
+    /// Set the baseline adaptation mode (T041).
+    pub fn set_adaptation(&mut self, mode: AdaptationMode) {
+        self.adaptation = mode;
+    }
+
+    pub fn adaptation(&self) -> AdaptationMode {
+        self.adaptation
+    }
+
+    /// Reset the baseline so the detector re-learns from scratch.
+    /// Useful when poisoning is suspected.
+    pub fn reset_baseline(&mut self) {
+        self.baseline = None;
+        self.observed_samples = 0;
     }
 
     /// Restore from a persisted baseline so the detector continues
@@ -221,8 +258,39 @@ impl AnomalyDetector {
 
                 score *= history_factor;
 
-                if score < self.config.learn_threshold {
-                    baseline.update(sample, self.config.smoothing);
+                // T041: respect adaptation mode
+                match self.adaptation {
+                    AdaptationMode::Normal => {
+                        if score < self.config.learn_threshold {
+                            baseline.update(sample, self.config.smoothing);
+                        }
+                    }
+                    AdaptationMode::Frozen => {
+                        // Do not update baseline at all.
+                    }
+                    AdaptationMode::Decay(rate) => {
+                        // Nudge each dimension toward a neutral midpoint.
+                        let mid = TelemetryBaseline {
+                            cpu_load_pct: 50.0,
+                            memory_load_pct: 50.0,
+                            temperature_c: 40.0,
+                            network_kbps: 1000.0,
+                            auth_failures: 0.0,
+                            battery_pct: 50.0,
+                            integrity_drift: 0.0,
+                            process_count: 50.0,
+                            disk_pressure_pct: 50.0,
+                        };
+                        baseline.cpu_load_pct = blend(baseline.cpu_load_pct, mid.cpu_load_pct, rate);
+                        baseline.memory_load_pct = blend(baseline.memory_load_pct, mid.memory_load_pct, rate);
+                        baseline.temperature_c = blend(baseline.temperature_c, mid.temperature_c, rate);
+                        baseline.network_kbps = blend(baseline.network_kbps, mid.network_kbps, rate);
+                        baseline.auth_failures = blend(baseline.auth_failures, mid.auth_failures, rate);
+                        baseline.battery_pct = blend(baseline.battery_pct, mid.battery_pct, rate);
+                        baseline.integrity_drift = blend(baseline.integrity_drift, mid.integrity_drift, rate);
+                        baseline.process_count = blend(baseline.process_count, mid.process_count, rate);
+                        baseline.disk_pressure_pct = blend(baseline.disk_pressure_pct, mid.disk_pressure_pct, rate);
+                    }
                 }
 
                 self.baseline = Some(baseline);
@@ -380,5 +448,41 @@ mod tests {
         let mut detector2 = AnomalyDetector::default();
         detector2.restore_baseline(&snapshot);
         assert_eq!(detector2.snapshot().unwrap().observed_samples, 1);
+    }
+
+    #[test]
+    fn frozen_mode_prevents_baseline_update() {
+        let mut detector = AnomalyDetector::default();
+        // Initialize baseline
+        detector.evaluate(&TelemetrySample {
+            timestamp_ms: 1,
+            cpu_load_pct: 20.0,
+            memory_load_pct: 30.0,
+            temperature_c: 38.0,
+            network_kbps: 400.0,
+            auth_failures: 0,
+            battery_pct: 90.0,
+            integrity_drift: 0.01,
+            process_count: 40,
+            disk_pressure_pct: 5.0,
+        });
+        let snap_before = detector.snapshot().unwrap();
+
+        detector.set_adaptation(super::AdaptationMode::Frozen);
+        // Feed a benign sample — should NOT update baseline
+        detector.evaluate(&TelemetrySample {
+            timestamp_ms: 2,
+            cpu_load_pct: 22.0,
+            memory_load_pct: 32.0,
+            temperature_c: 39.0,
+            network_kbps: 420.0,
+            auth_failures: 0,
+            battery_pct: 89.0,
+            integrity_drift: 0.01,
+            process_count: 42,
+            disk_pressure_pct: 6.0,
+        });
+        let snap_after = detector.snapshot().unwrap();
+        assert!((snap_before.cpu_load_pct - snap_after.cpu_load_pct).abs() < 0.001);
     }
 }

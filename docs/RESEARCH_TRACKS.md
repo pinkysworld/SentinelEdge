@@ -24,11 +24,11 @@ The current prototype intentionally implements only the smallest useful control 
 - **R01 Learned Multi-Modal Anomaly Detection with On-Device Continual Learning** - **Implemented foundation**
   - Research idea: let the detector keep adapting to the device's own local patterns instead of relying on fixed thresholds or cloud retraining.
   - Why it matters: edge devices drift over time, so adaptive on-device learning is essential if anomaly detection is supposed to stay useful.
-  - Current repo state: adaptive multi-signal scoring exists, but there is no replay buffer, no continual learning loop, no differential privacy, and no proof-carrying updates.
-- **R02 Formal Verification of Detection Rules with Runtime Checking** - **Planned**
+  - Current repo state: adaptive multi-signal scoring exists with a bounded replay buffer providing windowed statistics. Adaptation controls (freeze, decay, reset) support safe baseline management. Missing: continual learning loop, differential privacy, and proof-carrying update generation.
+- **R02 Formal Verification of Detection Rules with Runtime Checking** - **Scaffolded**
   - Research idea: represent the detection policy as a formally specified state machine and validate runtime behavior against that specification.
   - Why it matters: it moves the system from "heuristically works" toward "we can state and check what correctness means."
-  - Current repo state: no formal rule model or runtime checker exists yet.
+  - Current repo state: a `PolicyStateMachine` records and validates all threat-level transitions against formally defined legal rules. Transition traces are exportable for future TLA+/Alloy model checking. Missing: actual TLA+/Alloy integration and automated invariant checking.
 - **R03 Cross-Device Swarm Intelligence for Collective Anomaly Detection** - **Future**
   - Research idea: let multiple devices share partial threat signals and collectively detect patterns that any one node would miss.
   - Why it matters: many real attacks only become obvious when low-confidence evidence is aggregated across a fleet.
@@ -37,10 +37,10 @@ The current prototype intentionally implements only the smallest useful control 
   - Research idea: use quantum-walk-inspired propagation models to predict how suspicious behavior may spread through a mesh or dependency graph.
   - Why it matters: it would turn SentinelEdge from purely reactive detection toward predictive isolation planning.
   - Current repo state: no propagation graph or predictive spread model exists yet.
-- **R05 On-Device Model Poisoning Detection and Self-Recovery** - **Scaffolded**
+- **R05 On-Device Model Poisoning Detection and Self-Recovery** - **Implemented foundation**
   - Research idea: detect when the local model or policy has been tampered with and recover to a known-good state.
   - Why it matters: a detector that can be poisoned without noticing is a weak security primitive.
-  - Current repo state: `integrity_drift` and critical escalation exist, but poisoning analysis, trusted checkpoints, and real recovery are not implemented.
+  - Current repo state: four poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst) analyze replay buffers for manipulation attempts. Adaptation controls allow freezing baselines during suspected poisoning. Rollback checkpoints are available. Missing: verified checkpoint rollback automation and recovery proofs.
 
 ## Response and mitigation
 
@@ -59,11 +59,11 @@ The current prototype intentionally implements only the smallest useful control 
 - **R09 Adaptive Response Strength Based on Threat Severity and Battery State** - **Implemented foundation**
   - Research idea: map detection confidence and local constraints into different response intensities rather than a single fixed action.
   - Why it matters: it prevents overreaction on benign spikes and underreaction on truly dangerous events.
-  - Current repo state: threat score and battery state shape the response, with pluggable adapter chain for multi-stage enforcement.
+  - Current repo state: threat score and battery state shape the response, with pluggable adapter chain for multi-stage enforcement. Adaptation mode controls (Normal, Frozen, Decay) further refine detector sensitivity and baseline drift management.
 - **R10 Verifiable Rollback and Forensic Recovery** - **Implemented foundation**
   - Research idea: restore device state to a known-safe checkpoint and preserve a verifiable record of what was changed.
   - Why it matters: recovery is far more credible when it can be replayed and audited after the incident.
-  - Current repo state: rollback checkpoints are captured on severe/critical events in a bounded ring buffer. Forensic evidence bundles are exportable. Missing: real device state restore and cryptographic proof of restoration.
+  - Current repo state: rollback checkpoints are captured on severe/critical events in a bounded ring buffer. Forensic evidence bundles are exportable. Proof-carrying updates bind every baseline change with SHA-256 cryptographic evidence. Missing: real device state restore and cryptographic proof of restoration.
 
 ## Verifiability and audit
 
@@ -78,7 +78,7 @@ The current prototype intentionally implements only the smallest useful control 
 - **R13 Regulatory-Compliant Verifiable Export with Selective Disclosure** - **Scaffolded**
   - Research idea: export only the subset of logs or evidence required for a regulator while proving the rest was not altered.
   - Why it matters: many real deployments need auditability and privacy at the same time.
-  - Current repo state: forensic bundle export and structured JSON reports provide a foundation. Missing: selective disclosure and ZK-based redaction.
+  - Current repo state: forensic bundle export and structured JSON reports provide a foundation. FP/FN benchmark harness enables precision/recall/F1 measurement for regulatory compliance evidence. Missing: selective disclosure and ZK-based redaction.
 - **R14 Long-Term Archival with Energy-Harvesting Optimization** - **Future**
   - Research idea: defer expensive archival work until harvested energy is available, such as solar or scavenged power.
   - Why it matters: long-lived remote edge devices often operate under severe energy constraints.

@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::detector::AnomalySignal;
 use crate::telemetry::TelemetrySample;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ThreatLevel {
     Nominal,
     Elevated,
@@ -20,7 +22,7 @@ impl ThreatLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResponseAction {
     Observe,
     RateLimit,

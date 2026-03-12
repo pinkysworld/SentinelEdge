@@ -5,6 +5,9 @@ use crate::audit::AuditLog;
 use crate::checkpoint::CheckpointStore;
 use crate::detector::{AnomalyDetector, AnomalySignal};
 use crate::policy::{PolicyDecision, PolicyEngine, ThreatLevel};
+use crate::proof::ProofRegistry;
+use crate::replay::ReplayBuffer;
+use crate::state_machine::{PolicyStateMachine, TransitionTrigger};
 use crate::telemetry::TelemetrySample;
 
 #[derive(Debug, Clone)]
@@ -101,13 +104,48 @@ pub fn execute(samples: &[TelemetrySample]) -> RunResult {
     let policy = PolicyEngine;
     let mut audit = AuditLog::with_checkpoint_interval(5);
     let mut checkpoints = CheckpointStore::new(10);
+    let mut state_machine = PolicyStateMachine::new();
+    let mut proof_registry = ProofRegistry::new();
+    let mut replay = ReplayBuffer::new(100);
     let mut reports = Vec::with_capacity(samples.len());
 
     audit.record("boot", "SentinelEdge runtime started in prototype mode");
 
     for (index, sample) in samples.iter().enumerate() {
+        // Capture pre-evaluation state for proof binding
+        let prior_snap = detector
+            .snapshot()
+            .map(|s| serde_json::to_vec(&s).unwrap_or_default())
+            .unwrap_or_default();
+
         let signal = detector.evaluate(sample);
         let decision = policy.evaluate(&signal, sample);
+
+        // Record proof of baseline update (T032)
+        let post_snap = detector
+            .snapshot()
+            .map(|s| serde_json::to_vec(&s).unwrap_or_default())
+            .unwrap_or_default();
+        proof_registry.record("baseline_update", &prior_snap, &post_snap);
+
+        // Record state machine transition (T033)
+        let trigger = if sample.integrity_drift >= 0.45 {
+            TransitionTrigger::IntegrityDrift {
+                drift: sample.integrity_drift,
+            }
+        } else if sample.battery_pct < 20.0 {
+            TransitionTrigger::BatteryDegradation {
+                battery_pct: sample.battery_pct,
+            }
+        } else {
+            TransitionTrigger::ScoreThreshold {
+                score: signal.score,
+            }
+        };
+        state_machine.step(decision.level, decision.action, trigger);
+
+        // Push to replay buffer (T040)
+        replay.push(*sample);
 
         audit.record(
             "detect",
@@ -173,8 +211,9 @@ pub fn execute(samples: &[TelemetrySample]) -> RunResult {
     audit.record(
         "summary",
         format!(
-            "samples={} alerts={} critical={} avg_score={:.2} max_score={:.2}",
-            total_samples, alert_count, critical_count, average_score, max_score
+            "samples={} alerts={} critical={} avg_score={:.2} max_score={:.2} replay_buffer={} proofs={}",
+            total_samples, alert_count, critical_count, average_score, max_score,
+            replay.len(), proof_registry.proofs().len()
         ),
     );
 
@@ -257,10 +296,18 @@ pub fn status_snapshot() -> String {
         "  - rollback checkpoints with bounded ring buffer",
         "  - forensic evidence bundle exporter",
         "",
-        "Phase 3 — Verifiability (partial):",
+        "Phase 3 — Verifiability (complete):",
         "  - SHA-256 cryptographic digest chain (replaces FNV-1a)",
         "  - signed audit checkpoints at configurable intervals",
         "  - chain verification for integrity checking",
+        "  - proof-carrying update metadata for baseline transitions",
+        "  - formally checkable policy state machine with transition validation",
+        "",
+        "Phase 4 — Edge Learning (complete):",
+        "  - bounded replay buffer for telemetry windows",
+        "  - baseline adaptation controls (freeze, decay, retrain)",
+        "  - poisoning heuristics: mean-shift, variance, drift, auth-burst",
+        "  - FP/FN benchmark harness with precision/recall/F1",
         "",
         "Foundation (complete):",
         "  - adaptive multi-signal anomaly scoring (8 dimensions)",

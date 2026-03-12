@@ -81,8 +81,9 @@
                 This project explores how far a lightweight, self-contained runtime can go
                 toward providing meaningful security guarantees at the network edge. The current
                 prototype implements the full detect–respond–audit loop across eight telemetry
-                dimensions with pluggable action adapters, SHA-256 audit chains, rollback
-                checkpoints, forensic evidence bundles, and structured SIEM reporting.
+                dimensions with pluggable action adapters, SHA-256 audit chains, proof-carrying
+                updates, a formally checkable policy state machine, poisoning heuristics,
+                rollback checkpoints, forensic evidence bundles, and structured SIEM reporting.
                 The broader research agenda — zero-knowledge attestation, swarm
                 coordination, post-quantum log integrity — is documented in twenty-five
                 tracks but deliberately deferred until the foundation is stable enough to
@@ -128,7 +129,7 @@
             <p class="label">Architecture</p>
             <h2>System Design</h2>
             <p class="section-desc">
-              The runtime follows a seven-stage pipeline. Each stage maps to one or more Rust
+              The runtime follows a ten-stage pipeline. Each stage maps to one or more Rust
               modules with narrow interfaces. Complexity gets added when the research justifies
               it, not before.
             </p>
@@ -182,6 +183,27 @@
               <p>Emit structured JSON reports for SIEM ingestion, JSONL alert streams, and human-readable console summaries.</p>
               <span class="arch-module">report.rs + config.rs</span>
             </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">8</div>
+              <h3>Proof</h3>
+              <p>Bind every baseline state change to a SHA-256 proof linking prior state, transform, and post state. Accumulate and batch-verify proofs.</p>
+              <span class="arch-module">proof.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">9</div>
+              <h3>State Machine</h3>
+              <p>Record and validate all threat-level transitions against formally defined legal rules. Export transition traces for future TLA+/Alloy verification.</p>
+              <span class="arch-module">state_machine.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">10</div>
+              <h3>Replay &amp; Poisoning</h3>
+              <p>Retain recent telemetry in a bounded ring buffer for windowed statistics. Four poisoning heuristics scan for data manipulation attempts.</p>
+              <span class="arch-module">replay.rs + poisoning.rs</span>
+            </div>
           </div>
         </div>
       </section>
@@ -209,7 +231,7 @@
             <p class="label">Source</p>
             <h2>Module Map</h2>
             <p class="section-desc">
-              Eleven Rust source files. The prototype is deliberately modular — complexity gets
+              Sixteen Rust source files. The prototype is deliberately modular — complexity gets
               added when the research justifies it, not before.
             </p>
           </div>
@@ -271,8 +293,33 @@
             </div>
             <div class="module-row">
               <code>runtime.rs</code>
-              <span>Orchestration, CLI commands, summary rendering</span>
+              <span>Orchestration, CLI commands, proof registry, state machine, replay buffer</span>
               <span class="module-tracks">—</span>
+            </div>
+            <div class="module-row">
+              <code>proof.rs</code>
+              <span>Proof-carrying update metadata with SHA-256 binding digests and verification</span>
+              <span class="module-tracks">R10, R12</span>
+            </div>
+            <div class="module-row">
+              <code>state_machine.rs</code>
+              <span>Formally checkable policy state machine with legal transition validation</span>
+              <span class="module-tracks">R02</span>
+            </div>
+            <div class="module-row">
+              <code>replay.rs</code>
+              <span>Bounded ring-buffer replay with windowed statistics for continual learning</span>
+              <span class="module-tracks">R01</span>
+            </div>
+            <div class="module-row">
+              <code>poisoning.rs</code>
+              <span>Four poisoning heuristics: mean shift, variance spike, drift accumulation, auth burst</span>
+              <span class="module-tracks">R05</span>
+            </div>
+            <div class="module-row">
+              <code>benchmark.rs</code>
+              <span>FP/FN benchmark harness with precision, recall, F1, and accuracy metrics</span>
+              <span class="module-tracks">R13</span>
             </div>
           </div>
         </div>
@@ -285,8 +332,9 @@
             <p class="label">Implementation</p>
             <h2>Current Status</h2>
             <p class="section-desc">
-              The project has completed Phases 0–2 and partial Phase 3. The control loop runs
-              end-to-end with real adapters, cryptographic audit, and structured reporting.
+              The project has completed Phases 0–4. The control loop runs
+              end-to-end with real adapters, cryptographic audit, proof-carrying updates,
+              a policy state machine, replay buffers, poisoning heuristics, and structured reporting.
               Three categories below — no ambiguity about what is real versus what is planned.
             </p>
           </div>
@@ -321,9 +369,9 @@
             <p class="label">Roadmap</p>
             <h2>Engineering Backlog</h2>
             <p class="section-desc">
-              Concrete tasks grouped by phase. Phases 0–2 are complete. Phase 3 is partially
-              complete. The recommended build order is runtime hardening → device actions →
-              verifiability — each phase makes the claims from the previous one more credible.
+              Concrete tasks grouped by phase. Phases 0–4 are complete. The recommended next
+              build order is Phase 5 research expansion — each phase builds on the foundations
+              established in earlier phases.
             </p>
           </div>
           <div id="backlog-phases"></div>
@@ -394,7 +442,7 @@
             <div class="start-card">
               <h3>Run tests</h3>
               <div class="code-block"><code>cargo test</code></div>
-              <p>25 automated tests covering all modules.</p>
+              <p>45 automated tests covering all 16 modules.</p>
             </div>
             <div class="start-card">
               <h3>SIEM report</h3>
