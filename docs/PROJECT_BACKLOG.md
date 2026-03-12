@@ -49,6 +49,15 @@ This backlog lists the next concrete tasks in build order.
 - [ ] T053: Specify supply-chain attestation inputs for R20.
 - [ ] T054: Define a post-quantum logging upgrade path for R11/R21.
 
+## Phase 6 - Browser admin console
+
+- [x] T060: Define the browser admin console scope and data contracts.
+- [x] T061: Build a read-only browser status dashboard backed by exported JSON.
+- [x] T062: Add JSON report upload and per-sample drilldown views.
+- [ ] T063: Add a local runtime-backed status/report refresh path.
+- [ ] T064: Add authenticated browser-side control actions.
+
 ## Recommended next build order
 
-1. T050-T054 to bridge the gap from prototype to research publication.
+1. T050-T054 to bridge the gap from implementation to research publication.
+2. T063-T064 to move the browser console from artifact inspection to a real control plane.

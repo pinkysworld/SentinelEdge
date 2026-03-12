@@ -108,6 +108,29 @@ fn run() -> Result<(), String> {
             }
             println!("{}", runtime::status_snapshot());
         }
+        "status-json" => {
+            let output_path = args.next().map(PathBuf::from);
+
+            if args.next().is_some() {
+                return Err("too many arguments for `status-json`".into());
+            }
+
+            let manifest = runtime::status_manifest();
+            let json = serde_json::to_string_pretty(&manifest)
+                .map_err(|error| format!("failed to serialize status JSON: {error}"))?;
+
+            if let Some(path) = output_path {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|error| format!("failed to create status directory: {error}"))?;
+                }
+                std::fs::write(&path, json)
+                    .map_err(|error| format!("failed to write status JSON: {error}"))?;
+                println!("Status JSON written to {}", path.display());
+            } else {
+                println!("{json}");
+            }
+        }
         "help" | "--help" | "-h" => print_usage(),
         other => {
             return Err(format!(
@@ -128,5 +151,6 @@ fn print_usage() {
     println!("  cargo run -- report <csv_or_jsonl_path> [report_path]");
     println!("  cargo run -- init-config [config_path]");
     println!("  cargo run -- status");
+    println!("  cargo run -- status-json [output_path]");
     println!("  cargo run -- help");
 }

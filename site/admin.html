@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SentinelEdge Admin Console</title>
+    <meta
+      name="description"
+      content="Read-only SentinelEdge browser console for status snapshots and JSON report inspection."
+    >
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    >
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=5">
+    <script defer src="admin.js?v=1"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">SE</span>
+          <span class="nav-title">SentinelEdge</span>
+        </a>
+
+        <div class="nav-links admin-nav-links">
+          <a href="index.html" class="nav-link">Public Site</a>
+          <a href="#status-view" class="nav-link active">Status</a>
+          <a href="#report-view" class="nav-link">Reports</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main admin-main">
+      <section class="section hero-section admin-hero">
+        <div class="container">
+          <div class="hero-grid admin-hero-grid">
+            <div class="hero-text">
+              <p class="label">Browser Console</p>
+              <h1>Read-Only Admin Console</h1>
+              <p class="hero-subtitle">
+                Review project status snapshots and inspect generated SentinelEdge JSON reports in the browser.
+              </p>
+              <p class="hero-description">
+                This first console cut is intentionally read-only. It does not connect directly to a running device,
+                and it exposes no control actions. It consumes exported JSON artifacts from the runtime: a status
+                snapshot from <code>cargo run -- status-json</code> and SIEM-style report files from <code>cargo run -- report</code>.
+              </p>
+              <div class="hero-cta">
+                <a href="#status-view" class="btn btn-primary">Open Status View</a>
+                <a href="#report-view" class="btn btn-outline">Open Report View</a>
+              </div>
+            </div>
+
+            <aside class="hero-aside admin-controls-panel">
+              <div class="stat-card">
+                <div class="stat-header">Data Sources</div>
+                <div class="admin-control-group">
+                  <label class="admin-control-label" for="status-file">Load status JSON</label>
+                  <input id="status-file" class="admin-file-input" type="file" accept="application/json,.json">
+                  <button id="load-default-status" class="btn btn-outline admin-inline-btn" type="button">Use bundled status</button>
+                </div>
+                <div class="admin-control-group">
+                  <label class="admin-control-label" for="report-file">Load report JSON</label>
+                  <input id="report-file" class="admin-file-input" type="file" accept="application/json,.json">
+                  <button id="load-default-report" class="btn btn-outline admin-inline-btn" type="button">Use bundled demo report</button>
+                </div>
+                <p id="console-banner" class="admin-banner">Loading bundled status and demo report.</p>
+              </div>
+
+              <div class="console-preview admin-console-preview">
+                <div class="console-chrome"><span></span><span></span><span></span></div>
+                <pre class="console-output"><span class="c-dim">$</span> cargo run -- status-json site/data/status.json
+<span class="c-dim">$</span> cargo run -- report examples/credential_storm.csv site/data/demo-report.json
+
+<span class="c-label">browser</span>  open admin.html
+<span class="c-ok">✓</span> read-only console ready</pre>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="status-view" class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Status View</p>
+            <h2>Project Snapshot</h2>
+            <p class="section-desc">
+              This view shows the structured status manifest exported by the runtime. On GitHub Pages it is static;
+              for local review, regenerate it with <code>cargo run -- status-json site/data/status.json</code>.
+            </p>
+          </div>
+
+          <div class="admin-summary-grid" id="status-summary-grid"></div>
+
+          <div class="admin-columns">
+            <section class="status-col">
+              <div class="status-col-header implemented"><span class="status-dot"></span>Implemented</div>
+              <ul class="status-list" id="status-implemented-list"></ul>
+            </section>
+            <section class="status-col">
+              <div class="status-col-header scaffolded"><span class="status-dot"></span>Partially Wired</div>
+              <ul class="status-list" id="status-partial-list"></ul>
+            </section>
+            <section class="status-col">
+              <div class="status-col-header deferred"><span class="status-dot"></span>Not Implemented</div>
+              <ul class="status-list" id="status-missing-list"></ul>
+            </section>
+          </div>
+
+          <div class="module-table admin-command-table">
+            <div class="module-row module-header-row">
+              <span>Command</span>
+              <span>Purpose</span>
+              <span>Mode</span>
+            </div>
+            <div id="command-rows"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="report-view" class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Report View</p>
+            <h2>JSON Report Inspector</h2>
+            <p class="section-desc">
+              Load any report emitted by <code>cargo run -- report &lt;input&gt; [report_path]</code>. The console renders
+              summary metrics, a sample table, and per-sample telemetry and anomaly detail.
+            </p>
+          </div>
+
+          <div class="admin-summary-grid" id="report-summary-grid"></div>
+
+          <div class="admin-report-layout">
+            <div class="module-table admin-report-table-wrap">
+              <div class="module-row module-header-row admin-report-header-row">
+                <span>Sample</span>
+                <span>Detection</span>
+                <span>Decision</span>
+              </div>
+              <div id="report-rows"></div>
+            </div>
+
+            <aside class="detail-card admin-detail-panel">
+              <h3>Selected Sample</h3>
+              <div id="sample-detail-empty" class="admin-empty-state">
+                Load a report to inspect sample details.
+              </div>
+              <div id="sample-detail" class="admin-sample-detail" hidden>
+                <div class="admin-detail-meta" id="sample-detail-meta"></div>
+                <div class="admin-detail-block">
+                  <h4>Telemetry</h4>
+                  <div class="admin-kv-grid" id="sample-telemetry-grid"></div>
+                </div>
+                <div class="admin-detail-block">
+                  <h4>Anomaly</h4>
+                  <div class="admin-kv-grid" id="sample-anomaly-grid"></div>
+                  <ul class="status-list admin-reason-list" id="sample-reasons"></ul>
+                </div>
+                <div class="admin-detail-block">
+                  <h4>Decision</h4>
+                  <div class="admin-kv-grid" id="sample-decision-grid"></div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

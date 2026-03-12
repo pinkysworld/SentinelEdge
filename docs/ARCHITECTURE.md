@@ -37,6 +37,7 @@ SentinelEdge follows an edge-first control loop:
 10. **Output**
    - Console reports with per-sample detail.
    - Structured JSON reports for SIEM ingestion.
+  - Structured status JSON snapshots for the browser admin console.
    - JSONL streaming output for alert-only events.
    - Forensic evidence bundles combining audit log, summary, and checkpoints.
 

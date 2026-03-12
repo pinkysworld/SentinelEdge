@@ -9,7 +9,7 @@ const stats = [
   { value: "16", label: "core runtime modules" },
   { value: "8",  label: "telemetry dimensions" },
   { value: "25", label: "research tracks mapped" },
-  { value: "45", label: "automated tests" },
+  { value: "46", label: "automated tests" },
 ];
 
 const pipelineDetails = [
@@ -97,6 +97,7 @@ const statusData = {
     "Baseline adaptation controls (freeze, decay, reset)",
     "Four poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst)",
     "FP/FN benchmark harness with precision, recall, F1, and accuracy",
+    "Read-only browser admin console for status snapshots and report inspection",
     "Deterministic test fixtures (benign, escalation, low-battery, credential-storm)",
     "GitHub Pages deployment with CI workflow",
     "Documentation: architecture, getting started, backlog, research tracks",
@@ -106,6 +107,7 @@ const statusData = {
     "TLA+/Alloy export stubs in state machine — formal checker integration deferred (R02)",
     "Checkpoint state restoration — snapshots captured, restore not yet wired (R10)",
     "Post-quantum audit signatures — SHA-256 chain in place, PQ signatures deferred (R11)",
+    "Browser admin console is static and read-only — no authenticated control path yet",
     "Research-track status accounting across all 25 blueprint items",
   ],
   deferred: [
@@ -199,6 +201,19 @@ const backlogPhases = [
       { id: "T052", title: "Wasm extension surface specification", desc: "Define the sandboxed plugin API for R17." },
       { id: "T053", title: "Supply-chain attestation inputs", desc: "Specify attestation data flows for R20." },
       { id: "T054", title: "Post-quantum logging upgrade path", desc: "Define migration strategy for R11/R21." },
+    ],
+  },
+  {
+    id: "phase-6",
+    tag: "Phase 6",
+    tagClass: "later",
+    title: "Browser Admin Console (partial)",
+    tasks: [
+      { id: "T060", title: "Define browser admin console scope and data contracts", done: true },
+      { id: "T061", title: "Build read-only browser status dashboard", done: true },
+      { id: "T062", title: "Add JSON report upload and sample drilldown", done: true },
+      { id: "T063", title: "Add local runtime-backed refresh path", desc: "Connect the browser console to fresh local status/report exports." },
+      { id: "T064", title: "Add authenticated browser control actions", desc: "Move from inspection-only to protected control-plane actions." },
     ],
   },
 ];

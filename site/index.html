@@ -34,6 +34,7 @@
 
         <div class="nav-links" id="nav-links">
           <a href="#overview" class="nav-link active" data-section="overview">Overview</a>
+          <a href="admin.html" class="nav-link">Admin Console</a>
 
           <div class="nav-dropdown">
             <button class="nav-link nav-dropdown-trigger" aria-expanded="false">
@@ -88,6 +89,7 @@
               </p>
               <div class="hero-cta">
                 <a href="#architecture" class="btn btn-primary">Architecture</a>
+                <a href="admin.html" class="btn btn-outline">Admin Console</a>
                 <a href="#tracks" class="btn btn-outline">Research Tracks</a>
                 <a href="#start" class="btn btn-ghost">Quick Start →</a>
               </div>
@@ -329,9 +331,9 @@
             <p class="label">Implementation</p>
             <h2>Current Status</h2>
             <p class="section-desc">
-              The project has completed Phases 0–4. The control loop runs
-              end-to-end with real adapters, cryptographic audit, proof-carrying updates,
-              a policy state machine, replay buffers, poisoning heuristics, and structured reporting.
+              The project has completed Phases 0–4 and now includes an initial read-only browser console.
+              The control loop runs end-to-end with real adapters, cryptographic audit, proof-carrying updates,
+              a policy state machine, replay buffers, poisoning heuristics, structured reporting, and browser-based artifact inspection.
               Three categories below — no ambiguity about what is real versus what is planned.
             </p>
           </div>
@@ -366,9 +368,9 @@
             <p class="label">Roadmap</p>
             <h2>Engineering Backlog</h2>
             <p class="section-desc">
-              Concrete tasks grouped by phase. Phases 0–4 are complete. The recommended next
-              build order is Phase 5 research expansion — each phase builds on the foundations
-              established in earlier phases.
+              Concrete tasks grouped by phase. Phases 0–4 are complete, and the browser console
+              has started as a separate Phase 6 track. The recommended next build order is Phase 5
+              research expansion, then Phase 6 live-refresh and authenticated control work.
             </p>
           </div>
           <div id="backlog-phases"></div>
@@ -439,7 +441,7 @@
             <div class="start-card">
               <h3>Run tests</h3>
               <div class="code-block"><code>cargo test</code></div>
-              <p>45 automated tests covering all 16 modules.</p>
+              <p>46 automated tests covering all 16 modules.</p>
             </div>
             <div class="start-card">
               <h3>SIEM report</h3>
@@ -454,6 +456,11 @@
             <div class="start-card">
               <h3>Implementation snapshot</h3>
               <div class="code-block"><code>cargo run -- status</code></div>
+            </div>
+            <div class="start-card">
+              <h3>Browser console snapshot</h3>
+              <div class="code-block"><code>cargo run -- status-json site/data/status.json</code></div>
+              <p>Exports the structured status file consumed by <code>admin.html</code>.</p>
             </div>
           </div>
 
@@ -485,6 +492,7 @@
               <a href="#overview">Overview</a>
               <a href="#architecture">Architecture</a>
               <a href="#status">Status</a>
+              <a href="admin.html">Admin Console</a>
               <a href="#backlog">Backlog</a>
               <a href="#tracks">Research Tracks</a>
               <a href="#start">Getting Started</a>

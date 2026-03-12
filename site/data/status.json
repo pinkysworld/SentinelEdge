@@ -1,0 +1,41 @@
+{
+  "updated_at": "2026-03-12",
+  "backlog_completed": 27,
+  "backlog_total": 34,
+  "completed_phases": 5,
+  "total_phases": 7,
+  "cli_commands": [
+    "demo",
+    "analyze",
+    "report",
+    "init-config",
+    "status",
+    "status-json"
+  ],
+  "implemented": [
+    "Typed telemetry ingestion from CSV and JSONL",
+    "Adaptive EWMA-based anomaly scoring across eight signal dimensions",
+    "Battery-aware policy decisions with pluggable action adapters",
+    "SHA-256 audit chain with signed checkpoints and verification",
+    "Rollback checkpoints and forensic evidence bundles",
+    "Proof-carrying baseline update metadata",
+    "Policy state machine with transition validation",
+    "Replay buffer with descriptive statistics",
+    "Poisoning heuristics and adaptation controls",
+    "FP/FN benchmark harness",
+    "Static browser admin console for status and report review"
+  ],
+  "partially_wired": [
+    "Checkpoint restore semantics without real device-state restoration",
+    "ZK proof placeholder in proof metadata",
+    "TLA+/Alloy export path for the state machine",
+    "Static admin console without authenticated control actions"
+  ],
+  "not_implemented": [
+    "Continual learning and privacy-preserving updates",
+    "Zero-knowledge proofs and formal verification export",
+    "Swarm coordination and cross-device protocols",
+    "Post-quantum signatures and hardware roots of trust",
+    "Authenticated browser control plane"
+  ]
+}

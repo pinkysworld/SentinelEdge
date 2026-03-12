@@ -55,13 +55,39 @@ Creates `sentineledge.toml` with all default thresholds, battery policies, and o
 cargo run -- status
 ```
 
+## Export structured status JSON for the browser console
+
+```bash
+cargo run -- status-json site/data/status.json
+```
+
+This writes the structured status snapshot consumed by the read-only browser console.
+
 ## Run tests
 
 ```bash
 cargo test
 ```
 
-The test suite currently includes 45 tests covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints, forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, and benchmark scoring.
+The test suite currently includes 46 tests covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints, forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, benchmark scoring, and status export.
+
+## Open the read-only browser admin console
+
+1. Generate a report JSON file:
+
+```bash
+cargo run -- report examples/credential_storm.csv site/data/demo-report.json
+```
+
+2. Generate a structured status snapshot:
+
+```bash
+cargo run -- status-json site/data/status.json
+```
+
+3. Open `site/admin.html` in a browser.
+
+The browser console is read-only. It can inspect exported JSON artifacts, but it does not yet control devices or stream live runtime state.
 
 ## Telemetry CSV format
 

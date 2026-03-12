@@ -1,6 +1,8 @@
 use std::fmt::Write;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::audit::AuditLog;
 use crate::checkpoint::CheckpointStore;
 use crate::detector::{AnomalyDetector, AnomalySignal};
@@ -32,6 +34,19 @@ pub struct RunResult {
     pub reports: Vec<SampleReport>,
     pub summary: RunSummary,
     pub audit: AuditLog,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusManifest {
+    pub updated_at: String,
+    pub backlog_completed: usize,
+    pub backlog_total: usize,
+    pub completed_phases: usize,
+    pub total_phases: usize,
+    pub cli_commands: Vec<String>,
+    pub implemented: Vec<String>,
+    pub partially_wired: Vec<String>,
+    pub not_implemented: Vec<String>,
 }
 
 pub fn demo_samples() -> Vec<TelemetrySample> {
@@ -279,8 +294,10 @@ pub fn render_console_report(result: &RunResult, audit_path: Option<&Path>) -> S
 }
 
 pub fn status_snapshot() -> String {
+    let status = status_manifest();
+
     [
-        "SentinelEdge status snapshot (2026-03-12)",
+        &format!("SentinelEdge status snapshot ({})", status.updated_at),
         "",
         "Phase 1 — Runtime Hardening (complete):",
         "  - TOML/JSON configuration loading",
@@ -305,9 +322,14 @@ pub fn status_snapshot() -> String {
         "",
         "Phase 4 — Edge Learning (complete):",
         "  - bounded replay buffer for telemetry windows",
-        "  - baseline adaptation controls (freeze, decay, retrain)",
+        "  - baseline adaptation controls (freeze, decay, reset)",
         "  - poisoning heuristics: mean-shift, variance, drift, auth-burst",
         "  - FP/FN benchmark harness with precision/recall/F1",
+        "",
+        "Phase 6 — Browser Admin Console (partial):",
+        "  - structured status JSON export for browser consumption",
+        "  - static read-only admin console for status and report review",
+        "  - report inspector for generated JSON report files",
         "",
         "Foundation (complete):",
         "  - adaptive multi-signal anomaly scoring (8 dimensions)",
@@ -326,9 +348,53 @@ pub fn status_snapshot() -> String {
     .join("\n")
 }
 
+pub fn status_manifest() -> StatusManifest {
+    StatusManifest {
+        updated_at: "2026-03-12".into(),
+        backlog_completed: 27,
+        backlog_total: 34,
+        completed_phases: 5,
+        total_phases: 7,
+        cli_commands: vec![
+            "demo".into(),
+            "analyze".into(),
+            "report".into(),
+            "init-config".into(),
+            "status".into(),
+            "status-json".into(),
+        ],
+        implemented: vec![
+            "Typed telemetry ingestion from CSV and JSONL".into(),
+            "Adaptive EWMA-based anomaly scoring across eight signal dimensions".into(),
+            "Battery-aware policy decisions with pluggable action adapters".into(),
+            "SHA-256 audit chain with signed checkpoints and verification".into(),
+            "Rollback checkpoints and forensic evidence bundles".into(),
+            "Proof-carrying baseline update metadata".into(),
+            "Policy state machine with transition validation".into(),
+            "Replay buffer with descriptive statistics".into(),
+            "Poisoning heuristics and adaptation controls".into(),
+            "FP/FN benchmark harness".into(),
+            "Static browser admin console for status and report review".into(),
+        ],
+        partially_wired: vec![
+            "Checkpoint restore semantics without real device-state restoration".into(),
+            "ZK proof placeholder in proof metadata".into(),
+            "TLA+/Alloy export path for the state machine".into(),
+            "Static admin console without authenticated control actions".into(),
+        ],
+        not_implemented: vec![
+            "Continual learning and privacy-preserving updates".into(),
+            "Zero-knowledge proofs and formal verification export".into(),
+            "Swarm coordination and cross-device protocols".into(),
+            "Post-quantum signatures and hardware roots of trust".into(),
+            "Authenticated browser control plane".into(),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{demo_samples, execute};
+    use super::{demo_samples, execute, status_manifest};
 
     #[test]
     fn demo_sequence_produces_alerts() {
@@ -337,5 +403,13 @@ mod tests {
         assert_eq!(result.summary.total_samples, 5);
         assert!(result.summary.alert_count >= 2);
         assert!(result.summary.max_score > 4.0);
+    }
+
+    #[test]
+    fn status_manifest_reports_backlog_progress() {
+        let manifest = status_manifest();
+        assert_eq!(manifest.backlog_completed, 27);
+        assert_eq!(manifest.backlog_total, 34);
+        assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
     }
 }

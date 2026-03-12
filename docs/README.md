@@ -9,6 +9,7 @@ Read it in this order:
 3. [`STATUS.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/STATUS.md) for what is implemented, partially wired, and still unbuilt.
 4. [`PROJECT_BACKLOG.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/PROJECT_BACKLOG.md) for small, buildable tasks.
 5. [`RESEARCH_TRACKS.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/RESEARCH_TRACKS.md) for the full 25-track blueprint translated into an implementation status map.
+6. [`../site/admin.html`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/site/admin.html) for the read-only browser console backed by exported JSON artifacts.
 
 ## Current philosophy
 

@@ -26,9 +26,11 @@ Updated: 2026-03-12
 - Baseline adaptation controls: normal, frozen, and decay modes (T041)
 - Poisoning heuristics: mean-shift detection, variance spike, drift accumulation, auth-burst patterns (T042)
 - FP/FN benchmark harness with precision, recall, F1, and accuracy metrics (T043)
+- Structured status JSON export for browser consumption (`status-json`)
+- Read-only browser admin console for status snapshots and JSON report inspection
 - Static GitHub Pages site and deployment workflow
 - Documentation index, architecture notes, backlog, and research-track mapping
-- 45 automated tests covering all modules
+- 46 automated tests covering all modules
 
 ## Partially wired
 
@@ -36,6 +38,7 @@ Updated: 2026-03-12
 - Rollback-and-escalate action semantics (decision and checkpoint exist; real device state restore does not)
 - ZK proof integration in proof-carrying metadata (digest binding exists, Halo2/SNARK deferred)
 - TLA+/Alloy export from the policy state machine (model exists, export deferred)
+- Browser admin console is static and read-only; no authenticated control path or live backend
 - Research-track status accounting for all 25 blueprint items
 
 ## Not implemented yet
@@ -54,4 +57,4 @@ Updated: 2026-03-12
 
 ## Practical milestone summary
 
-The repository has completed Phases 0–4. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, and benchmark tooling. The research agenda beyond that point remains open: differential privacy, ZK proofs, swarm coordination, and formal verification export are not implemented yet.
+The repository has completed Phases 0–4 and started Phase 6 with a read-only browser admin console. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, and browser-based inspection of exported status/report artifacts. The research agenda beyond that point remains open: differential privacy, ZK proofs, swarm coordination, formal verification export, and an authenticated control plane are not implemented yet.

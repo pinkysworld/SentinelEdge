@@ -14,6 +14,7 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - bounded replay buffer with windowed statistics for continual learning
 - poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst)
 - FP/FN benchmark harness with precision, recall, F1, and accuracy metrics
+- read-only browser admin console for status snapshots and JSON report inspection
 - maintained docs, backlog tracking, test fixtures, and a GitHub Pages site
 
 ## What ships today
@@ -33,6 +34,7 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - **Adaptation controls:** detector baseline updates can be frozen, decayed, or reset to contain suspected poisoning.
 - **Poisoning heuristics:** four statistical heuristics analyze replay buffers for data manipulation attempts.
 - **Benchmark harness:** labeled datasets can be scored for true/false positive/negative rates, precision, recall, and F1.
+- **Browser admin console:** a read-only web UI can load exported status JSON and generated report JSON for review in the browser.
 - **Operator-facing docs:** architecture, getting-started, backlog, and track-by-track implementation status in [`docs/`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/README.md).
 
 ## Quick start
@@ -71,10 +73,22 @@ Inspect the current implementation snapshot:
 cargo run -- status
 ```
 
+Export the structured snapshot used by the browser console:
+
+```bash
+cargo run -- status-json site/data/status.json
+```
+
 Run tests:
 
 ```bash
 cargo test
+```
+
+Open the read-only browser console:
+
+```text
+site/admin.html
 ```
 
 ## Repository layout
