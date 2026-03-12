@@ -1,6 +1,6 @@
 # SentinelEdge
 
-SentinelEdge is a Rust-first edge security runtime scaffold for privacy-aware anomaly detection, policy-driven response, and verifiable auditability on constrained devices.
+SentinelEdge is a Rust edge security runtime for anomaly detection, policy-driven response, and verifiable audit trails on constrained devices.
 
 The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/blueprint.md) sketches 25 ambitious tracks. The codebase now covers Phases 0–4 of the engineering backlog:
 
@@ -14,7 +14,7 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - bounded replay buffer with windowed statistics for continual learning
 - poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst)
 - FP/FN benchmark harness with precision, recall, F1, and accuracy metrics
-- project docs, backlog tracking, test fixtures, and an accompanying GitHub Pages site
+- maintained docs, backlog tracking, test fixtures, and a GitHub Pages site
 
 ## What ships today
 
@@ -102,7 +102,7 @@ Key documents:
 
 ## GitHub Pages
 
-The static landing page lives in `site/`, and the Pages workflow publishes it automatically on pushes to `main`.
+The static landing page lives in `site/`, and the Pages workflow publishes it on pushes to `main`.
 
 ## License
 

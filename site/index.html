@@ -78,16 +78,13 @@
                 with no cloud dependency.
               </p>
               <p class="hero-description">
-                This project explores how far a lightweight, self-contained runtime can go
-                toward providing meaningful security guarantees at the network edge. The current
-                prototype implements the full detect–respond–audit loop across eight telemetry
-                dimensions with pluggable action adapters, SHA-256 audit chains, proof-carrying
-                updates, a formally checkable policy state machine, poisoning heuristics,
-                rollback checkpoints, forensic evidence bundles, and structured SIEM reporting.
-                The broader research agenda — zero-knowledge attestation, swarm
-                coordination, post-quantum log integrity — is documented in twenty-five
-                tracks but deliberately deferred until the foundation is stable enough to
-                support it honestly.
+                SentinelEdge runs the full detect–respond–audit loop locally across eight telemetry
+                dimensions. The current codebase includes pluggable action adapters, SHA-256 audit
+                chains, proof-carrying updates, a checkable policy state machine, poisoning
+                heuristics, rollback checkpoints, forensic evidence bundles, and structured SIEM
+                reporting. The larger research agenda — zero-knowledge attestation, swarm
+                coordination, and post-quantum log integrity — is documented separately and left
+                out of the runtime until there is real implementation behind it.
               </p>
               <div class="hero-cta">
                 <a href="#architecture" class="btn btn-primary">Architecture</a>
@@ -130,8 +127,8 @@
             <h2>System Design</h2>
             <p class="section-desc">
               The runtime follows a ten-stage pipeline. Each stage maps to one or more Rust
-              modules with narrow interfaces. Complexity gets added when the research justifies
-              it, not before.
+              modules with narrow interfaces. New complexity is added only when there is code to
+              support it.
             </p>
           </div>
           <div class="arch-flow" id="arch-flow">

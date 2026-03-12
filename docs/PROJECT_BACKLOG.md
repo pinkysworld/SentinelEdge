@@ -1,6 +1,6 @@
 # SentinelEdge Project Backlog
 
-This backlog is designed for small, concrete follow-up tasks.
+This backlog lists the next concrete tasks in build order.
 
 ## Phase 0 - Foundation (completed)
 
@@ -37,7 +37,7 @@ This backlog is designed for small, concrete follow-up tasks.
 ## Phase 4 - Edge learning (completed)
 
 - [x] T040: Add a bounded replay buffer for telemetry windows.
-- [x] T041: Add incremental baseline adaptation controls (freeze, decay, retrain).
+- [x] T041: Add baseline adaptation controls (freeze, decay, reset).
 - [x] T042: Add poisoning heuristics beyond `integrity_drift`.
 - [x] T043: Add benchmark harnesses for false-positive / false-negative tradeoffs.
 

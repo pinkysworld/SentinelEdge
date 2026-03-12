@@ -30,7 +30,7 @@ Updated: 2026-03-12
 - Documentation index, architecture notes, backlog, and research-track mapping
 - 45 automated tests covering all modules
 
-## Partially scaffolded
+## Partially wired
 
 - Integrity-drift handling as a precursor to full spectral poisoning recovery
 - Rollback-and-escalate action semantics (decision and checkpoint exist; real device state restore does not)
@@ -40,7 +40,7 @@ Updated: 2026-03-12
 
 ## Not implemented yet
 
-- Continual learning, replay buffers, or any on-device model training
+- Continual learning or any on-device model training
 - Differential privacy guarantees
 - Zero-knowledge proofs, Halo2 circuits, or zk-SNARKs
 - Formal rule verification / TLA+ export
@@ -54,4 +54,4 @@ Updated: 2026-03-12
 
 ## Practical milestone summary
 
-The repository has completed Phases 0–4 fully. It now provides a functional edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a formally checkable policy state machine, poisoning heuristics, and benchmark tooling. The advanced research agenda (differential privacy, ZK proofs, swarm coordination, formal verification export) remains ahead.
+The repository has completed Phases 0–4. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, and benchmark tooling. The research agenda beyond that point remains open: differential privacy, ZK proofs, swarm coordination, and formal verification export are not implemented yet.

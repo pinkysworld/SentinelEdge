@@ -2,7 +2,7 @@
 
 ## Runtime pipeline
 
-The current SentinelEdge prototype follows a simple edge-first control loop:
+SentinelEdge follows an edge-first control loop:
 
 1. **Telemetry ingestion**
    - CSV or JSONL samples are parsed into typed `TelemetrySample` records.
@@ -92,7 +92,7 @@ The codebase now covers Phases 0–4 of the backlog. Here is how the implementat
   - Baseline adaptation controls (freeze, decay) support containment during suspected poisoning.
   - Missing: verified checkpoint rollback and recovery proofs.
 - **R06 Energy-Aware Verifiable Isolation**
-  - Scaffolded via battery-aware policy downgrades and pluggable action adapters.
+  - Battery-aware policy downgrades and pluggable action adapters are implemented.
   - Missing: formal proof machinery and hardware-level isolation enforcement.
 - **R09 Adaptive Response Strength**
   - Implemented through response selection based on score and battery, with pluggable adapter chain.
@@ -111,8 +111,8 @@ The codebase now covers Phases 0–4 of the backlog. Here is how the implementat
 
 ## Design principle
 
-The code is honest about scope:
+The code stays explicit about scope:
 
 - implemented features run now
-- partially implemented features expose hooks and semantics
-- advanced tracks remain explicit backlog items instead of implied promises
+- partially wired features expose structure without overstating capability
+- advanced tracks stay as backlog items rather than implied promises
