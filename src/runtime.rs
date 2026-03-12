@@ -326,6 +326,13 @@ pub fn status_snapshot() -> String {
         "  - poisoning heuristics: mean-shift, variance, drift, auth-burst",
         "  - FP/FN benchmark harness with precision/recall/F1",
         "",
+        "Phase 5 — Research Blueprint Expansion (complete):",
+        "  - research paper targeting with evaluation plan (T050)",
+        "  - swarm coordination protocol sketch (T051)",
+        "  - Wasm extension surface specification (T052)",
+        "  - supply-chain attestation inputs (T053)",
+        "  - post-quantum logging upgrade path (T054)",
+        "",
         "Phase 6 — Browser Admin Console (partial):",
         "  - structured status JSON export for browser consumption",
         "  - static read-only admin console for status and report review",
@@ -357,9 +364,9 @@ pub fn status_snapshot() -> String {
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2026-03-12".into(),
-        backlog_completed: 27,
+        backlog_completed: 32,
         backlog_total: 41,
-        completed_phases: 5,
+        completed_phases: 6,
         total_phases: 8,
         cli_commands: vec![
             "demo".into(),
@@ -381,6 +388,11 @@ pub fn status_manifest() -> StatusManifest {
             "Poisoning heuristics and adaptation controls".into(),
             "FP/FN benchmark harness".into(),
             "Static browser admin console for status and report review".into(),
+            "Research paper targeting with evaluation plan".into(),
+            "Swarm coordination protocol design".into(),
+            "Wasm extension surface specification".into(),
+            "Supply-chain attestation design".into(),
+            "Post-quantum logging upgrade path".into(),
         ],
         partially_wired: vec![
             "Checkpoint restore semantics without real device-state restoration".into(),
@@ -418,7 +430,7 @@ mod tests {
     #[test]
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
-        assert_eq!(manifest.backlog_completed, 27);
+        assert_eq!(manifest.backlog_completed, 32);
         assert_eq!(manifest.backlog_total, 41);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
     }

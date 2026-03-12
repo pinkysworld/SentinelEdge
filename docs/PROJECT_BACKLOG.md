@@ -41,13 +41,13 @@ This backlog lists the next concrete tasks in build order.
 - [x] T042: Add poisoning heuristics beyond `integrity_drift`.
 - [x] T043: Add benchmark harnesses for false-positive / false-negative tradeoffs.
 
-## Phase 5 - Research blueprint expansion
+## Phase 5 - Research blueprint expansion (completed)
 
-- [ ] T050: Formalize the subset of blueprint tracks targeted for the first research paper draft.
-- [ ] T051: Design a swarm-coordination protocol sketch for R03/R08/R15/R23.
-- [ ] T052: Specify a Wasm extension surface for R17.
-- [ ] T053: Specify supply-chain attestation inputs for R20.
-- [ ] T054: Define a post-quantum logging upgrade path for R11/R21.
+- [x] T050: Formalize the subset of blueprint tracks targeted for the first research paper draft.
+- [x] T051: Design a swarm-coordination protocol sketch for R03/R08/R15/R23.
+- [x] T052: Specify a Wasm extension surface for R17.
+- [x] T053: Specify supply-chain attestation inputs for R20.
+- [x] T054: Define a post-quantum logging upgrade path for R11/R21.
 
 ## Phase 6 - Browser admin console
 
@@ -69,7 +69,7 @@ This backlog lists the next concrete tasks in build order.
 
 ## Recommended next build order
 
-1. T050-T054 to bridge the gap from implementation to research publication.
+1. ~~T050-T054~~ (completed) — research blueprint expansion with design documents.
 2. T070-T072 to formalize the expanded research questions for tracks R26-R40.
 3. T063-T064 to move the browser console from artifact inspection to a real control plane.
 4. T073-T076 to produce design documents for the most implementation-ready new tracks.

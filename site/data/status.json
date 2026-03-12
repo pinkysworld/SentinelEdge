@@ -1,8 +1,8 @@
 {
   "updated_at": "2026-03-12",
-  "backlog_completed": 27,
+  "backlog_completed": 32,
   "backlog_total": 41,
-  "completed_phases": 5,
+  "completed_phases": 6,
   "total_phases": 8,
   "cli_commands": [
     "demo",
@@ -23,7 +23,12 @@
     "Replay buffer with descriptive statistics",
     "Poisoning heuristics and adaptation controls",
     "FP/FN benchmark harness",
-    "Static browser admin console for status and report review"
+    "Static browser admin console for status and report review",
+    "Research paper targeting with evaluation plan",
+    "Swarm coordination protocol design",
+    "Wasm extension surface specification",
+    "Supply-chain attestation design",
+    "Post-quantum logging upgrade path"
   ],
   "partially_wired": [
     "Checkpoint restore semantics without real device-state restoration",
