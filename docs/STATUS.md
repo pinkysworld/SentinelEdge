@@ -39,7 +39,7 @@ Updated: 2026-03-12
 - ZK proof integration in proof-carrying metadata (digest binding exists, Halo2/SNARK deferred)
 - TLA+/Alloy export from the policy state machine (model exists, export deferred)
 - Browser admin console is static and read-only; no authenticated control path or live backend
-- Research-track status accounting for all 25 blueprint items
+- Research-track status accounting for all 40 blueprint items
 
 ## Not implemented yet
 
@@ -57,4 +57,4 @@ Updated: 2026-03-12
 
 ## Practical milestone summary
 
-The repository has completed Phases 0–4 and started Phase 6 with a read-only browser admin console. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, and browser-based inspection of exported status/report artifacts. The research agenda beyond that point remains open: differential privacy, ZK proofs, swarm coordination, formal verification export, and an authenticated control plane are not implemented yet.
+The repository has completed Phases 0–4 and started Phase 6 with a read-only browser admin console. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, and browser-based inspection of exported status/report artifacts. The research agenda has been expanded from 25 to 40 tracks across seven thematic categories, with new areas covering explainability (R26–R30), infrastructure hardening (R31–R35), and long-horizon resilience (R36–R40). Phases 5 and 7 formalize the research questions; differential privacy, ZK proofs, swarm coordination, formal verification export, and an authenticated control plane are not implemented yet.

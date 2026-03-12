@@ -131,6 +131,75 @@ The current prototype intentionally implements only the smallest useful control 
   - Why it matters: this is the longest-horizon path toward self-improving edge detection without permanent cloud dependence.
   - Current repo state: there is no long-horizon model adaptation system yet.
 
+## Edge intelligence and explainability
+
+- **R26 Explainable Anomaly Attribution** - **Future**
+  - Research idea: on-device interpretable attribution that traces each anomaly score back to the contributing signals and their temporal context.
+  - Why it matters: operators need to understand why an alert fired before they can trust and act on it. Opaque scores erode confidence.
+  - Current repo state: the detector emits human-readable anomaly reasons, but there is no formal attribution framework (e.g., Shapley values).
+- **R27 Federated Threat Model Distillation** - **Future**
+  - Research idea: fleet-wide model improvement through federated learning rounds that distill knowledge into a compact student model suitable for constrained devices.
+  - Why it matters: individual devices see limited threat diversity; federated distillation lets the fleet learn collectively without centralizing raw data.
+  - Current repo state: no federated learning or model distillation infrastructure exists yet.
+- **R28 Adversarial Robustness Testing Framework** - **Future**
+  - Research idea: automated red-team harness that generates adversarial telemetry sequences designed to evade or confuse the detector.
+  - Why it matters: a detector whose weaknesses have never been probed systematically is likely brittle against adaptive attackers.
+  - Current repo state: benchmark harness measures FP/FN rates on fixed fixtures. No adversarial input generation or evasion testing exists.
+- **R29 Temporal Logic Runtime Monitoring** - **Future**
+  - Research idea: lightweight runtime monitor that checks live telemetry streams against LTL/CTL safety and liveness properties.
+  - Why it matters: explicit temporal properties let the system state guarantees like "a critical alert is always followed by a response within N samples."
+  - Current repo state: the policy state machine validates legal transitions, but general temporal logic monitoring is not implemented.
+- **R30 Anomaly Correlation Graph Mining** - **Future**
+  - Research idea: construct and maintain a lightweight causal correlation graph across signal dimensions to identify multi-stage attack patterns.
+  - Why it matters: many advanced attacks show up as individually benign signals that become suspicious only when their temporal and causal relationships are visible.
+  - Current repo state: signals are scored independently. No cross-signal causal graph or correlation mining exists.
+
+## Edge infrastructure and hardening
+
+- **R31 Digital Twin Simulation for Edge Fleets** - **Future**
+  - Research idea: a deterministic simulation harness that models heterogeneous edge fleets for scenario testing and policy validation before live deployment.
+  - Why it matters: testing policies and detection logic on a simulated fleet is far cheaper and safer than experimenting on production hardware.
+  - Current repo state: deterministic test fixtures exist for single-device scenarios. No fleet-scale simulation harness exists.
+- **R32 Autonomous Secure Patch Management** - **Future**
+  - Research idea: self-patching edge runtime that verifies patch integrity before application and proves post-patch state correctness.
+  - Why it matters: manual patching at scale is infeasible for large edge deployments; automated patching without verification is a supply-chain risk.
+  - Current repo state: no patch management or binary update mechanism exists.
+- **R33 Deception-Based Threat Engagement** - **Future**
+  - Research idea: deploy lightweight honeypot services and canary tokens at the edge to detect lateral movement and attacker reconnaissance.
+  - Why it matters: deception forces attackers to reveal themselves by interacting with synthetic assets that legitimate users never touch.
+  - Current repo state: no deception layer or canary token system exists.
+- **R34 Secure Multi-Tenancy Isolation** - **Future**
+  - Research idea: namespace-isolated detection and response policies on shared edge hardware so multiple tenants coexist without cross-contamination.
+  - Why it matters: shared edge infrastructure (e.g., gateways, concentrators) often serves multiple organizational tenants who must not see each other's data or interfere with each other's policies.
+  - Current repo state: the runtime is single-tenant. No namespace isolation or per-tenant policy scoping exists.
+- **R35 Side-Channel Attack Detection** - **Future**
+  - Research idea: detect timing, power, and electromagnetic side-channel attacks using statistical profiling of device operational patterns.
+  - Why it matters: side-channel attacks bypass software defenses entirely; detecting them requires observing the hardware layer through statistical anomalies.
+  - Current repo state: all detection is based on software telemetry. No hardware-level side-channel profiling exists.
+
+## Resilience and long-horizon
+
+- **R36 Edge-Cloud Hybrid Offload with Verifiability** - **Future**
+  - Research idea: decide when to offload expensive analysis to the cloud while proving that the cloud result was computed correctly and the raw data was not leaked.
+  - Why it matters: some analyses are too expensive for edge hardware, but blind cloud offload sacrifices the privacy and autonomy advantages of edge processing.
+  - Current repo state: the runtime is fully local. No cloud offload path or verifiable computation receipt system exists.
+- **R37 Resilient Mesh Topology Self-Organisation** - **Future**
+  - Research idea: autonomous mesh network formation and repair that maintains connectivity and security invariants after node loss or compromise.
+  - Why it matters: edge networks in the field lose nodes to hardware failure, power loss, and compromise. Automatic topology repair is a prerequisite for sustained collective defense.
+  - Current repo state: no topology awareness, mesh networking, or distributed spanning-tree logic exists.
+- **R38 Behavioural Device Fingerprinting** - **Future**
+  - Research idea: build a behavioural identity for each device based on its operational patterns, enabling impersonation detection without shared secrets.
+  - Why it matters: device impersonation is a common edge attack vector. Behavioural fingerprints provide a second authentication factor that is hard to forge.
+  - Current repo state: baselines characterize normal device behavior for anomaly scoring, but there is no explicit device identity or impersonation detection path.
+- **R39 Formal Policy Composition and Conflict Resolution** - **Future**
+  - Research idea: compose multiple detection and response policies with formal guarantees that the combined policy is free of contradictions and deadlocks.
+  - Why it matters: realistic deployments layer multiple policies (vendor, operator, regulatory). Without composition guarantees, conflicting rules can cause silent failures or action paralysis.
+  - Current repo state: a single policy engine maps scores to actions. No multi-policy composition, priority resolution, or conflict analysis exists.
+- **R40 Privacy-Preserving Incident Forensics** - **Future**
+  - Research idea: conduct post-incident forensic analysis across multiple devices without exposing raw sensor data to the investigating party.
+  - Why it matters: incident response teams need evidence, but sharing raw edge telemetry with external investigators can violate privacy regulations or expose sensitive operational data.
+  - Current repo state: forensic bundle export exists for single-device evidence. No multi-device privacy-preserving forensic query protocol exists.
+
 ## Interpretation
 
-The codebase now makes the project concrete, but most of the research novelty remains ahead of us. That is deliberate: SentinelEdge can grow from a stable, testable prototype while still keeping the larger research agenda explicit and legible.
+The codebase now makes the project concrete, but most of the research novelty remains ahead of us. That is deliberate: SentinelEdge can grow from a stable, testable prototype while still keeping the larger research agenda explicit and legible. The expansion from 25 to 40 tracks adds three new thematic areas — explainability and edge intelligence (R26–R30), infrastructure hardening (R31–R35), and long-horizon resilience (R36–R40) — reflecting the breadth of open problems in trustworthy edge security.

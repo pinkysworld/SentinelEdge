@@ -331,6 +331,12 @@ pub fn status_snapshot() -> String {
         "  - static read-only admin console for status and report review",
         "  - report inspector for generated JSON report files",
         "",
+        "Phase 7 — Expanded Research Agenda (not started):",
+        "  - 15 new tracks: R26-R40 across three new categories",
+        "  - Edge intelligence & explainability (R26-R30)",
+        "  - Edge infrastructure & hardening (R31-R35)",
+        "  - Resilience & long-horizon (R36-R40)",
+        "",
         "Foundation (complete):",
         "  - adaptive multi-signal anomaly scoring (8 dimensions)",
         "  - battery-aware mitigation scaling",
@@ -352,9 +358,9 @@ pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2026-03-12".into(),
         backlog_completed: 27,
-        backlog_total: 34,
+        backlog_total: 41,
         completed_phases: 5,
-        total_phases: 7,
+        total_phases: 8,
         cli_commands: vec![
             "demo".into(),
             "analyze".into(),
@@ -388,6 +394,10 @@ pub fn status_manifest() -> StatusManifest {
             "Swarm coordination and cross-device protocols".into(),
             "Post-quantum signatures and hardware roots of trust".into(),
             "Authenticated browser control plane".into(),
+            "Explainability, adversarial robustness, temporal-logic monitoring".into(),
+            "Digital twin simulation, deception, multi-tenancy, side-channel detection".into(),
+            "Edge-cloud offload, mesh self-organisation, device fingerprinting".into(),
+            "Policy composition, privacy-preserving forensics".into(),
         ],
     }
 }
@@ -409,7 +419,7 @@ mod tests {
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
         assert_eq!(manifest.backlog_completed, 27);
-        assert_eq!(manifest.backlog_total, 34);
+        assert_eq!(manifest.backlog_total, 41);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
     }
 }

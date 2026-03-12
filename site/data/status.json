@@ -1,9 +1,9 @@
 {
   "updated_at": "2026-03-12",
   "backlog_completed": 27,
-  "backlog_total": 34,
+  "backlog_total": 41,
   "completed_phases": 5,
-  "total_phases": 7,
+  "total_phases": 8,
   "cli_commands": [
     "demo",
     "analyze",
@@ -36,6 +36,10 @@
     "Zero-knowledge proofs and formal verification export",
     "Swarm coordination and cross-device protocols",
     "Post-quantum signatures and hardware roots of trust",
-    "Authenticated browser control plane"
+    "Authenticated browser control plane",
+    "Explainability, adversarial robustness, temporal-logic monitoring",
+    "Digital twin simulation, deception, multi-tenancy, side-channel detection",
+    "Edge-cloud offload, mesh self-organisation, device fingerprinting",
+    "Policy composition, privacy-preserving forensics"
   ]
 }
