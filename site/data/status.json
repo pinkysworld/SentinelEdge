@@ -1,8 +1,8 @@
 {
   "updated_at": "2026-03-12",
-  "backlog_completed": 32,
+  "backlog_completed": 39,
   "backlog_total": 41,
-  "completed_phases": 6,
+  "completed_phases": 7,
   "total_phases": 8,
   "cli_commands": [
     "demo",
@@ -28,7 +28,14 @@
     "Swarm coordination protocol design",
     "Wasm extension surface specification",
     "Supply-chain attestation design",
-    "Post-quantum logging upgrade path"
+    "Post-quantum logging upgrade path",
+    "Research questions for R26-R30 (explainability)",
+    "Research questions for R31-R35 (infrastructure)",
+    "Research questions for R36-R40 (resilience)",
+    "Adversarial robustness testing harness design",
+    "Temporal-logic property specification format",
+    "Digital-twin fleet simulation architecture",
+    "Formal policy composition algebra"
   ],
   "partially_wired": [
     "Checkpoint restore semantics without real device-state restoration",

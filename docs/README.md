@@ -19,6 +19,16 @@ Read it in this order:
 - [`DESIGN_SUPPLY_CHAIN.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/DESIGN_SUPPLY_CHAIN.md) — supply-chain attestation inputs (R20).
 - [`DESIGN_POST_QUANTUM.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/DESIGN_POST_QUANTUM.md) — post-quantum logging upgrade path (R11/R21).
 
+## Research questions & design documents (Phase 7)
+
+- [`RESEARCH_QUESTIONS_R26_R30.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/RESEARCH_QUESTIONS_R26_R30.md) — edge intelligence & explainability (R26–R30).
+- [`RESEARCH_QUESTIONS_R31_R35.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/RESEARCH_QUESTIONS_R31_R35.md) — edge infrastructure & hardening (R31–R35).
+- [`RESEARCH_QUESTIONS_R36_R40.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/RESEARCH_QUESTIONS_R36_R40.md) — resilience & long-horizon (R36–R40).
+- [`DESIGN_ADVERSARIAL_HARNESS.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/DESIGN_ADVERSARIAL_HARNESS.md) — adversarial robustness testing harness (R28).
+- [`DESIGN_TEMPORAL_LOGIC.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/DESIGN_TEMPORAL_LOGIC.md) — temporal-logic property specification format (R29).
+- [`DESIGN_DIGITAL_TWIN.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/DESIGN_DIGITAL_TWIN.md) — digital-twin fleet simulation architecture (R31).
+- [`DESIGN_POLICY_COMPOSITION.md`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/DESIGN_POLICY_COMPOSITION.md) — formal policy composition algebra (R39).
+
 ## Current philosophy
 
 - Build a useful runtime slice first.

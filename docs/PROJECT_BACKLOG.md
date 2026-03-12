@@ -57,19 +57,18 @@ This backlog lists the next concrete tasks in build order.
 - [ ] T063: Add a local runtime-backed status/report refresh path.
 - [ ] T064: Add authenticated browser-side control actions.
 
-## Phase 7 - Expanded research agenda
+## Phase 7 - Expanded research agenda (completed)
 
-- [ ] T070: Write detailed research-question statements for R26-R30 (explainability and edge intelligence).
-- [ ] T071: Write detailed research-question statements for R31-R35 (infrastructure and hardening).
-- [ ] T072: Write detailed research-question statements for R36-R40 (resilience and long-horizon).
-- [ ] T073: Design an adversarial robustness testing harness for R28.
-- [ ] T074: Design a temporal-logic property specification format for R29.
-- [ ] T075: Sketch a digital-twin simulation architecture for R31.
-- [ ] T076: Sketch a formal policy composition algebra for R39.
+- [x] T070: Write detailed research-question statements for R26-R30 (explainability and edge intelligence).
+- [x] T071: Write detailed research-question statements for R31-R35 (infrastructure and hardening).
+- [x] T072: Write detailed research-question statements for R36-R40 (resilience and long-horizon).
+- [x] T073: Design an adversarial robustness testing harness for R28.
+- [x] T074: Design a temporal-logic property specification format for R29.
+- [x] T075: Sketch a digital-twin simulation architecture for R31.
+- [x] T076: Sketch a formal policy composition algebra for R39.
 
 ## Recommended next build order
 
 1. ~~T050-T054~~ (completed) — research blueprint expansion with design documents.
-2. T070-T072 to formalize the expanded research questions for tracks R26-R40.
+2. ~~T070-T076~~ (completed) — expanded research questions and design documents.
 3. T063-T064 to move the browser console from artifact inspection to a real control plane.
-4. T073-T076 to produce design documents for the most implementation-ready new tracks.

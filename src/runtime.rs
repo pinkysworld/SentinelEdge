@@ -338,11 +338,14 @@ pub fn status_snapshot() -> String {
         "  - static read-only admin console for status and report review",
         "  - report inspector for generated JSON report files",
         "",
-        "Phase 7 — Expanded Research Agenda (not started):",
-        "  - 15 new tracks: R26-R40 across three new categories",
-        "  - Edge intelligence & explainability (R26-R30)",
-        "  - Edge infrastructure & hardening (R31-R35)",
-        "  - Resilience & long-horizon (R36-R40)",
+        "Phase 7 — Expanded Research Agenda (complete):",
+        "  - research questions formalised for R26-R30 (T070)",
+        "  - research questions formalised for R31-R35 (T071)",
+        "  - research questions formalised for R36-R40 (T072)",
+        "  - adversarial robustness testing harness design (T073)",
+        "  - temporal-logic property specification format (T074)",
+        "  - digital-twin fleet simulation architecture (T075)",
+        "  - formal policy composition algebra (T076)",
         "",
         "Foundation (complete):",
         "  - adaptive multi-signal anomaly scoring (8 dimensions)",
@@ -364,9 +367,9 @@ pub fn status_snapshot() -> String {
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2026-03-12".into(),
-        backlog_completed: 32,
+        backlog_completed: 39,
         backlog_total: 41,
-        completed_phases: 6,
+        completed_phases: 7,
         total_phases: 8,
         cli_commands: vec![
             "demo".into(),
@@ -393,6 +396,13 @@ pub fn status_manifest() -> StatusManifest {
             "Wasm extension surface specification".into(),
             "Supply-chain attestation design".into(),
             "Post-quantum logging upgrade path".into(),
+            "Research questions for R26-R30 (explainability)".into(),
+            "Research questions for R31-R35 (infrastructure)".into(),
+            "Research questions for R36-R40 (resilience)".into(),
+            "Adversarial robustness testing harness design".into(),
+            "Temporal-logic property specification format".into(),
+            "Digital-twin fleet simulation architecture".into(),
+            "Formal policy composition algebra".into(),
         ],
         partially_wired: vec![
             "Checkpoint restore semantics without real device-state restoration".into(),
@@ -430,7 +440,7 @@ mod tests {
     #[test]
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
-        assert_eq!(manifest.backlog_completed, 32);
+        assert_eq!(manifest.backlog_completed, 39);
         assert_eq!(manifest.backlog_total, 41);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
     }

@@ -33,6 +33,13 @@ Updated: 2026-03-12
 - Wasm extension surface specification with sandboxed detector/response plugins (T052)
 - Supply-chain attestation design with build manifests and trust stores (T053)
 - Post-quantum logging upgrade path with hybrid signature strategy (T054)
+- Research questions formalised for R26-R30 with hypotheses, evaluation criteria, and implementation sketches (T070)
+- Research questions formalised for R31-R35 with hypotheses, evaluation criteria, and implementation sketches (T071)
+- Research questions formalised for R36-R40 with hypotheses, evaluation criteria, and implementation sketches (T072)
+- Adversarial robustness testing harness design with evasion grammar and coverage metric (T073)
+- Temporal-logic property specification format (SentinelTL) with runtime monitor architecture (T074)
+- Digital-twin fleet simulation architecture with deterministic discrete-event model (T075)
+- Formal policy composition algebra with conflict resolution and verification (T076)
 - Static GitHub Pages site and deployment workflow
 - Documentation index, architecture notes, backlog, and research-track mapping
 - 46 automated tests covering all modules
@@ -62,4 +69,4 @@ Updated: 2026-03-12
 
 ## Practical milestone summary
 
-The repository has completed Phases 0–5 and started Phase 6 with a read-only browser admin console. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, and browser-based inspection of exported status/report artifacts. Phase 5 produced design documents for research publication targeting, swarm coordination, Wasm extensibility, supply-chain attestation, and post-quantum cryptography upgrade. The research agenda has been expanded from 25 to 40 tracks across seven thematic categories, with new areas covering explainability (R26–R30), infrastructure hardening (R31–R35), and long-horizon resilience (R36–R40). Phases 6 and 7 continue with console enhancements and expanded research formalization; differential privacy, ZK proofs, swarm coordination, formal verification export, and an authenticated control plane are not implemented yet.
+The repository has completed Phases 0–5 and 7, and started Phase 6 with a read-only browser admin console. It now provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, and browser-based inspection of exported status/report artifacts. Phase 5 produced design documents for research publication targeting, swarm coordination, Wasm extensibility, supply-chain attestation, and post-quantum cryptography upgrade. Phase 7 formalised research questions for all 15 expanded tracks (R26–R40) with hypotheses, evaluation criteria, and implementation sketches, plus design documents for adversarial robustness testing, temporal-logic monitoring, digital-twin simulation, and formal policy composition. The research agenda spans 40 tracks across seven thematic categories. Phase 6 completion (T063–T064) is the next recommended build step; differential privacy, ZK proofs, swarm coordination, formal verification export, and an authenticated control plane are not implemented yet.
