@@ -6,55 +6,83 @@
 // ── Project Data ──────────────────────────────────────────────────────────────
 
 const stats = [
-  { value: "5",  label: "core runtime modules" },
-  { value: "6",  label: "telemetry dimensions" },
+  { value: "11", label: "core runtime modules" },
+  { value: "8",  label: "telemetry dimensions" },
   { value: "25", label: "research tracks mapped" },
-  { value: "3",  label: "CLI commands available" },
+  { value: "5",  label: "CLI commands available" },
 ];
 
 const pipelineDetails = [
   {
     num: "01",
     title: "Telemetry Ingestion",
-    body: "CSV rows are parsed into typed TelemetrySample records. Each field (CPU, memory, temperature, bandwidth, auth failures, integrity drift) is validated against expected ranges. The parser is deterministic, which means the same input file always produces the same internal state — useful for regression testing and scenario comparison.",
-    note: "JSONL ingestion is backlogged (T011) but not yet implemented."
+    body: "CSV and JSONL inputs are parsed into typed TelemetrySample records. Eight signal dimensions (CPU, memory, temperature, bandwidth, auth failures, integrity drift, process count, disk pressure) are validated against expected ranges. The parser auto-detects format by file extension, and deterministic replay semantics ensure the same input always produces the same internal state — useful for regression testing and scenario comparison.",
+    note: "CSV supports both 8-column legacy and 10-column extended formats. JSONL ingestion is fully implemented (T011)."
   },
   {
     num: "02",
     title: "Adaptive Anomaly Detection",
-    body: "An EWMA-style rolling baseline tracks normal behaviour for each signal dimension. Incoming samples are compared against this baseline; deviations are weighted by dimension and combined into a single anomaly score. The detector also emits human-readable explanations identifying which signals contributed most — operators should not have to guess why a score is high.",
+    body: "An EWMA-style rolling baseline tracks normal behaviour for each signal dimension. Incoming samples are compared against this baseline; deviations are weighted by dimension and combined into a single anomaly score. The detector also emits human-readable explanations identifying which signals contributed most. Baselines can be persisted to disk and restored across sessions for long-running deployments.",
     note: "No continual learning, replay buffers, or differential privacy yet — that is R01's longer-term scope."
   },
   {
     num: "03",
     title: "Policy-Driven Response",
     body: "The anomaly score is mapped to one of four threat levels: nominal, elevated, severe, critical. Each level triggers a corresponding response action (observe, rate-limit, quarantine, rollback-and-escalate). When the device battery is low, the policy engine automatically downgrades expensive actions to preserve device availability — the assumption being that a dead device is worse than a slightly softer response.",
-    note: "Response actions are labels today. Pluggable device adapters for real enforcement are in Phase 2 (T020–T023)."
+    note: "Pluggable action adapters (T020–T021) provide trait-based implementations for logging, throttle, quarantine, and isolate actions."
   },
   {
     num: "04",
+    title: "Response Execution",
+    body: "Actions are dispatched through a composable adapter chain. Each adapter implements a trait with execute/name methods. The default chain includes logging, throttle, quarantine, and isolate adapters that fire in sequence based on threat level.",
+    note: "Adapters are currently simulated (log-based). Real device enforcement is a future integration point."
+  },
+  {
+    num: "05",
+    title: "Rollback & Checkpoints",
+    body: "Rollback checkpoints capture detector state snapshots on severe/critical events. A bounded ring buffer retains recent checkpoints, enabling post-incident analysis and future state restoration. The forensic bundle exporter combines audit logs, checkpoint history, and evidence summaries into a single human-readable report.",
+    note: "State restoration from checkpoints is not yet implemented — the snapshot infrastructure is in place."
+  },
+  {
+    num: "06",
     title: "Audit Trail",
-    body: "Every detection-and-response decision is appended to a chained log. Each entry includes a hash of the previous entry, forming a linked sequence that makes retroactive tampering detectable. The trail is written to disk in a human-readable format so it can be inspected with standard tools.",
-    note: "The hash chain is a prototype digest — production-grade cryptographic signatures are backlogged in Phase 3 (T030–T031)."
+    body: "Every detection-and-response decision is appended to a SHA-256-chained audit log. Each entry includes a cryptographic hash of the previous entry, forming a linked sequence that makes retroactive tampering detectable. Signed audit checkpoints are inserted at configurable intervals. The entire chain can be verified end-to-end.",
+    note: "SHA-256 digest chain and signed checkpoints are implemented (T030–T031). Post-quantum signatures remain deferred."
+  },
+  {
+    num: "07",
+    title: "Output & Reporting",
+    body: "Structured JSON reports can be generated for SIEM integration. JSONL alert streams provide real-time event output. The init-config command generates a TOML configuration template, and the status command provides a live implementation snapshot.",
+    note: "Five CLI commands: demo, analyze, report, init-config, status."
   },
 ];
 
 const statusData = {
   implemented: [
-    "Rust project scaffold with runnable CLI (demo, analyze, status, report)",
-    "Typed telemetry ingestion from CSV with field validation",
-    "Adaptive EWMA-based anomaly scoring across six signal dimensions",
+    "Rust project scaffold with runnable CLI (demo, analyze, report, init-config, status)",
+    "Typed telemetry ingestion from CSV and JSONL with auto-detection",
+    "Adaptive EWMA-based anomaly scoring across eight signal dimensions",
     "Human-readable anomaly explanations per scoring decision",
     "Threat-level classification and response-action selection",
     "Battery-aware graceful degradation of mitigation actions",
-    "Tamper-evident chained audit log written to disk",
+    "TOML/JSON configuration loading with write-default support",
+    "Baseline persistence and cross-session restoration",
+    "Pluggable action adapters (logging, throttle, quarantine, isolate)",
+    "Rollback checkpoints with bounded ring buffer",
+    "Forensic evidence bundle exporter",
+    "SHA-256 cryptographic digest chain in audit log",
+    "Signed audit checkpoints at configurable intervals",
+    "Structured JSON reports for SIEM integration",
+    "Deterministic test fixtures (benign, escalation, low-battery, credential-storm)",
     "GitHub Pages deployment with CI workflow",
     "Documentation: architecture, getting started, backlog, research tracks",
   ],
   scaffolded: [
-    "Integrity-drift handling as a precursor to poisoning detection (R05)",
-    "Rollback-and-escalate action semantics — the decision exists but real rollback does not (R10)",
-    "Verifiable logging structure — hash chain present, production cryptography is not (R11)",
+    "Integrity-drift and poisoning detection — signal exists, spectral analysis does not (R05)",
+    "Checkpoint state restoration — snapshots captured, restore not yet wired (R10)",
+    "Post-quantum audit signatures — SHA-256 chain in place, PQ signatures deferred (R11)",
+    "Proof-carrying update metadata — hooks planned, ZK integration deferred (T032)",
+    "Formally checkable response policy — state machine model not yet extracted (T033)",
     "Research-track status accounting across all 25 blueprint items",
   ],
   deferred: [
@@ -90,37 +118,37 @@ const backlogPhases = [
   {
     id: "phase-1",
     tag: "Phase 1",
-    tagClass: "next",
-    title: "Runtime Hardening",
+    tagClass: "done",
+    title: "Runtime Hardening (complete)",
     tasks: [
-      { id: "T010", title: "TOML/JSON configuration loading", desc: "Externalise thresholds, battery policies, and output paths into a config file." },
-      { id: "T011", title: "JSONL telemetry ingestion", desc: "Support structured JSON input alongside CSV." },
-      { id: "T012", title: "Structured JSON reports for SIEM ingestion", desc: "Machine-readable output for integration with existing monitoring stacks." },
-      { id: "T013", title: "Persist and reload learned baselines", desc: "Store baselines between runs so the detector improves across sessions." },
-      { id: "T014", title: "Richer anomaly features", desc: "Add process count, disk pressure, and sensor drift windows." },
-      { id: "T015", title: "Deterministic test fixtures", desc: "Replayable benign and adversarial traces for regression testing." },
+      { id: "T010", title: "TOML/JSON configuration loading", done: true },
+      { id: "T011", title: "JSONL telemetry ingestion", done: true },
+      { id: "T012", title: "Structured JSON reports for SIEM ingestion", done: true },
+      { id: "T013", title: "Persist and reload learned baselines", done: true },
+      { id: "T014", title: "Richer anomaly features (process count, disk pressure)", done: true },
+      { id: "T015", title: "Deterministic test fixtures", done: true },
     ],
   },
   {
     id: "phase-2",
     tag: "Phase 2",
-    tagClass: "next",
-    title: "Device Actions",
+    tagClass: "done",
+    title: "Device Actions (complete)",
     tasks: [
-      { id: "T020", title: "Pluggable device action adapters", desc: "Replace abstract response labels with real trait-based implementations." },
-      { id: "T021", title: "Throttle, quarantine, and isolate implementations", desc: "Concrete response actions behind a pluggable interface." },
-      { id: "T022", title: "Rollback checkpoints", desc: "Configuration and model state snapshots for real recovery." },
-      { id: "T023", title: "Forensic bundle exporter", desc: "Audit log combined with summarised evidence for post-incident review." },
+      { id: "T020", title: "Pluggable device action adapters", done: true },
+      { id: "T021", title: "Throttle, quarantine, and isolate implementations", done: true },
+      { id: "T022", title: "Rollback checkpoints", done: true },
+      { id: "T023", title: "Forensic bundle exporter", done: true },
     ],
   },
   {
     id: "phase-3",
     tag: "Phase 3",
-    tagClass: "later",
-    title: "Verifiability",
+    tagClass: "next",
+    title: "Verifiability (partial)",
     tasks: [
-      { id: "T030", title: "Cryptographic digest chain", desc: "Replace the prototype hash chain with proper cryptographic checksums." },
-      { id: "T031", title: "Signed audit checkpoints", desc: "Periodic signed anchors in the audit stream." },
+      { id: "T030", title: "Cryptographic digest chain (SHA-256)", done: true },
+      { id: "T031", title: "Signed audit checkpoints", done: true },
       { id: "T032", title: "Proof-carrying update metadata", desc: "Metadata hooks for future ZK integration." },
       { id: "T033", title: "Formally checkable response policy", desc: "Model the policy engine as a verifiable state machine." },
     ],
@@ -204,12 +232,12 @@ const trackGroups = [
     label: "Response & Mitigation",
     tracks: [
       {
-        code: "R06", status: "scaffolded",
+        code: "R06", status: "foundation",
         title: "Energy-Aware Verifiable Isolation",
         summary: "Select mitigations that respect both security urgency and the device energy budget, with proofs that the action matched policy.",
         idea: "Priority queue with energy cost model plus a proof circuit for compliance verification.",
         matters: "Edge security cannot assume desktop-class power or cooling. The mitigation has to fit the device.",
-        state: "Energy-aware downgrade logic exists. Missing: real isolation adapters and formal proof mechanisms.",
+        state: "Energy-aware downgrade logic and pluggable action adapters (logging, throttle, quarantine, isolate) are implemented. Missing: formal proof mechanisms.",
       },
       {
         code: "R07", status: "planned",
@@ -233,15 +261,15 @@ const trackGroups = [
         summary: "Map detection confidence and local constraints into different response intensities rather than a single fixed action.",
         idea: "Continuous response scaling: observe → rate-limit → quarantine → rollback-and-escalate, shaped by a learned policy with energy penalty.",
         matters: "Prevents overreaction on benign spikes and underreaction on genuinely dangerous events.",
-        state: "Threat score and battery state already shape the response chosen by the runtime.",
+        state: "Threat score and battery state shape response selection. Pluggable adapters dispatch concrete actions through a composable chain.",
       },
       {
-        code: "R10", status: "scaffolded",
+        code: "R10", status: "foundation",
         title: "Verifiable Rollback and Forensic Recovery",
         summary: "Restore device state to a known-safe checkpoint and preserve a verifiable record of what was changed.",
         idea: "Merkle-based snapshotting with ZK range proofs for restoration integrity.",
         matters: "Recovery is far more credible when it can be replayed and audited after the incident.",
-        state: "Rollback is a policy action and the audit trail records it. Missing: actual state snapshots and restore logic.",
+        state: "Rollback checkpoints capture detector state on severe/critical events. Forensic bundle exporter produces human-readable evidence reports. Missing: Merkle proofs and actual state restoration.",
       },
     ],
   },
@@ -250,12 +278,12 @@ const trackGroups = [
     label: "Verifiability & Audit",
     tracks: [
       {
-        code: "R11", status: "scaffolded",
+        code: "R11", status: "foundation",
         title: "Post-Quantum Secure Audit Logs",
         summary: "Tamper-evident event logs signed with algorithms that remain viable in a post-quantum setting.",
         idea: "Hybrid classical + PQ signature scheme (Dilithium/Falcon) with a seamless in-place upgrade path.",
         matters: "The entire 'verifiable security' claim depends on the evidence trail remaining trustworthy long-term.",
-        state: "The audit chain structure exists. No cryptographic or post-quantum signatures are implemented.",
+        state: "SHA-256 cryptographic digest chain and signed audit checkpoints are implemented. End-to-end chain verification is operational. Missing: post-quantum signature upgrade.",
       },
       {
         code: "R12", status: "future",
@@ -266,12 +294,12 @@ const trackGroups = [
         state: "No historical state proof machinery exists yet.",
       },
       {
-        code: "R13", status: "planned",
+        code: "R13", status: "scaffolded",
         title: "Regulatory-Compliant Selective Disclosure",
         summary: "Export only the subset of logs a regulator requires while proving the rest was not altered.",
         idea: "zk-SNARK-based log redaction with integrity proofs.",
         matters: "Many deployments need to satisfy auditability and privacy constraints simultaneously.",
-        state: "No selective disclosure export flow exists yet.",
+        state: "Forensic bundle exports provide structured evidence subsets. ZK-based redaction proofs remain deferred.",
       },
       {
         code: "R14", status: "future",
@@ -388,6 +416,8 @@ const csvFields = [
   { name: "auth_failures", desc: "Failed auth attempts per window" },
   { name: "battery_pct", desc: "Battery level, 0–100" },
   { name: "integrity_drift", desc: "Model/config drift, 0–1" },
+  { name: "process_count", desc: "Running process count (optional, extended format)" },
+  { name: "disk_pressure_pct", desc: "Disk pressure, 0–100 (optional, extended format)" },
 ];
 
 // ── Rendering ─────────────────────────────────────────────────────────────────

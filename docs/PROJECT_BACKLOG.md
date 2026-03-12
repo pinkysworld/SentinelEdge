@@ -2,7 +2,7 @@
 
 This backlog is designed for small, concrete follow-up tasks.
 
-## Phase 0 - Foundation (completed this milestone)
+## Phase 0 - Foundation (completed)
 
 - [x] T001: Bootstrap the Rust package and module layout.
 - [x] T002: Implement CSV telemetry ingestion and validation.
@@ -11,26 +11,26 @@ This backlog is designed for small, concrete follow-up tasks.
 - [x] T005: Implement a chained audit log for run forensics.
 - [x] T006: Add baseline documentation and a GitHub Pages landing site.
 
-## Phase 1 - Runtime hardening
+## Phase 1 - Runtime hardening (completed)
 
-- [ ] T010: Add TOML/JSON configuration loading for thresholds, battery policies, and output paths.
-- [ ] T011: Support JSONL telemetry ingestion in addition to CSV.
-- [ ] T012: Emit structured JSON reports for SIEM ingestion.
-- [ ] T013: Persist and reload learned baselines between runs.
-- [ ] T014: Add richer anomaly features (process count, disk pressure, sensor drift windows).
-- [ ] T015: Add replayable deterministic test fixtures for benign and adversarial traces.
+- [x] T010: Add TOML/JSON configuration loading for thresholds, battery policies, and output paths.
+- [x] T011: Support JSONL telemetry ingestion in addition to CSV.
+- [x] T012: Emit structured JSON reports for SIEM ingestion.
+- [x] T013: Persist and reload learned baselines between runs.
+- [x] T014: Add richer anomaly features (process count, disk pressure, sensor drift windows).
+- [x] T015: Add replayable deterministic test fixtures for benign and adversarial traces.
 
-## Phase 2 - Device actions
+## Phase 2 - Device actions (completed)
 
-- [ ] T020: Replace abstract response actions with pluggable device action adapters.
-- [ ] T021: Add soft-throttle, service quarantine, and network isolate implementations behind traits.
-- [ ] T022: Add rollback checkpoints for configuration and model state.
-- [ ] T023: Add a forensic bundle exporter (audit log + summarized evidence).
+- [x] T020: Replace abstract response actions with pluggable device action adapters.
+- [x] T021: Add soft-throttle, service quarantine, and network isolate implementations behind traits.
+- [x] T022: Add rollback checkpoints for configuration and model state.
+- [x] T023: Add a forensic bundle exporter (audit log + summarized evidence).
 
-## Phase 3 - Verifiability
+## Phase 3 - Verifiability (partial)
 
-- [ ] T030: Replace the prototype hash chain with a cryptographic digest chain.
-- [ ] T031: Add signed audit checkpoints.
+- [x] T030: Replace the prototype hash chain with a cryptographic digest chain.
+- [x] T031: Add signed audit checkpoints.
 - [ ] T032: Define proof-carrying update metadata for future ZK integration.
 - [ ] T033: Model the response policy as a formally checkable state machine.
 
@@ -51,6 +51,6 @@ This backlog is designed for small, concrete follow-up tasks.
 
 ## Recommended next build order
 
-1. T010-T013 to make the current runtime persist and integrate more cleanly.
-2. T020-T023 to turn the prototype decisions into real device actions.
-3. T030-T033 to start making the "verifiable" claims technically rigorous.
+1. T032-T033 to finish making the "verifiable" claims technically rigorous.
+2. T040-T043 to start on-device learning and quality benchmarks.
+3. T050-T054 to bridge the gap from prototype to research publication.

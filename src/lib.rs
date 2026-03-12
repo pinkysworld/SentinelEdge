@@ -1,5 +1,11 @@
+pub mod actions;
 pub mod audit;
+pub mod baseline;
+pub mod checkpoint;
+pub mod config;
 pub mod detector;
+pub mod forensics;
 pub mod policy;
+pub mod report;
 pub mod runtime;
 pub mod telemetry;

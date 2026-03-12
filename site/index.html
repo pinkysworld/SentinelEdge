@@ -80,8 +80,10 @@
               <p class="hero-description">
                 This project explores how far a lightweight, self-contained runtime can go
                 toward providing meaningful security guarantees at the network edge. The current
-                prototype implements the core detect–respond–audit loop across six telemetry
-                dimensions. The broader research agenda — zero-knowledge attestation, swarm
+                prototype implements the full detect–respond–audit loop across eight telemetry
+                dimensions with pluggable action adapters, SHA-256 audit chains, rollback
+                checkpoints, forensic evidence bundles, and structured SIEM reporting.
+                The broader research agenda — zero-knowledge attestation, swarm
                 coordination, post-quantum log integrity — is documented in twenty-five
                 tracks but deliberately deferred until the foundation is stable enough to
                 support it honestly.
@@ -126,24 +128,24 @@
             <p class="label">Architecture</p>
             <h2>System Design</h2>
             <p class="section-desc">
-              The runtime follows a four-stage control loop. Each stage maps to a separate Rust
-              module with a narrow interface. The goal for this milestone was a correct, testable
-              pipeline — not feature breadth.
+              The runtime follows a seven-stage pipeline. Each stage maps to one or more Rust
+              modules with narrow interfaces. Complexity gets added when the research justifies
+              it, not before.
             </p>
           </div>
           <div class="arch-flow" id="arch-flow">
             <div class="arch-stage">
               <div class="arch-num">1</div>
               <h3>Ingest</h3>
-              <p>Parse typed telemetry samples from CSV. Validate field ranges. Maintain deterministic replay semantics so test scenarios are reproducible.</p>
+              <p>Parse typed telemetry samples from CSV or JSONL. Validate field ranges. Auto-detect format by extension. Maintain deterministic replay semantics so test scenarios are reproducible.</p>
               <span class="arch-module">telemetry.rs</span>
             </div>
             <div class="arch-connector" aria-hidden="true"><span></span></div>
             <div class="arch-stage">
               <div class="arch-num">2</div>
               <h3>Detect</h3>
-              <p>Maintain a rolling EWMA baseline across six signal dimensions (CPU, memory, temperature, bandwidth, auth failures, integrity drift). Compute a weighted anomaly score with human-readable explanations for each contributing signal.</p>
-              <span class="arch-module">detector.rs</span>
+              <p>Maintain a rolling EWMA baseline across eight signal dimensions (CPU, memory, temperature, bandwidth, auth failures, integrity drift, process count, disk pressure). Compute a weighted anomaly score with human-readable explanations. Persist and restore baselines across sessions.</p>
+              <span class="arch-module">detector.rs + baseline.rs</span>
             </div>
             <div class="arch-connector" aria-hidden="true"><span></span></div>
             <div class="arch-stage">
@@ -155,9 +157,30 @@
             <div class="arch-connector" aria-hidden="true"><span></span></div>
             <div class="arch-stage">
               <div class="arch-num">4</div>
+              <h3>Execute</h3>
+              <p>Dispatch actions through composable adapter chains. Logging, throttle, quarantine, and isolate adapters fire in sequence based on threat level.</p>
+              <span class="arch-module">actions.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">5</div>
+              <h3>Checkpoint</h3>
+              <p>Capture detector state snapshots on severe/critical events. A bounded ring buffer retains recent checkpoints for post-incident analysis and forensic exports.</p>
+              <span class="arch-module">checkpoint.rs + forensics.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">6</div>
               <h3>Audit</h3>
-              <p>Append every detection-and-response decision to a chained, hash-linked log. Each entry references the previous, forming a verifiable sequence that can be inspected after the fact.</p>
+              <p>Append every decision to a SHA-256-chained audit log with signed checkpoints at configurable intervals. Verify the entire chain end-to-end.</p>
               <span class="arch-module">audit.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">7</div>
+              <h3>Report</h3>
+              <p>Emit structured JSON reports for SIEM ingestion, JSONL alert streams, and human-readable console summaries.</p>
+              <span class="arch-module">report.rs + config.rs</span>
             </div>
           </div>
         </div>
@@ -186,8 +209,8 @@
             <p class="label">Source</p>
             <h2>Module Map</h2>
             <p class="section-desc">
-              Five Rust source files. The prototype is small on purpose — complexity gets added
-              when the research justifies it, not before.
+              Eleven Rust source files. The prototype is deliberately modular — complexity gets
+              added when the research justifies it, not before.
             </p>
           </div>
           <div class="module-table">
@@ -198,13 +221,18 @@
             </div>
             <div class="module-row">
               <code>telemetry.rs</code>
-              <span>Input parsing, field validation, typed sample records</span>
+              <span>CSV/JSONL input parsing, field validation, auto-detection, typed sample records</span>
               <span class="module-tracks">—</span>
             </div>
             <div class="module-row">
               <code>detector.rs</code>
-              <span>EWMA baseline, multi-signal anomaly scoring, explanation generation</span>
+              <span>EWMA baseline, multi-signal anomaly scoring (8 dims), explanation generation</span>
               <span class="module-tracks">R01, R05</span>
+            </div>
+            <div class="module-row">
+              <code>baseline.rs</code>
+              <span>Baseline persistence and cross-session restoration (JSON)</span>
+              <span class="module-tracks">R01</span>
             </div>
             <div class="module-row">
               <code>policy.rs</code>
@@ -212,9 +240,34 @@
               <span class="module-tracks">R06, R09</span>
             </div>
             <div class="module-row">
+              <code>actions.rs</code>
+              <span>Pluggable action adapters: logging, throttle, quarantine, isolate</span>
+              <span class="module-tracks">R06, R09</span>
+            </div>
+            <div class="module-row">
+              <code>checkpoint.rs</code>
+              <span>Rollback checkpoints, bounded ring buffer, state snapshots</span>
+              <span class="module-tracks">R10</span>
+            </div>
+            <div class="module-row">
+              <code>forensics.rs</code>
+              <span>Evidence bundle export for post-incident review</span>
+              <span class="module-tracks">R10, R13</span>
+            </div>
+            <div class="module-row">
               <code>audit.rs</code>
-              <span>Chained audit entries, hash linking, tamper-evident log structure</span>
+              <span>SHA-256 chained audit entries, signed checkpoints, chain verification</span>
               <span class="module-tracks">R10, R11</span>
+            </div>
+            <div class="module-row">
+              <code>report.rs</code>
+              <span>Structured JSON reports, JSONL alert streams for SIEM integration</span>
+              <span class="module-tracks">—</span>
+            </div>
+            <div class="module-row">
+              <code>config.rs</code>
+              <span>TOML/JSON configuration loading, default template generation</span>
+              <span class="module-tracks">—</span>
             </div>
             <div class="module-row">
               <code>runtime.rs</code>
@@ -232,9 +285,9 @@
             <p class="label">Implementation</p>
             <h2>Current Status</h2>
             <p class="section-desc">
-              The project is in a "foundation laid" state. The control loop runs, the
-              tests pass, and the documentation accounts for scope honestly. Three categories
-              below — no ambiguity about what is real versus what is planned.
+              The project has completed Phases 0–2 and partial Phase 3. The control loop runs
+              end-to-end with real adapters, cryptographic audit, and structured reporting.
+              Three categories below — no ambiguity about what is real versus what is planned.
             </p>
           </div>
 
@@ -268,9 +321,9 @@
             <p class="label">Roadmap</p>
             <h2>Engineering Backlog</h2>
             <p class="section-desc">
-              Concrete tasks grouped by phase. Phase 0 is complete. The recommended build order
-              is runtime hardening → device actions → verifiability — each phase makes the claims
-              from the previous one more credible.
+              Concrete tasks grouped by phase. Phases 0–2 are complete. Phase 3 is partially
+              complete. The recommended build order is runtime hardening → device actions →
+              verifiability — each phase makes the claims from the previous one more credible.
             </p>
           </div>
           <div id="backlog-phases"></div>
@@ -318,7 +371,7 @@
             <p class="label">Setup</p>
             <h2>Getting Started</h2>
             <p class="section-desc">
-              Requirements: a stable Rust toolchain (1.75+). No external services, no database,
+              Requirements: a stable Rust toolchain (1.85+). No external services, no database,
               no cloud account.
             </p>
           </div>
@@ -336,15 +389,22 @@
             <div class="start-card">
               <h3>Analyze a scenario</h3>
               <div class="code-block"><code>cargo run -- analyze examples/credential_storm.csv</code></div>
-              <p>Full ingest → detect → respond → audit pipeline on the included credential-storm trace.</p>
+              <p>Full ingest → detect → respond → audit pipeline. Supports CSV and JSONL formats.</p>
             </div>
             <div class="start-card">
               <h3>Run tests</h3>
               <div class="code-block"><code>cargo test</code></div>
+              <p>25 automated tests covering all modules.</p>
             </div>
             <div class="start-card">
-              <h3>Formatted report</h3>
+              <h3>SIEM report</h3>
               <div class="code-block"><code>cargo run -- report examples/credential_storm.csv</code></div>
+              <p>Generates a structured JSON report for SIEM integration.</p>
+            </div>
+            <div class="start-card">
+              <h3>Generate config</h3>
+              <div class="code-block"><code>cargo run -- init-config</code></div>
+              <p>Writes a default TOML configuration template.</p>
             </div>
             <div class="start-card">
               <h3>Implementation snapshot</h3>
@@ -353,10 +413,10 @@
           </div>
 
           <div class="csv-format">
-            <h3>Expected CSV Format</h3>
-            <p>The telemetry parser expects this header row:</p>
+            <h3>Telemetry Formats</h3>
+            <p>The telemetry parser supports CSV (8-column legacy or 10-column extended) and JSONL. Format is auto-detected by file extension. CSV header:</p>
             <div class="code-block code-block-wide">
-              <code>timestamp_ms,cpu_load_pct,memory_load_pct,temperature_c,network_kbps,auth_failures,battery_pct,integrity_drift</code>
+              <code>timestamp_ms,cpu_load_pct,memory_load_pct,temperature_c,network_kbps,auth_failures,battery_pct,integrity_drift[,process_count,disk_pressure_pct]</code>
             </div>
             <div class="field-grid" id="field-grid"></div>
           </div>
@@ -391,7 +451,7 @@
             </div>
           </div>
           <div class="footer-bottom">
-            <p>SentinelEdge · Milestone 01 · March 2026</p>
+            <p>SentinelEdge · Milestone 02 · Phase 1–3 · July 2025</p>
           </div>
         </div>
       </footer>

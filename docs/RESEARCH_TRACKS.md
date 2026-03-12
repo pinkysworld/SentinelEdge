@@ -44,10 +44,10 @@ The current prototype intentionally implements only the smallest useful control 
 
 ## Response and mitigation
 
-- **R06 Energy-Aware Verifiable Isolation with Graceful Degradation** - **Scaffolded**
+- **R06 Energy-Aware Verifiable Isolation with Graceful Degradation** - **Implemented foundation**
   - Research idea: choose mitigations that respect both security urgency and the device's energy budget, then prove the action matched policy.
   - Why it matters: edge security cannot assume desktop-class power or cooling.
-  - Current repo state: energy-aware downgrade logic exists, but real isolation adapters and proof mechanisms do not.
+  - Current repo state: energy-aware downgrade logic exists with pluggable action adapters (throttle, quarantine, isolate). Proof mechanisms are not yet implemented.
 - **R07 Self-Healing Network Reconfiguration with ZK Proofs** - **Planned**
   - Research idea: after isolating compromised nodes, automatically repair the network topology while preserving security invariants.
   - Why it matters: isolation without recovery can turn defense into self-inflicted outage.
@@ -59,26 +59,26 @@ The current prototype intentionally implements only the smallest useful control 
 - **R09 Adaptive Response Strength Based on Threat Severity and Battery State** - **Implemented foundation**
   - Research idea: map detection confidence and local constraints into different response intensities rather than a single fixed action.
   - Why it matters: it prevents overreaction on benign spikes and underreaction on truly dangerous events.
-  - Current repo state: threat score and battery state already shape the response chosen by the runtime.
-- **R10 Verifiable Rollback and Forensic Recovery** - **Scaffolded**
+  - Current repo state: threat score and battery state shape the response, with pluggable adapter chain for multi-stage enforcement.
+- **R10 Verifiable Rollback and Forensic Recovery** - **Implemented foundation**
   - Research idea: restore device state to a known-safe checkpoint and preserve a verifiable record of what was changed.
   - Why it matters: recovery is far more credible when it can be replayed and audited after the incident.
-  - Current repo state: rollback is represented as a policy action and the audit trail is present, but state snapshots and restore logic are missing.
+  - Current repo state: rollback checkpoints are captured on severe/critical events in a bounded ring buffer. Forensic evidence bundles are exportable. Missing: real device state restore and cryptographic proof of restoration.
 
 ## Verifiability and audit
 
-- **R11 Post-Quantum Secure Audit Logs** - **Scaffolded**
+- **R11 Post-Quantum Secure Audit Logs** - **Implemented foundation**
   - Research idea: make the event history tamper-evident and signed with algorithms that remain viable in a post-quantum setting.
   - Why it matters: "verifiable security" depends on the evidence trail remaining trustworthy.
-  - Current repo state: the audit chain is present, but no cryptographic or post-quantum signatures are implemented.
+  - Current repo state: SHA-256 cryptographic digest chain with signed checkpoints and programmatic chain verification. Missing: post-quantum signature algorithms.
 - **R12 Zero-Knowledge Proof of Entire Device State at Time T** - **Future**
   - Research idea: prove that a device was in a particular historical state without disclosing the underlying sensitive data.
   - Why it matters: it would allow audits and incident response without exposing full device contents.
   - Current repo state: there is no historical state proof machinery yet.
-- **R13 Regulatory-Compliant Verifiable Export with Selective Disclosure** - **Planned**
+- **R13 Regulatory-Compliant Verifiable Export with Selective Disclosure** - **Scaffolded**
   - Research idea: export only the subset of logs or evidence required for a regulator while proving the rest was not altered.
   - Why it matters: many real deployments need auditability and privacy at the same time.
-  - Current repo state: no selective disclosure export flow exists yet.
+  - Current repo state: forensic bundle export and structured JSON reports provide a foundation. Missing: selective disclosure and ZK-based redaction.
 - **R14 Long-Term Archival with Energy-Harvesting Optimization** - **Future**
   - Research idea: defer expensive archival work until harvested energy is available, such as solar or scavenged power.
   - Why it matters: long-lived remote edge devices often operate under severe energy constraints.

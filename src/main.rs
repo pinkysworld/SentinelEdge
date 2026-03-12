@@ -2,6 +2,8 @@ use std::env;
 use std::path::PathBuf;
 use std::process;
 
+use sentineledge::config::Config;
+use sentineledge::report::JsonReport;
 use sentineledge::runtime;
 use sentineledge::telemetry::TelemetrySample;
 
@@ -41,10 +43,10 @@ fn run() -> Result<(), String> {
             );
         }
         "analyze" => {
-            let csv_path = args
+            let input_path = args
                 .next()
                 .map(PathBuf::from)
-                .ok_or_else(|| "missing telemetry CSV path for `analyze`".to_string())?;
+                .ok_or_else(|| "missing telemetry path for `analyze`".to_string())?;
             let audit_path = args
                 .next()
                 .map(PathBuf::from)
@@ -55,7 +57,7 @@ fn run() -> Result<(), String> {
             }
 
             let samples =
-                TelemetrySample::parse_csv(&csv_path).map_err(|error| error.to_string())?;
+                TelemetrySample::parse_auto(&input_path).map_err(|error| error.to_string())?;
             let result = runtime::execute(&samples);
             result
                 .audit
@@ -65,6 +67,40 @@ fn run() -> Result<(), String> {
                 "{}",
                 runtime::render_console_report(&result, Some(&audit_path))
             );
+        }
+        "report" => {
+            let input_path = args
+                .next()
+                .map(PathBuf::from)
+                .ok_or_else(|| "missing telemetry path for `report`".to_string())?;
+            let report_path = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("var/last-run.report.json"));
+
+            if args.next().is_some() {
+                return Err("too many arguments for `report`".into());
+            }
+
+            let samples =
+                TelemetrySample::parse_auto(&input_path).map_err(|error| error.to_string())?;
+            let result = runtime::execute(&samples);
+            let json_report = JsonReport::from_run_result(&result);
+            json_report.write_to_path(&report_path)?;
+            println!("JSON report written to {}", report_path.display());
+        }
+        "init-config" => {
+            let config_path = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("sentineledge.toml"));
+
+            if args.next().is_some() {
+                return Err("too many arguments for `init-config`".into());
+            }
+
+            Config::write_default_toml(&config_path)?;
+            println!("Default config written to {}", config_path.display());
         }
         "status" => {
             if args.next().is_some() {
@@ -88,7 +124,9 @@ fn print_usage() {
     println!();
     println!("Usage:");
     println!("  cargo run -- demo [audit_path]");
-    println!("  cargo run -- analyze <csv_path> [audit_path]");
+    println!("  cargo run -- analyze <csv_or_jsonl_path> [audit_path]");
+    println!("  cargo run -- report <csv_or_jsonl_path> [report_path]");
+    println!("  cargo run -- init-config [config_path]");
     println!("  cargo run -- status");
     println!("  cargo run -- help");
 }

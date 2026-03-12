@@ -1,3 +1,4 @@
+use crate::baseline::PersistedBaseline;
 use crate::telemetry::TelemetrySample;
 
 #[derive(Debug, Clone, Copy)]
@@ -9,6 +10,8 @@ struct TelemetryBaseline {
     auth_failures: f32,
     battery_pct: f32,
     integrity_drift: f32,
+    process_count: f32,
+    disk_pressure_pct: f32,
 }
 
 impl TelemetryBaseline {
@@ -21,6 +24,22 @@ impl TelemetryBaseline {
             auth_failures: sample.auth_failures as f32,
             battery_pct: sample.battery_pct,
             integrity_drift: sample.integrity_drift,
+            process_count: sample.process_count as f32,
+            disk_pressure_pct: sample.disk_pressure_pct,
+        }
+    }
+
+    fn from_persisted(p: &PersistedBaseline) -> Self {
+        Self {
+            cpu_load_pct: p.cpu_load_pct,
+            memory_load_pct: p.memory_load_pct,
+            temperature_c: p.temperature_c,
+            network_kbps: p.network_kbps,
+            auth_failures: p.auth_failures,
+            battery_pct: p.battery_pct,
+            integrity_drift: p.integrity_drift,
+            process_count: 0.0,
+            disk_pressure_pct: 0.0,
         }
     }
 
@@ -32,6 +51,8 @@ impl TelemetryBaseline {
         self.auth_failures = blend(self.auth_failures, sample.auth_failures as f32, alpha);
         self.battery_pct = blend(self.battery_pct, sample.battery_pct, alpha);
         self.integrity_drift = blend(self.integrity_drift, sample.integrity_drift, alpha);
+        self.process_count = blend(self.process_count, sample.process_count as f32, alpha);
+        self.disk_pressure_pct = blend(self.disk_pressure_pct, sample.disk_pressure_pct, alpha);
     }
 }
 
@@ -79,6 +100,27 @@ impl AnomalyDetector {
             baseline: None,
             observed_samples: 0,
         }
+    }
+
+    /// Restore from a persisted baseline so the detector continues
+    /// where a previous run left off (T013).
+    pub fn restore_baseline(&mut self, persisted: &PersistedBaseline) {
+        self.baseline = Some(TelemetryBaseline::from_persisted(persisted));
+        self.observed_samples = persisted.observed_samples;
+    }
+
+    /// Export the current baseline for persistence.
+    pub fn snapshot(&self) -> Option<PersistedBaseline> {
+        self.baseline.map(|b| PersistedBaseline {
+            cpu_load_pct: b.cpu_load_pct,
+            memory_load_pct: b.memory_load_pct,
+            temperature_c: b.temperature_c,
+            network_kbps: b.network_kbps,
+            auth_failures: b.auth_failures,
+            battery_pct: b.battery_pct,
+            integrity_drift: b.integrity_drift,
+            observed_samples: self.observed_samples,
+        })
     }
 
     pub fn evaluate(&mut self, sample: &TelemetrySample) -> AnomalySignal {
@@ -147,6 +189,26 @@ impl AnomalyDetector {
                     0.06,
                     1.9,
                     "integrity drift increase",
+                    &mut reasons,
+                    &mut suspicious_axes,
+                );
+
+                // T014: process count anomaly
+                score += weighted_positive_delta(
+                    sample.process_count as f32 - baseline.process_count,
+                    20.0,
+                    0.65,
+                    "process count spike",
+                    &mut reasons,
+                    &mut suspicious_axes,
+                );
+
+                // T014: disk pressure anomaly
+                score += weighted_positive_delta(
+                    sample.disk_pressure_pct - baseline.disk_pressure_pct,
+                    25.0,
+                    0.6,
+                    "disk pressure increase",
                     &mut reasons,
                     &mut suspicious_axes,
                 );
@@ -224,6 +286,8 @@ mod tests {
                 auth_failures: 0,
                 battery_pct: 92.0,
                 integrity_drift: 0.01,
+                process_count: 50,
+                disk_pressure_pct: 10.0,
             },
             TelemetrySample {
                 timestamp_ms: 2,
@@ -234,6 +298,8 @@ mod tests {
                 auth_failures: 0,
                 battery_pct: 91.0,
                 integrity_drift: 0.01,
+                process_count: 52,
+                disk_pressure_pct: 11.0,
             },
             TelemetrySample {
                 timestamp_ms: 3,
@@ -244,6 +310,8 @@ mod tests {
                 auth_failures: 0,
                 battery_pct: 90.0,
                 integrity_drift: 0.01,
+                process_count: 51,
+                disk_pressure_pct: 12.0,
             },
         ];
 
@@ -268,6 +336,8 @@ mod tests {
                 auth_failures: 0,
                 battery_pct: 88.0,
                 integrity_drift: 0.02,
+                process_count: 45,
+                disk_pressure_pct: 8.0,
             });
         }
 
@@ -280,9 +350,35 @@ mod tests {
             auth_failures: 11,
             battery_pct: 63.0,
             integrity_drift: 0.17,
+            process_count: 120,
+            disk_pressure_pct: 65.0,
         });
 
         assert!(signal.score > 5.0);
         assert!(signal.reasons.iter().any(|reason| reason.contains("auth")));
+    }
+
+    #[test]
+    fn snapshot_round_trip() {
+        let mut detector = AnomalyDetector::default();
+        detector.evaluate(&TelemetrySample {
+            timestamp_ms: 1,
+            cpu_load_pct: 20.0,
+            memory_load_pct: 30.0,
+            temperature_c: 38.0,
+            network_kbps: 400.0,
+            auth_failures: 0,
+            battery_pct: 90.0,
+            integrity_drift: 0.01,
+            process_count: 40,
+            disk_pressure_pct: 5.0,
+        });
+
+        let snapshot = detector.snapshot().unwrap();
+        assert_eq!(snapshot.observed_samples, 1);
+
+        let mut detector2 = AnomalyDetector::default();
+        detector2.restore_baseline(&snapshot);
+        assert_eq!(detector2.snapshot().unwrap().observed_samples, 1);
     }
 }

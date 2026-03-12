@@ -141,6 +141,8 @@ mod tests {
                 auth_failures: 6,
                 battery_pct: 14.0,
                 integrity_drift: 0.18,
+                process_count: 0,
+                disk_pressure_pct: 0.0,
             },
         );
 
@@ -167,6 +169,8 @@ mod tests {
                 auth_failures: 0,
                 battery_pct: 80.0,
                 integrity_drift: 0.52,
+                process_count: 0,
+                disk_pressure_pct: 0.0,
             },
         );
 
