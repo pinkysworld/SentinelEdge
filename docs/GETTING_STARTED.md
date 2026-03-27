@@ -100,9 +100,15 @@ cargo run -- serve
 This starts a server on port 8080 and prints a one-time authentication token to the terminal. Open `http://localhost:8080/admin.html` in a browser, paste the token, and use the control panel to:
 
 - refresh runtime status and reports live
+- enable auto-refresh (5-second polling toggle)
+- monitor connection status (connected/disconnected/error indicator)
 - run demo analysis
-- switch detection mode (normal / frozen / decay)
+- switch detection mode (normal / frozen / decay) with decay rate slider
 - reset the detector baseline
+- upload custom JSONL or CSV files for analysis via drag-and-drop
+- view responsive report tables on any screen size
+
+The console respects the system dark mode preference via `prefers-color-scheme: dark`.
 
 Custom port and site directory:
 

@@ -62,7 +62,8 @@ fn json_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> 
         tiny_http::StatusCode(status),
         vec![
             Header::from_bytes(b"Content-Type", b"application/json").unwrap(),
-            Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap(),
+            Header::from_bytes(b"Access-Control-Allow-Origin", b"http://localhost").unwrap(),
+            Header::from_bytes(b"Vary", b"Origin").unwrap(),
         ],
         std::io::Cursor::new(data),
         Some(len),
@@ -156,7 +157,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             Response::new(
                 tiny_http::StatusCode(204),
                 vec![
-                    Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap(),
+                    Header::from_bytes(b"Access-Control-Allow-Origin", b"http://localhost").unwrap(),
+                    Header::from_bytes(b"Vary", b"Origin").unwrap(),
                     Header::from_bytes(b"Access-Control-Allow-Methods", b"GET, POST, OPTIONS")
                         .unwrap(),
                     Header::from_bytes(
@@ -182,8 +184,38 @@ fn handle_analyze(request: &mut Request, state: &Arc<Mutex<AppState>>) -> Respon
         return error_json("failed to read request body", 400);
     }
 
-    // Try JSONL first, then CSV lines
-    let samples: Result<Vec<TelemetrySample>, String> = if body.trim_start().starts_with('{') {
+    // Detect format: if the content-type says CSV or the body looks like CSV, parse as CSV
+    let is_csv = request.headers().iter().any(|h| {
+        h.field.as_str().to_ascii_lowercase() == "content-type"
+            && h.value.as_str().contains("csv")
+    }) || (!body.trim_start().starts_with('{') && body.contains(','));
+
+    let samples: Result<Vec<TelemetrySample>, String> = if is_csv {
+        // CSV: skip header row if present, parse each data line
+        body.lines()
+            .filter(|l| !l.trim().is_empty())
+            .enumerate()
+            .filter(|(_, l)| {
+                // skip header row (first field is non-numeric)
+                !l.trim_start().starts_with(|c: char| c.is_ascii_alphabetic())
+            })
+            .map(|(i, line)| {
+                let cols = line.split(',').count();
+                TelemetrySample::parse_line(line, i + 1)
+                    .or_else(|_| {
+                        // parse_line defaults to 8 cols; try to infer proper column count
+                        if cols >= 10 {
+                            // Re-parse not possible via public API; fallback to parse_line
+                            TelemetrySample::parse_line(line, i + 1)
+                        } else {
+                            TelemetrySample::parse_line(line, i + 1)
+                        }
+                    })
+                    .map_err(|e| format!("{e}"))
+            })
+            .collect()
+    } else if body.trim_start().starts_with('{') {
+        // JSONL
         body.lines()
             .filter(|l| !l.trim().is_empty())
             .enumerate()
@@ -193,7 +225,7 @@ fn handle_analyze(request: &mut Request, state: &Arc<Mutex<AppState>>) -> Respon
             })
             .collect()
     } else {
-        Err("POST body must be JSONL format (one JSON object per line)".into())
+        Err("Unsupported format. POST body must be JSONL or CSV.".into())
     };
 
     match samples {

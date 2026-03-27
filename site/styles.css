@@ -1309,3 +1309,38 @@ ul { list-style: none; margin: 0; padding: 0; }
   .field-grid { grid-template-columns: 1fr; }
   h1 { font-size: 2rem; }
 }
+
+/* ── Dark Mode ────────────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:           #121418;
+    --bg-alt:       #1a1e24;
+    --surface:      #1e2228;
+    --ink:          #e0e0e0;
+    --ink-2:        #b0b0b0;
+    --ink-3:        #808080;
+    --border:       #2e3238;
+    --border-light: #262a30;
+
+    --accent:       #4fd1b2;
+    --accent-light: #1a2e28;
+    --accent-hover: #3fbfa0;
+    --accent-2:     #e0964a;
+    --accent-2-light: #2a2218;
+
+    --nav-bg:       #0e1014;
+    --nav-ink:      #c0c0c0;
+    --nav-ink-hover:#ffffff;
+    --nav-accent:   #4fd1b2;
+
+    --console-bg:   #0e1014;
+    --console-fg:   #c8cdd5;
+
+    --shadow-sm:    0 1px 3px rgba(0,0,0,0.2);
+    --shadow-md:    0 4px 16px rgba(0,0,0,0.25);
+    --shadow-lg:    0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  img { opacity: 0.9; }
+}

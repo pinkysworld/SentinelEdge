@@ -14,7 +14,7 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - bounded replay buffer with windowed statistics for continual learning
 - poisoning heuristics (mean shift, variance spike, drift accumulation, auth burst)
 - FP/FN benchmark harness with precision, recall, F1, and accuracy metrics
-- live browser admin console with token-authenticated HTTP API for status, analysis, and control
+- live browser admin console with token-authenticated HTTP API, auto-refresh, file upload, and dark mode
 - research paper targeting, swarm protocol design, Wasm surface spec, supply-chain attestation, post-quantum upgrade path
 - research questions formalised for R26–R40 plus design documents for adversarial testing, temporal logic, digital twins, and policy composition
 - maintained docs, backlog tracking, test fixtures, and a GitHub Pages site
@@ -36,7 +36,7 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - **Adaptation controls:** detector baseline updates can be frozen, decayed, or reset to contain suspected poisoning.
 - **Poisoning heuristics:** four statistical heuristics analyze replay buffers for data manipulation attempts.
 - **Benchmark harness:** labeled datasets can be scored for true/false positive/negative rates, precision, recall, and F1.
-- **Browser admin console:** a live web UI backed by a token-authenticated HTTP server for runtime status, analysis control, mode switching, and report inspection.
+- **Browser admin console:** a live web UI backed by a token-authenticated HTTP server with auto-refresh polling, connection status indicator, JSONL/CSV file upload via drag-and-drop, decay rate slider, dark mode support, and responsive report tables.
 - **Operator-facing docs:** architecture, getting-started, backlog, and track-by-track implementation status in [`docs/`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/README.md).
 
 ## Quick start

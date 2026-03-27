@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     >
-    <link rel="stylesheet" href="styles.css?v=5">
+    <link rel="stylesheet" href="styles.css?v=6">
     <style>
       .admin-layout { padding-top: 80px; }
 
@@ -29,14 +29,25 @@
       .auth-bar input {
         font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
         border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem;
-        width: 280px; background: var(--bg);
+        width: 280px; background: var(--bg); color: var(--ink);
       }
       .auth-status {
         font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px;
         font-weight: 600;
       }
       .auth-status.ok { background: var(--accent-light); color: var(--accent); }
-      .auth-status.none { background: #f5f5f5; color: var(--ink-3); }
+      .auth-status.none { background: var(--bg-alt); color: var(--ink-3); }
+
+      .conn-indicator {
+        display: flex; align-items: center; gap: 0.4rem;
+        font-size: 0.75rem; color: var(--ink-3);
+      }
+      .conn-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--ink-3); transition: background 300ms;
+      }
+      .conn-dot.connected { background: var(--accent); }
+      .conn-dot.error { background: #c0392b; }
 
       .admin-grid {
         display: grid;
@@ -44,7 +55,10 @@
         gap: 1.5rem;
         margin-bottom: 2rem;
       }
-      @media (max-width: 768px) { .admin-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 768px) {
+        .admin-grid { grid-template-columns: 1fr; }
+        .auth-bar input { width: 180px; }
+      }
 
       .panel {
         background: var(--surface); border: 1px solid var(--border);
@@ -74,11 +88,12 @@
         color: var(--ink-3); margin-bottom: 0.3rem;
       }
 
-      .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+      .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
       .btn-sm {
         padding: 0.4rem 0.9rem; font-size: 0.82rem; border-radius: 6px;
         border: 1px solid var(--border); background: var(--surface);
         cursor: pointer; font-weight: 500; transition: var(--transition);
+        color: var(--ink);
       }
       .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
       .btn-sm.active { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -86,16 +101,31 @@
       .btn-sm.primary:hover { background: var(--accent-hover); }
       .btn-sm.danger { border-color: #c0392b; color: #c0392b; }
       .btn-sm.danger:hover { background: #c0392b; color: #fff; }
+      .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
 
+      .decay-slider {
+        display: none; align-items: center; gap: 0.5rem; margin-top: 0.5rem;
+        font-size: 0.8rem; color: var(--ink-3);
+      }
+      .decay-slider.visible { display: flex; }
+      .decay-slider input[type="range"] {
+        flex: 1; accent-color: var(--accent);
+      }
+      .decay-slider .decay-val {
+        font-family: 'JetBrains Mono', monospace; font-weight: 600;
+        min-width: 3.5em;
+      }
+
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .sample-table {
         width: 100%; border-collapse: collapse; font-size: 0.82rem;
-        margin-top: 0.5rem;
+        margin-top: 0.5rem; min-width: 600px;
       }
       .sample-table th, .sample-table td {
         padding: 0.4rem 0.6rem; text-align: left;
         border-bottom: 1px solid var(--border-light);
       }
-      .sample-table th { color: var(--ink-3); font-weight: 500; }
+      .sample-table th { color: var(--ink-3); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
       .sample-table .level-nominal { color: var(--ink-3); }
       .sample-table .level-elevated { color: var(--accent-2); }
       .sample-table .level-severe { color: #b94a00; font-weight: 600; }
@@ -116,6 +146,24 @@
       }
       .flash.success { display: block; background: var(--accent-light); color: var(--accent); }
       .flash.error { display: block; background: #fde8e8; color: #c0392b; }
+
+      .upload-zone {
+        border: 2px dashed var(--border); border-radius: var(--radius);
+        padding: 1.2rem; text-align: center; color: var(--ink-3);
+        font-size: 0.85rem; cursor: pointer; transition: var(--transition);
+        margin-top: 0.5rem;
+      }
+      .upload-zone:hover, .upload-zone.dragover {
+        border-color: var(--accent); color: var(--accent);
+        background: var(--accent-light);
+      }
+      .upload-zone input { display: none; }
+
+      .auto-refresh-toggle {
+        display: flex; align-items: center; gap: 0.4rem;
+        font-size: 0.78rem; color: var(--ink-3);
+      }
+      .auto-refresh-toggle input { accent-color: var(--accent); }
     </style>
   </head>
   <body>
@@ -138,10 +186,21 @@
 
         <div class="admin-header">
           <h1>Admin Console</h1>
-          <div class="auth-bar">
-            <label for="auth-token">Token:</label>
-            <input type="password" id="auth-token" placeholder="Paste token from terminal">
-            <span class="auth-status none" id="auth-status">No token</span>
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <div class="conn-indicator" id="conn-indicator">
+              <span class="conn-dot" id="conn-dot"></span>
+              <span id="conn-label">Disconnected</span>
+            </div>
+            <div class="auth-bar">
+              <label for="auth-token">Token:</label>
+              <input type="password" id="auth-token" placeholder="Paste token from terminal"
+                     autocomplete="off" spellcheck="false">
+              <span class="auth-status none" id="auth-status">No token</span>
+            </div>
+            <div class="auto-refresh-toggle">
+              <input type="checkbox" id="auto-refresh">
+              <label for="auto-refresh">Auto-refresh (5 s)</label>
+            </div>
           </div>
         </div>
 
@@ -177,6 +236,11 @@
                 <button class="btn-sm" data-mode="frozen">Frozen</button>
                 <button class="btn-sm" data-mode="decay">Decay</button>
               </div>
+              <div class="decay-slider" id="decay-slider">
+                <span>Rate:</span>
+                <input type="range" min="1" max="100" value="10" id="decay-range">
+                <span class="decay-val" id="decay-val">10%</span>
+              </div>
             </div>
 
             <div class="control-group">
@@ -201,20 +265,35 @@
                 <dt>Generated</dt><dd id="r-generated">—</dd>
               </dl>
             </div>
-            <table class="sample-table" id="sample-table">
-              <thead>
-                <tr>
-                  <th>#</th><th>Timestamp</th><th>Score</th><th>Level</th>
-                  <th>Action</th><th>Isolation</th><th>Reasons</th>
-                </tr>
-              </thead>
-              <tbody id="sample-tbody">
-                <tr><td colspan="7" style="color:var(--ink-3);">No report loaded yet.</td></tr>
-              </tbody>
-            </table>
+            <div class="table-wrap">
+              <table class="sample-table" id="sample-table">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Timestamp</th><th>Score</th><th>Level</th>
+                    <th>Action</th><th>Isolation</th><th>Reasons</th>
+                  </tr>
+                </thead>
+                <tbody id="sample-tbody">
+                  <tr><td colspan="7" style="color:var(--ink-3);">No report loaded yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
             <div style="margin-top: 1rem;">
               <button class="btn-sm primary" id="btn-refresh-report">Refresh Report</button>
             </div>
+          </div>
+
+          <!-- Upload Panel -->
+          <div class="panel full-width">
+            <h2><span class="dot dot-orange"></span> Analyze Custom Data</h2>
+            <p style="font-size:0.85rem;color:var(--ink-3);margin-bottom:0.5rem;">
+              Upload a JSONL or CSV file to run through the detection pipeline.
+            </p>
+            <div class="upload-zone" id="upload-zone">
+              <input type="file" id="upload-input" accept=".jsonl,.csv,.json">
+              Drop a <strong>.jsonl</strong> or <strong>.csv</strong> file here, or click to browse
+            </div>
+            <div id="upload-status" style="font-size:0.82rem;margin-top:0.5rem;color:var(--ink-3);"></div>
           </div>
 
           <!-- Activity Log -->
@@ -233,10 +312,13 @@
       const $ = (sel) => document.querySelector(sel);
       const $$ = (sel) => document.querySelectorAll(sel);
 
+      let autoRefreshTimer = null;
+
       function getToken() { return $('#auth-token').value.trim(); }
-      function authHeaders() {
+      function authHeaders(contentType) {
+        const h = {};
+        if (contentType) h['Content-Type'] = contentType;
         const t = getToken();
-        const h = { 'Content-Type': 'application/json' };
         if (t) h['Authorization'] = 'Bearer ' + t;
         return h;
       }
@@ -255,11 +337,19 @@
         setTimeout(() => { el.className = 'flash'; }, 4000);
       }
 
+      function setConn(state) {
+        const dot = $('#conn-dot');
+        const label = $('#conn-label');
+        dot.className = 'conn-dot ' + state;
+        label.textContent = state === 'connected' ? 'Connected' : state === 'error' ? 'Error' : 'Disconnected';
+      }
+
       // ── Status ──
 
       async function refreshStatus() {
         try {
           const res = await fetch(API + '/api/status');
+          if (res.status === 401) { flash('Unauthorized — check token', 'error'); setConn('error'); return; }
           if (!res.ok) throw new Error(res.statusText);
           const d = await res.json();
           $('#s-updated').textContent = d.updated_at;
@@ -269,8 +359,10 @@
           $('#s-implemented').textContent = d.implemented.length;
           $('#s-partial').textContent = d.partially_wired.length;
           $('#s-not-built').textContent = d.not_implemented.length;
+          setConn('connected');
           log('Status refreshed');
         } catch(e) {
+          setConn('error');
           log('Status fetch failed: ' + e.message);
         }
       }
@@ -280,6 +372,7 @@
       async function refreshReport() {
         try {
           const res = await fetch(API + '/api/report');
+          if (res.status === 401) { flash('Unauthorized — check token', 'error'); return; }
           if (!res.ok) throw new Error(res.statusText);
           const d = await res.json();
           renderReport(d);
@@ -287,6 +380,12 @@
         } catch(e) {
           log('Report fetch failed: ' + e.message);
         }
+      }
+
+      function escapeHtml(s) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(s));
+        return div.innerHTML;
       }
 
       function renderReport(d) {
@@ -301,14 +400,17 @@
         tbody.innerHTML = '';
         for (const s of d.samples) {
           const tr = document.createElement('tr');
+          const level = escapeHtml(s.level);
+          const action = escapeHtml(s.action);
+          const reasons = escapeHtml(s.reasons.join('; '));
           tr.innerHTML = [
             '<td>' + s.index + '</td>',
             '<td>' + s.timestamp_ms + '</td>',
             '<td>' + s.score.toFixed(2) + '</td>',
-            '<td class="level-' + s.level + '">' + s.level + '</td>',
-            '<td>' + s.action + '</td>',
+            '<td class="level-' + level + '">' + level + '</td>',
+            '<td>' + action + '</td>',
             '<td>' + s.isolation_pct + '%</td>',
-            '<td>' + s.reasons.join('; ') + '</td>',
+            '<td>' + reasons + '</td>',
           ].join('');
           tbody.appendChild(tr);
         }
@@ -319,12 +421,16 @@
       async function setMode(mode) {
         try {
           const res = await fetch(API + '/api/control/mode', {
-            method: 'POST', headers: authHeaders(),
+            method: 'POST', headers: authHeaders('application/json'),
             body: JSON.stringify({ mode }),
           });
           if (res.status === 401) { flash('Unauthorized — check token', 'error'); return; }
           if (!res.ok) throw new Error(res.statusText);
           $$('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+          // Show/hide decay slider
+          const slider = $('#decay-slider');
+          if (mode === 'decay') slider.classList.add('visible');
+          else slider.classList.remove('visible');
           flash('Detection mode set to ' + mode, 'success');
           log('Mode changed to ' + mode);
         } catch(e) {
@@ -334,9 +440,11 @@
       }
 
       async function runDemo() {
+        const btn = $('#btn-run-demo');
+        btn.disabled = true;
         try {
           const res = await fetch(API + '/api/control/run-demo', {
-            method: 'POST', headers: authHeaders(),
+            method: 'POST', headers: authHeaders('application/json'),
           });
           if (res.status === 401) { flash('Unauthorized — check token', 'error'); return; }
           if (!res.ok) throw new Error(res.statusText);
@@ -347,6 +455,8 @@
         } catch(e) {
           flash('Failed: ' + e.message, 'error');
           log('Demo run failed: ' + e.message);
+        } finally {
+          btn.disabled = false;
         }
       }
 
@@ -354,7 +464,7 @@
         if (!confirm('Reset the detector baseline? This cannot be undone.')) return;
         try {
           const res = await fetch(API + '/api/control/reset-baseline', {
-            method: 'POST', headers: authHeaders(),
+            method: 'POST', headers: authHeaders('application/json'),
           });
           if (res.status === 401) { flash('Unauthorized — check token', 'error'); return; }
           if (!res.ok) throw new Error(res.statusText);
@@ -363,6 +473,40 @@
         } catch(e) {
           flash('Failed: ' + e.message, 'error');
           log('Baseline reset failed: ' + e.message);
+        }
+      }
+
+      // ── File upload ──
+
+      async function uploadFile(file) {
+        const statusEl = $('#upload-status');
+        statusEl.textContent = 'Uploading ' + file.name + '…';
+        try {
+          const text = await file.text();
+          let body, ct;
+          if (file.name.endsWith('.csv')) {
+            ct = 'text/csv';
+            body = text;
+          } else {
+            ct = 'application/x-jsonlines';
+            body = text;
+          }
+          const res = await fetch(API + '/api/analyze', {
+            method: 'POST',
+            headers: authHeaders(ct),
+            body: body,
+          });
+          if (res.status === 401) { flash('Unauthorized — check token', 'error'); statusEl.textContent = ''; return; }
+          if (!res.ok) throw new Error(res.statusText);
+          const d = await res.json();
+          renderReport(d);
+          statusEl.textContent = 'Analysis complete — ' + d.summary.total_samples + ' samples processed.';
+          flash('File analyzed: ' + file.name, 'success');
+          log('Analyzed uploaded file: ' + file.name);
+        } catch(e) {
+          statusEl.textContent = 'Upload failed: ' + e.message;
+          flash('Upload failed: ' + e.message, 'error');
+          log('Upload failed: ' + e.message);
         }
       }
 
@@ -376,6 +520,48 @@
         } else {
           el.textContent = 'No token';
           el.className = 'auth-status none';
+        }
+      });
+
+      // ── Decay slider ──
+
+      $('#decay-range').addEventListener('input', function() {
+        $('#decay-val').textContent = this.value + '%';
+      });
+
+      // ── Upload zone events ──
+
+      const uploadZone = $('#upload-zone');
+      const uploadInput = $('#upload-input');
+
+      uploadZone.addEventListener('click', () => uploadInput.click());
+      uploadInput.addEventListener('change', (e) => {
+        if (e.target.files.length) uploadFile(e.target.files[0]);
+      });
+      uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); uploadZone.classList.add('dragover');
+      });
+      uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+      });
+      uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault(); uploadZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+      });
+
+      // ── Auto-refresh ──
+
+      $('#auto-refresh').addEventListener('change', function() {
+        if (this.checked) {
+          autoRefreshTimer = setInterval(() => {
+            refreshStatus();
+            refreshReport();
+          }, 5000);
+          log('Auto-refresh enabled (5 s)');
+        } else {
+          clearInterval(autoRefreshTimer);
+          autoRefreshTimer = null;
+          log('Auto-refresh disabled');
         }
       });
 
