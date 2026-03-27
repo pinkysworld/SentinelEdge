@@ -9,7 +9,7 @@ const stats = [
   { value: "17", label: "core runtime modules" },
   { value: "8",  label: "telemetry dimensions" },
   { value: "40", label: "research tracks mapped" },
-  { value: "52", label: "automated tests" },
+  { value: "54", label: "automated tests" },
 ];
 
 const pipelineDetails = [
@@ -71,7 +71,7 @@ const pipelineDetails = [
     num: "10",
     title: "Output & Reporting",
     body: "Structured JSON reports can be generated for SIEM integration. JSONL alert streams provide real-time event output. The init-config command generates a TOML configuration template, and the status command provides a live implementation snapshot.",
-    note: "Six CLI commands: demo, analyze, report, init-config, status, serve."
+    note: "Eight CLI commands: demo, analyze, report, init-config, status, status-json, serve, help."
   },
 ];
 

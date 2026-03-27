@@ -367,7 +367,7 @@ pub fn status_snapshot() -> String {
 
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
-        updated_at: "2026-03-12".into(),
+        updated_at: "2026-03-27".into(),
         backlog_completed: 41,
         backlog_total: 41,
         completed_phases: 8,
@@ -380,6 +380,7 @@ pub fn status_manifest() -> StatusManifest {
             "status".into(),
             "status-json".into(),
             "serve".into(),
+            "help".into(),
         ],
         implemented: vec![
             "Typed telemetry ingestion from CSV and JSONL".into(),

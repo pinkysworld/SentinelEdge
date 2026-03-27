@@ -36,7 +36,7 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - **Adaptation controls:** detector baseline updates can be frozen, decayed, or reset to contain suspected poisoning.
 - **Poisoning heuristics:** four statistical heuristics analyze replay buffers for data manipulation attempts.
 - **Benchmark harness:** labeled datasets can be scored for true/false positive/negative rates, precision, recall, and F1.
-- **Browser admin console:** a live web UI backed by a token-authenticated HTTP server with auto-refresh polling, connection status indicator, JSONL/CSV file upload via drag-and-drop, decay rate slider, dark mode support, and responsive report tables.
+- **Browser admin console:** a live web UI backed by a token-authenticated HTTP server with auto-refresh polling, connection status indicator, JSONL/CSV file upload via drag-and-drop, decay rate slider, checkpoint save/restore, CSV report export, threat-level filtering, dark mode support, and responsive report tables.
 - **Operator-facing docs:** architecture, getting-started, backlog, and track-by-track implementation status in [`docs/`](/Users/michelpicker/Library/Mobile Documents/com~apple~CloudDocs/Projekte/SentinelEdge/docs/README.md).
 
 ## Quick start

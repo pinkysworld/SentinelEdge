@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use tiny_http::{Header, Method, Request, Response, Server};
 
+use crate::checkpoint::CheckpointStore;
 use crate::detector::{AdaptationMode, AnomalyDetector};
 use crate::report::JsonReport;
 use crate::runtime;
@@ -11,6 +12,7 @@ use crate::telemetry::TelemetrySample;
 
 struct AppState {
     detector: AnomalyDetector,
+    checkpoints: CheckpointStore,
     last_report: Option<JsonReport>,
     token: String,
 }
@@ -29,6 +31,7 @@ pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
 
     let state = Arc::new(Mutex::new(AppState {
         detector: AnomalyDetector::default(),
+        checkpoints: CheckpointStore::new(10),
         last_report: None,
         token: token.clone(),
     }));
@@ -101,6 +104,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             | (Method::Post, "/api/control/mode")
             | (Method::Post, "/api/control/reset-baseline")
             | (Method::Post, "/api/control/run-demo")
+            | (Method::Post, "/api/control/checkpoint")
+            | (Method::Post, "/api/control/restore-checkpoint")
     );
 
     if needs_auth && !check_auth(&request, state) {
@@ -142,6 +147,37 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let mut s = state.lock().unwrap();
             s.detector.reset_baseline();
             json_response(r#"{"status":"baseline reset"}"#, 200)
+        }
+        (Method::Post, "/api/control/checkpoint") => {
+            let mut s = state.lock().unwrap();
+            if let Some(snapshot) = s.detector.snapshot() {
+                s.checkpoints.push_snapshot(snapshot);
+            }
+            let count = s.checkpoints.len();
+            json_response(
+                &format!(r#"{{"status":"checkpoint saved","total":{count}}}"#),
+                200,
+            )
+        }
+        (Method::Post, "/api/control/restore-checkpoint") => {
+            let mut s = state.lock().unwrap();
+            let baseline = s.checkpoints.latest().map(|e| e.baseline.clone());
+            if let Some(b) = baseline {
+                s.detector.restore_baseline(&b);
+                json_response(r#"{"status":"checkpoint restored"}"#, 200)
+            } else {
+                error_json("no checkpoints available", 404)
+            }
+        }
+        (Method::Get, "/api/checkpoints") => {
+            let s = state.lock().unwrap();
+            let info = serde_json::json!({
+                "count": s.checkpoints.len(),
+                "timestamps": s.checkpoints.entries().iter()
+                    .map(|e| e.timestamp_ms)
+                    .collect::<Vec<_>>(),
+            });
+            json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/control/run-demo") => {
             let result = runtime::execute(&runtime::demo_samples());
@@ -194,23 +230,13 @@ fn handle_analyze(request: &mut Request, state: &Arc<Mutex<AppState>>) -> Respon
         // CSV: skip header row if present, parse each data line
         body.lines()
             .filter(|l| !l.trim().is_empty())
-            .enumerate()
-            .filter(|(_, l)| {
+            .filter(|l| {
                 // skip header row (first field is non-numeric)
                 !l.trim_start().starts_with(|c: char| c.is_ascii_alphabetic())
             })
+            .enumerate()
             .map(|(i, line)| {
-                let cols = line.split(',').count();
                 TelemetrySample::parse_line(line, i + 1)
-                    .or_else(|_| {
-                        // parse_line defaults to 8 cols; try to infer proper column count
-                        if cols >= 10 {
-                            // Re-parse not possible via public API; fallback to parse_line
-                            TelemetrySample::parse_line(line, i + 1)
-                        } else {
-                            TelemetrySample::parse_line(line, i + 1)
-                        }
-                    })
                     .map_err(|e| format!("{e}"))
             })
             .collect()

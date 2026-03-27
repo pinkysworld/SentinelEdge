@@ -69,7 +69,7 @@ This writes the structured status snapshot consumed by the read-only browser con
 cargo test
 ```
 
-The test suite currently includes 52 tests covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints, forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, benchmark scoring, and status export.
+The test suite currently includes 54 tests covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints (including save and restore), forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, benchmark scoring, and status export.
 
 ## Open the read-only browser admin console
 
@@ -106,6 +106,9 @@ This starts a server on port 8080 and prints a one-time authentication token to 
 - switch detection mode (normal / frozen / decay) with decay rate slider
 - reset the detector baseline
 - upload custom JSONL or CSV files for analysis via drag-and-drop
+- save and restore detector checkpoints
+- filter report samples by threat level
+- export the current report as a CSV file
 - view responsive report tables on any screen size
 
 The console respects the system dark mode preference via `prefers-color-scheme: dark`.

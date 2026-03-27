@@ -123,7 +123,9 @@ impl TelemetrySample {
     }
 
     pub fn parse_line(line: &str, line_number: usize) -> Result<Self, ParseTelemetryError> {
-        Self::parse_line_cols(line, line_number, 8)
+        let cols = line.split(',').count();
+        let expected = if cols >= 10 { 10 } else { 8 };
+        Self::parse_line_cols(line, line_number, expected)
     }
 
     fn parse_line_cols(

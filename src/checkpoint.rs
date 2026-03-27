@@ -24,14 +24,19 @@ impl CheckpointStore {
 
     pub fn capture(&mut self, detector: &AnomalyDetector) {
         if let Some(snapshot) = detector.snapshot() {
-            if self.entries.len() == self.capacity {
-                self.entries.pop_front();
-            }
-            self.entries.push_back(CheckpointEntry {
-                baseline: snapshot,
-                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-            });
+            self.push_snapshot(snapshot);
         }
+    }
+
+    /// Push a pre-extracted baseline snapshot into the checkpoint store.
+    pub fn push_snapshot(&mut self, baseline: PersistedBaseline) {
+        if self.entries.len() == self.capacity {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(CheckpointEntry {
+            baseline,
+            timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+        });
     }
 
     pub fn latest(&self) -> Option<&CheckpointEntry> {
@@ -48,6 +53,17 @@ impl CheckpointStore {
 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// Restore the detector to the most recent checkpoint.
+    /// Returns `true` if a checkpoint was applied, `false` if no checkpoints exist.
+    pub fn restore_latest(&self, detector: &mut AnomalyDetector) -> bool {
+        if let Some(entry) = self.latest() {
+            detector.restore_baseline(&entry.baseline);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -95,5 +111,26 @@ mod tests {
         store.capture(&detector);
 
         assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn restore_latest_applies_baseline() {
+        let mut detector = AnomalyDetector::default();
+        detector.evaluate(&sample());
+
+        let mut store = CheckpointStore::new(5);
+        store.capture(&detector);
+
+        // Reset and verify restore brings it back
+        detector.reset_baseline();
+        assert!(store.restore_latest(&mut detector));
+        assert!(detector.snapshot().is_some());
+    }
+
+    #[test]
+    fn restore_latest_returns_false_when_empty() {
+        let store = CheckpointStore::new(5);
+        let mut detector = AnomalyDetector::default();
+        assert!(!store.restore_latest(&mut detector));
     }
 }

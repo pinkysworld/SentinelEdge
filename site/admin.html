@@ -250,6 +250,15 @@
                 <button class="btn-sm danger" id="btn-reset">Reset Baseline</button>
               </div>
             </div>
+
+            <div class="control-group">
+              <label>Checkpoints</label>
+              <div class="btn-row">
+                <button class="btn-sm" id="btn-checkpoint">Save Checkpoint</button>
+                <button class="btn-sm" id="btn-restore">Restore Latest</button>
+                <span style="font-size:0.78rem;color:var(--ink-3);" id="checkpoint-count"></span>
+              </div>
+            </div>
           </div>
 
           <!-- Report Panel -->
@@ -278,8 +287,16 @@
                 </tbody>
               </table>
             </div>
-            <div style="margin-top: 1rem;">
+            <div style="margin-top: 1rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
               <button class="btn-sm primary" id="btn-refresh-report">Refresh Report</button>
+              <button class="btn-sm" id="btn-export-csv">Export CSV</button>
+              <select id="filter-level" style="font-size:0.82rem;padding:0.35rem 0.6rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);">
+                <option value="">All levels</option>
+                <option value="nominal">Nominal</option>
+                <option value="elevated">Elevated</option>
+                <option value="severe">Severe</option>
+                <option value="critical">Critical</option>
+              </select>
             </div>
           </div>
 
@@ -337,11 +354,17 @@
         setTimeout(() => { el.className = 'flash'; }, 4000);
       }
 
-      function setConn(state) {
+      function setConn(state, detail) {
         const dot = $('#conn-dot');
         const label = $('#conn-label');
         dot.className = 'conn-dot ' + state;
-        label.textContent = state === 'connected' ? 'Connected' : state === 'error' ? 'Error' : 'Disconnected';
+        if (state === 'connected') {
+          label.textContent = 'Connected';
+        } else if (state === 'error') {
+          label.textContent = detail || 'Error';
+        } else {
+          label.textContent = 'Disconnected';
+        }
       }
 
       // ── Status ──
@@ -349,8 +372,8 @@
       async function refreshStatus() {
         try {
           const res = await fetch(API + '/api/status');
-          if (res.status === 401) { flash('Unauthorized — check token', 'error'); setConn('error'); return; }
-          if (!res.ok) throw new Error(res.statusText);
+          if (res.status === 401) { flash('Unauthorized — check token', 'error'); setConn('error', 'Auth failed'); return; }
+          if (!res.ok) throw new Error('HTTP ' + res.status);
           const d = await res.json();
           $('#s-updated').textContent = d.updated_at;
           $('#s-backlog').textContent = d.backlog_completed + '/' + d.backlog_total;
@@ -360,10 +383,10 @@
           $('#s-partial').textContent = d.partially_wired.length;
           $('#s-not-built').textContent = d.not_implemented.length;
           setConn('connected');
-          log('Status refreshed');
         } catch(e) {
-          setConn('error');
-          log('Status fetch failed: ' + e.message);
+          const detail = e.message.includes('Failed to fetch') ? 'Server offline' : e.message;
+          setConn('error', detail);
+          log('Status fetch failed: ' + detail);
         }
       }
 
@@ -382,6 +405,8 @@
         }
       }
 
+      let lastReportData = null;
+
       function escapeHtml(s) {
         const div = document.createElement('div');
         div.appendChild(document.createTextNode(s));
@@ -389,6 +414,7 @@
       }
 
       function renderReport(d) {
+        lastReportData = d;
         $('#r-samples').textContent = d.summary.total_samples;
         $('#r-alerts').textContent = d.summary.alert_count;
         $('#r-critical').textContent = d.summary.critical_count;
@@ -396,9 +422,22 @@
         $('#r-max').textContent = d.summary.max_score.toFixed(2);
         $('#r-generated').textContent = d.generated_at.substring(0, 19);
 
+        renderSamples(d.samples);
+      }
+
+      function renderSamples(samples) {
+        const filter = $('#filter-level').value;
+        const filtered = filter ? samples.filter(s => s.level === filter) : samples;
+
         const tbody = $('#sample-tbody');
         tbody.innerHTML = '';
-        for (const s of d.samples) {
+        if (filtered.length === 0) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td colspan="7" style="color:var(--ink-3);">No matching samples.</td>';
+          tbody.appendChild(tr);
+          return;
+        }
+        for (const s of filtered) {
           const tr = document.createElement('tr');
           const level = escapeHtml(s.level);
           const action = escapeHtml(s.action);
@@ -414,6 +453,27 @@
           ].join('');
           tbody.appendChild(tr);
         }
+      }
+
+      function exportCsv() {
+        if (!lastReportData || !lastReportData.samples.length) {
+          flash('No report data to export', 'error');
+          return;
+        }
+        const header = 'Index,Timestamp,Score,Level,Action,Isolation%,Reasons';
+        const rows = lastReportData.samples.map(s =>
+          [s.index, s.timestamp_ms, s.score.toFixed(2), s.level, s.action,
+           s.isolation_pct, '"' + s.reasons.join('; ').replace(/"/g, '""') + '"'].join(',')
+        );
+        const csv = header + '\n' + rows.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'sentineledge-report.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        log('Report exported as CSV');
       }
 
       // ── Controls ──
@@ -474,6 +534,51 @@
           flash('Failed: ' + e.message, 'error');
           log('Baseline reset failed: ' + e.message);
         }
+      }
+
+      // ── Checkpoints ──
+
+      async function saveCheckpoint() {
+        try {
+          const res = await fetch(API + '/api/control/checkpoint', {
+            method: 'POST', headers: authHeaders('application/json'),
+          });
+          if (res.status === 401) { flash('Unauthorized — check token', 'error'); return; }
+          if (!res.ok) throw new Error(res.statusText);
+          const d = await res.json();
+          flash('Checkpoint saved (' + d.total + ' stored)', 'success');
+          log('Checkpoint saved — ' + d.total + ' total');
+          refreshCheckpointCount();
+        } catch(e) {
+          flash('Failed: ' + e.message, 'error');
+          log('Checkpoint save failed: ' + e.message);
+        }
+      }
+
+      async function restoreCheckpoint() {
+        if (!confirm('Restore detector to the latest checkpoint?')) return;
+        try {
+          const res = await fetch(API + '/api/control/restore-checkpoint', {
+            method: 'POST', headers: authHeaders('application/json'),
+          });
+          if (res.status === 401) { flash('Unauthorized — check token', 'error'); return; }
+          if (res.status === 404) { flash('No checkpoints available', 'error'); return; }
+          if (!res.ok) throw new Error(res.statusText);
+          flash('Checkpoint restored', 'success');
+          log('Detector restored to latest checkpoint');
+        } catch(e) {
+          flash('Failed: ' + e.message, 'error');
+          log('Checkpoint restore failed: ' + e.message);
+        }
+      }
+
+      async function refreshCheckpointCount() {
+        try {
+          const res = await fetch(API + '/api/checkpoints');
+          if (!res.ok) return;
+          const d = await res.json();
+          $('#checkpoint-count').textContent = d.count + ' stored';
+        } catch(e) { /* ignore */ }
       }
 
       // ── File upload ──
@@ -571,6 +676,12 @@
       $('#btn-refresh-report').addEventListener('click', refreshReport);
       $('#btn-run-demo').addEventListener('click', runDemo);
       $('#btn-reset').addEventListener('click', resetBaseline);
+      $('#btn-checkpoint').addEventListener('click', saveCheckpoint);
+      $('#btn-restore').addEventListener('click', restoreCheckpoint);
+      $('#btn-export-csv').addEventListener('click', exportCsv);
+      $('#filter-level').addEventListener('change', function() {
+        if (lastReportData) renderSamples(lastReportData.samples);
+      });
       $$('[data-mode]').forEach(btn => {
         btn.addEventListener('click', () => setMode(btn.dataset.mode));
       });
@@ -578,6 +689,7 @@
       // ── Initial load ──
       refreshStatus();
       refreshReport();
+      refreshCheckpointCount();
 
     })();
     </script>
