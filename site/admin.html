@@ -164,6 +164,21 @@
         font-size: 0.78rem; color: var(--ink-3);
       }
       .auto-refresh-toggle input { accent-color: var(--accent); }
+
+      .track-badge {
+        display: inline-block; padding: 1px 8px; border-radius: 4px;
+        font-size: .75rem; font-weight: 600; letter-spacing: .02em;
+      }
+      .track-badge.foundation { background: #d4edda; color: #155724; }
+      .track-badge.scaffolded { background: #fff3cd; color: #856404; }
+      .track-badge.planned    { background: #cce5ff; color: #004085; }
+      .track-badge.future     { background: #e2e3e5; color: #383d41; }
+      @media (prefers-color-scheme: dark) {
+        .track-badge.foundation { background: #1b4332; color: #95d5b2; }
+        .track-badge.scaffolded { background: #5a3e00; color: #ffd166; }
+        .track-badge.planned    { background: #003566; color: #a2d2ff; }
+        .track-badge.future     { background: #343a40; color: #adb5bd; }
+      }
     </style>
   </head>
   <body>
@@ -199,7 +214,8 @@
             </div>
             <div class="auto-refresh-toggle">
               <input type="checkbox" id="auto-refresh">
-              <label for="auto-refresh">Auto-refresh (5 s)</label>
+              <label for="auto-refresh" id="auto-refresh-label">Auto-refresh (5 s)</label>
+              <button id="btn-resume" class="btn btn-secondary" style="display:none;margin-left:8px;padding:2px 10px;font-size:.85rem;">Resume</button>
             </div>
           </div>
         </div>
@@ -220,8 +236,29 @@
               <dt>Partial</dt><dd id="s-partial">—</dd>
               <dt>Not built</dt><dd id="s-not-built">—</dd>
             </dl>
+            <details id="status-details" style="margin-top:.5rem;font-size:.85rem;">
+              <summary style="cursor:pointer;color:var(--ink-3);">Show feature details…</summary>
+              <div id="status-partial-list" style="margin-top:.4rem;"></div>
+              <div id="status-notbuilt-list" style="margin-top:.4rem;"></div>
+            </details>
             <div style="margin-top: 1rem;">
               <button class="btn-sm primary" id="btn-refresh-status">Refresh Status</button>
+            </div>
+          </div>
+
+          <!-- Research Tracks Panel -->
+          <div class="panel" id="tracks-panel" style="display:none;">
+            <h2><span class="dot dot-blue"></span> Research Tracks</h2>
+            <div style="font-size:.85rem;margin-bottom:.5rem;" id="track-summary"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Code</th><th>Track</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="track-tbody"></tbody>
+              </table>
             </div>
           </div>
 
@@ -330,6 +367,10 @@
       const $$ = (sel) => document.querySelectorAll(sel);
 
       let autoRefreshTimer = null;
+      let autoRefreshFailures = 0;
+      const AUTO_REFRESH_BASE = 5000;
+      const AUTO_REFRESH_MAX = 30000;
+      const AUTO_REFRESH_PAUSE_AFTER = 6;
 
       function getToken() { return $('#auth-token').value.trim(); }
       function authHeaders(contentType) {
@@ -360,11 +401,54 @@
         dot.className = 'conn-dot ' + state;
         if (state === 'connected') {
           label.textContent = 'Connected';
+          if (autoRefreshFailures > 0) {
+            autoRefreshFailures = 0;
+            rescheduleAutoRefresh();
+          }
         } else if (state === 'error') {
           label.textContent = detail || 'Error';
+          if (autoRefreshTimer) {
+            autoRefreshFailures++;
+            if (autoRefreshFailures >= AUTO_REFRESH_PAUSE_AFTER) {
+              clearTimeout(autoRefreshTimer);
+              autoRefreshTimer = null;
+              label.textContent = (detail || 'Error') + ' — auto-refresh paused';
+              log('Auto-refresh paused after ' + autoRefreshFailures + ' failures. Click Resume to retry.');
+              showResumeButton(true);
+            } else {
+              rescheduleAutoRefresh();
+            }
+          }
         } else {
           label.textContent = 'Disconnected';
         }
+      }
+
+      function autoRefreshDelay() {
+        if (autoRefreshFailures === 0) return AUTO_REFRESH_BASE;
+        return Math.min(AUTO_REFRESH_BASE * Math.pow(2, autoRefreshFailures), AUTO_REFRESH_MAX);
+      }
+
+      function rescheduleAutoRefresh() {
+        if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+        const delay = autoRefreshDelay();
+        const label = $('#auto-refresh-label');
+        if (autoRefreshFailures > 0) {
+          label.textContent = 'Retrying in ' + Math.round(delay / 1000) + 's…';
+        } else {
+          label.textContent = 'Auto-refresh (5 s)';
+        }
+        autoRefreshTimer = setTimeout(() => {
+          refreshStatus();
+          refreshReport();
+          if ($('#auto-refresh').checked) rescheduleAutoRefresh();
+        }, delay);
+      }
+
+      function showResumeButton(show) {
+        let btn = $('#btn-resume');
+        if (!btn) return;
+        btn.style.display = show ? 'inline-block' : 'none';
       }
 
       // ── Status ──
@@ -382,11 +466,50 @@
           $('#s-implemented').textContent = d.implemented.length;
           $('#s-partial').textContent = d.partially_wired.length;
           $('#s-not-built').textContent = d.not_implemented.length;
+
+          // Populate collapsible detail lists
+          const partialEl = $('#status-partial-list');
+          const notbuiltEl = $('#status-notbuilt-list');
+          if (d.partially_wired.length) {
+            partialEl.innerHTML = '<strong style="color:var(--orange);">Partially wired:</strong><ul style="margin:.2rem 0 .5rem 1.2rem;">' +
+              d.partially_wired.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>';
+          } else { partialEl.innerHTML = ''; }
+          if (d.not_implemented.length) {
+            notbuiltEl.innerHTML = '<strong style="color:var(--ink-3);">Not implemented:</strong><ul style="margin:.2rem 0 .5rem 1.2rem;">' +
+              d.not_implemented.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>';
+          } else { notbuiltEl.innerHTML = ''; }
+
+          // Research tracks
+          if (d.research_tracks && d.research_tracks.length) {
+            $('#tracks-panel').style.display = '';
+            renderTracks(d.research_tracks);
+          }
+
           setConn('connected');
         } catch(e) {
           const detail = e.message.includes('Failed to fetch') ? 'Server offline' : e.message;
           setConn('error', detail);
           log('Status fetch failed: ' + detail);
+        }
+      }
+
+      function renderTracks(tracks) {
+        const counts = { foundation: 0, scaffolded: 0, planned: 0, future: 0 };
+        tracks.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
+        $('#track-summary').innerHTML =
+          '<span class="track-badge foundation">' + counts.foundation + ' Foundation</span> ' +
+          '<span class="track-badge scaffolded">' + counts.scaffolded + ' Scaffolded</span> ' +
+          '<span class="track-badge planned">' + counts.planned + ' Planned</span> ' +
+          '<span class="track-badge future">' + counts.future + ' Future</span>';
+
+        const tbody = $('#track-tbody');
+        tbody.innerHTML = '';
+        for (const t of tracks) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td><strong>' + escapeHtml(t.code) + '</strong></td>' +
+            '<td>' + escapeHtml(t.title) + '</td>' +
+            '<td><span class="track-badge ' + escapeHtml(t.status) + '">' + escapeHtml(t.status) + '</span></td>';
+          tbody.appendChild(tr);
         }
       }
 
@@ -658,16 +781,28 @@
 
       $('#auto-refresh').addEventListener('change', function() {
         if (this.checked) {
-          autoRefreshTimer = setInterval(() => {
-            refreshStatus();
-            refreshReport();
-          }, 5000);
+          autoRefreshFailures = 0;
+          showResumeButton(false);
+          rescheduleAutoRefresh();
           log('Auto-refresh enabled (5 s)');
         } else {
-          clearInterval(autoRefreshTimer);
+          clearTimeout(autoRefreshTimer);
           autoRefreshTimer = null;
+          autoRefreshFailures = 0;
+          showResumeButton(false);
+          $('#auto-refresh-label').textContent = 'Auto-refresh (5 s)';
           log('Auto-refresh disabled');
         }
+      });
+
+      $('#btn-resume').addEventListener('click', () => {
+        autoRefreshFailures = 0;
+        showResumeButton(false);
+        $('#auto-refresh').checked = true;
+        rescheduleAutoRefresh();
+        refreshStatus();
+        refreshReport();
+        log('Auto-refresh resumed');
       });
 
       // ── Wire up buttons ──

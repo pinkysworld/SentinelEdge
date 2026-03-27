@@ -38,17 +38,41 @@ pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
 
     let site_dir = site_dir.to_path_buf();
 
+    serve_loop(&server, &state, &site_dir);
+
+    Ok(())
+}
+
+/// Spawn a test server on a random port. Returns `(port, token)`.
+/// The server runs in a background thread.
+#[doc(hidden)]
+pub fn spawn_test_server() -> (u16, String) {
+    let server = Server::http("127.0.0.1:0").expect("bind test server");
+    let port = server.server_addr().to_ip().expect("ip addr").port();
+    let token = generate_token();
+    let state = Arc::new(Mutex::new(AppState {
+        detector: AnomalyDetector::default(),
+        checkpoints: CheckpointStore::new(10),
+        last_report: None,
+        token: token.clone(),
+    }));
+    let site_dir = PathBuf::from("site");
+    std::thread::spawn(move || {
+        serve_loop(&server, &state, &site_dir);
+    });
+    (port, token)
+}
+
+fn serve_loop(server: &Server, state: &Arc<Mutex<AppState>>, site_dir: &Path) {
     for request in server.incoming_requests() {
         let url = request.url().to_string();
 
         if url.starts_with("/api/") {
-            handle_api(request, &state, &site_dir);
+            handle_api(request, state, site_dir);
         } else {
-            serve_static(request, &site_dir);
+            serve_static(request, site_dir);
         }
     }
-
-    Ok(())
 }
 
 fn generate_token() -> String {
@@ -180,12 +204,16 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/control/run-demo") => {
-            let result = runtime::execute(&runtime::demo_samples());
+            let demo = runtime::demo_samples();
+            let result = runtime::execute(&demo);
             let report = JsonReport::from_run_result(&result);
             let json = serde_json::to_string_pretty(&report).unwrap_or_default();
-            state.lock().unwrap().last_report = Some(
-                serde_json::from_str(&json).unwrap(),
-            );
+            let mut s = state.lock().unwrap();
+            for sample in &demo {
+                s.detector.evaluate(sample);
+            }
+            s.last_report = Some(serde_json::from_str(&json).unwrap());
+            drop(s);
             json_response(&json, 200)
         }
         (Method::Options, _) => {
@@ -259,9 +287,13 @@ fn handle_analyze(request: &mut Request, state: &Arc<Mutex<AppState>>) -> Respon
             let result = runtime::execute(&samples);
             let report = JsonReport::from_run_result(&result);
             let json = serde_json::to_string_pretty(&report).unwrap_or_default();
-            state.lock().unwrap().last_report = Some(
-                serde_json::from_str(&json).unwrap(),
-            );
+            let mut s = state.lock().unwrap();
+            // Update the live detector baseline with the analyzed samples
+            for sample in &samples {
+                s.detector.evaluate(sample);
+            }
+            s.last_report = Some(serde_json::from_str(&json).unwrap());
+            drop(s);
             json_response(&json, 200)
         }
         Ok(_) => error_json("no samples in request body", 400),

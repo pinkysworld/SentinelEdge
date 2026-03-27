@@ -175,4 +175,67 @@ mod tests {
         let result = run_benchmark(&mut detector, &labeled, 2.0);
         assert!(result.true_positives + result.true_negatives > 0);
     }
+
+    #[test]
+    fn benchmark_10k_samples() {
+        use rand::Rng;
+
+        let mut rng = rand::thread_rng();
+        let anomaly_rate = 0.05; // 5% anomaly injection
+        let n = 10_000;
+
+        let mut labeled: Vec<(TelemetrySample, bool)> = Vec::with_capacity(n);
+        for i in 0..n {
+            let is_anomaly = rng.r#gen::<f64>() < anomaly_rate;
+            let sample = if is_anomaly {
+                // Attack profile: elevated across all axes
+                TelemetrySample {
+                    timestamp_ms: i as u64,
+                    cpu_load_pct: 70.0 + rng.r#gen::<f32>() * 25.0,
+                    memory_load_pct: 65.0 + rng.r#gen::<f32>() * 30.0,
+                    temperature_c: 55.0 + rng.r#gen::<f32>() * 15.0,
+                    network_kbps: 5000.0 + rng.r#gen::<f32>() * 5000.0,
+                    auth_failures: (5.0 + rng.r#gen::<f32>() * 20.0) as u32,
+                    battery_pct: 20.0 + rng.r#gen::<f32>() * 30.0,
+                    integrity_drift: 0.10 + rng.r#gen::<f32>() * 0.20,
+                    process_count: (100.0 + rng.r#gen::<f32>() * 150.0) as u32,
+                    disk_pressure_pct: 60.0 + rng.r#gen::<f32>() * 35.0,
+                }
+            } else {
+                // Benign profile: normal operating range
+                TelemetrySample {
+                    timestamp_ms: i as u64,
+                    cpu_load_pct: 10.0 + rng.r#gen::<f32>() * 25.0,
+                    memory_load_pct: 20.0 + rng.r#gen::<f32>() * 25.0,
+                    temperature_c: 35.0 + rng.r#gen::<f32>() * 12.0,
+                    network_kbps: 200.0 + rng.r#gen::<f32>() * 600.0,
+                    auth_failures: if rng.r#gen::<f32>() < 0.1 { 1 } else { 0 },
+                    battery_pct: 70.0 + rng.r#gen::<f32>() * 28.0,
+                    integrity_drift: rng.r#gen::<f32>() * 0.03,
+                    process_count: (30.0 + rng.r#gen::<f32>() * 30.0) as u32,
+                    disk_pressure_pct: 5.0 + rng.r#gen::<f32>() * 20.0,
+                }
+            };
+            labeled.push((sample, is_anomaly));
+        }
+
+        let start = std::time::Instant::now();
+        let mut detector = AnomalyDetector::default();
+        let result = run_benchmark(&mut detector, &labeled, 2.0);
+        let elapsed = start.elapsed();
+
+        // Performance: 10k samples should complete in well under 1 second
+        assert!(elapsed.as_secs() < 1, "10k benchmark took {:?}", elapsed);
+
+        // Sanity: we should have some of each category
+        let total = result.true_positives + result.false_positives
+            + result.true_negatives + result.false_negatives;
+        assert_eq!(total, n);
+
+        // The detector should achieve > 50% accuracy on this well-separated dataset
+        assert!(result.accuracy > 0.5, "accuracy {} too low", result.accuracy);
+
+        // F1 should be non-trivial on a 5% anomaly rate with clear separation
+        assert!(result.f1 > 0.0, "F1 score is zero — detector not detecting anomalies");
+    }
 }

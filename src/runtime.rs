@@ -37,6 +37,13 @@ pub struct RunResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackStatus {
+    pub code: String,
+    pub title: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusManifest {
     pub updated_at: String,
     pub backlog_completed: usize,
@@ -47,6 +54,7 @@ pub struct StatusManifest {
     pub implemented: Vec<String>,
     pub partially_wired: Vec<String>,
     pub not_implemented: Vec<String>,
+    pub research_tracks: Vec<TrackStatus>,
 }
 
 pub fn demo_samples() -> Vec<TelemetrySample> {
@@ -367,7 +375,7 @@ pub fn status_snapshot() -> String {
 
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
-        updated_at: "2026-03-27".into(),
+        updated_at: "2026-03-28".into(),
         backlog_completed: 41,
         backlog_total: 41,
         completed_phases: 8,
@@ -423,7 +431,57 @@ pub fn status_manifest() -> StatusManifest {
             "Edge-cloud offload, mesh self-organisation, device fingerprinting".into(),
             "Policy composition, privacy-preserving forensics".into(),
         ],
+        research_tracks: research_tracks(),
     }
+}
+
+fn rt(code: &str, title: &str, status: &str) -> TrackStatus {
+    TrackStatus { code: code.into(), title: title.into(), status: status.into() }
+}
+
+fn research_tracks() -> Vec<TrackStatus> {
+    vec![
+        rt("R01", "Learned Multi-Modal Anomaly Detection", "foundation"),
+        rt("R02", "Formal Verification of Detection Rules", "scaffolded"),
+        rt("R03", "Cross-Device Swarm Intelligence", "future"),
+        rt("R04", "Quantum-Inspired Anomaly Propagation", "future"),
+        rt("R05", "On-Device Model Poisoning Detection", "foundation"),
+        rt("R06", "Energy-Aware Verifiable Isolation", "foundation"),
+        rt("R07", "Self-Healing Network Reconfiguration", "planned"),
+        rt("R08", "Privacy-Preserving Coordinated Response", "future"),
+        rt("R09", "Adaptive Response Strength", "foundation"),
+        rt("R10", "Verifiable Rollback and Forensic Recovery", "foundation"),
+        rt("R11", "Post-Quantum Secure Audit Logs", "foundation"),
+        rt("R12", "Zero-Knowledge Proof of Device State", "future"),
+        rt("R13", "Regulatory-Compliant Verifiable Export", "scaffolded"),
+        rt("R14", "Long-Term Archival with Energy Harvesting", "future"),
+        rt("R15", "Cross-Device Verifiable Threat Sharing", "future"),
+        rt("R16", "Hardware Root-of-Trust Integration", "planned"),
+        rt("R17", "Wasm-Based Extensible Policies", "planned"),
+        rt("R18", "Energy-Proportional Model Quantization", "future"),
+        rt("R19", "Learned False-Positive Reduction", "future"),
+        rt("R20", "Verifiable Supply-Chain Attestation", "planned"),
+        rt("R21", "Quantum-Resistant Key Rotation", "future"),
+        rt("R22", "Cross-Platform Binary Self-Optimization", "future"),
+        rt("R23", "Verifiable Multi-Device Swarm Defense", "future"),
+        rt("R24", "Energy-Harvesting Aware Security Posture", "future"),
+        rt("R25", "Long-Term Evolutionary Model Improvement", "future"),
+        rt("R26", "Explainable Anomaly Attribution", "future"),
+        rt("R27", "Federated Threat Model Distillation", "future"),
+        rt("R28", "Adversarial Robustness Testing Framework", "future"),
+        rt("R29", "Temporal Logic Runtime Monitoring", "future"),
+        rt("R30", "Anomaly Correlation Graph Mining", "future"),
+        rt("R31", "Digital Twin Simulation for Edge Fleets", "future"),
+        rt("R32", "Autonomous Secure Patch Management", "future"),
+        rt("R33", "Deception-Based Threat Engagement", "future"),
+        rt("R34", "Secure Multi-Tenancy Isolation", "future"),
+        rt("R35", "Side-Channel Attack Detection", "future"),
+        rt("R36", "Edge-Cloud Hybrid Offload", "future"),
+        rt("R37", "Resilient Mesh Topology Self-Organisation", "future"),
+        rt("R38", "Behavioural Device Fingerprinting", "future"),
+        rt("R39", "Formal Policy Composition", "future"),
+        rt("R40", "Privacy-Preserving Incident Forensics", "future"),
+    ]
 }
 
 #[cfg(test)]

@@ -17,7 +17,11 @@ The research blueprint in [blueprint.md](/Users/michelpicker/Library/Mobile Docu
 - live browser admin console with token-authenticated HTTP API, auto-refresh, file upload, and dark mode
 - research paper targeting, swarm protocol design, Wasm surface spec, supply-chain attestation, post-quantum upgrade path
 - research questions formalised for R26–R40 plus design documents for adversarial testing, temporal logic, digital twins, and policy composition
+- 69 automated tests (55 unit + 14 integration) with 10k-sample benchmark
+- cross-platform CI (Linux, macOS, Windows) with clippy and fmt
 - maintained docs, backlog tracking, test fixtures, and a GitHub Pages site
+
+See [FEATURES.md](FEATURES.md) for a one-page capability summary and [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## What ships today
 

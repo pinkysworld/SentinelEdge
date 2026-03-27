@@ -9,7 +9,7 @@ const stats = [
   { value: "17", label: "core runtime modules" },
   { value: "8",  label: "telemetry dimensions" },
   { value: "40", label: "research tracks mapped" },
-  { value: "54", label: "automated tests" },
+  { value: "69", label: "automated tests" },
 ];
 
 const pipelineDetails = [

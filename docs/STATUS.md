@@ -51,7 +51,14 @@ Updated: 2026-03-12
 - Formal policy composition algebra with conflict resolution and verification (T076)
 - Static GitHub Pages site and deployment workflow
 - Documentation index, architecture notes, backlog, and research-track mapping
-- 54 automated tests covering all modules
+- 69 automated tests (55 unit + 14 integration) covering all modules
+- 10,000-sample benchmark test for detector performance at scale
+- End-to-end HTTP API integration test suite (14 tests)
+- Auto-refresh exponential backoff with resume button in admin console
+- Research-track status table (40 tracks with badges) in admin console
+- Collapsible partially-wired and not-implemented detail lists in status panel
+- Cross-platform CI (Linux, macOS, Windows) with clippy and fmt checks
+- FEATURES.md one-page marketing summary and CHANGELOG.md
 
 ## Partially wired
 
@@ -59,7 +66,7 @@ Updated: 2026-03-12
 - Rollback-and-escalate action semantics (checkpoint save/restore now wired via API; real device state restore deferred)
 - ZK proof integration in proof-carrying metadata (digest binding exists, Halo2/SNARK deferred)
 - TLA+/Alloy export from the policy state machine (model exists, export deferred)
-- Research-track status accounting for all 40 blueprint items
+- Research-track status accounting for all 40 blueprint items (now live in admin console; static data, not auto-discovered)
 
 ## Not implemented yet
 
@@ -77,4 +84,4 @@ Updated: 2026-03-12
 
 ## Practical milestone summary
 
-The repository has completed Phases 0–7 and provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, a live browser admin console backed by an authenticated HTTP API, and browser-based inspection of exported status/report artifacts. The admin console features auto-refresh polling, connection status indicator, drag-and-drop JSONL/CSV file upload for custom analysis, decay rate slider, checkpoint save/restore, CSV report export, threat-level filtering, improved error diagnostics, and dark mode support across the entire site. CORS is hardened to same-origin, and the analyze endpoint accepts both JSONL and CSV formats with auto-detecting column count. Eight CLI commands are available. Phase 5 produced design documents for research publication targeting, swarm coordination, Wasm extensibility, supply-chain attestation, and post-quantum cryptography upgrade. Phase 6 delivers a live control plane with token-authenticated endpoints for analysis, mode switching, baseline reset, checkpoint management, and demo execution. Phase 7 formalised research questions for all 15 expanded tracks (R26–R40) with hypotheses, evaluation criteria, and implementation sketches, plus design documents for adversarial robustness testing, temporal-logic monitoring, digital-twin simulation, and formal policy composition. The research agenda spans 40 tracks across seven thematic categories. All 41 backlog items are complete. 54 automated tests cover all modules. Differential privacy, ZK proofs, swarm coordination, and formal verification export are not implemented yet.
+The repository has completed Phases 0–7 and provides a working edge security runtime with configurable detection, pluggable response actions, cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine, poisoning heuristics, replay buffering, benchmark tooling, a live browser admin console backed by an authenticated HTTP API, and browser-based inspection of exported status/report artifacts. The admin console features auto-refresh polling, connection status indicator, drag-and-drop JSONL/CSV file upload for custom analysis, decay rate slider, checkpoint save/restore, CSV report export, threat-level filtering, improved error diagnostics, and dark mode support across the entire site. CORS is hardened to same-origin, and the analyze endpoint accepts both JSONL and CSV formats with auto-detecting column count. Eight CLI commands are available. Phase 5 produced design documents for research publication targeting, swarm coordination, Wasm extensibility, supply-chain attestation, and post-quantum cryptography upgrade. Phase 6 delivers a live control plane with token-authenticated endpoints for analysis, mode switching, baseline reset, checkpoint management, and demo execution. Phase 7 formalised research questions for all 15 expanded tracks (R26–R40) with hypotheses, evaluation criteria, and implementation sketches, plus design documents for adversarial robustness testing, temporal-logic monitoring, digital-twin simulation, and formal policy composition. The research agenda spans 40 tracks across seven thematic categories. All 41 backlog items are complete. 69 automated tests (55 unit + 14 integration) cover all modules. Differential privacy, ZK proofs, swarm coordination, and formal verification export are not implemented yet.

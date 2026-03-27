@@ -1,9 +1,9 @@
 [package]
 name = "sentineledge"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2024"
 description = "Edge security runtime scaffold for anomaly detection, adaptive response, and verifiable audit trails"
-license = "TBD"
+license = "MIT"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -14,3 +14,6 @@ hex = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 tiny_http = "0.12"
 rand = "0.8"
+
+[dev-dependencies]
+ureq = { version = "2", features = ["json"] }
