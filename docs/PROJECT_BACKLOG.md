@@ -67,13 +67,22 @@ This backlog lists the next concrete tasks in build order.
 - [x] T075: Sketch a digital-twin simulation architecture for R31.
 - [x] T076: Sketch a formal policy composition algebra for R39.
 
+## Phase 8 - Runtime intelligence (completed)
+
+- [x] T080: Add explainable anomaly attribution — per-signal contribution breakdown in `AnomalySignal` (R26).
+- [x] T081: Add `Config::validate()` with threshold ordering and range checks.
+- [x] T082: Add anomaly correlation engine — multi-signal co-movement detection via replay buffer analysis (R30).
+- [x] T083: Add temporal-logic runtime monitor — lightweight LTL property checking on live telemetry (R29 / T074).
+- [x] T084: Add adversarial test harness — grammar-based evasion fuzzer for detector regression testing (R28 / T073).
+
 ## Recommended next build order
 
 1. ~~T050-T054~~ (completed) — research blueprint expansion with design documents.
 2. ~~T070-T076~~ (completed) — expanded research questions and design documents.
 3. ~~T063-T064~~ (completed) — live browser admin console with authenticated control plane.
+4. ~~T080-T084~~ (completed) — runtime intelligence: explainability, validation, correlation, temporal monitoring, adversarial testing.
 
-All 41 backlog items are now complete.
+All 46 backlog items (Phases 0–8) are complete.
 
 ## Code-quality sweep (post-Phase 7)
 

@@ -79,6 +79,11 @@ pub struct AnomalySignal {
     pub confidence: f32,
     pub suspicious_axes: usize,
     pub reasons: Vec<String>,
+    /// Per-signal contribution to the total score (T080 — explainable attribution).
+    /// Each entry is `(signal_name, contribution)` where contribution is the
+    /// weighted score contributed by that signal dimension. Sum of contributions
+    /// equals `score` (before history_factor scaling) when history_factor is 1.0.
+    pub contributions: Vec<(&'static str, f32)>,
 }
 
 /// Controls how the detector updates its learned baseline (T041).
@@ -173,17 +178,19 @@ impl AnomalyDetector {
                     confidence: 0.25,
                     suspicious_axes: 0,
                     reasons: vec!["baseline initialized".to_string()],
+                    contributions: Vec::new(),
                 }
             }
             Some(mut baseline) => {
                 let mut reasons = Vec::new();
                 let mut suspicious_axes = 0usize;
+                let mut contributions: Vec<(&'static str, f32)> = Vec::new();
                 let history_factor = (self.observed_samples as f32
                     / self.config.warmup_samples as f32)
                     .clamp(0.35, 1.0);
 
                 let mut score = 0.0;
-                score += weighted_positive_delta(
+                let c = weighted_positive_delta(
                     sample.cpu_load_pct - baseline.cpu_load_pct,
                     18.0,
                     0.85,
@@ -191,7 +198,9 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
-                score += weighted_positive_delta(
+                if c > 0.0 { contributions.push(("cpu_load_pct", c)); }
+                score += c;
+                let c = weighted_positive_delta(
                     sample.memory_load_pct - baseline.memory_load_pct,
                     14.0,
                     0.7,
@@ -199,7 +208,9 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
-                score += weighted_positive_delta(
+                if c > 0.0 { contributions.push(("memory_load_pct", c)); }
+                score += c;
+                let c = weighted_positive_delta(
                     sample.temperature_c - baseline.temperature_c,
                     7.0,
                     0.8,
@@ -207,7 +218,9 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
-                score += weighted_positive_delta(
+                if c > 0.0 { contributions.push(("temperature_c", c)); }
+                score += c;
+                let c = weighted_positive_delta(
                     sample.network_kbps - baseline.network_kbps,
                     1800.0,
                     1.1,
@@ -215,7 +228,9 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
-                score += weighted_positive_delta(
+                if c > 0.0 { contributions.push(("network_kbps", c)); }
+                score += c;
+                let c = weighted_positive_delta(
                     sample.auth_failures as f32 - baseline.auth_failures,
                     3.0,
                     1.6,
@@ -223,7 +238,9 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
-                score += weighted_positive_delta(
+                if c > 0.0 { contributions.push(("auth_failures", c)); }
+                score += c;
+                let c = weighted_positive_delta(
                     sample.integrity_drift - baseline.integrity_drift,
                     0.06,
                     1.9,
@@ -231,9 +248,11 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
+                if c > 0.0 { contributions.push(("integrity_drift", c)); }
+                score += c;
 
                 // T014: process count anomaly
-                score += weighted_positive_delta(
+                let c = weighted_positive_delta(
                     sample.process_count as f32 - baseline.process_count,
                     20.0,
                     0.65,
@@ -241,9 +260,11 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
+                if c > 0.0 { contributions.push(("process_count", c)); }
+                score += c;
 
                 // T014: disk pressure anomaly
-                score += weighted_positive_delta(
+                let c = weighted_positive_delta(
                     sample.disk_pressure_pct - baseline.disk_pressure_pct,
                     25.0,
                     0.6,
@@ -251,9 +272,12 @@ impl AnomalyDetector {
                     &mut reasons,
                     &mut suspicious_axes,
                 );
+                if c > 0.0 { contributions.push(("disk_pressure_pct", c)); }
+                score += c;
 
                 if sample.battery_pct < baseline.battery_pct - 18.0 {
                     score += 0.35;
+                    contributions.push(("battery_pct", 0.35));
                     reasons.push("battery dropped sharply under load".to_string());
                     suspicious_axes += 1;
                 }
@@ -302,11 +326,17 @@ impl AnomalyDetector {
                     reasons.push("within learned baseline".to_string());
                 }
 
+                // Scale contributions by history_factor to match final score.
+                for c in &mut contributions {
+                    c.1 *= history_factor;
+                }
+
                 AnomalySignal {
                     score,
                     confidence: history_factor,
                     suspicious_axes,
                     reasons,
+                    contributions,
                 }
             }
         }
@@ -486,5 +516,69 @@ mod tests {
         });
         let snap_after = detector.snapshot().unwrap();
         assert!((snap_before.cpu_load_pct - snap_after.cpu_load_pct).abs() < 0.001);
+    }
+
+    #[test]
+    fn contributions_sum_to_score() {
+        let mut detector = AnomalyDetector::default();
+        // Build baseline over warmup period
+        for ts in 0..5 {
+            detector.evaluate(&TelemetrySample {
+                timestamp_ms: ts,
+                cpu_load_pct: 18.0,
+                memory_load_pct: 24.0,
+                temperature_c: 37.0,
+                network_kbps: 500.0,
+                auth_failures: 0,
+                battery_pct: 88.0,
+                integrity_drift: 0.02,
+                process_count: 45,
+                disk_pressure_pct: 8.0,
+            });
+        }
+        // Inject anomalous sample
+        let signal = detector.evaluate(&TelemetrySample {
+            timestamp_ms: 6,
+            cpu_load_pct: 62.0,
+            memory_load_pct: 55.0,
+            temperature_c: 49.0,
+            network_kbps: 4400.0,
+            auth_failures: 11,
+            battery_pct: 63.0,
+            integrity_drift: 0.17,
+            process_count: 120,
+            disk_pressure_pct: 65.0,
+        });
+
+        assert!(!signal.contributions.is_empty(), "anomaly should have contributions");
+        let sum: f32 = signal.contributions.iter().map(|(_, v)| v).sum();
+        assert!(
+            (sum - signal.score).abs() < 0.01,
+            "contribution sum {sum:.4} should match score {:.4}",
+            signal.score,
+        );
+        // Verify that CPU contribution is present and labelled
+        assert!(
+            signal.contributions.iter().any(|(name, _)| *name == "cpu_load_pct"),
+            "expected cpu_load_pct in contributions"
+        );
+    }
+
+    #[test]
+    fn benign_samples_have_no_contributions() {
+        let mut detector = AnomalyDetector::default();
+        let signal = detector.evaluate(&TelemetrySample {
+            timestamp_ms: 1,
+            cpu_load_pct: 20.0,
+            memory_load_pct: 30.0,
+            temperature_c: 38.0,
+            network_kbps: 400.0,
+            auth_failures: 0,
+            battery_pct: 90.0,
+            integrity_drift: 0.01,
+            process_count: 40,
+            disk_pressure_pct: 5.0,
+        });
+        assert!(signal.contributions.is_empty(), "first sample (baseline init) should have no contributions");
     }
 }

@@ -375,11 +375,11 @@ pub fn status_snapshot() -> String {
 
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
-        updated_at: "2026-03-28".into(),
-        backlog_completed: 41,
-        backlog_total: 41,
-        completed_phases: 8,
-        total_phases: 8,
+        updated_at: "2025-07-18".into(),
+        backlog_completed: 46,
+        backlog_total: 46,
+        completed_phases: 9,
+        total_phases: 9,
         cli_commands: vec![
             "demo".into(),
             "analyze".into(),
@@ -415,6 +415,11 @@ pub fn status_manifest() -> StatusManifest {
             "Temporal-logic property specification format".into(),
             "Digital-twin fleet simulation architecture".into(),
             "Formal policy composition algebra".into(),
+            "Explainable anomaly attribution with per-signal contributions".into(),
+            "Config validation with threshold ordering and range checks".into(),
+            "Multi-signal anomaly correlation engine".into(),
+            "Temporal-logic runtime monitor (safety + bounded liveness)".into(),
+            "Adversarial test harness with evasion strategies and coverage".into(),
         ],
         partially_wired: vec![
             "Checkpoint restore semantics without real device-state restoration".into(),
@@ -426,7 +431,7 @@ pub fn status_manifest() -> StatusManifest {
             "Zero-knowledge proofs and formal verification export".into(),
             "Swarm coordination and cross-device protocols".into(),
             "Post-quantum signatures and hardware roots of trust".into(),
-            "Explainability, adversarial robustness, temporal-logic monitoring".into(),
+            "Explainability, adversarial robustness, temporal-logic monitoring (designs implemented)".into(),
             "Digital twin simulation, deception, multi-tenancy, side-channel detection".into(),
             "Edge-cloud offload, mesh self-organisation, device fingerprinting".into(),
             "Policy composition, privacy-preserving forensics".into(),
@@ -466,11 +471,11 @@ fn research_tracks() -> Vec<TrackStatus> {
         rt("R23", "Verifiable Multi-Device Swarm Defense", "future"),
         rt("R24", "Energy-Harvesting Aware Security Posture", "future"),
         rt("R25", "Long-Term Evolutionary Model Improvement", "future"),
-        rt("R26", "Explainable Anomaly Attribution", "future"),
+        rt("R26", "Explainable Anomaly Attribution", "foundation"),
         rt("R27", "Federated Threat Model Distillation", "future"),
-        rt("R28", "Adversarial Robustness Testing Framework", "future"),
-        rt("R29", "Temporal Logic Runtime Monitoring", "future"),
-        rt("R30", "Anomaly Correlation Graph Mining", "future"),
+        rt("R28", "Adversarial Robustness Testing Framework", "foundation"),
+        rt("R29", "Temporal Logic Runtime Monitoring", "foundation"),
+        rt("R30", "Anomaly Correlation Graph Mining", "foundation"),
         rt("R31", "Digital Twin Simulation for Edge Fleets", "future"),
         rt("R32", "Autonomous Secure Patch Management", "future"),
         rt("R33", "Deception-Based Threat Engagement", "future"),
@@ -500,8 +505,8 @@ mod tests {
     #[test]
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
-        assert_eq!(manifest.backlog_completed, 41);
-        assert_eq!(manifest.backlog_total, 41);
+        assert_eq!(manifest.backlog_completed, 46);
+        assert_eq!(manifest.backlog_total, 46);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
     }
 }

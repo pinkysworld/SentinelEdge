@@ -89,12 +89,73 @@ impl Config {
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
         let raw = fs::read_to_string(path).map_err(|e| format!("failed to read config: {e}"))?;
 
-        match path.extension().and_then(|e| e.to_str()) {
+        let config: Self = match path.extension().and_then(|e| e.to_str()) {
             Some("json") => {
-                serde_json::from_str(&raw).map_err(|e| format!("invalid JSON config: {e}"))
+                serde_json::from_str(&raw).map_err(|e| format!("invalid JSON config: {e}"))?
             }
-            _ => toml::from_str(&raw).map_err(|e| format!("invalid TOML config: {e}")),
+            _ => toml::from_str(&raw).map_err(|e| format!("invalid TOML config: {e}"))?,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Validate invariants: threshold ordering, non-negative values, ranges.
+    pub fn validate(&self) -> Result<(), String> {
+        let d = &self.detector;
+        if d.warmup_samples == 0 {
+            return Err("detector.warmup_samples must be >= 1".into());
         }
+        if !(0.0..=1.0).contains(&d.smoothing) {
+            return Err(format!(
+                "detector.smoothing must be in [0.0, 1.0], got {}",
+                d.smoothing
+            ));
+        }
+        if d.learn_threshold < 0.0 {
+            return Err(format!(
+                "detector.learn_threshold must be >= 0.0, got {}",
+                d.learn_threshold
+            ));
+        }
+
+        let p = &self.policy;
+        if p.critical_score <= p.severe_score {
+            return Err(format!(
+                "policy.critical_score ({}) must be > severe_score ({})",
+                p.critical_score, p.severe_score
+            ));
+        }
+        if p.severe_score <= p.elevated_score {
+            return Err(format!(
+                "policy.severe_score ({}) must be > elevated_score ({})",
+                p.severe_score, p.elevated_score
+            ));
+        }
+        if p.elevated_score < 0.0 {
+            return Err(format!(
+                "policy.elevated_score must be >= 0.0, got {}",
+                p.elevated_score
+            ));
+        }
+        if p.critical_integrity_drift < 0.0 || p.critical_integrity_drift > 1.0 {
+            return Err(format!(
+                "policy.critical_integrity_drift must be in [0.0, 1.0], got {}",
+                p.critical_integrity_drift
+            ));
+        }
+        if p.low_battery_threshold < 0.0 || p.low_battery_threshold > 100.0 {
+            return Err(format!(
+                "policy.low_battery_threshold must be in [0.0, 100.0], got {}",
+                p.low_battery_threshold
+            ));
+        }
+
+        let o = &self.output;
+        if o.checkpoint_interval == 0 {
+            return Err("output.checkpoint_interval must be >= 1".into());
+        }
+
+        Ok(())
     }
 }
 
@@ -129,5 +190,43 @@ mod tests {
         assert_eq!(loaded.output.checkpoint_interval, 5);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_config_validates() {
+        Config::default().validate().unwrap();
+    }
+
+    #[test]
+    fn rejects_inverted_thresholds() {
+        let mut config = Config::default();
+        config.policy.critical_score = 2.0;
+        config.policy.severe_score = 3.0;
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("critical_score"), "error: {err}");
+    }
+
+    #[test]
+    fn rejects_zero_warmup() {
+        let mut config = Config::default();
+        config.detector.warmup_samples = 0;
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("warmup_samples"), "error: {err}");
+    }
+
+    #[test]
+    fn rejects_smoothing_out_of_range() {
+        let mut config = Config::default();
+        config.detector.smoothing = 1.5;
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("smoothing"), "error: {err}");
+    }
+
+    #[test]
+    fn rejects_zero_checkpoint_interval() {
+        let mut config = Config::default();
+        config.output.checkpoint_interval = 0;
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("checkpoint_interval"), "error: {err}");
     }
 }

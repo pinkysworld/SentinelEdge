@@ -16,6 +16,9 @@ pub struct JsonSampleEntry {
     pub isolation_pct: u8,
     pub reasons: Vec<String>,
     pub rationale: String,
+    /// Per-signal attribution (T080). Each entry is (signal_name, contribution).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub contributions: Vec<(String, f32)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +65,9 @@ impl JsonReport {
                 isolation_pct: r.decision.isolation_pct,
                 reasons: r.signal.reasons.clone(),
                 rationale: r.decision.rationale.clone(),
+                contributions: r.signal.contributions.iter()
+                    .map(|(name, val)| (name.to_string(), *val))
+                    .collect(),
             })
             .collect();
 

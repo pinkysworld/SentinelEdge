@@ -133,6 +133,7 @@ mod tests {
                 confidence: 1.0,
                 suspicious_axes: 3,
                 reasons: vec!["network burst".into()],
+                contributions: Vec::new(),
             },
             &TelemetrySample {
                 timestamp_ms: 1,
@@ -161,6 +162,7 @@ mod tests {
                 confidence: 0.8,
                 suspicious_axes: 1,
                 reasons: vec!["integrity drift".into()],
+                contributions: Vec::new(),
             },
             &TelemetrySample {
                 timestamp_ms: 1,
