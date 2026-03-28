@@ -2,6 +2,31 @@
 
 All notable changes to SentinelEdge are documented in this file.
 
+## [0.8.0] — 2025-07-18
+
+### Added
+- **Correlation engine integration** (T090): runtime `execute()` now runs Pearson correlation analysis on the replay buffer and includes results in audit logs and console output.
+- **Temporal-logic monitor integration** (T091): runtime pipeline feeds sample, alert, action, and transition events to a default safety monitor; violations are reported in audit and console output.
+- **Correlation API endpoint** (T092): `GET /api/correlation` returns live correlation analysis of samples seen by the server-side replay buffer.
+- **Harness CLI command** (T093): `cargo run -- harness` runs the adversarial test harness and prints evasion rates and coverage metrics.
+- **Behavioural device fingerprinting** (T094): new `fingerprint.rs` module with `DeviceFingerprint` training from telemetry windows and Mahalanobis-inspired impersonation detection (R38).
+- Server-side replay buffer in `AppState` — analyzed and demo samples are pushed to a 200-sample ring buffer for live correlation.
+- 8 new unit tests across `runtime`, `fingerprint` modules (105 total: 91 unit + 14 integration).
+- New source module: `fingerprint.rs`.
+
+### Changed
+- `CorrelationResult` and `CorrelatedPair` fields changed from `&'static str` to `String` for serde compatibility.
+- CLI commands increased to 9 (added `harness`).
+- R38 research track status updated from "future" to "foundation".
+
+### Fixed
+- JSONL line numbers in `/api/analyze` now enumerate before filter so errors report original file positions (CQ-12).
+- `observed_samples` in detector uses `saturating_add` to prevent overflow (CQ-13).
+- State machine `step()` validates transitions via `is_legal()` before accepting (CQ-14).
+- Fingerprint standard deviation uses Bessel's correction (n−1) to avoid inflated z-scores with small sample counts (CQ-16).
+- `DeviceFingerprint::train()` returns `None` if NaN/Inf propagates through computation (CQ-17).
+- Temporal-logic monitor now receives state machine transition events so `no_skip_escalation` property is exercised (CQ-20).
+
 ## [0.7.0] — 2025-07-18
 
 ### Added

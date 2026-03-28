@@ -379,6 +379,18 @@ impl Property {
     }
 }
 
+/// Create a monitor pre-loaded with sensible default safety properties.
+///
+/// Properties included:
+/// - `score_bounded(10.0)`: score should never exceed 10.0 (sanity bound)
+/// - `no_skip_escalation`: transitions should not jump from normal straight to critical
+pub fn default_safety_monitor() -> Monitor {
+    let mut mon = Monitor::new();
+    mon.add_property(Property::score_bounded(10.0));
+    mon.add_property(Property::no_skip_escalation());
+    mon
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process;
 
 use sentineledge::config::Config;
+use sentineledge::harness::{self, HarnessConfig};
 use sentineledge::report::JsonReport;
 use sentineledge::runtime;
 use sentineledge::server;
@@ -133,6 +134,43 @@ fn run() -> Result<(), String> {
             }
         }
         "help" | "--help" | "-h" => print_usage(),
+        "harness" => {
+            if args.next().is_some() {
+                return Err("`harness` does not accept extra arguments".into());
+            }
+
+            let config = HarnessConfig::default();
+            let result = harness::run(&config);
+
+            println!("SentinelEdge adversarial harness");
+            println!(
+                "  strategies: SlowDrip, BurstMask, DriftInject ({} traces each)",
+                config.traces_per_strategy
+            );
+            println!(
+                "  trace length: {} samples, evasion threshold: {:.1}",
+                config.trace_length, config.evasion_threshold
+            );
+            println!();
+            println!(
+                "  total traces: {} | evasions: {} | evasion rate: {:.1}%",
+                result.total_count,
+                result.evasion_count,
+                result.evasion_rate * 100.0
+            );
+            println!(
+                "  coverage: {:.0}% of score buckets exercised",
+                result.coverage.coverage_ratio() * 100.0
+            );
+            println!();
+
+            for trace in &result.traces {
+                println!(
+                    "  {:?} max_score={:.2} evaded={}",
+                    trace.strategy, trace.max_score, trace.evaded
+                );
+            }
+        }
         "serve" => {
             let port: u16 = args
                 .next()
@@ -171,6 +209,7 @@ fn print_usage() {
     println!("  cargo run -- init-config [config_path]");
     println!("  cargo run -- status");
     println!("  cargo run -- status-json [output_path]");
+    println!("  cargo run -- harness");
     println!("  cargo run -- serve [port] [site_dir]");
     println!("  cargo run -- help");
 }

@@ -38,6 +38,10 @@ impl PolicyStateMachine {
         action: ResponseAction,
         trigger: TransitionTrigger,
     ) {
+        if !Self::is_legal(self.state, level) {
+            // Clamp illegal de-escalations: stay at current level.
+            return;
+        }
         let transition = Transition {
             from: self.state,
             to: level,
@@ -134,5 +138,28 @@ mod tests {
             ThreatLevel::Critical,
             ThreatLevel::Elevated
         ));
+    }
+
+    #[test]
+    fn step_rejects_illegal_transition() {
+        let mut sm = PolicyStateMachine::new();
+        // Escalate to Critical
+        sm.step(
+            ThreatLevel::Critical,
+            ResponseAction::RollbackAndEscalate,
+            TransitionTrigger::ScoreThreshold { score: 8.0 },
+        );
+        assert_eq!(sm.state(), ThreatLevel::Critical);
+
+        // Attempt illegal jump: Critical → Nominal (skip Severe and Elevated)
+        sm.step(
+            ThreatLevel::Nominal,
+            ResponseAction::Observe,
+            TransitionTrigger::ScoreThreshold { score: 0.1 },
+        );
+        // State should remain Critical (illegal transition was rejected)
+        assert_eq!(sm.state(), ThreatLevel::Critical);
+        // Only the initial escalation should be in the trace
+        assert_eq!(sm.trace().len(), 1);
     }
 }

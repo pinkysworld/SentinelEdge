@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::replay::ReplayBuffer;
 
 /// A detected multi-signal correlation pattern (T082 / R30).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorrelationResult {
     /// Pearson correlation coefficient between each signal pair that
     /// exceeds the threshold, along with the signal names.
@@ -10,13 +12,13 @@ pub struct CorrelationResult {
     /// (positive slope over the replay window).
     pub co_rising_count: usize,
     /// Names of signals trending upward.
-    pub co_rising_signals: Vec<&'static str>,
+    pub co_rising_signals: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorrelatedPair {
-    pub signal_a: &'static str,
-    pub signal_b: &'static str,
+    pub signal_a: String,
+    pub signal_b: String,
     pub coefficient: f32,
 }
 
@@ -123,8 +125,8 @@ pub fn analyze(buf: &ReplayBuffer, threshold: f32) -> CorrelationResult {
             let r = pearson(&signals[i].1, &signals[j].1);
             if r.abs() >= threshold {
                 correlated_pairs.push(CorrelatedPair {
-                    signal_a: signals[i].0,
-                    signal_b: signals[j].0,
+                    signal_a: signals[i].0.to_string(),
+                    signal_b: signals[j].0.to_string(),
                     coefficient: r,
                 });
             }
@@ -134,7 +136,7 @@ pub fn analyze(buf: &ReplayBuffer, threshold: f32) -> CorrelationResult {
     // Co-rising detection
     for (name, values) in &signals {
         if is_rising(values) {
-            co_rising_signals.push(*name);
+            co_rising_signals.push(name.to_string());
         }
     }
 
@@ -189,7 +191,7 @@ mod tests {
             "expected cpu-memory correlation"
         );
         assert!(result.co_rising_count >= 3, "expected at least 3 co-rising signals");
-        assert!(result.co_rising_signals.contains(&"cpu_load_pct"));
+        assert!(result.co_rising_signals.iter().any(|s| s == "cpu_load_pct"));
     }
 
     #[test]

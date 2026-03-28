@@ -320,7 +320,7 @@ impl AnomalyDetector {
                 }
 
                 self.baseline = Some(baseline);
-                self.observed_samples += 1;
+                self.observed_samples = self.observed_samples.saturating_add(1);
 
                 if reasons.is_empty() {
                     reasons.push("within learned baseline".to_string());

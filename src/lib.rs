@@ -6,6 +6,7 @@ pub mod checkpoint;
 pub mod config;
 pub mod correlation;
 pub mod detector;
+pub mod fingerprint;
 pub mod forensics;
 pub mod harness;
 pub mod monitor;

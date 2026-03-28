@@ -75,14 +75,17 @@ This backlog lists the next concrete tasks in build order.
 - [x] T083: Add temporal-logic runtime monitor — lightweight LTL property checking on live telemetry (R29 / T074).
 - [x] T084: Add adversarial test harness — grammar-based evasion fuzzer for detector regression testing (R28 / T073).
 
+## Phase 9 - Pipeline integration and fingerprinting (completed)
+
+- [x] T090: Wire correlation engine into the runtime `execute()` pipeline with audit logging and console output (R30).
+- [x] T091: Wire temporal-logic monitor into the runtime pipeline with transition events and violation reporting (R29).
+- [x] T092: Add `/api/correlation` GET endpoint and server-side replay buffer for live correlation analysis.
+- [x] T093: Add `harness` CLI command for adversarial regression testing from the command line (R28).
+- [x] T094: Add behavioural device fingerprinting module with statistical profiling and impersonation detection (R38).
+
 ## Recommended next build order
 
-1. ~~T050-T054~~ (completed) — research blueprint expansion with design documents.
-2. ~~T070-T076~~ (completed) — expanded research questions and design documents.
-3. ~~T063-T064~~ (completed) — live browser admin console with authenticated control plane.
-4. ~~T080-T084~~ (completed) — runtime intelligence: explainability, validation, correlation, temporal monitoring, adversarial testing.
-
-All 46 backlog items (Phases 0–8) are complete.
+All 51 backlog items (Phases 0–9) are complete.
 
 ## Code-quality sweep (post-Phase 7)
 
@@ -99,3 +102,18 @@ The following hardening fixes were applied across three code-review rounds:
 - [x] CQ-09: Validate NaN/Infinity in `network_kbps` and `temperature_c` fields.
 - [x] CQ-10: Validate `decay_rate` parameter in `/api/control/mode` (must be finite, 0.0–1.0).
 - [x] CQ-11: Add client-side file size limit (10 MB) on admin console uploads.
+
+## Code-quality sweep (post-Phase 8)
+
+- [x] CQ-12: Fix JSONL line numbers in `/api/analyze` — enumerate before filter so errors report original line positions.
+- [x] CQ-13: Use `saturating_add` for `observed_samples` in detector to prevent overflow.
+- [x] CQ-14: Validate state machine transitions in `step()` via `is_legal()` before accepting.
+- [x] CQ-15: Add test for illegal transition rejection in state machine.
+
+## Code-quality sweep (post-Phase 9)
+
+- [x] CQ-16: Use Bessel's correction (n−1) for fingerprint standard deviation to avoid inflated z-scores.
+- [x] CQ-17: Guard against NaN/Inf propagation in `DeviceFingerprint::train()`.
+- [x] CQ-18: Add test for zero-variance dimension sentinel z-score in fingerprinting.
+- [x] CQ-19: Update R38 research track status from "future" to "foundation".
+- [x] CQ-20: Feed state machine transitions to the temporal-logic monitor so `no_skip_escalation` is exercised.

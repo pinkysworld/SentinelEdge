@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::audit::AuditLog;
 use crate::checkpoint::CheckpointStore;
+use crate::correlation::{self, CorrelationResult};
 use crate::detector::{AnomalyDetector, AnomalySignal};
+use crate::monitor::{self, MonitorEvent, Violation};
 use crate::policy::{PolicyDecision, PolicyEngine, ThreatLevel};
 use crate::proof::ProofRegistry;
 use crate::replay::ReplayBuffer;
@@ -34,6 +36,8 @@ pub struct RunResult {
     pub reports: Vec<SampleReport>,
     pub summary: RunSummary,
     pub audit: AuditLog,
+    pub correlation: Option<CorrelationResult>,
+    pub monitor_violations: Vec<Violation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -240,6 +244,64 @@ pub fn execute(samples: &[TelemetrySample]) -> RunResult {
         ),
     );
 
+    // Run correlation analysis on the replay buffer (T090 / R30)
+    let correlation = if replay.len() >= 3 {
+        let result = correlation::analyze(&replay, 0.8);
+        if !result.correlated_pairs.is_empty() || result.co_rising_count > 0 {
+            audit.record(
+                "correlation",
+                format!(
+                    "correlated_pairs={} co_rising={}",
+                    result.correlated_pairs.len(),
+                    result.co_rising_count
+                ),
+            );
+        }
+        Some(result)
+    } else {
+        None
+    };
+
+    // Run temporal-logic monitor over the sample/alert/action stream (T091 / R29)
+    let mut monitor = monitor::default_safety_monitor();
+    for report in &reports {
+        monitor.step(&MonitorEvent::Sample {
+            score: report.signal.score,
+            battery_pct: report.sample.battery_pct,
+        });
+        if report.decision.level != ThreatLevel::Nominal {
+            monitor.step(&MonitorEvent::Alert {
+                severity: report.decision.level.as_str().to_string(),
+            });
+            monitor.step(&MonitorEvent::Action {
+                kind: report.decision.action.as_str().to_string(),
+                battery_pct: report.sample.battery_pct,
+            });
+        }
+    }
+    // Feed state machine transitions to the monitor (CQ-20 / R29)
+    for transition in state_machine.trace() {
+        monitor.step(&MonitorEvent::Transition {
+            from: transition.from.as_str().to_string(),
+            to: transition.to.as_str().to_string(),
+        });
+    }
+    let monitor_violations = monitor.violations().to_vec();
+    if !monitor_violations.is_empty() {
+        audit.record(
+            "monitor",
+            format!(
+                "violations={} properties={}",
+                monitor_violations.len(),
+                monitor_violations
+                    .iter()
+                    .map(|v| v.property_name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+    }
+
     RunResult {
         reports,
         summary: RunSummary {
@@ -250,6 +312,8 @@ pub fn execute(samples: &[TelemetrySample]) -> RunResult {
             max_score,
         },
         audit,
+        correlation,
+        monitor_violations,
     }
 }
 
@@ -296,6 +360,44 @@ pub fn render_console_report(result: &RunResult, audit_path: Option<&Path>) -> S
 
     if let Some(path) = audit_path {
         let _ = writeln!(output, "\naudit log: {}", path.display());
+    }
+
+    // Correlation summary (T090)
+    if let Some(ref corr) = result.correlation {
+        if !corr.correlated_pairs.is_empty() || corr.co_rising_count > 0 {
+            let _ = writeln!(output, "\ncorrelation analysis:");
+            for pair in &corr.correlated_pairs {
+                let _ = writeln!(
+                    output,
+                    "  {} ~ {} (r={:.2})",
+                    pair.signal_a, pair.signal_b, pair.coefficient
+                );
+            }
+            if corr.co_rising_count > 0 {
+                let _ = writeln!(
+                    output,
+                    "  co-rising signals ({}): {}",
+                    corr.co_rising_count,
+                    corr.co_rising_signals.join(", ")
+                );
+            }
+        }
+    }
+
+    // Monitor violations (T091)
+    if !result.monitor_violations.is_empty() {
+        let _ = writeln!(
+            output,
+            "\nmonitor violations ({}):",
+            result.monitor_violations.len()
+        );
+        for v in &result.monitor_violations {
+            let _ = writeln!(
+                output,
+                "  property '{}' violated at event #{}",
+                v.property_name, v.event_index
+            );
+        }
     }
 
     output
@@ -356,11 +458,25 @@ pub fn status_snapshot() -> String {
         "  - digital-twin fleet simulation architecture (T075)",
         "  - formal policy composition algebra (T076)",
         "",
+        "Phase 8 — Runtime Intelligence (complete):",
+        "  - explainable anomaly attribution with per-signal contributions (T080)",
+        "  - config validation with threshold ordering and range checks (T081)",
+        "  - multi-signal anomaly correlation engine (T082)",
+        "  - temporal-logic runtime monitor (T083)",
+        "  - adversarial test harness with evasion strategies (T084)",
+        "",
+        "Phase 9 — Pipeline Integration & Fingerprinting (complete):",
+        "  - correlation engine wired into runtime pipeline (T090)",
+        "  - temporal-logic monitor wired into runtime pipeline (T091)",
+        "  - /api/correlation endpoint for live analysis (T092)",
+        "  - adversarial harness CLI command (T093)",
+        "  - behavioural device fingerprinting (T094)",
+        "",
         "Foundation (complete):",
         "  - adaptive multi-signal anomaly scoring (8 dimensions)",
         "  - battery-aware mitigation scaling",
         "  - chained audit log output",
-        "  - CLI: demo, analyze, status, report, init-config, serve",
+        "  - CLI: demo, analyze, status, report, init-config, harness, serve",
         "  - documentation and GitHub Pages site",
         "",
         "Not built yet:",
@@ -376,10 +492,10 @@ pub fn status_snapshot() -> String {
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2025-07-18".into(),
-        backlog_completed: 46,
-        backlog_total: 46,
-        completed_phases: 9,
-        total_phases: 9,
+        backlog_completed: 51,
+        backlog_total: 51,
+        completed_phases: 10,
+        total_phases: 10,
         cli_commands: vec![
             "demo".into(),
             "analyze".into(),
@@ -387,6 +503,7 @@ pub fn status_manifest() -> StatusManifest {
             "init-config".into(),
             "status".into(),
             "status-json".into(),
+            "harness".into(),
             "serve".into(),
             "help".into(),
         ],
@@ -420,6 +537,11 @@ pub fn status_manifest() -> StatusManifest {
             "Multi-signal anomaly correlation engine".into(),
             "Temporal-logic runtime monitor (safety + bounded liveness)".into(),
             "Adversarial test harness with evasion strategies and coverage".into(),
+            "Correlation engine integrated into runtime pipeline".into(),
+            "Temporal-logic monitor integrated into runtime pipeline".into(),
+            "Server-side /api/correlation endpoint for live analysis".into(),
+            "Adversarial harness CLI command".into(),
+            "Behavioural device fingerprinting with impersonation detection".into(),
         ],
         partially_wired: vec![
             "Checkpoint restore semantics without real device-state restoration".into(),
@@ -431,9 +553,8 @@ pub fn status_manifest() -> StatusManifest {
             "Zero-knowledge proofs and formal verification export".into(),
             "Swarm coordination and cross-device protocols".into(),
             "Post-quantum signatures and hardware roots of trust".into(),
-            "Explainability, adversarial robustness, temporal-logic monitoring (designs implemented)".into(),
             "Digital twin simulation, deception, multi-tenancy, side-channel detection".into(),
-            "Edge-cloud offload, mesh self-organisation, device fingerprinting".into(),
+            "Edge-cloud offload, mesh self-organisation".into(),
             "Policy composition, privacy-preserving forensics".into(),
         ],
         research_tracks: research_tracks(),
@@ -483,7 +604,7 @@ fn research_tracks() -> Vec<TrackStatus> {
         rt("R35", "Side-Channel Attack Detection", "future"),
         rt("R36", "Edge-Cloud Hybrid Offload", "future"),
         rt("R37", "Resilient Mesh Topology Self-Organisation", "future"),
-        rt("R38", "Behavioural Device Fingerprinting", "future"),
+        rt("R38", "Behavioural Device Fingerprinting", "foundation"),
         rt("R39", "Formal Policy Composition", "future"),
         rt("R40", "Privacy-Preserving Incident Forensics", "future"),
     ]
@@ -505,8 +626,30 @@ mod tests {
     #[test]
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
-        assert_eq!(manifest.backlog_completed, 46);
-        assert_eq!(manifest.backlog_total, 46);
+        assert_eq!(manifest.backlog_completed, 51);
+        assert_eq!(manifest.backlog_total, 51);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
+    }
+
+    #[test]
+    fn execute_includes_correlation_results() {
+        let result = execute(&demo_samples());
+        // The demo has 5 samples ≥ 3, so correlation should be present
+        assert!(result.correlation.is_some());
+        let corr = result.correlation.unwrap();
+        // Demo samples escalate CPU/mem/net together → expect correlations
+        assert!(
+            !corr.correlated_pairs.is_empty() || corr.co_rising_count > 0,
+            "expected correlation or co-rising signals in escalating demo"
+        );
+    }
+
+    #[test]
+    fn execute_runs_monitor_without_panic() {
+        let result = execute(&demo_samples());
+        // Monitor runs safety checks; demo is well-behaved, so no violations expected
+        // (score_bounded at 10.0 should not fire for typical demo scores)
+        // Just verify it doesn't panic and returns a Vec
+        let _ = result.monitor_violations;
     }
 }

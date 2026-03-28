@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 use crate::checkpoint::CheckpointStore;
+use crate::correlation;
 use crate::detector::{AdaptationMode, AnomalyDetector};
+use crate::replay::ReplayBuffer;
 use crate::report::JsonReport;
 use crate::runtime;
 use crate::telemetry::TelemetrySample;
@@ -13,6 +15,7 @@ use crate::telemetry::TelemetrySample;
 struct AppState {
     detector: AnomalyDetector,
     checkpoints: CheckpointStore,
+    replay: ReplayBuffer,
     last_report: Option<JsonReport>,
     token: String,
 }
@@ -32,6 +35,7 @@ pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
     let state = Arc::new(Mutex::new(AppState {
         detector: AnomalyDetector::default(),
         checkpoints: CheckpointStore::new(10),
+        replay: ReplayBuffer::new(200),
         last_report: None,
         token: token.clone(),
     }));
@@ -53,6 +57,7 @@ pub fn spawn_test_server() -> (u16, String) {
     let state = Arc::new(Mutex::new(AppState {
         detector: AnomalyDetector::default(),
         checkpoints: CheckpointStore::new(10),
+        replay: ReplayBuffer::new(200),
         last_report: None,
         token: token.clone(),
     }));
@@ -207,6 +212,14 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&info.to_string(), 200)
         }
+        (Method::Get, "/api/correlation") => {
+            let s = state.lock().unwrap();
+            let result = correlation::analyze(&s.replay, 0.8);
+            match serde_json::to_string_pretty(&result) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
         (Method::Post, "/api/control/run-demo") => {
             let demo = runtime::demo_samples();
             let result = runtime::execute(&demo);
@@ -216,6 +229,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     let mut s = state.lock().unwrap();
                     for sample in &demo {
                         s.detector.evaluate(sample);
+                        s.replay.push(*sample);
                     }
                     s.last_report = Some(report);
                     drop(s);
@@ -278,10 +292,10 @@ fn handle_analyze(request: &mut Request, state: &Arc<Mutex<AppState>>) -> Respon
             })
             .collect()
     } else if body.trim_start().starts_with('{') {
-        // JSONL
+        // JSONL — enumerate before filtering so line numbers match the original input
         body.lines()
-            .filter(|l| !l.trim().is_empty())
             .enumerate()
+            .filter(|(_, l)| !l.trim().is_empty())
             .map(|(i, line)| {
                 serde_json::from_str(line)
                     .map_err(|e| format!("line {}: {e}", i + 1))
@@ -303,6 +317,7 @@ fn handle_analyze(request: &mut Request, state: &Arc<Mutex<AppState>>) -> Respon
             // Update the live detector baseline with the analyzed samples
             for sample in &samples {
                 s.detector.evaluate(sample);
+                s.replay.push(*sample);
             }
             s.last_report = Some(report);
             drop(s);
