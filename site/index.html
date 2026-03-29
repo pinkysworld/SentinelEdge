@@ -132,7 +132,7 @@
             <p class="label">Architecture</p>
             <h2>System Design</h2>
             <p class="section-desc">
-              The runtime follows a ten-stage pipeline. Each stage maps to one or more Rust
+              The runtime follows a sixteen-stage pipeline. Each stage maps to one or more Rust
               modules with narrow interfaces. New complexity is added only when there is code to
               support it.
             </p>
@@ -207,6 +207,48 @@
               <p>Retain recent telemetry in a bounded ring buffer for windowed statistics. Four poisoning heuristics scan for data manipulation attempts.</p>
               <span class="arch-module">replay.rs + poisoning.rs</span>
             </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">11</div>
+              <h3>Threat Intel</h3>
+              <p>Match observed indicators against a local threat-intelligence store. Enrich anomaly signals with known-bad indicator metadata.</p>
+              <span class="arch-module">threat_intel.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">12</div>
+              <h3>Enforcement</h3>
+              <p>Automated network blocking and process suspension driven by threat level. Pluggable enforcers for different OS primitives.</p>
+              <span class="arch-module">enforcement.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">13</div>
+              <h3>Digital Twin</h3>
+              <p>Simulate fleet behaviour under observed conditions. Predict cascading failures and validate response strategies before deployment.</p>
+              <span class="arch-module">digital_twin.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">14</div>
+              <h3>Energy</h3>
+              <p>Track energy budgets and tick consumption per pipeline iteration. Enforce energy-proportional processing on battery-constrained devices.</p>
+              <span class="arch-module">energy.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">15</div>
+              <h3>Side-Channel</h3>
+              <p>Detect timing anomalies indicative of side-channel attacks. Statistical observation of execution timing distributions.</p>
+              <span class="arch-module">side_channel.rs</span>
+            </div>
+            <div class="arch-connector" aria-hidden="true"><span></span></div>
+            <div class="arch-stage">
+              <div class="arch-num">16</div>
+              <h3>Compliance</h3>
+              <p>Collect evidence toward compliance frameworks. Score adherence from accumulated audit, detection, and enforcement records.</p>
+              <span class="arch-module">compliance.rs</span>
+            </div>
           </div>
         </div>
       </section>
@@ -234,7 +276,7 @@
             <p class="label">Source</p>
             <h2>Module Map</h2>
             <p class="section-desc">
-              Twenty-two Rust source files. The prototype is deliberately modular — complexity gets
+              Thirty-five Rust source modules. The prototype is deliberately modular — complexity gets
               added when the research justifies it, not before.
             </p>
           </div>
@@ -359,6 +401,66 @@
               <span>Static per-signal threshold detector for paper comparison benchmarks</span>
               <span class="module-tracks">R13</span>
             </div>
+            <div class="module-row">
+              <code>compliance.rs</code>
+              <span>Compliance evidence collection and framework scoring</span>
+              <span class="module-tracks">R13</span>
+            </div>
+            <div class="module-row">
+              <code>digital_twin.rs</code>
+              <span>Fleet simulation engine for cascading-failure prediction</span>
+              <span class="module-tracks">R31</span>
+            </div>
+            <div class="module-row">
+              <code>edge_cloud.rs</code>
+              <span>Edge-cloud hybrid offload decision engine</span>
+              <span class="module-tracks">R36</span>
+            </div>
+            <div class="module-row">
+              <code>energy.rs</code>
+              <span>Energy budget tracking and proportional processing control</span>
+              <span class="module-tracks">R06, R14</span>
+            </div>
+            <div class="module-row">
+              <code>enforcement.rs</code>
+              <span>Automated network blocking and process suspension</span>
+              <span class="module-tracks">R09</span>
+            </div>
+            <div class="module-row">
+              <code>multi_tenant.rs</code>
+              <span>Tenant-isolated security contexts for multi-tenancy</span>
+              <span class="module-tracks">R34</span>
+            </div>
+            <div class="module-row">
+              <code>privacy.rs</code>
+              <span>Privacy-preserving forensic evidence handling</span>
+              <span class="module-tracks">R08, R40</span>
+            </div>
+            <div class="module-row">
+              <code>quantum.rs</code>
+              <span>Post-quantum Lamport one-time signatures</span>
+              <span class="module-tracks">R11, R21</span>
+            </div>
+            <div class="module-row">
+              <code>side_channel.rs</code>
+              <span>Timing-based side-channel attack detection</span>
+              <span class="module-tracks">R35</span>
+            </div>
+            <div class="module-row">
+              <code>swarm.rs</code>
+              <span>Swarm coordination protocol with peer discovery</span>
+              <span class="module-tracks">R03, R23</span>
+            </div>
+            <div class="module-row">
+              <code>threat_intel.rs</code>
+              <span>Local threat-intelligence store with IOC matching</span>
+              <span class="module-tracks">R15</span>
+            </div>
+            <div class="module-row">
+              <code>wasm_engine.rs</code>
+              <span>Wasm extension sandbox for user-defined detection policies</span>
+              <span class="module-tracks">R17</span>
+            </div>
           </div>
         </div>
       </section>
@@ -370,7 +472,7 @@
             <p class="label">Implementation</p>
             <h2>Current Status</h2>
             <p class="section-desc">
-              The project has completed all twelve phases (0–11) of the engineering backlog. It provides a
+              The project has completed all fourteen phases (0–13) of the engineering backlog. It provides a
               working edge security runtime with configurable detection, pluggable response actions,
               cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine,
               poisoning heuristics, replay buffering, benchmark tooling, a live browser admin console
@@ -381,6 +483,13 @@
               Phase 10 unified the research-track data pipeline and added supply-chain attestation.
               Phase 11 added extended 120-sample test fixtures, a fixed-threshold baseline detector
               for paper comparison, a side-by-side bench CLI, and per-signal contribution aggregation.
+              Phase 12 expanded the research frontier with twelve new modules: enforcement, quantum signatures,
+              swarm coordination, privacy-preserving forensics, Wasm extension engine, threat intelligence,
+              side-channel detection, digital-twin simulation, compliance scoring, multi-tenancy, edge-cloud
+              offload, and energy budget tracking — bringing all 40 research tracks to foundation status.
+              Phase 13 wired threat-intel, enforcement, digital-twin, energy, side-channel, and compliance
+              into the live pipeline, added criterion micro-benchmarks, continual learning with drift
+              detection, and a policy composition algebra.
               Three categories below — no ambiguity about what is real versus what is planned.
             </p>
           </div>
@@ -415,9 +524,10 @@
             <p class="label">Completed</p>
             <h2>Engineering Log</h2>
             <p class="section-desc">
-              Concrete tasks grouped by phase. All twelve phases (0–11) and all 61 tasks are
+              Concrete tasks grouped by phase. All fourteen phases (0–13) and all 67 tasks are
               complete, encompassing the full detect–respond–audit pipeline, runtime intelligence
-              features, extended benchmark fixtures, and a side-by-side detector comparison CLI.
+              features, extended benchmark fixtures, twelve new research-frontier modules, criterion
+              micro-benchmarks, continual learning, and a policy composition algebra.
             </p>
           </div>
           <div id="backlog-phases"></div>
@@ -488,7 +598,7 @@
             <div class="start-card">
               <h3>Run tests</h3>
               <div class="code-block"><code>cargo test</code></div>
-              <p>147 automated tests covering all 22 modules.</p>
+              <p>276 automated tests covering all 35 modules.</p>
             </div>
             <div class="start-card">
               <h3>SIEM report</h3>
@@ -562,7 +672,7 @@
             </div>
           </div>
           <div class="footer-bottom">
-            <p>SentinelEdge · v0.10.0 · Phase 0–11 complete · 147 tests · March 2026</p>
+            <p>SentinelEdge · v0.11.0 · Phase 0–13 complete · 276 tests · March 2026</p>
           </div>
         </div>
       </footer>

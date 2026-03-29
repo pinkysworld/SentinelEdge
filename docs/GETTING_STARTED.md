@@ -69,7 +69,7 @@ This writes the structured status snapshot consumed by the read-only browser con
 cargo test
 ```
 
-The test suite currently includes 147 tests (126 unit + 21 integration) covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints (including save and restore), forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, benchmark scoring (including a 10,000-sample performance benchmark), correlation analysis, temporal-logic monitoring, adversarial testing, device fingerprinting, supply-chain attestation, fixed-threshold detection, extended fixtures, status export, and end-to-end HTTP API endpoints.
+The test suite currently includes 276 tests (255 unit + 21 integration) covering telemetry parsing, anomaly detection, policy evaluation, audit chains, checkpoints (including save and restore), forensics, proof verification, state machine transitions, replay buffers, poisoning heuristics, benchmark scoring (including a 10,000-sample performance benchmark), correlation analysis, temporal-logic monitoring, adversarial testing, device fingerprinting, supply-chain attestation, fixed-threshold detection, extended fixtures, enforcement, quantum signatures, swarm coordination, privacy-preserving forensics, Wasm extensions, threat intelligence, side-channel detection, digital-twin simulation, compliance scoring, multi-tenancy, edge-cloud offload, energy tracking, continual learning with drift detection, policy composition algebra, status export, and end-to-end HTTP API endpoints.
 
 ## Open the read-only browser admin console
 

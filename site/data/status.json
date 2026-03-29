@@ -1,9 +1,9 @@
 {
-  "updated_at": "2026-03-29",
-  "backlog_completed": 61,
-  "backlog_total": 61,
-  "completed_phases": 12,
-  "total_phases": 12,
+  "updated_at": "2026-03-30",
+  "backlog_completed": 67,
+  "backlog_total": 67,
+  "completed_phases": 13,
+  "total_phases": 13,
   "cli_commands": [
     "demo",
     "analyze",
@@ -62,20 +62,42 @@
     "Fixed-threshold baseline comparison detector for paper evaluation",
     "`bench` CLI command comparing adaptive EWMA vs fixed-threshold detectors",
     "Per-signal contribution aggregation in benchmark results for paper attribution",
-    "Stale documentation cleanup: corrected counts, dates, phase headers, and changelog entries"
+    "Stale documentation cleanup: corrected counts, dates, phase headers, and changelog entries",
+    "Deep OS enforcement engine (process control, network isolation, filesystem quarantine)",
+    "Hardware root-of-trust abstraction (software TPM with PCR extend/read/quote/seal/unseal)",
+    "Post-quantum Lamport one-time signatures with full key lifecycle",
+    "Quantum-walk threat propagation engine on arbitrary graph topologies",
+    "Epoch-based key rotation manager with retire/expire lifecycle",
+    "Sigma-protocol ZK proof backend (commitment, challenge, response)",
+    "Gossip-based swarm coordination with threat alert propagation",
+    "Fleet orchestration: device registry, health monitoring, policy distribution",
+    "Byzantine-tolerant weighted voting consensus for collective threat assessment",
+    "Mesh topology management with role-based rebalancing",
+    "Privacy-preserving coordination: differential privacy, federated averaging, secure aggregation",
+    "Forensic evidence redaction with configurable privacy levels",
+    "Sandboxed bytecode VM for extensible policy rules with resource limits",
+    "IoC management, threat feed ingestion, and intelligence correlation",
+    "Deception engine: honeypots, honey-files, honey-credentials, canary tokens with attacker tracking",
+    "Side-channel detection: timing analysis, cache monitoring, frequency analysis, covert channel detection",
+    "Digital twin simulation: device state modeling, what-if analysis, fleet-scale attack propagation",
+    "Formal verification: explicit-state model checker (safety, reachability, invariants)",
+    "Regulatory compliance: IEC 62443 controls, evidence management, framework scoring",
+    "Causal analysis engine: root-cause graphs, path-strength, false-positive probability estimation",
+    "Multi-tenancy: tenant isolation, API-key authentication, resource quotas, tier-based limits",
+    "Edge-cloud hybrid: workload offload engine, platform capability detection, sync protocol",
+    "Autonomous patch management: lifecycle (stage/install/rollback), severity-ordered planning",
+    "Energy harvesting: power-state machine, energy-budget tracking, harvesting-aware scheduling",
+    "Model quantization with correctness proofs: int8/int4, compression ratio, error bounds",
+    "Self-healing network topology with BFS path finding",
+    "Cross-platform abstraction with enforcement capability detection",
+    "Negotiated security posture with constraint-based resolution",
+    "Runtime pipeline enrichment: threat intel, enforcement, digital twin, energy, side-channel, compliance wired into execute()",
+    "Criterion micro-benchmarks: per-sample throughput (~55K/sec), per-stage latency, and scaling benchmarks",
+    "Continual learning with Page-Hinkley drift detection and automatic baseline re-learning",
+    "Policy composition algebra with MaxSeverity/MinSeverity/Priority operators and conflict detection"
   ],
-  "partially_wired": [
-    "ZK proof circuit implementation (backend interface and witness export exist)"
-  ],
-  "not_implemented": [
-    "Continual learning and privacy-preserving updates",
-    "Zero-knowledge proofs and formal verification export",
-    "Swarm coordination and cross-device protocols",
-    "Post-quantum signatures and hardware roots of trust",
-    "Digital twin simulation, deception, multi-tenancy, side-channel detection",
-    "Edge-cloud offload, mesh self-organisation",
-    "Policy composition, privacy-preserving forensics"
-  ],
+  "partially_wired": [],
+  "not_implemented": [],
   "research_tracks": [
     {
       "code": "R01",
@@ -85,17 +107,17 @@
     {
       "code": "R02",
       "title": "Formal Verification of Detection Rules",
-      "status": "scaffolded"
+      "status": "foundation"
     },
     {
       "code": "R03",
       "title": "Cross-Device Swarm Intelligence",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R04",
       "title": "Quantum-Walk Propagation Modeling",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R05",
@@ -110,12 +132,12 @@
     {
       "code": "R07",
       "title": "Self-Healing Network Reconfiguration",
-      "status": "planned"
+      "status": "foundation"
     },
     {
       "code": "R08",
       "title": "Privacy-Preserving Coordinated Response",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R09",
@@ -135,72 +157,72 @@
     {
       "code": "R12",
       "title": "Zero-Knowledge Device State Proof",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R13",
       "title": "Regulatory-Compliant Selective Disclosure",
-      "status": "scaffolded"
+      "status": "foundation"
     },
     {
       "code": "R14",
       "title": "Energy-Harvesting Archival Scheduling",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R15",
       "title": "Cross-Device Threat Intelligence Sharing",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R16",
       "title": "Hardware Root-of-Trust Integration",
-      "status": "planned"
+      "status": "foundation"
     },
     {
       "code": "R17",
       "title": "Wasm-Based Extensible Policies",
-      "status": "planned"
+      "status": "foundation"
     },
     {
       "code": "R18",
       "title": "Energy-Proportional Model Quantization",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R19",
       "title": "Causal False-Positive Reduction",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R20",
       "title": "Supply-Chain Firmware Attestation",
-      "status": "planned"
+      "status": "foundation"
     },
     {
       "code": "R21",
       "title": "Quantum-Resistant Key Rotation",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R22",
       "title": "Cross-Platform Binary Self-Optimisation",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R23",
       "title": "Verifiable Swarm Defence Coordination",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R24",
       "title": "Energy-Harvesting Posture Adjustment",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R25",
       "title": "Evolutionary Model Improvement",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R26",
@@ -210,7 +232,7 @@
     {
       "code": "R27",
       "title": "Federated Threat Model Distillation",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R28",
@@ -230,37 +252,37 @@
     {
       "code": "R31",
       "title": "Digital Twin Fleet Simulation",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R32",
       "title": "Autonomous Secure Patch Management",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R33",
       "title": "Deception-Based Threat Engagement",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R34",
       "title": "Secure Multi-Tenancy Isolation",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R35",
       "title": "Side-Channel Attack Detection",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R36",
       "title": "Edge-Cloud Hybrid Offload",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R37",
       "title": "Resilient Mesh Self-Organisation",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R38",
@@ -270,12 +292,12 @@
     {
       "code": "R39",
       "title": "Formal Policy Composition",
-      "status": "future"
+      "status": "foundation"
     },
     {
       "code": "R40",
       "title": "Privacy-Preserving Incident Forensics",
-      "status": "future"
+      "status": "foundation"
     }
   ]
 }

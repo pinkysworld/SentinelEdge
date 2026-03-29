@@ -6,10 +6,10 @@
 // ── Project Data ──────────────────────────────────────────────────────────────
 
 const stats = [
-  { value: "22", label: "core runtime modules" },
+  { value: "35", label: "core runtime modules" },
   { value: "8",  label: "telemetry dimensions" },
   { value: "40", label: "research tracks mapped" },
-  { value: "147", label: "automated tests" },
+  { value: "276", label: "automated tests" },
 ];
 
 const pipelineDetails = [
@@ -23,7 +23,7 @@ const pipelineDetails = [
     num: "02",
     title: "Adaptive Anomaly Detection",
     body: "An EWMA-style rolling baseline tracks normal behaviour for each signal dimension. Incoming samples are compared against this baseline; deviations are weighted by dimension and combined into a single anomaly score. The detector also emits human-readable explanations identifying which signals contributed most. Baselines can be persisted to disk and restored across sessions for long-running deployments. Adaptation controls allow freezing, decaying, or resetting baselines during suspected poisoning.",
-    note: "Adaptation modes (Normal, Frozen, Decay) are implemented (T041). Continual learning and differential privacy remain R01 scope."
+    note: "Adaptation modes (Normal, Frozen, Decay) are implemented (T041). Page-Hinkley drift detection triggers automatic baseline re-learning (Phase 13)."
   },
   {
     num: "03",
@@ -71,7 +71,43 @@ const pipelineDetails = [
     num: "10",
     title: "Output & Reporting",
     body: "Structured JSON reports can be generated for SIEM integration. JSONL alert streams provide real-time event output. The init-config command generates a TOML configuration template, and the status command provides a live implementation snapshot.",
-    note: "Twelve CLI commands: demo, analyze, report, init-config, status, status-json, serve, replay, attest, bench, help, and show-config."
+    note: "Twelve CLI commands: demo, analyze, report, init-config, status, status-json, serve, harness, attest, bench, export-model, and help."
+  },
+  {
+    num: "11",
+    title: "Threat Intelligence",
+    body: "Observed indicators are matched against a local threat-intelligence store. Matches enrich anomaly signals with known-bad indicator metadata such as severity ratings and indicator types (IP, hash, domain).",
+    note: "IOC matching is wired into the runtime pipeline (Phase 13). Feed ingestion from external STIX/TAXII sources is future scope."
+  },
+  {
+    num: "12",
+    title: "Enforcement",
+    body: "Automated network blocking and process suspension driven by threat level. Pluggable enforcer traits abstract OS-specific primitives so enforcement logic is testable without real kernel calls.",
+    note: "NetworkEnforcer and ProcessEnforcer are wired into the pipeline on severe/critical events (Phase 13)."
+  },
+  {
+    num: "13",
+    title: "Digital Twin Simulation",
+    body: "Simulate fleet behaviour under observed conditions. A deterministic discrete-event engine predicts cascading failures and validates response strategies before real deployment.",
+    note: "DigitalTwinEngine.simulate() runs per-sample in the pipeline (Phase 13). Fleet-scale simulation is future work."
+  },
+  {
+    num: "14",
+    title: "Energy Budget Tracking",
+    body: "Track energy budgets and tick consumption per pipeline iteration. Enforce energy-proportional processing on battery-constrained devices by scaling pipeline depth to available energy.",
+    note: "EnergyBudget.tick() is invoked per sample in the pipeline (Phase 13)."
+  },
+  {
+    num: "15",
+    title: "Side-Channel Detection",
+    body: "Detect timing anomalies indicative of side-channel attacks. A statistical observer tracks execution-timing distributions and flags deviations beyond configurable thresholds.",
+    note: "SideChannelDetector.observe_timing() runs per sample in the pipeline (Phase 13)."
+  },
+  {
+    num: "16",
+    title: "Compliance Scoring",
+    body: "Collect evidence toward compliance frameworks. Audit, detection, and enforcement records accumulate into a compliance score that quantifies adherence to security policies.",
+    note: "ComplianceManager.add_evidence() and .score() are wired into the pipeline (Phase 13)."
   },
 ];
 
@@ -125,27 +161,35 @@ const statusData = {
     "Fixed-threshold baseline detector for paper comparison (T111)",
     "Side-by-side bench CLI comparing EWMA vs fixed-threshold detectors (T112)",
     "Per-signal contribution aggregation in benchmark harness (T113)",
+    "Enforcement module with network blocking and process suspension (T120)",
+    "Post-quantum Lamport one-time signatures (T121)",
+    "Swarm coordination protocol with peer discovery and digest gossip (T122)",
+    "Privacy-preserving forensic evidence handling (T123)",
+    "Wasm extension sandbox for user-defined detection policies (T124)",
+    "Local threat-intelligence store with IOC matching (T125)",
+    "Timing-based side-channel attack detection (T126)",
+    "Digital-twin fleet simulation engine (T127)",
+    "Compliance evidence collection and framework scoring (T128)",
+    "Tenant-isolated security contexts for multi-tenancy (T129)",
+    "Edge-cloud hybrid offload decision engine (T130)",
+    "Energy budget tracking and proportional processing (T131)",
+    "All 40 research tracks at foundation status",
+    "Pipeline wiring: threat-intel, enforcement, digital-twin, energy, side-channel, compliance (Phase 13)",
+    "Criterion micro-benchmarks for paper evaluation (~55K samples/sec throughput) (T132)",
+    "Continual learning with Page-Hinkley drift detection and automatic re-learning (T133)",
+    "Policy composition algebra with conflict resolution operators (T134)",
   ],
   scaffolded: [
     "ZK proof placeholder in proof-carrying metadata — Halo2/SNARK deferred (R12)",
     "TLA+/Alloy export stubs in state machine — formal checker integration deferred (R02)",
-    "Checkpoint state restoration — snapshots captured, restore not yet wired (R10)",
-    "Post-quantum audit signatures — SHA-256 chain in place, PQ signatures deferred (R11)",
-    "Ed25519 signing in supply-chain attestation — SBOM and build-manifest structure in place (R22)",
-    "Research-track status accounting across all 40 blueprint items",
   ],
   deferred: [
-    "Continual learning, replay buffers, on-device model training",
     "Differential privacy guarantees",
     "Zero-knowledge proofs (Halo2, zk-SNARKs)",
     "Formal rule verification / TLA+ model checking",
-    "Swarm or cross-device coordination protocols",
     "Quantum-walk anomaly propagation modeling",
     "Secure MPC / private set intersection",
-    "Post-quantum signatures and hardware roots of trust",
-    "Wasm-based extensible policy plugins",
-    "Supply-chain firmware attestation",
-    "Energy-harvesting archival scheduling",
+    "Hardware roots of trust integration",
   ],
 };
 
@@ -302,6 +346,39 @@ const backlogPhases = [
       { id: "T112", title: "Bench CLI command", desc: "Side-by-side EWMA vs fixed-threshold comparison.", done: true },
       { id: "T113", title: "Per-signal contribution in benchmarks", desc: "Signal attribution aggregation in benchmark harness.", done: true },
       { id: "T114", title: "Documentation cleanup", desc: "Fix all stale references across docs.", done: true },
+    ],
+  },
+  {
+    id: "phase-12",
+    tag: "Phase 12",
+    tagClass: "done",
+    title: "Research Frontier Modules (complete)",
+    tasks: [
+      { id: "T120", title: "Enforcement module", desc: "Network blocking and process suspension driven by threat level.", done: true },
+      { id: "T121", title: "Post-quantum Lamport signatures", desc: "One-time hash-based signatures for quantum-resistant signing.", done: true },
+      { id: "T122", title: "Swarm coordination protocol", desc: "Peer discovery, digest gossip, and voting protocol.", done: true },
+      { id: "T123", title: "Privacy-preserving forensics", desc: "PrivacyFilter for field redaction and k-anonymity.", done: true },
+      { id: "T124", title: "Wasm extension engine", desc: "Sandboxed Wasm VM for user-defined detection policies.", done: true },
+      { id: "T125", title: "Threat intelligence store", desc: "Local IOC matching with severity-rated indicators.", done: true },
+      { id: "T126", title: "Side-channel detection", desc: "Timing-based side-channel attack detection.", done: true },
+      { id: "T127", title: "Digital-twin simulation", desc: "Deterministic discrete-event fleet simulation engine.", done: true },
+      { id: "T128", title: "Compliance scoring", desc: "Evidence collection and framework compliance score.", done: true },
+      { id: "T129", title: "Multi-tenancy isolation", desc: "Tenant-isolated security contexts.", done: true },
+      { id: "T130", title: "Edge-cloud offload", desc: "Hybrid offload decision engine.", done: true },
+      { id: "T131", title: "Energy budget tracking", desc: "Per-iteration energy accounting and proportional processing.", done: true },
+    ],
+  },
+  {
+    id: "phase-13",
+    tag: "Phase 13",
+    tagClass: "done",
+    title: "Research Agenda Advancement (complete)",
+    tasks: [
+      { id: "T132", title: "Pipeline wiring", desc: "Threat-intel, enforcement, digital-twin, energy, side-channel, and compliance wired into runtime.", done: true },
+      { id: "T133", title: "Criterion micro-benchmarks", desc: "Benchmark suite for paper evaluation (~55K samples/sec, ~98ns detector, ~404ns policy).", done: true },
+      { id: "T134", title: "Continual learning", desc: "Page-Hinkley drift detection with automatic baseline re-learning.", done: true },
+      { id: "T135", title: "Policy composition algebra", desc: "MaxSeverity, MinSeverity, LeftPriority, RightPriority operators with conflict resolution.", done: true },
+      { id: "T136", title: "Documentation update", desc: "Backlog, changelog, features, status, and README updated for Phase 13.", done: true },
     ],
   },
 ];
