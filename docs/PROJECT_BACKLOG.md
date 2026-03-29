@@ -93,7 +93,7 @@ This backlog lists the next concrete tasks in build order.
 
 ## Phase 11 - Paper readiness (planned)
 
-- [ ] T110: Generate extended test fixtures (100+ samples each) for four attack scenarios: benign steady-state, credential storm, slow escalation, and low-battery attack.
+- [x] T110: Generate extended test fixtures (100+ samples each) for four attack scenarios: benign steady-state, credential storm, slow escalation, and low-battery attack.
 - [ ] T111: Add a fixed-threshold baseline comparison detector for paper evaluation against the adaptive EWMA detector.
 - [ ] T112: Add a `bench` CLI command that runs the benchmark harness and prints precision/recall/F1/accuracy plus per-sample throughput.
 - [ ] T113: Add per-signal contribution percentage to `BenchmarkResult` for paper-ready attribution breakdowns.
@@ -101,9 +101,9 @@ This backlog lists the next concrete tasks in build order.
 
 ## Recommended next build order
 
-56 of 61 backlog items are complete. Phases 0–10 are complete.
+57 of 61 backlog items are complete. Phases 0–10 are complete.
 
-Recommended next work: T110–T114, in order.
+Recommended next work: T111–T114, in order.
 
 ## Code-quality sweep (post-Phase 7)
 

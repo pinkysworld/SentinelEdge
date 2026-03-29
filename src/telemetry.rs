@@ -280,4 +280,47 @@ mod tests {
         let parsed: TelemetrySample = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.process_count, 42);
     }
+
+    #[test]
+    fn parse_benign_extended_fixture() {
+        let samples =
+            TelemetrySample::parse_csv(std::path::Path::new("examples/benign_extended.csv"))
+                .unwrap();
+        assert_eq!(samples.len(), 120);
+        assert!(samples.iter().all(|s| s.auth_failures == 0));
+    }
+
+    #[test]
+    fn parse_credential_storm_extended_fixture() {
+        let samples = TelemetrySample::parse_csv(std::path::Path::new(
+            "examples/credential_storm_extended.csv",
+        ))
+        .unwrap();
+        assert_eq!(samples.len(), 120);
+        assert!(samples.iter().any(|s| s.auth_failures > 10));
+    }
+
+    #[test]
+    fn parse_slow_escalation_extended_fixture() {
+        let samples = TelemetrySample::parse_csv(std::path::Path::new(
+            "examples/slow_escalation_extended.csv",
+        ))
+        .unwrap();
+        assert_eq!(samples.len(), 120);
+        // starts benign, ramps to high CPU
+        assert!(samples.first().unwrap().cpu_load_pct < 15.0);
+        assert!(samples.iter().any(|s| s.cpu_load_pct > 85.0));
+    }
+
+    #[test]
+    fn parse_low_battery_extended_fixture() {
+        let samples = TelemetrySample::parse_csv(std::path::Path::new(
+            "examples/low_battery_extended.csv",
+        ))
+        .unwrap();
+        assert_eq!(samples.len(), 120);
+        // starts with low battery, degrades further
+        assert!(samples.first().unwrap().battery_pct < 20.0);
+        assert!(samples.iter().any(|s| s.battery_pct < 1.0));
+    }
 }
