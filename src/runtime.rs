@@ -499,9 +499,9 @@ pub fn status_snapshot() -> String {
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2026-03-29".into(),
-        backlog_completed: 60,
+        backlog_completed: 61,
         backlog_total: 61,
-        completed_phases: 11,
+        completed_phases: 12,
         total_phases: 12,
         cli_commands: vec![
             "demo".into(),
@@ -561,6 +561,7 @@ pub fn status_manifest() -> StatusManifest {
             "Fixed-threshold baseline comparison detector for paper evaluation".into(),
             "`bench` CLI command comparing adaptive EWMA vs fixed-threshold detectors".into(),
             "Per-signal contribution aggregation in benchmark results for paper attribution".into(),
+            "Stale documentation cleanup: corrected counts, dates, phase headers, and changelog entries".into(),
         ],
         partially_wired: vec![
             "ZK proof circuit implementation (backend interface and witness export exist)".into(),
@@ -632,7 +633,7 @@ mod tests {
     #[test]
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
-        assert_eq!(manifest.backlog_completed, 60);
+        assert_eq!(manifest.backlog_completed, 61);
         assert_eq!(manifest.backlog_total, 61);
         assert_eq!(manifest.total_phases, 12);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));

@@ -2,7 +2,37 @@
 
 All notable changes to SentinelEdge are documented in this file.
 
-## [0.8.0] — 2025-07-18
+## [0.10.0] — 2026-03-29
+
+### Added
+- **Extended test fixtures** (T110): four 120-sample CSV datasets (benign, credential storm, slow escalation, low-battery attack) for paper evaluation.
+- **Fixed-threshold baseline detector** (T111): static per-signal threshold detector in `fixed_threshold.rs` with `run_fixed_benchmark` for comparison against adaptive EWMA.
+- **`bench` CLI command** (T112): head-to-head detector comparison printing precision/recall/F1/accuracy and throughput.
+- **Per-signal contribution aggregation** (T113): `BenchmarkResult` now carries averaged per-signal attribution; printed by `bench` CLI.
+- 11 new unit tests (147 total: 126 unit + 21 integration).
+- New source module: `fixed_threshold.rs`.
+
+### Changed
+- CLI commands increased to 12 (added `bench`).
+- `BenchmarkHarness` now tracks and averages per-signal contributions.
+
+## [0.9.0] — 2026-03-29
+
+### Added
+- **Adapter-backed checkpoint restore** (T100): rollback now reapplies abstract device isolation/quarantine state via pluggable action adapters.
+- **TLA+ and Alloy model export** (T101): `PolicyStateMachine::export_tla()` and `export_alloy()` produce formal verification modules; `/api/export/tla` and `/api/export/alloy` endpoints.
+- **Proof backend interface** (T102): `DigestBackend` and `ZkStubBackend` with serializable witness export; `/api/export/witnesses` endpoint.
+- **Single-source research-track data** (T103): canonical `research_tracks.json` consumed by runtime, API (`/api/research-tracks`), and admin console with static-file fallback.
+- **Supply-chain attestation foundations** (T104): `BuildManifest` generation with SHA-256 artifact hashing, `TrustStore` management, manifest/artifact verification, `/api/attestation/status` endpoint.
+- `export-model` and `attest` CLI commands.
+- 31 new unit tests (115 unit + 21 integration).
+- New source modules: `attestation.rs`, `proof.rs`.
+
+### Changed
+- CLI commands increased to 11 (added `export-model`, `attest`).
+- Admin console `trackGroups` replaced with async `loadTrackGroups()` fetching from API/static JSON.
+
+## [0.8.0] — 2026-03-29
 
 ### Added
 - **Correlation engine integration** (T090): runtime `execute()` now runs Pearson correlation analysis on the replay buffer and includes results in audit logs and console output.
@@ -27,7 +57,7 @@ All notable changes to SentinelEdge are documented in this file.
 - `DeviceFingerprint::train()` returns `None` if NaN/Inf propagates through computation (CQ-17).
 - Temporal-logic monitor now receives state machine transition events so `no_skip_escalation` property is exercised (CQ-20).
 
-## [0.7.0] — 2025-07-18
+## [0.7.0] — 2026-03-28
 
 ### Added
 - **Explainable anomaly attribution** (T080): per-signal contribution breakdown in `AnomalySignal` — each signal dimension's weighted score contribution is captured and included in JSON reports.

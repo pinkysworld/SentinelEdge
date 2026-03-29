@@ -83,7 +83,7 @@ This backlog lists the next concrete tasks in build order.
 - [x] T093: Add `harness` CLI command for adversarial regression testing from the command line (R28).
 - [x] T094: Add behavioural device fingerprinting module with statistical profiling and impersonation detection (R38).
 
-## Phase 10 - Integration closure (planned)
+## Phase 10 - Integration closure (completed)
 
 - [x] T100: Add a device-state restore abstraction so checkpoint restore can drive adapter-backed rollback beyond detector baseline state.
 - [x] T101: Export the policy state machine to TLA+/Alloy-friendly artifacts for offline verification workflows.
@@ -91,19 +91,19 @@ This backlog lists the next concrete tasks in build order.
 - [x] T103: Replace static research-track status duplication with a single generated source consumed by docs, runtime status, and the admin console.
 - [x] T104: Implement supply-chain attestation foundations: build manifest generation, trust-store loading, and verification hooks.
 
-## Phase 11 - Paper readiness (planned)
+## Phase 11 - Paper readiness (completed)
 
 - [x] T110: Generate extended test fixtures (100+ samples each) for four attack scenarios: benign steady-state, credential storm, slow escalation, and low-battery attack.
 - [x] T111: Add a fixed-threshold baseline comparison detector for paper evaluation against the adaptive EWMA detector.
 - [x] T112: Add a `bench` CLI command that runs the benchmark harness and prints precision/recall/F1/accuracy plus per-sample throughput.
 - [x] T113: Add per-signal contribution percentage to `BenchmarkResult` for paper-ready attribution breakdowns.
-- [ ] T114: Clean up stale documentation references (supply-chain now partially implemented, Phase 10 complete, update counts and recommended-next section).
+- [x] T114: Clean up stale documentation references (supply-chain now partially implemented, Phase 10 complete, update counts and recommended-next section).
 
 ## Recommended next build order
 
-60 of 61 backlog items are complete. Phases 0–10 are complete.
+61 of 61 backlog items are complete. Phases 0–11 are complete.
 
-Recommended next work: T114.
+All tasks are done.
 
 ## Code-quality sweep (post-Phase 7)
 
