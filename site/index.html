@@ -230,7 +230,7 @@
             <p class="label">Source</p>
             <h2>Module Map</h2>
             <p class="section-desc">
-              Seventeen Rust source files. The prototype is deliberately modular — complexity gets
+              Twenty-two Rust source files. The prototype is deliberately modular — complexity gets
               added when the research justifies it, not before.
             </p>
           </div>
@@ -325,6 +325,36 @@
               <span>HTTP server with token-authenticated API for browser admin console</span>
               <span class="module-tracks">—</span>
             </div>
+            <div class="module-row">
+              <code>correlation.rs</code>
+              <span>Multi-signal Pearson correlation analysis and co-rising detection</span>
+              <span class="module-tracks">R26</span>
+            </div>
+            <div class="module-row">
+              <code>monitor.rs</code>
+              <span>Temporal-logic runtime monitor with safety and bounded liveness properties</span>
+              <span class="module-tracks">R29</span>
+            </div>
+            <div class="module-row">
+              <code>harness.rs</code>
+              <span>Adversarial testing harness with grammar-based evasion strategies</span>
+              <span class="module-tracks">R28</span>
+            </div>
+            <div class="module-row">
+              <code>fingerprint.rs</code>
+              <span>Behavioural device fingerprinting with Mahalanobis-inspired distance</span>
+              <span class="module-tracks">R38</span>
+            </div>
+            <div class="module-row">
+              <code>attestation.rs</code>
+              <span>Supply-chain attestation with SBOM generation and build manifests</span>
+              <span class="module-tracks">R22</span>
+            </div>
+            <div class="module-row">
+              <code>fixed_threshold.rs</code>
+              <span>Static per-signal threshold detector for paper comparison benchmarks</span>
+              <span class="module-tracks">R13</span>
+            </div>
           </div>
         </div>
       </section>
@@ -336,14 +366,17 @@
             <p class="label">Implementation</p>
             <h2>Current Status</h2>
             <p class="section-desc">
-              The project has completed all ten phases (0–9) of the engineering backlog. It provides a
+              The project has completed all twelve phases (0–11) of the engineering backlog. It provides a
               working edge security runtime with configurable detection, pluggable response actions,
               cryptographic audit trails, proof-carrying update metadata, a checkable policy state machine,
               poisoning heuristics, replay buffering, benchmark tooling, a live browser admin console
               backed by an authenticated HTTP API, and browser-based inspection of exported status/report
-              artifacts. Phase 8–9 added runtime intelligence: explainable anomaly attribution,
+              artifacts. Phases 8–9 added runtime intelligence: explainable anomaly attribution,
               correlation analysis, temporal-logic monitoring, adversarial testing, and device fingerprinting —
               all wired into the execution pipeline with audit logging and API endpoints.
+              Phase 10 unified the research-track data pipeline and added supply-chain attestation.
+              Phase 11 added extended 120-sample test fixtures, a fixed-threshold baseline detector
+              for paper comparison, a side-by-side bench CLI, and per-signal contribution aggregation.
               Three categories below — no ambiguity about what is real versus what is planned.
             </p>
           </div>
@@ -378,9 +411,9 @@
             <p class="label">Roadmap</p>
             <h2>Engineering Backlog</h2>
             <p class="section-desc">
-              Concrete tasks grouped by phase. All ten phases (0–9) are complete, including the
-              live admin console with auto-refresh, file upload analysis, dark mode, and
-              authenticated control endpoints.
+              Concrete tasks grouped by phase. All twelve phases (0–11) are complete, encompassing
+              the full detect–respond–audit pipeline, runtime intelligence features, extended
+              benchmark fixtures, and a side-by-side detector comparison CLI.
             </p>
           </div>
           <div id="backlog-phases"></div>
@@ -451,7 +484,7 @@
             <div class="start-card">
               <h3>Run tests</h3>
               <div class="code-block"><code>cargo test</code></div>
-              <p>52 automated tests covering all 17 modules.</p>
+              <p>147 automated tests covering all 22 modules.</p>
             </div>
             <div class="start-card">
               <h3>SIEM report</h3>
@@ -476,6 +509,11 @@
               <h3>Live admin console</h3>
               <div class="code-block"><code>cargo run -- serve</code></div>
               <p>Starts the HTTP server on port 8080. Open <code>localhost:8080/admin.html</code> for the live control plane.</p>
+            </div>
+            <div class="start-card">
+              <h3>Benchmark detectors</h3>
+              <div class="code-block"><code>cargo run -- bench examples/benign_extended.csv examples/credential_storm_extended.csv</code></div>
+              <p>Side-by-side comparison of EWMA vs fixed-threshold detectors with P/R/F1/accuracy and per-signal attribution.</p>
             </div>
           </div>
 
@@ -519,7 +557,7 @@
             </div>
           </div>
           <div class="footer-bottom">
-            <p>SentinelEdge · v0.8.0 · Phase 0–9 complete · 105 tests · 20 hardening fixes · July 2025</p>
+            <p>SentinelEdge · v0.10.0 · Phase 0–11 complete · 147 tests · March 2026</p>
           </div>
         </div>
       </footer>

@@ -6,10 +6,10 @@
 // ── Project Data ──────────────────────────────────────────────────────────────
 
 const stats = [
-  { value: "17", label: "core runtime modules" },
+  { value: "22", label: "core runtime modules" },
   { value: "8",  label: "telemetry dimensions" },
   { value: "40", label: "research tracks mapped" },
-  { value: "69", label: "automated tests" },
+  { value: "147", label: "automated tests" },
 ];
 
 const pipelineDetails = [
@@ -71,7 +71,7 @@ const pipelineDetails = [
     num: "10",
     title: "Output & Reporting",
     body: "Structured JSON reports can be generated for SIEM integration. JSONL alert streams provide real-time event output. The init-config command generates a TOML configuration template, and the status command provides a live implementation snapshot.",
-    note: "Eight CLI commands: demo, analyze, report, init-config, status, status-json, serve, help."
+    note: "Twelve CLI commands: demo, analyze, report, init-config, status, status-json, serve, replay, attest, bench, help, and show-config."
   },
 ];
 
@@ -114,12 +114,24 @@ const statusData = {
     "Temporal-logic property specification format (SentinelTL, runtime monitor)",
     "Digital-twin fleet simulation architecture (deterministic discrete-event model)",
     "Formal policy composition algebra (conflict resolution, verification)",
+    "Explainable anomaly attribution with per-signal contribution breakdown (T080)",
+    "Multi-signal correlation analysis with Pearson coefficients and co-rising detection (T081)",
+    "Runtime temporal-logic monitor with safety and liveness property checking (T083)",
+    "Adversarial testing harness with grammar-based evasion strategies (T084)",
+    "Behavioural device fingerprinting with Mahalanobis-inspired distance scoring (T094)",
+    "Single-source research-track data pipeline for website and API (T103)",
+    "Supply-chain attestation module with SBOM generation and build-manifest signing (T104)",
+    "Extended 120-sample test fixtures for all four attack scenarios (T110)",
+    "Fixed-threshold baseline detector for paper comparison (T111)",
+    "Side-by-side bench CLI comparing EWMA vs fixed-threshold detectors (T112)",
+    "Per-signal contribution aggregation in benchmark harness (T113)",
   ],
   scaffolded: [
     "ZK proof placeholder in proof-carrying metadata — Halo2/SNARK deferred (R12)",
     "TLA+/Alloy export stubs in state machine — formal checker integration deferred (R02)",
     "Checkpoint state restoration — snapshots captured, restore not yet wired (R10)",
     "Post-quantum audit signatures — SHA-256 chain in place, PQ signatures deferred (R11)",
+    "Ed25519 signing in supply-chain attestation — SBOM and build-manifest structure in place (R22)",
     "Research-track status accounting across all 40 blueprint items",
   ],
   deferred: [
@@ -241,6 +253,55 @@ const backlogPhases = [
       { id: "T074", title: "Temporal-logic property spec format", desc: "Design a property specification format for R29.", done: true },
       { id: "T075", title: "Digital-twin simulation architecture", desc: "Sketch a fleet simulation architecture for R31.", done: true },
       { id: "T076", title: "Formal policy composition algebra", desc: "Sketch a policy algebra for R39.", done: true },
+    ],
+  },
+  {
+    id: "phase-8",
+    tag: "Phase 8",
+    tagClass: "done",
+    title: "Runtime Intelligence (complete)",
+    tasks: [
+      { id: "T080", title: "Explainable anomaly attribution", desc: "Per-signal contribution breakdown in AnomalySignal.", done: true },
+      { id: "T081", title: "Multi-signal correlation engine", desc: "Pearson coefficients and co-rising detection.", done: true },
+      { id: "T082", title: "Attribution + correlation wired into pipeline", desc: "Full pipeline integration with audit logging.", done: true },
+      { id: "T083", title: "Temporal-logic runtime monitor", desc: "SentinelTL property checking (safety + liveness).", done: true },
+      { id: "T084", title: "Adversarial testing harness", desc: "Grammar-based evasion strategies and coverage metric.", done: true },
+    ],
+  },
+  {
+    id: "phase-9",
+    tag: "Phase 9",
+    tagClass: "done",
+    title: "Extended Intelligence (complete)",
+    tasks: [
+      { id: "T090", title: "Correlation analysis wired into API", desc: "Correlation endpoint and pipeline integration.", done: true },
+      { id: "T091", title: "Monitor violations in pipeline output", desc: "Temporal-logic violations in run results.", done: true },
+      { id: "T092", title: "Adversarial harness wired into pipeline", desc: "Evasion testing callable from CLI and API.", done: true },
+      { id: "T093", title: "Export endpoints (TLA+, Alloy, witnesses)", desc: "Formal model export endpoints.", done: true },
+      { id: "T094", title: "Behavioural device fingerprinting", desc: "Statistical profile for device impersonation detection.", done: true },
+    ],
+  },
+  {
+    id: "phase-10",
+    tag: "Phase 10",
+    tagClass: "done",
+    title: "Data Pipeline & Attestation (complete)",
+    tasks: [
+      { id: "T103", title: "Single-source research-track data", desc: "Canonical JSON drives website and API.", done: true },
+      { id: "T104", title: "Supply-chain attestation module", desc: "SBOM generation and build-manifest signing.", done: true },
+    ],
+  },
+  {
+    id: "phase-11",
+    tag: "Phase 11",
+    tagClass: "done",
+    title: "Extended Fixtures & Benchmarking (complete)",
+    tasks: [
+      { id: "T110", title: "Extended 120-sample test fixtures", desc: "Benign, credential-storm, slow-escalation, and low-battery extended CSVs.", done: true },
+      { id: "T111", title: "Fixed-threshold baseline detector", desc: "Static per-signal threshold detector for paper comparison.", done: true },
+      { id: "T112", title: "Bench CLI command", desc: "Side-by-side EWMA vs fixed-threshold comparison.", done: true },
+      { id: "T113", title: "Per-signal contribution in benchmarks", desc: "Signal attribution aggregation in benchmark harness.", done: true },
+      { id: "T114", title: "Documentation cleanup", desc: "Fix all stale references across docs.", done: true },
     ],
   },
 ];

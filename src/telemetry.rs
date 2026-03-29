@@ -119,6 +119,11 @@ impl TelemetrySample {
 
     pub fn parse_line(line: &str, line_number: usize) -> Result<Self, ParseTelemetryError> {
         let cols = line.split(',').count();
+        if cols == 9 {
+            return Err(ParseTelemetryError::new(format!(
+                "line {line_number}: expected 8 or 10 columns, found 9"
+            )));
+        }
         let expected = if cols >= 10 { 10 } else { 8 };
         Self::parse_line_cols(line, line_number, expected)
     }

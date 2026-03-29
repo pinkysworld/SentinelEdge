@@ -1,0 +1,281 @@
+{
+  "updated_at": "2026-03-29",
+  "backlog_completed": 61,
+  "backlog_total": 61,
+  "completed_phases": 12,
+  "total_phases": 12,
+  "cli_commands": [
+    "demo",
+    "analyze",
+    "report",
+    "init-config",
+    "status",
+    "status-json",
+    "harness",
+    "export-model",
+    "attest",
+    "bench",
+    "serve",
+    "help"
+  ],
+  "implemented": [
+    "Typed telemetry ingestion from CSV and JSONL",
+    "Adaptive EWMA-based anomaly scoring across eight signal dimensions",
+    "Battery-aware policy decisions with pluggable action adapters",
+    "SHA-256 audit chain with signed checkpoints and verification",
+    "Rollback checkpoints and forensic evidence bundles",
+    "Proof-carrying baseline update metadata",
+    "Policy state machine with transition validation",
+    "Replay buffer with descriptive statistics",
+    "Poisoning heuristics and adaptation controls",
+    "FP/FN benchmark harness",
+    "HTTP server with token-authenticated API",
+    "Live browser admin console with authenticated control plane",
+    "Research paper targeting with evaluation plan",
+    "Swarm coordination protocol design",
+    "Wasm extension surface specification",
+    "Supply-chain attestation design",
+    "Post-quantum logging upgrade path",
+    "Research questions for R26-R30 (explainability)",
+    "Research questions for R31-R35 (infrastructure)",
+    "Research questions for R36-R40 (resilience)",
+    "Adversarial robustness testing harness design",
+    "Temporal-logic property specification format",
+    "Digital-twin fleet simulation architecture",
+    "Formal policy composition algebra",
+    "Explainable anomaly attribution with per-signal contributions",
+    "Config validation with threshold ordering and range checks",
+    "Multi-signal anomaly correlation engine",
+    "Temporal-logic runtime monitor (safety + bounded liveness)",
+    "Adversarial test harness with evasion strategies and coverage",
+    "Correlation engine integrated into runtime pipeline",
+    "Temporal-logic monitor integrated into runtime pipeline",
+    "Server-side /api/correlation endpoint for live analysis",
+    "Adversarial harness CLI command",
+    "Behavioural device fingerprinting with impersonation detection",
+    "Adapter-backed checkpoint restore for abstract device state",
+    "TLA+ and Alloy model export for offline formal verification",
+    "Proof backend interface with witness export for ZK integration",
+    "Single-source research-track data with API and static-file fallback",
+    "Supply-chain attestation: build manifest generation, trust-store loading, artifact verification",
+    "Extended 120-sample test fixtures for paper evaluation (4 scenarios)",
+    "Fixed-threshold baseline comparison detector for paper evaluation",
+    "`bench` CLI command comparing adaptive EWMA vs fixed-threshold detectors",
+    "Per-signal contribution aggregation in benchmark results for paper attribution",
+    "Stale documentation cleanup: corrected counts, dates, phase headers, and changelog entries"
+  ],
+  "partially_wired": [
+    "ZK proof circuit implementation (backend interface and witness export exist)"
+  ],
+  "not_implemented": [
+    "Continual learning and privacy-preserving updates",
+    "Zero-knowledge proofs and formal verification export",
+    "Swarm coordination and cross-device protocols",
+    "Post-quantum signatures and hardware roots of trust",
+    "Digital twin simulation, deception, multi-tenancy, side-channel detection",
+    "Edge-cloud offload, mesh self-organisation",
+    "Policy composition, privacy-preserving forensics"
+  ],
+  "research_tracks": [
+    {
+      "code": "R01",
+      "title": "Adaptive Anomaly Detection with Continual Learning",
+      "status": "foundation"
+    },
+    {
+      "code": "R02",
+      "title": "Formal Verification of Detection Rules",
+      "status": "scaffolded"
+    },
+    {
+      "code": "R03",
+      "title": "Cross-Device Swarm Intelligence",
+      "status": "future"
+    },
+    {
+      "code": "R04",
+      "title": "Quantum-Walk Propagation Modeling",
+      "status": "future"
+    },
+    {
+      "code": "R05",
+      "title": "Model Poisoning Detection and Recovery",
+      "status": "foundation"
+    },
+    {
+      "code": "R06",
+      "title": "Energy-Aware Verifiable Isolation",
+      "status": "foundation"
+    },
+    {
+      "code": "R07",
+      "title": "Self-Healing Network Reconfiguration",
+      "status": "planned"
+    },
+    {
+      "code": "R08",
+      "title": "Privacy-Preserving Coordinated Response",
+      "status": "future"
+    },
+    {
+      "code": "R09",
+      "title": "Adaptive Response Strength",
+      "status": "foundation"
+    },
+    {
+      "code": "R10",
+      "title": "Verifiable Rollback and Forensic Recovery",
+      "status": "foundation"
+    },
+    {
+      "code": "R11",
+      "title": "Post-Quantum Secure Audit Logs",
+      "status": "foundation"
+    },
+    {
+      "code": "R12",
+      "title": "Zero-Knowledge Device State Proof",
+      "status": "future"
+    },
+    {
+      "code": "R13",
+      "title": "Regulatory-Compliant Selective Disclosure",
+      "status": "scaffolded"
+    },
+    {
+      "code": "R14",
+      "title": "Energy-Harvesting Archival Scheduling",
+      "status": "future"
+    },
+    {
+      "code": "R15",
+      "title": "Cross-Device Threat Intelligence Sharing",
+      "status": "future"
+    },
+    {
+      "code": "R16",
+      "title": "Hardware Root-of-Trust Integration",
+      "status": "planned"
+    },
+    {
+      "code": "R17",
+      "title": "Wasm-Based Extensible Policies",
+      "status": "planned"
+    },
+    {
+      "code": "R18",
+      "title": "Energy-Proportional Model Quantization",
+      "status": "future"
+    },
+    {
+      "code": "R19",
+      "title": "Causal False-Positive Reduction",
+      "status": "future"
+    },
+    {
+      "code": "R20",
+      "title": "Supply-Chain Firmware Attestation",
+      "status": "planned"
+    },
+    {
+      "code": "R21",
+      "title": "Quantum-Resistant Key Rotation",
+      "status": "future"
+    },
+    {
+      "code": "R22",
+      "title": "Cross-Platform Binary Self-Optimisation",
+      "status": "future"
+    },
+    {
+      "code": "R23",
+      "title": "Verifiable Swarm Defence Coordination",
+      "status": "future"
+    },
+    {
+      "code": "R24",
+      "title": "Energy-Harvesting Posture Adjustment",
+      "status": "future"
+    },
+    {
+      "code": "R25",
+      "title": "Evolutionary Model Improvement",
+      "status": "future"
+    },
+    {
+      "code": "R26",
+      "title": "Explainable Anomaly Attribution",
+      "status": "foundation"
+    },
+    {
+      "code": "R27",
+      "title": "Federated Threat Model Distillation",
+      "status": "future"
+    },
+    {
+      "code": "R28",
+      "title": "Adversarial Robustness Testing",
+      "status": "foundation"
+    },
+    {
+      "code": "R29",
+      "title": "Temporal Logic Runtime Monitoring",
+      "status": "foundation"
+    },
+    {
+      "code": "R30",
+      "title": "Anomaly Correlation Graph Mining",
+      "status": "foundation"
+    },
+    {
+      "code": "R31",
+      "title": "Digital Twin Fleet Simulation",
+      "status": "future"
+    },
+    {
+      "code": "R32",
+      "title": "Autonomous Secure Patch Management",
+      "status": "future"
+    },
+    {
+      "code": "R33",
+      "title": "Deception-Based Threat Engagement",
+      "status": "future"
+    },
+    {
+      "code": "R34",
+      "title": "Secure Multi-Tenancy Isolation",
+      "status": "future"
+    },
+    {
+      "code": "R35",
+      "title": "Side-Channel Attack Detection",
+      "status": "future"
+    },
+    {
+      "code": "R36",
+      "title": "Edge-Cloud Hybrid Offload",
+      "status": "future"
+    },
+    {
+      "code": "R37",
+      "title": "Resilient Mesh Self-Organisation",
+      "status": "future"
+    },
+    {
+      "code": "R38",
+      "title": "Behavioural Device Fingerprinting",
+      "status": "foundation"
+    },
+    {
+      "code": "R39",
+      "title": "Formal Policy Composition",
+      "status": "future"
+    },
+    {
+      "code": "R40",
+      "title": "Privacy-Preserving Incident Forensics",
+      "status": "future"
+    }
+  ]
+}

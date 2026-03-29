@@ -135,7 +135,12 @@ fn text_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> 
 fn check_auth(request: &Request, state: &Arc<Mutex<AppState>>) -> bool {
     let state = state.lock().unwrap();
     for header in request.headers() {
-        if header.field.as_str() == "Authorization" || header.field.as_str() == "authorization" {
+        if header
+            .field
+            .as_str()
+            .as_str()
+            .eq_ignore_ascii_case("authorization")
+        {
             let val = header.value.as_str();
             if let Some(token) = val.strip_prefix("Bearer ") {
                 return token.trim() == state.token;
@@ -395,13 +400,21 @@ fn handle_analyze(
                 let pre = s
                     .detector
                     .snapshot()
-                    .map(|snap| serde_json::to_vec(&snap).unwrap_or_default())
+                    .and_then(|snap| {
+                        serde_json::to_vec(&snap)
+                            .map_err(|e| eprintln!("proof pre-snapshot serialization error: {e}"))
+                            .ok()
+                    })
                     .unwrap_or_default();
                 s.detector.evaluate(sample);
                 let post = s
                     .detector
                     .snapshot()
-                    .map(|snap| serde_json::to_vec(&snap).unwrap_or_default())
+                    .and_then(|snap| {
+                        serde_json::to_vec(&snap)
+                            .map_err(|e| eprintln!("proof post-snapshot serialization error: {e}"))
+                            .ok()
+                    })
                     .unwrap_or_default();
                 s.proofs.record("baseline_update", &pre, &post);
                 s.device.apply_decision(&report.decision);
