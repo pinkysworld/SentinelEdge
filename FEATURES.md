@@ -32,7 +32,7 @@ A 10-stage pipeline — ingest → parse → detect → decide → act → audit
 | Proof backend interface with witness export | Zero-knowledge proof integration (Halo2) |
 | Bounded replay buffer with statistics | Swarm/cross-device coordination |
 | Token-authenticated HTTP API (10 endpoints) | Wasm-based extensible policies |
-| 124 automated tests (105 unit + 19 integration) | Supply-chain attestation |
+| 125 automated tests (105 unit + 20 integration) | Supply-chain attestation |
 | Browser admin console with dark mode | Digital-twin fleet simulation |
 | CSV + JSONL multi-format ingestion | Quantum-walk anomaly propagation |
 

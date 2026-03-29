@@ -476,6 +476,7 @@ pub fn status_snapshot() -> String {
         "  - adapter-backed checkpoint restore (T100)",
         "  - TLA+/Alloy model export for offline verification (T101)",
         "  - proof backend interface with witness export (T102)",
+        "  - single-source research-track status data (T103)",
         "",
         "Foundation (complete):",
         "  - adaptive multi-signal anomaly scoring (8 dimensions)",
@@ -497,7 +498,7 @@ pub fn status_snapshot() -> String {
 pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2026-03-29".into(),
-        backlog_completed: 54,
+        backlog_completed: 55,
         backlog_total: 56,
         completed_phases: 10,
         total_phases: 11,
@@ -551,6 +552,7 @@ pub fn status_manifest() -> StatusManifest {
             "Adapter-backed checkpoint restore for abstract device state".into(),
             "TLA+ and Alloy model export for offline formal verification".into(),
             "Proof backend interface with witness export for ZK integration".into(),
+            "Single-source research-track data with API and static-file fallback".into(),
         ],
         partially_wired: vec![
             "ZK proof circuit implementation (backend interface and witness export exist)".into(),
@@ -568,53 +570,42 @@ pub fn status_manifest() -> StatusManifest {
     }
 }
 
-fn rt(code: &str, title: &str, status: &str) -> TrackStatus {
-    TrackStatus { code: code.into(), title: title.into(), status: status.into() }
+/// Canonical research-track data embedded from `site/data/research_tracks.json`.
+const RESEARCH_TRACKS_JSON: &str = include_str!("../site/data/research_tracks.json");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackGroup {
+    pub id: String,
+    pub label: String,
+    pub tracks: Vec<TrackDetail>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackDetail {
+    pub code: String,
+    pub status: String,
+    pub title: String,
+    pub summary: String,
+    pub idea: String,
+    pub matters: String,
+    pub state: String,
+}
+
+/// Return the full canonical research-track groups (used by the API).
+pub fn research_track_groups() -> Vec<TrackGroup> {
+    serde_json::from_str(RESEARCH_TRACKS_JSON).unwrap_or_default()
 }
 
 fn research_tracks() -> Vec<TrackStatus> {
-    vec![
-        rt("R01", "Learned Multi-Modal Anomaly Detection", "foundation"),
-        rt("R02", "Formal Verification of Detection Rules", "scaffolded"),
-        rt("R03", "Cross-Device Swarm Intelligence", "future"),
-        rt("R04", "Quantum-Inspired Anomaly Propagation", "future"),
-        rt("R05", "On-Device Model Poisoning Detection", "foundation"),
-        rt("R06", "Energy-Aware Verifiable Isolation", "foundation"),
-        rt("R07", "Self-Healing Network Reconfiguration", "planned"),
-        rt("R08", "Privacy-Preserving Coordinated Response", "future"),
-        rt("R09", "Adaptive Response Strength", "foundation"),
-        rt("R10", "Verifiable Rollback and Forensic Recovery", "foundation"),
-        rt("R11", "Post-Quantum Secure Audit Logs", "foundation"),
-        rt("R12", "Zero-Knowledge Proof of Device State", "future"),
-        rt("R13", "Regulatory-Compliant Verifiable Export", "scaffolded"),
-        rt("R14", "Long-Term Archival with Energy Harvesting", "future"),
-        rt("R15", "Cross-Device Verifiable Threat Sharing", "future"),
-        rt("R16", "Hardware Root-of-Trust Integration", "planned"),
-        rt("R17", "Wasm-Based Extensible Policies", "planned"),
-        rt("R18", "Energy-Proportional Model Quantization", "future"),
-        rt("R19", "Learned False-Positive Reduction", "future"),
-        rt("R20", "Verifiable Supply-Chain Attestation", "planned"),
-        rt("R21", "Quantum-Resistant Key Rotation", "future"),
-        rt("R22", "Cross-Platform Binary Self-Optimization", "future"),
-        rt("R23", "Verifiable Multi-Device Swarm Defense", "future"),
-        rt("R24", "Energy-Harvesting Aware Security Posture", "future"),
-        rt("R25", "Long-Term Evolutionary Model Improvement", "future"),
-        rt("R26", "Explainable Anomaly Attribution", "foundation"),
-        rt("R27", "Federated Threat Model Distillation", "future"),
-        rt("R28", "Adversarial Robustness Testing Framework", "foundation"),
-        rt("R29", "Temporal Logic Runtime Monitoring", "foundation"),
-        rt("R30", "Anomaly Correlation Graph Mining", "foundation"),
-        rt("R31", "Digital Twin Simulation for Edge Fleets", "future"),
-        rt("R32", "Autonomous Secure Patch Management", "future"),
-        rt("R33", "Deception-Based Threat Engagement", "future"),
-        rt("R34", "Secure Multi-Tenancy Isolation", "future"),
-        rt("R35", "Side-Channel Attack Detection", "future"),
-        rt("R36", "Edge-Cloud Hybrid Offload", "future"),
-        rt("R37", "Resilient Mesh Topology Self-Organisation", "future"),
-        rt("R38", "Behavioural Device Fingerprinting", "foundation"),
-        rt("R39", "Formal Policy Composition", "future"),
-        rt("R40", "Privacy-Preserving Incident Forensics", "future"),
-    ]
+    research_track_groups()
+        .into_iter()
+        .flat_map(|g| g.tracks)
+        .map(|t| TrackStatus {
+            code: t.code,
+            title: t.title,
+            status: t.status,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -633,7 +624,7 @@ mod tests {
     #[test]
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
-        assert_eq!(manifest.backlog_completed, 54);
+        assert_eq!(manifest.backlog_completed, 55);
         assert_eq!(manifest.backlog_total, 56);
         assert_eq!(manifest.total_phases, 11);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));

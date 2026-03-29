@@ -344,3 +344,29 @@ fn export_witnesses_populated_after_run_demo() {
     assert_eq!(witnesses[0]["label"], "baseline_update");
     assert!(witnesses[0]["verified"].as_bool().unwrap());
 }
+
+// ── GET /api/research-tracks ───────────────────────────────────
+
+#[test]
+fn research_tracks_returns_grouped_tracks() {
+    let (port, _token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/research-tracks", base(port)))
+        .call()
+        .expect("research-tracks request");
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let groups = body.as_array().expect("should be array");
+    assert!(groups.len() >= 7, "at least 7 track groups");
+
+    let first = &groups[0];
+    assert!(first.get("label").is_some());
+    let tracks = first["tracks"].as_array().expect("tracks array");
+    assert!(!tracks.is_empty());
+
+    let t = &tracks[0];
+    assert!(t.get("code").is_some());
+    assert!(t.get("title").is_some());
+    assert!(t.get("status").is_some());
+    assert!(t.get("summary").is_some());
+}

@@ -270,6 +270,13 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let json = s.proofs.export_witnesses_json(&DigestBackend);
             json_response(&json, 200)
         }
+        (Method::Get, "/api/research-tracks") => {
+            let groups = runtime::research_track_groups();
+            match serde_json::to_string_pretty(&groups) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
         (Method::Post, "/api/control/run-demo") => {
             let demo = runtime::demo_samples();
             let result = runtime::execute(&demo);
