@@ -500,9 +500,9 @@ pub fn status_manifest() -> StatusManifest {
     StatusManifest {
         updated_at: "2026-03-29".into(),
         backlog_completed: 56,
-        backlog_total: 56,
+        backlog_total: 61,
         completed_phases: 11,
-        total_phases: 11,
+        total_phases: 12,
         cli_commands: vec![
             "demo".into(),
             "analyze".into(),
@@ -628,8 +628,8 @@ mod tests {
     fn status_manifest_reports_backlog_progress() {
         let manifest = status_manifest();
         assert_eq!(manifest.backlog_completed, 56);
-        assert_eq!(manifest.backlog_total, 56);
-        assert_eq!(manifest.total_phases, 11);
+        assert_eq!(manifest.backlog_total, 61);
+        assert_eq!(manifest.total_phases, 12);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
     }
 
