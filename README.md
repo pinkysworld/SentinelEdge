@@ -106,7 +106,7 @@ cargo test
 ## Repository layout
 
 ```text
-src/                  Rust runtime (17 modules)
+src/                  Rust runtime (22 modules)
 examples/             Sample telemetry traces (CSV + JSONL)
 docs/                 Design notes, backlog, and status documentation
 site/                 Static GitHub Pages site

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   SentinelEdge — Site Logic v4
+   SentinelEdge — Site Logic v5
    Data-driven rendering. Researcher tone. No marketing fluff.
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -592,33 +592,36 @@ function initNav() {
 function initScrollReveal() {
   const targets = document.querySelectorAll(
     ".section-header, .arch-stage, .detail-card, .status-col, .phase-block, " +
-    ".track-group, .start-card, .csv-format, .stat-card, .console-preview"
+    ".track-group, .start-card, .csv-format, .stat-card, .console-preview, " +
+    ".module-table"
   );
 
   const observer = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
-        entry.target.classList.add("revealed");
+        entry.target.classList.add("visible");
         observer.unobserve(entry.target);
       }
     });
-  }, { threshold: 0.1 });
+  }, { threshold: 0.08, rootMargin: "0px 0px -40px 0px" });
 
+  let groupIndex = 0;
   targets.forEach(t => {
-    t.style.opacity = "0";
-    t.style.transform = "translateY(16px)";
-    t.style.transition = "opacity 500ms ease, transform 500ms ease";
-    const delay = t.style.getPropertyValue("--stagger");
-    if (delay) t.style.transitionDelay = delay;
+    t.classList.add("reveal");
+    // Stagger siblings within the same parent
+    const siblings = t.parentElement.querySelectorAll(":scope > .reveal");
+    if (siblings.length > 1) {
+      const idx = Array.from(siblings).indexOf(t);
+      t.style.transitionDelay = `${idx * 80}ms`;
+    }
     observer.observe(t);
+    groupIndex++;
   });
 }
 
 // ── Revealed class ────────────────────────────────────────────────────────────
 
-const style = document.createElement("style");
-style.textContent = `.revealed { opacity: 1 !important; transform: translateY(0) !important; }`;
-document.head.appendChild(style);
+// (reveal/visible classes handled via styles.css)
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

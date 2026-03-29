@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   SentinelEdge — Site Styles v4
+   SentinelEdge — Site Styles v5
    Clean, research-oriented design. Dark nav, light content, monospace accents.
+   Polished cards, subtle gradients, scroll animations, improved hierarchy.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -83,6 +84,21 @@ ul { list-style: none; margin: 0; padding: 0; }
   background: var(--nav-bg);
   border-bottom: 1px solid rgba(255,255,255,0.06);
   backdrop-filter: blur(12px);
+  box-shadow: 0 1px 12px rgba(0,0,0,0.15);
+}
+
+.site-nav::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--nav-accent) 50%, var(--accent-2) 100%);
+}
+
+.site-nav.scrolled {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
 }
 
 .nav-inner {
@@ -240,6 +256,27 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .section-alt {
   background: var(--bg-alt);
+  position: relative;
+}
+
+.section-alt::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 5%, var(--border) 50%, transparent 95%);
+}
+
+.section-alt::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 5%, var(--border) 50%, transparent 95%);
 }
 
 .section-header {
@@ -269,7 +306,21 @@ ul { list-style: none; margin: 0; padding: 0; }
   padding-top: 100px;
   padding-bottom: 80px;
   background:
+    radial-gradient(ellipse 80% 50% at 70% 40%, rgba(79,209,178,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(26,107,90,0.04) 0%, transparent 60%),
     linear-gradient(180deg, var(--bg) 0%, var(--bg-alt) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-section::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
 }
 
 .hero-section .container {
@@ -335,7 +386,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .btn-primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  box-shadow: 0 4px 12px rgba(26,107,90,0.25);
+  box-shadow: 0 4px 16px rgba(26,107,90,0.3);
+  transform: translateY(-1px);
 }
 
 .btn-outline {
@@ -393,11 +445,17 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 
 .stat-card {
-  padding: 20px;
+  padding: 24px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .stat-header {
@@ -421,11 +479,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 
 .stat-value {
-  font-size: 1.8rem;
+  font-size: 1.9rem;
   font-weight: 700;
   color: var(--accent);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .stat-label {
@@ -437,9 +496,20 @@ ul { list-style: none; margin: 0; padding: 0; }
 .console-preview {
   border-radius: var(--radius-lg);
   background: var(--console-bg);
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
   overflow: hidden;
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 60px rgba(79,209,178,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: box-shadow 400ms ease;
+}
+
+.console-preview:hover {
+  box-shadow:
+    var(--shadow-lg),
+    0 0 80px rgba(79,209,178,0.1),
+    inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .console-chrome {
@@ -487,12 +557,13 @@ ul { list-style: none; margin: 0; padding: 0; }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
 
 .arch-stage:hover {
   border-color: var(--accent);
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .arch-num {
@@ -571,11 +642,13 @@ ul { list-style: none; margin: 0; padding: 0; }
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
 
 .detail-card:hover {
   border-color: rgba(26,107,90,0.3);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .detail-card h3 {
@@ -617,6 +690,7 @@ ul { list-style: none; margin: 0; padding: 0; }
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .module-row {
@@ -630,6 +704,14 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 
 .module-row:last-child { border-bottom: none; }
+
+.module-row:nth-child(even):not(.module-header-row) {
+  background: var(--bg-alt);
+}
+
+.module-row:not(.module-header-row):hover {
+  background: var(--accent-light);
+}
 
 .module-header-row {
   background: var(--bg-alt);
@@ -667,6 +749,12 @@ ul { list-style: none; margin: 0; padding: 0; }
   border-radius: var(--radius-lg);
   background: var(--surface);
   overflow: hidden;
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.status-col:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
 }
 
 .status-col-header {
@@ -921,13 +1009,14 @@ ul { list-style: none; margin: 0; padding: 0; }
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
   cursor: default;
 }
 
 .track-card:hover {
   border-color: rgba(26,107,90,0.25);
   box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .track-card.hidden {
@@ -1060,6 +1149,13 @@ ul { list-style: none; margin: 0; padding: 0; }
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.start-card:hover {
+  border-color: rgba(26,107,90,0.25);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
 }
 
 .start-card h3 {
@@ -1146,7 +1242,19 @@ ul { list-style: none; margin: 0; padding: 0; }
 .site-footer {
   background: var(--nav-bg);
   color: var(--nav-ink);
-  padding: 48px 0 0;
+  padding: 56px 0 0;
+  position: relative;
+}
+
+.site-footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--nav-accent), transparent);
+  opacity: 0.3;
 }
 
 .footer-grid {
@@ -1200,32 +1308,41 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .footer-bottom {
   margin-top: 40px;
-  padding: 16px 0;
+  padding: 20px 0;
   border-top: 1px solid rgba(255,255,255,0.06);
 }
 
 .footer-bottom p {
   font-size: 0.78rem;
-  color: rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.3);
   text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* ── Section Dividers ──────────────────────────────────────────────────────── */
+
+.section + .section:not(.section-alt),
+.section-alt + .section:not(.section-alt) {
+  border-top: 1px solid var(--border-light);
 }
 
 /* ── Animations ────────────────────────────────────────────────────────────── */
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.section-header,
-.arch-stage,
-.detail-card,
-.status-col,
-.phase-block,
-.track-group,
-.start-card,
-.csv-format {
-  animation: fade-up 500ms ease-out both;
+/* Scroll-reveal: elements start hidden, animate when observed */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 600ms ease-out, transform 600ms ease-out;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Stagger helper — set via JS */
