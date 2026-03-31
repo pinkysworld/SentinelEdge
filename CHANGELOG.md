@@ -2,6 +2,27 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.18.0] — Phase 21
+
+### Added
+- **Velocity rate-of-change detector**: Tracks per-axis first derivative (velocity) and second derivative (acceleration) over a sliding window. Flags ramp-ups where the latest velocity exceeds mean + σ·std, even when absolute values remain below static thresholds. Configurable window size and sigma threshold.
+- **Shannon entropy detector**: Computes per-axis entropy over a sliding window using histogram binning. Low entropy (<15% of max) flags constant attack traffic (cryptominers, DDoS floods). High entropy on auth-failures axis (>90%) flags randomised credential stuffing and evasion.
+- **Compound multi-axis threat detector**: Counts simultaneously elevated axes and applies a score multiplier (`score × (1 + fraction × 0.5)`) when ≥40% of axes spike together. Detects coordinated attacks that spread across CPU, network, auth, disk, and temperature.
+- **Detection analysis panel** in admin console: Threat Detection section now shows velocity, entropy, and compound detector configuration with live status from `/api/detection/summary`.
+- **`GET /api/detection/summary`** endpoint returning velocity/entropy/compound detector state.
+- **Help & Docs updates**: Three new detection method sections in the "How Detection Works" accordion.
+
+### Security
+- **Path traversal hardening**: `canonicalize()` validation on static file serving prevents symlink-based directory escape.
+- **Request body size limit**: 10 MB cap on API request bodies with 413 rejection.
+- **Security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store` on JSON responses; `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, and CORS headers on static file responses.
+- **MIME type coverage**: Added `ico` and `woff2` content types.
+
+### Changed
+- Monitor thread now enriches EWMA signals with velocity, entropy, and compound analysis before alert threshold evaluation.
+- Runtime manifest updated to 102/102 tasks, 21 phases.
+- Version bumped to 0.18.0.
+
 ## [0.17.1] — Phase 20
 
 ### Added

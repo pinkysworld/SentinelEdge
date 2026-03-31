@@ -1,3 +1,5 @@
 target/
 var/
 .DS_Store
+site/admin.html.bak
+site/generate_admin.py

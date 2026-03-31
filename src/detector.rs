@@ -458,6 +458,297 @@ impl DriftDetector {
     }
 }
 
+// ─── Rate-of-change velocity detector (R01 / Phase 21) ───
+
+/// Tracks per-dimension velocity (first derivative) and acceleration (second
+/// derivative). A sudden spike in velocity that exceeds the historical mean
+/// by `velocity_sigma` standard deviations indicates an attack ramp-up even
+/// when absolute values haven't yet breached fixed thresholds.
+#[derive(Debug, Clone)]
+pub struct VelocityDetector {
+    history: Vec<[f32; 9]>,
+    window_cap: usize,
+    velocity_sigma: f32,
+}
+
+/// Result from a velocity analysis pass.
+#[derive(Debug, Clone)]
+pub struct VelocityReport {
+    pub anomalous_axes: Vec<String>,
+    pub max_velocity: f32,
+    pub max_acceleration: f32,
+    pub score_boost: f32,
+}
+
+impl VelocityDetector {
+    pub fn new(window_cap: usize, velocity_sigma: f32) -> Self {
+        Self {
+            history: Vec::with_capacity(window_cap),
+            window_cap,
+            velocity_sigma,
+        }
+    }
+
+    pub fn sigma(&self) -> f32 { self.velocity_sigma }
+
+    fn sample_to_array(s: &TelemetrySample) -> [f32; 9] {
+        [
+            s.cpu_load_pct,
+            s.memory_load_pct,
+            s.temperature_c,
+            s.network_kbps,
+            s.auth_failures as f32,
+            s.battery_pct,
+            s.integrity_drift,
+            s.process_count as f32,
+            s.disk_pressure_pct,
+        ]
+    }
+
+    const AXIS_NAMES: [&'static str; 9] = [
+        "cpu_load_pct", "memory_load_pct", "temperature_c", "network_kbps",
+        "auth_failures", "battery_pct", "integrity_drift", "process_count",
+        "disk_pressure_pct",
+    ];
+
+    /// Feed a new sample and return velocity anomalies.
+    pub fn update(&mut self, sample: &TelemetrySample) -> VelocityReport {
+        let arr = Self::sample_to_array(sample);
+        if self.history.len() >= self.window_cap {
+            self.history.remove(0);
+        }
+        self.history.push(arr);
+
+        if self.history.len() < 3 {
+            return VelocityReport {
+                anomalous_axes: vec![],
+                max_velocity: 0.0,
+                max_acceleration: 0.0,
+                score_boost: 0.0,
+            };
+        }
+
+        let _n = self.history.len();
+        let mut anomalous = Vec::new();
+        let mut max_vel: f32 = 0.0;
+        let mut max_acc: f32 = 0.0;
+        let mut boost: f32 = 0.0;
+
+        for dim in 0..9 {
+            // Compute velocities (first differences)
+            let velocities: Vec<f32> = self.history.windows(2)
+                .map(|w| w[1][dim] - w[0][dim])
+                .collect();
+
+            // Last velocity
+            let last_vel = velocities.last().copied().unwrap_or(0.0);
+            let vel_abs = last_vel.abs();
+            if vel_abs > max_vel { max_vel = vel_abs; }
+
+            // Acceleration (second differences)
+            if velocities.len() >= 2 {
+                let tail = velocities.len();
+                let acc = (velocities[tail - 1] - velocities[tail - 2]).abs();
+                if acc > max_acc { max_acc = acc; }
+            }
+
+            // Mean and std of velocity history
+            let v_mean: f32 = velocities.iter().sum::<f32>() / velocities.len() as f32;
+            let v_var: f32 = velocities.iter()
+                .map(|v| (v - v_mean).powi(2))
+                .sum::<f32>() / velocities.len() as f32;
+            let v_std = v_var.sqrt().max(0.001);
+
+            // Check if latest velocity is an outlier
+            if vel_abs > v_mean.abs() + self.velocity_sigma * v_std && vel_abs > 0.5 {
+                anomalous.push(Self::AXIS_NAMES[dim].to_string());
+                boost += (vel_abs - v_mean.abs()) / (v_std * 10.0);
+            }
+        }
+
+        VelocityReport {
+            anomalous_axes: anomalous,
+            max_velocity: max_vel,
+            max_acceleration: max_acc,
+            score_boost: boost.min(2.5),
+        }
+    }
+
+    pub fn window_len(&self) -> usize {
+        self.history.len()
+    }
+}
+
+// ─── Shannon entropy anomaly scorer (Phase 21) ───
+
+/// Computes Shannon entropy over the distribution of telemetry values
+/// in a sliding window. Abnormally low entropy (uniform/constant attack
+/// traffic) or abnormally high entropy (randomised evasion) both signal
+/// anomalous behaviour.
+#[derive(Debug, Clone)]
+pub struct EntropyDetector {
+    window: Vec<[f32; 9]>,
+    window_cap: usize,
+    bins: usize,
+}
+
+/// Result from an entropy analysis pass.
+#[derive(Debug, Clone)]
+pub struct EntropyReport {
+    pub entropies: Vec<(String, f32)>,
+    pub anomalous_axes: Vec<String>,
+    pub score_boost: f32,
+}
+
+impl EntropyDetector {
+    pub fn new(window_cap: usize, bins: usize) -> Self {
+        Self {
+            window: Vec::with_capacity(window_cap),
+            window_cap,
+            bins: bins.max(4),
+        }
+    }
+
+    pub fn window_len(&self) -> usize { self.window.len() }
+    pub fn bins(&self) -> usize { self.bins }
+
+    /// Feed a new sample and compute per-axis Shannon entropy.
+    pub fn update(&mut self, sample: &TelemetrySample) -> EntropyReport {
+        let arr = VelocityDetector::sample_to_array(sample);
+        if self.window.len() >= self.window_cap {
+            self.window.remove(0);
+        }
+        self.window.push(arr);
+
+        if self.window.len() < 5 {
+            return EntropyReport {
+                entropies: vec![],
+                anomalous_axes: vec![],
+                score_boost: 0.0,
+            };
+        }
+
+        let n = self.window.len() as f32;
+        let mut entropies = Vec::new();
+        let mut anomalous = Vec::new();
+        let mut boost: f32 = 0.0;
+
+        for dim in 0..9 {
+            let values: Vec<f32> = self.window.iter().map(|a| a[dim]).collect();
+            let min_v = values.iter().cloned().fold(f32::INFINITY, f32::min);
+            let max_v = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let range = (max_v - min_v).max(0.001);
+
+            // Bin the values
+            let mut hist = vec![0u32; self.bins];
+            for &v in &values {
+                let idx = (((v - min_v) / range) * (self.bins as f32 - 1.0)) as usize;
+                let idx = idx.min(self.bins - 1);
+                hist[idx] += 1;
+            }
+
+            // Shannon entropy H = -Σ p*log2(p)
+            let mut h: f32 = 0.0;
+            for &count in &hist {
+                if count > 0 {
+                    let p = count as f32 / n;
+                    h -= p * p.log2();
+                }
+            }
+
+            let max_entropy = (self.bins as f32).log2();
+            let name = VelocityDetector::AXIS_NAMES[dim].to_string();
+            entropies.push((name.clone(), h));
+
+            // Very low entropy = suspicious uniformity (cryptominer steady-state)
+            if h < max_entropy * 0.15 && n >= 10.0 {
+                anomalous.push(format!("{name}:low_entropy"));
+                boost += 0.4;
+            }
+            // Very high entropy where it shouldn't be (e.g. randomised auth failures)
+            if h > max_entropy * 0.9 && dim == 4 && n >= 10.0 {
+                anomalous.push(format!("{name}:high_entropy"));
+                boost += 0.6;
+            }
+        }
+
+        EntropyReport {
+            entropies,
+            anomalous_axes: anomalous,
+            score_boost: boost.min(2.0),
+        }
+    }
+}
+
+// ─── Compound multi-axis threat detector (Phase 21) ───
+
+/// Detects coordinated multi-axis attacks where individual dimensions
+/// may be below threshold but their simultaneous co-elevation indicates
+/// a sophisticated attack pattern (e.g. CPU + network + auth rising
+/// together).
+#[derive(Debug, Clone)]
+pub struct CompoundThreatDetector {
+    /// Minimum fraction of axes that must be simultaneously elevated.
+    pub min_concurrent_fraction: f32,
+    /// Threshold: each axis must deviate by at least this fraction of
+    /// its scale to count as "elevated".
+    pub per_axis_threshold: f32,
+}
+
+/// Result from compound threat analysis.
+#[derive(Debug, Clone)]
+pub struct CompoundThreatReport {
+    pub elevated_axes: Vec<String>,
+    pub concurrent_fraction: f32,
+    pub compound_score: f32,
+    pub is_compound_attack: bool,
+}
+
+impl Default for CompoundThreatDetector {
+    fn default() -> Self {
+        Self {
+            min_concurrent_fraction: 0.4,
+            per_axis_threshold: 0.3,
+        }
+    }
+}
+
+impl CompoundThreatDetector {
+    pub fn new(min_concurrent_fraction: f32, per_axis_threshold: f32) -> Self {
+        Self { min_concurrent_fraction, per_axis_threshold }
+    }
+
+    /// Analyse how many axes are simultaneously elevated relative to
+    /// their baseline contribution. Takes the per-signal contributions
+    /// from `AnomalySignal`.
+    pub fn evaluate(&self, signal: &AnomalySignal) -> CompoundThreatReport {
+        // Count axes with non-trivial contribution
+        let elevated: Vec<String> = signal.contributions.iter()
+            .filter(|(_, v)| *v >= self.per_axis_threshold)
+            .map(|(name, _)| name.to_string())
+            .collect();
+
+        let total_axes = 9.0_f32;
+        let fraction = elevated.len() as f32 / total_axes;
+        let is_compound = fraction >= self.min_concurrent_fraction;
+
+        // Compound multiplier: the more axes are co-elevated, the greater
+        // the effective threat (sophisticated coordinated attack)
+        let compound_score = if is_compound {
+            signal.score * (1.0 + fraction * 0.5)
+        } else {
+            signal.score
+        };
+
+        CompoundThreatReport {
+            elevated_axes: elevated,
+            concurrent_fraction: fraction,
+            compound_score,
+            is_compound_attack: is_compound,
+        }
+    }
+}
+
 /// Multi-signal continual-learning monitor that wraps an `AnomalyDetector`
 /// with per-dimension drift detection and automatic baseline re-learning.
 pub struct ContinualLearner {
@@ -826,5 +1117,104 @@ mod tests {
             "continual learner should trigger re-learn on distribution shift"
         );
         assert!(learner.relearn_count() >= 1);
+    }
+
+    #[test]
+    fn velocity_detector_flags_rapid_ramp() {
+        use super::VelocityDetector;
+
+        let mut vel = VelocityDetector::new(20, 2.0);
+        // Feed stable samples
+        for i in 0..10 {
+            let s = TelemetrySample {
+                timestamp_ms: i,
+                cpu_load_pct: 15.0,
+                memory_load_pct: 25.0,
+                temperature_c: 38.0,
+                network_kbps: 400.0,
+                auth_failures: 0,
+                battery_pct: 90.0,
+                integrity_drift: 0.01,
+                process_count: 50,
+                disk_pressure_pct: 10.0,
+            };
+            vel.update(&s);
+        }
+        // Inject rapid CPU ramp
+        let report = vel.update(&TelemetrySample {
+            timestamp_ms: 10,
+            cpu_load_pct: 85.0,
+            memory_load_pct: 25.0,
+            temperature_c: 38.0,
+            network_kbps: 400.0,
+            auth_failures: 0,
+            battery_pct: 90.0,
+            integrity_drift: 0.01,
+            process_count: 50,
+            disk_pressure_pct: 10.0,
+        });
+        assert!(!report.anomalous_axes.is_empty(), "should flag velocity anomaly on cpu ramp");
+        assert!(report.score_boost > 0.0);
+    }
+
+    #[test]
+    fn entropy_detector_flags_uniformity() {
+        use super::EntropyDetector;
+
+        let mut ent = EntropyDetector::new(30, 8);
+        // Feed identical samples (zero entropy = suspicious)
+        for i in 0..15 {
+            let s = TelemetrySample {
+                timestamp_ms: i,
+                cpu_load_pct: 80.0,
+                memory_load_pct: 60.0,
+                temperature_c: 55.0,
+                network_kbps: 5000.0,
+                auth_failures: 0,
+                battery_pct: 80.0,
+                integrity_drift: 0.05,
+                process_count: 100,
+                disk_pressure_pct: 30.0,
+            };
+            ent.update(&s);
+        }
+        let report = ent.update(&TelemetrySample {
+            timestamp_ms: 15,
+            cpu_load_pct: 80.0,
+            memory_load_pct: 60.0,
+            temperature_c: 55.0,
+            network_kbps: 5000.0,
+            auth_failures: 0,
+            battery_pct: 80.0,
+            integrity_drift: 0.05,
+            process_count: 100,
+            disk_pressure_pct: 30.0,
+        });
+        assert!(!report.anomalous_axes.is_empty(), "constant values should flag low entropy");
+        assert!(report.score_boost > 0.0);
+    }
+
+    #[test]
+    fn compound_detector_flags_multi_axis() {
+        use super::CompoundThreatDetector;
+
+        let compound = CompoundThreatDetector::default();
+        // Build a signal with 5 axes contributing
+        let signal = super::AnomalySignal {
+            score: 4.0,
+            confidence: 1.0,
+            suspicious_axes: 5,
+            reasons: vec!["cpu".into(), "mem".into(), "net".into(), "auth".into(), "disk".into()],
+            contributions: vec![
+                ("cpu_load_pct", 0.8),
+                ("memory_load_pct", 0.7),
+                ("network_kbps", 1.0),
+                ("auth_failures", 0.9),
+                ("disk_pressure_pct", 0.6),
+            ],
+        };
+        let report = compound.evaluate(&signal);
+        assert!(report.is_compound_attack, "5 of 9 axes elevated should trigger compound");
+        assert!(report.compound_score > signal.score, "compound score should be boosted");
     }
 }

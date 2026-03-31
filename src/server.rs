@@ -11,7 +11,7 @@ use crate::compliance::{ComplianceManager, CausalGraph};
 use crate::collector::{AlertRecord, CollectorState, FileIntegrityMonitor, HostInfo, detect_platform};
 use crate::config::Config;
 use crate::correlation;
-use crate::detector::{AdaptationMode, AnomalyDetector, DriftDetector};
+use crate::detector::{AdaptationMode, AnomalyDetector, CompoundThreatDetector, DriftDetector, EntropyDetector, VelocityDetector};
 use crate::digital_twin::DigitalTwinEngine;
 use crate::edge_cloud::{PlatformCapabilities, PatchManager};
 use crate::enforcement::EnforcementEngine;
@@ -75,6 +75,10 @@ struct AppState {
     // Local host telemetry (ring buffer, last 300 samples)
     local_telemetry: Vec<TelemetrySample>,
     local_host_info: HostInfo,
+    // Phase 21: advanced detectors
+    velocity: VelocityDetector,
+    entropy: EntropyDetector,
+    compound: CompoundThreatDetector,
 }
 
 pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
@@ -124,6 +128,9 @@ pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
         siem_connector: SiemConnector::new(crate::siem::SiemConfig::default()),
         local_telemetry: Vec::new(),
         local_host_info: detect_platform(),
+        velocity: VelocityDetector::new(60, 2.5),
+        entropy: EntropyDetector::new(60, 8),
+        compound: CompoundThreatDetector::default(),
     }));
 
     // ── Spawn local host monitoring thread ──────────────────────────
@@ -144,7 +151,29 @@ pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
                         s.local_telemetry.remove(0);
                     }
                     s.local_telemetry.push(sample);
-                    let signal = s.detector.evaluate(&sample);
+                    let mut signal = s.detector.evaluate(&sample);
+
+                    // Phase 21: velocity / entropy / compound enrichment
+                    let vel_report = s.velocity.update(&sample);
+                    let ent_report = s.entropy.update(&sample);
+                    signal.score += vel_report.score_boost + ent_report.score_boost;
+                    let mut extra_reasons: Vec<String> = Vec::new();
+                    for ax in &vel_report.anomalous_axes {
+                        extra_reasons.push(format!("velocity-spike:{ax}"));
+                    }
+                    for ax in &ent_report.anomalous_axes {
+                        extra_reasons.push(format!("entropy-anomaly:{ax}"));
+                    }
+                    let cmp_report = s.compound.evaluate(&signal);
+                    if cmp_report.is_compound_attack {
+                        signal.score = cmp_report.compound_score;
+                        extra_reasons.push(format!(
+                            "compound-threat({:.0}%)",
+                            cmp_report.concurrent_fraction * 100.0
+                        ));
+                    }
+                    signal.reasons.extend(extra_reasons);
+
                     let crit = s.config.policy.critical_score;
                     let sev = s.config.policy.severe_score;
                     let elev = s.config.policy.elevated_score;
@@ -228,6 +257,9 @@ pub fn spawn_test_server() -> (u16, String) {
         siem_connector: SiemConnector::new(crate::siem::SiemConfig::default()),
         local_telemetry: Vec::new(),
         local_host_info: detect_platform(),
+        velocity: VelocityDetector::new(60, 2.5),
+        entropy: EntropyDetector::new(60, 8),
+        compound: CompoundThreatDetector::default(),
     }));
     let site_dir = PathBuf::from("site");
     std::thread::spawn(move || {
@@ -269,6 +301,9 @@ fn json_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> 
             Header::from_bytes(b"Content-Type", b"application/json").unwrap(),
             Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
             Header::from_bytes(b"Vary", b"Origin").unwrap(),
+            Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
+            Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
+            Header::from_bytes(b"Cache-Control", b"no-store").unwrap(),
         ],
         std::io::Cursor::new(data),
         Some(len),
@@ -319,6 +354,15 @@ fn check_auth(request: &Request, state: &Arc<Mutex<AppState>>) -> bool {
 fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Path) {
     let url = request.url().to_string();
     let method = request.method().clone();
+
+    // ── Request body size limit (10 MB) ──
+    const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
+    if let Some(len) = request.body_length() {
+        if len > MAX_BODY_SIZE {
+            let _ = request.respond(error_json("request body too large", 413));
+            return;
+        }
+    }
 
     // Check auth for mutating endpoints before consuming the request body
     // XDR agent endpoints that do NOT require admin auth (agents use enrollment tokens)
@@ -1004,6 +1048,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 {"method": "POST", "path": "/api/config/save", "auth": true, "description": "Persist config to disk"},
                 {"method": "GET", "path": "/api/endpoints", "auth": false, "description": "This endpoint listing"},
                 {"method": "GET", "path": "/api/threads/status", "auth": false, "description": "Background thread status and collection stats"},
+                {"method": "GET", "path": "/api/detection/summary", "auth": false, "description": "Velocity, entropy, compound detector state"},
             ]);
             json_response(&endpoints.to_string(), 200)
         }
@@ -1055,6 +1100,29 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         // ── XDR Update Distribution ──────────────────────────────
         (Method::Post, "/api/updates/publish") => {
             handle_update_publish(&mut request, state)
+        }
+
+        // ── Detection Analysis ─────────────────────────────────
+        (Method::Get, "/api/detection/summary") => {
+            let s = state.lock().unwrap();
+            let vel_state = &s.velocity;
+            let ent_state = &s.entropy;
+            let cmp_state = &s.compound;
+            let body = serde_json::json!({
+                "velocity": {
+                    "window_size": vel_state.window_len(),
+                    "sigma": vel_state.sigma(),
+                },
+                "entropy": {
+                    "window_size": ent_state.window_len(),
+                    "bins": ent_state.bins(),
+                },
+                "compound": {
+                    "min_concurrent_fraction": cmp_state.min_concurrent_fraction,
+                    "per_axis_threshold": cmp_state.per_axis_threshold,
+                },
+            });
+            json_response(&body.to_string(), 200)
         }
 
         // ── SIEM Status ──────────────────────────────────────────
@@ -1925,7 +1993,7 @@ fn serve_static(request: Request, site_dir: &Path) {
     let url = request.url();
     let relative = if url == "/" { "/index.html" } else { url };
 
-    // Prevent path traversal
+    // Prevent path traversal via components
     let clean = relative.trim_start_matches('/');
     let requested = PathBuf::from(clean);
     if requested
@@ -1938,6 +2006,18 @@ fn serve_static(request: Request, site_dir: &Path) {
 
     let file_path = site_dir.join(clean);
 
+    // Canonicalize to prevent symlink-based path traversal
+    let canon_site = match site_dir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => { let _ = request.respond(error_json("server error", 500)); return; }
+    };
+    if let Ok(canon_file) = file_path.canonicalize() {
+        if !canon_file.starts_with(&canon_site) {
+            let _ = request.respond(error_json("forbidden", 403));
+            return;
+        }
+    }
+
     if file_path.is_file() {
         let content_type = match file_path.extension().and_then(|e| e.to_str()) {
             Some("html") => "text/html; charset=utf-8",
@@ -1947,15 +2027,23 @@ fn serve_static(request: Request, site_dir: &Path) {
             Some("csv") => "text/csv",
             Some("svg") => "image/svg+xml",
             Some("png") => "image/png",
+            Some("ico") => "image/x-icon",
+            Some("woff2") => "font/woff2",
             _ => "application/octet-stream",
         };
 
         match fs::read(&file_path) {
             Ok(data) => {
                 let len = data.len();
+                let origin = cors_origin();
                 let response = Response::new(
                     tiny_http::StatusCode(200),
-                    vec![Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap()],
+                    vec![
+                        Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap(),
+                        Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
+                        Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
+                        Header::from_bytes(b"X-Frame-Options", b"SAMEORIGIN").unwrap(),
+                    ],
                     std::io::Cursor::new(data),
                     Some(len),
                     None,

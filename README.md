@@ -31,7 +31,9 @@ The research blueprint in [blueprint.md](blueprint.md) sketches 40 research trac
 - cross-platform host telemetry collector with live monitoring, webhook alerts, syslog/CEF output, and file-integrity monitoring
 - admin console Live Monitoring panel with auto-polling alert table, settings editor, and toast notifications
 - XDR fleet management: central server + lightweight agent architecture, enrollment, event forwarding with cross-agent correlation, policy distribution, SIEM integration (Splunk HEC/Elasticsearch/generic JSON), agent auto-update with SHA-256 verification, cross-platform service installation
-- 434 automated tests (342 unit + 92 integration) with 10k-sample benchmark and criterion benchmarks
+- velocity rate-of-change detector, Shannon entropy analysis, and compound multi-axis threat correlation
+- server security hardening: canonicalize path traversal, body size limits, security headers (X-Content-Type-Options, X-Frame-Options, Cache-Control, CORS)
+- 437+ automated tests with 10k-sample benchmark and criterion benchmarks
 - cross-platform CI (Linux, macOS, Windows) with clippy and fmt
 - maintained docs, backlog tracking, test fixtures, and a GitHub Pages site
 

@@ -639,6 +639,37 @@ input::placeholder{color:var(--ink-3);}
       <div class="btn-row mt-1">
         <button class="btn btn-sm" id="btn-refresh-security">Refresh Security Data</button>
       </div>
+
+      <div class="card mt-1">
+        <h2><span class="dot dot-blue"></span> Detection Analysis</h2>
+        <p class="text-muted" style="margin-bottom:.75rem;font-size:.82rem;">Advanced detection engines running alongside EWMA scoring — velocity rate-of-change tracking, Shannon entropy analysis, and multi-axis compound threat correlation.</p>
+        <div class="card-grid cols-3">
+          <div class="card" style="background:var(--bg-alt);">
+            <h3>&#8693; Velocity Detector</h3>
+            <p class="text-muted" style="font-size:.78rem;margin-bottom:.5rem;">Tracks rate-of-change (first derivative) and acceleration (second derivative) per telemetry axis. Flags sudden ramp-ups that exceed &sigma;-threshold.</p>
+            <dl class="kv-grid">
+              <dt>Window</dt><dd id="det-vel-window">—</dd>
+              <dt>Sigma (&sigma;)</dt><dd id="det-vel-sigma">—</dd>
+            </dl>
+          </div>
+          <div class="card" style="background:var(--bg-alt);">
+            <h3>&#9783; Entropy Detector</h3>
+            <p class="text-muted" style="font-size:.78rem;margin-bottom:.5rem;">Computes Shannon entropy over a sliding window. Low entropy flags constant attack traffic (cryptominers); high entropy on auth axis flags randomised evasion.</p>
+            <dl class="kv-grid">
+              <dt>Window</dt><dd id="det-ent-window">—</dd>
+              <dt>Bins</dt><dd id="det-ent-bins">—</dd>
+            </dl>
+          </div>
+          <div class="card" style="background:var(--bg-alt);">
+            <h3>&#9733; Compound Threat</h3>
+            <p class="text-muted" style="font-size:.78rem;margin-bottom:.5rem;">Detects coordinated multi-axis attacks where many dimensions spike simultaneously. Applies a compound score multiplier when &ge;40% of axes are elevated.</p>
+            <dl class="kv-grid">
+              <dt>Min Axes</dt><dd id="det-cmp-fraction">—</dd>
+              <dt>Per-Axis &tau;</dt><dd id="det-cmp-threshold">—</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
@@ -1079,6 +1110,12 @@ input::placeholder{color:var(--ink-3);}
           <p>The policy engine maps anomaly scores to enforcement actions: logging, rate-limiting, network isolation, process quarantine, or full lockdown. Policies can be composed (max, min, left/right priority) and executed in a sandboxed WASM VM for safe extensibility.</p>
           <h4>Correlation Engine</h4>
           <p>Cross-agent event correlation detects coordinated attacks spanning multiple endpoints. Uses temporal proximity, shared IOCs, and behavioral similarity to group related events across the fleet.</p>
+          <h4>Velocity Detection</h4>
+          <p>The velocity detector tracks the <em>rate of change</em> (first derivative) and <em>acceleration</em> (second derivative) of each telemetry axis over a sliding window. When the latest velocity exceeds the historical mean by more than &sigma; standard deviations, it flags a velocity spike — detecting rapid ramp-ups characteristic of attack escalation, even when the absolute values remain below static thresholds. Configurable parameters: window size (default 60 samples) and sigma threshold (default 2.5&sigma;).</p>
+          <h4>Entropy Analysis</h4>
+          <p>The entropy detector computes Shannon entropy (<em>H = &minus;&sum; p&middot;log&#8322;p</em>) over a sliding window for each telemetry axis. Values are binned and the entropy is normalised against the maximum possible entropy. <strong>Low entropy</strong> (&lt;15% of max) indicates suspiciously constant traffic — common in cryptominers, DDoS floods, and persistent C2 beacons. <strong>High entropy</strong> on the auth-failures axis (&gt;90% of max) indicates randomised credential stuffing or evasion through password spraying. Configurable parameters: window size (default 60) and bin count (default 8).</p>
+          <h4>Compound Threat Detection</h4>
+          <p>The compound threat detector identifies coordinated multi-axis attacks. It counts how many telemetry axes have a per-axis contribution exceeding a threshold (default &tau;=0.3). When &ge;40% of all axes are simultaneously elevated, the attack is classified as a <em>compound threat</em> and receives a score multiplier: <code>score &times; (1 + fraction &times; 0.5)</code>. This catches sophisticated attacks that spread activity across CPU, network, auth, disk, and temperature to stay below single-axis thresholds.</p>
         </div>
       </div>
 
@@ -1705,16 +1742,26 @@ input::placeholder{color:var(--ink-3);}
   // ── Security Operations ──
   async function refreshSecurity() {
     try {
-      const [enfRes, tiRes, scRes, decRes] = await Promise.all([
+      const [enfRes, tiRes, scRes, decRes, detRes] = await Promise.all([
         fetch(API + '/api/enforcement/status', { headers: authHeaders() }),
         fetch(API + '/api/threat-intel/status', { headers: authHeaders() }),
         fetch(API + '/api/side-channel/status', { headers: authHeaders() }),
         fetch(API + '/api/deception/status', { headers: authHeaders() }),
+        fetch(API + '/api/detection/summary'),
       ]);
       if (enfRes.ok) { const d = await enfRes.json(); $('#enf-policies').textContent = d.policy_count ?? d.policies ?? '—'; $('#enf-actions').textContent = d.history_len ?? d.actions ?? '—'; }
       if (tiRes.ok) { const d = await tiRes.json(); $('#ti-ioc-count').textContent = d.ioc_count ?? '—'; $('#ti-match-count').textContent = d.match_count ?? '—'; }
       if (scRes.ok) { const d = await scRes.json(); $('#sc-risk').textContent = typeof d.risk_score === 'number' ? d.risk_score.toFixed(3) : '—'; $('#sc-samples').textContent = d.timing_samples ?? '—'; }
       if (decRes.ok) { const d = await decRes.json(); $('#dec-total').textContent = d.total_decoys ?? '—'; $('#dec-active').textContent = d.active_decoys ?? '—'; $('#dec-interactions').textContent = d.total_interactions ?? '—'; }
+      if (detRes.ok) {
+        const d = await detRes.json();
+        $('#det-vel-window').textContent = d.velocity?.window_size ?? '—';
+        $('#det-vel-sigma').textContent = typeof d.velocity?.sigma === 'number' ? d.velocity.sigma.toFixed(1) + 'σ' : '—';
+        $('#det-ent-window').textContent = d.entropy?.window_size ?? '—';
+        $('#det-ent-bins').textContent = d.entropy?.bins ?? '—';
+        $('#det-cmp-fraction').textContent = typeof d.compound?.min_concurrent_fraction === 'number' ? (d.compound.min_concurrent_fraction * 100).toFixed(0) + '%' : '—';
+        $('#det-cmp-threshold').textContent = typeof d.compound?.per_axis_threshold === 'number' ? d.compound.per_axis_threshold.toFixed(2) : '—';
+      }
       log('Security data refreshed');
     } catch(e) { log('Security refresh failed: ' + e.message); }
   }
