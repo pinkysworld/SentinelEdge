@@ -1051,3 +1051,99 @@ fn energy_harvest_without_auth_returns_401() {
         other => panic!("expected 401, got {other:?}"),
     }
 }
+
+// ── TLS Status ──────────────────────────────────────────────────
+
+#[test]
+fn tls_status_returns_plain_mode() {
+    let (port, _token) = spawn_test_server();
+    let body: serde_json::Value = ureq::get(&format!("{}/api/tls/status", base(port)))
+        .call()
+        .unwrap()
+        .into_json()
+        .unwrap();
+    assert_eq!(body["tls_enabled"], false);
+    assert_eq!(body["scheme"], "http");
+}
+
+// ── Config Hot-Reload ───────────────────────────────────────────
+
+#[test]
+fn config_current_returns_defaults() {
+    let (port, _token) = spawn_test_server();
+    let body: serde_json::Value = ureq::get(&format!("{}/api/config/current", base(port)))
+        .call()
+        .unwrap()
+        .into_json()
+        .unwrap();
+    assert!(body["detector"]["warmup_samples"].as_u64().unwrap() > 0);
+    assert!(body["policy"]["critical_score"].as_f64().unwrap() > 0.0);
+}
+
+#[test]
+fn config_reload_applies_valid_patch() {
+    let (port, token) = spawn_test_server();
+    let body: serde_json::Value = ureq::post(&format!("{}/api/config/reload", base(port)))
+        .set("Authorization", &format!("Bearer {token}"))
+        .send_string(r#"{"smoothing": 0.30}"#)
+        .unwrap()
+        .into_json()
+        .unwrap();
+    assert_eq!(body["success"], true);
+    assert!(body["applied_fields"].as_array().unwrap().len() == 1);
+}
+
+#[test]
+fn config_reload_rejects_invalid_patch() {
+    let (port, token) = spawn_test_server();
+    // critical_score=1.0 < severe_score=3.0 → invalid
+    let err = ureq::post(&format!("{}/api/config/reload", base(port)))
+        .set("Authorization", &format!("Bearer {token}"))
+        .send_string(r#"{"critical_score": 1.0}"#);
+    match err {
+        Err(ureq::Error::Status(400, resp)) => {
+            let body: serde_json::Value = resp.into_json().unwrap();
+            assert_eq!(body["success"], false);
+            assert!(body["error"].as_str().unwrap().contains("critical_score"));
+        }
+        other => panic!("expected 400, got {other:?}"),
+    }
+}
+
+#[test]
+fn config_reload_without_auth_returns_401() {
+    let (port, _token) = spawn_test_server();
+    let err = ureq::post(&format!("{}/api/config/reload", base(port)))
+        .send_string(r#"{"smoothing": 0.5}"#);
+    match err {
+        Err(ureq::Error::Status(401, _)) => {}
+        other => panic!("expected 401, got {other:?}"),
+    }
+}
+
+// ── Mesh Health ──────────────────────────────────────────────────────────────
+
+#[test]
+fn mesh_health_returns_connected() {
+    let (port, _token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/mesh/health", base(port)))
+        .call()
+        .unwrap();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    // Default swarm has empty mesh → single trivially-connected component
+    assert_eq!(body["is_connected"], true);
+    assert_eq!(body["partition_count"], 0);
+}
+
+#[test]
+fn mesh_heal_on_empty_mesh_is_noop() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::post(&format!("{}/api/mesh/heal", base(port)))
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+        .unwrap();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["repairs_applied"], 0);
+    assert_eq!(body["was_connected"], true);
+    assert_eq!(body["now_connected"], true);
+}

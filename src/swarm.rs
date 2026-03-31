@@ -299,6 +299,216 @@ pub struct MeshReorgAction {
     pub detail: String,
 }
 
+// ── Mesh Self-Healing (R37) ──────────────────────────────────────────────────
+
+/// Result of a BFS spanning-tree computation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanningTree {
+    /// Root node of the spanning tree.
+    pub root: String,
+    /// Parent of each node (root has itself as parent).
+    pub parent: HashMap<String, String>,
+    /// Depth of each node from the root.
+    pub depth: HashMap<String, usize>,
+    /// Total number of nodes reached.
+    pub nodes_reached: usize,
+}
+
+/// A detected network partition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Partition {
+    pub partition_id: usize,
+    pub members: Vec<String>,
+    pub size: usize,
+}
+
+/// Result of partition detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionReport {
+    pub partitions: Vec<Partition>,
+    pub is_connected: bool,
+    pub largest_partition_size: usize,
+}
+
+/// A repair action proposed by the self-healing algorithm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepairAction {
+    pub action_type: RepairType,
+    pub from_node: String,
+    pub to_node: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RepairType {
+    /// Add an edge to reconnect partitions.
+    AddEdge,
+    /// Promote a leaf to relay to improve connectivity.
+    PromoteRelay,
+    /// Re-route traffic through an alternate path.
+    Reroute,
+}
+
+/// Compute a BFS spanning tree from a root node over a mesh topology.
+pub fn bfs_spanning_tree(mesh: &[MeshNode], root_id: &str) -> SpanningTree {
+    let mut parent: HashMap<String, String> = HashMap::new();
+    let mut depth: HashMap<String, usize> = HashMap::new();
+    let mut visited: Vec<String> = Vec::new();
+    let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+
+    // Index for quick lookup
+    let node_map: HashMap<&str, &MeshNode> = mesh.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    if !node_map.contains_key(root_id) {
+        return SpanningTree {
+            root: root_id.to_string(),
+            parent,
+            depth,
+            nodes_reached: 0,
+        };
+    }
+
+    queue.push_back(root_id.to_string());
+    visited.push(root_id.to_string());
+    parent.insert(root_id.to_string(), root_id.to_string());
+    depth.insert(root_id.to_string(), 0);
+
+    while let Some(current) = queue.pop_front() {
+        let current_depth = depth[&current];
+        if let Some(node) = node_map.get(current.as_str()) {
+            for neighbor_id in &node.neighbors {
+                if !visited.contains(neighbor_id) {
+                    visited.push(neighbor_id.clone());
+                    parent.insert(neighbor_id.clone(), current.clone());
+                    depth.insert(neighbor_id.clone(), current_depth + 1);
+                    queue.push_back(neighbor_id.clone());
+                }
+            }
+        }
+    }
+
+    SpanningTree {
+        root: root_id.to_string(),
+        parent,
+        depth,
+        nodes_reached: visited.len(),
+    }
+}
+
+/// Detect partitions in a mesh topology using connected-component analysis.
+pub fn detect_partitions(mesh: &[MeshNode]) -> PartitionReport {
+    let mut visited: Vec<String> = Vec::new();
+    let mut partitions = Vec::new();
+    let node_map: HashMap<&str, &MeshNode> = mesh.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    for node in mesh {
+        if visited.contains(&node.id) {
+            continue;
+        }
+        // BFS from this node
+        let mut component = Vec::new();
+        let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+        queue.push_back(node.id.clone());
+        visited.push(node.id.clone());
+
+        while let Some(current) = queue.pop_front() {
+            component.push(current.clone());
+            if let Some(n) = node_map.get(current.as_str()) {
+                for neighbor_id in &n.neighbors {
+                    if !visited.contains(neighbor_id) {
+                        visited.push(neighbor_id.clone());
+                        queue.push_back(neighbor_id.clone());
+                    }
+                }
+            }
+        }
+
+        let size = component.len();
+        partitions.push(Partition {
+            partition_id: partitions.len(),
+            members: component,
+            size,
+        });
+    }
+
+    let largest = partitions.iter().map(|p| p.size).max().unwrap_or(0);
+    let is_connected = partitions.len() <= 1;
+
+    PartitionReport {
+        partitions,
+        is_connected,
+        largest_partition_size: largest,
+    }
+}
+
+/// Propose repair actions to heal a partitioned mesh.
+///
+/// Strategy: for each pair of disconnected partitions, find the closest
+/// pair of nodes (by capacity) and propose adding an edge between them.
+/// Additionally promotes high-capacity leaf nodes to relay status.
+pub fn propose_repairs(mesh: &[MeshNode], report: &PartitionReport) -> Vec<RepairAction> {
+    let mut repairs = Vec::new();
+
+    if report.is_connected {
+        return repairs;
+    }
+
+    // For each pair of partitions, find the best nodes to bridge
+    for i in 0..report.partitions.len() {
+        for j in (i + 1)..report.partitions.len() {
+            let p_a = &report.partitions[i];
+            let p_b = &report.partitions[j];
+
+            // Find the highest-capacity node in each partition
+            let best_a = p_a
+                .members
+                .iter()
+                .filter_map(|id| mesh.iter().find(|n| n.id == *id))
+                .max_by(|a, b| a.capacity.partial_cmp(&b.capacity).unwrap_or(std::cmp::Ordering::Equal));
+            let best_b = p_b
+                .members
+                .iter()
+                .filter_map(|id| mesh.iter().find(|n| n.id == *id))
+                .max_by(|a, b| a.capacity.partial_cmp(&b.capacity).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let (Some(a), Some(b)) = (best_a, best_b) {
+                repairs.push(RepairAction {
+                    action_type: RepairType::AddEdge,
+                    from_node: a.id.clone(),
+                    to_node: b.id.clone(),
+                    reason: format!(
+                        "Bridge partition {} ({} nodes) ↔ partition {} ({} nodes)",
+                        i, p_a.size, j, p_b.size
+                    ),
+                });
+            }
+        }
+    }
+
+    // Promote high-capacity leaf nodes in small partitions to relay
+    for partition in &report.partitions {
+        if partition.size <= 2 {
+            for member_id in &partition.members {
+                if let Some(node) = mesh.iter().find(|n| n.id == *member_id) {
+                    if node.role == MeshRole::Leaf && node.capacity > 50.0 {
+                        repairs.push(RepairAction {
+                            action_type: RepairType::PromoteRelay,
+                            from_node: node.id.clone(),
+                            to_node: node.id.clone(),
+                            reason: format!(
+                                "Promote leaf in small partition {} (capacity={:.0}) to relay",
+                                partition.partition_id, node.capacity
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    repairs
+}
+
 // ── Swarm Node (Composite) ───────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -556,6 +766,42 @@ impl SwarmNode {
             .fold(0.0_f32, f32::max);
         (sum / count as f32, max, count)
     }
+
+    // ── Self-Healing ──
+
+    /// Detect partitions in the mesh and propose repair actions.
+    pub fn self_heal(&self) -> (PartitionReport, Vec<RepairAction>) {
+        let report = detect_partitions(&self.mesh);
+        let repairs = propose_repairs(&self.mesh, &report);
+        (report, repairs)
+    }
+
+    /// Apply a repair action by adding edges to the mesh.
+    pub fn apply_repair(&mut self, repair: &RepairAction) {
+        if repair.action_type == RepairType::AddEdge {
+            // Add the from→to neighbor link
+            if let Some(from_node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node) {
+                if !from_node.neighbors.contains(&repair.to_node) {
+                    from_node.neighbors.push(repair.to_node.clone());
+                }
+            }
+            // Add the to→from neighbor link (undirected)
+            if let Some(to_node) = self.mesh.iter_mut().find(|n| n.id == repair.to_node) {
+                if !to_node.neighbors.contains(&repair.from_node) {
+                    to_node.neighbors.push(repair.from_node.clone());
+                }
+            }
+        } else if repair.action_type == RepairType::PromoteRelay {
+            if let Some(node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node) {
+                node.role = MeshRole::Relay;
+            }
+        }
+    }
+
+    /// Compute a BFS spanning tree from the coordinator.
+    pub fn spanning_tree(&self) -> SpanningTree {
+        bfs_spanning_tree(&self.mesh, &self.id)
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -748,5 +994,192 @@ mod tests {
         let health = node.health_report();
         assert_eq!(health.quarantined, 1);
         assert_eq!(health.online, 0);
+    }
+
+    // ── Mesh Self-Healing Tests ──
+
+    fn make_mesh_node(id: &str, role: MeshRole, neighbors: &[&str], capacity: f32) -> MeshNode {
+        MeshNode {
+            id: id.to_string(),
+            role,
+            neighbors: neighbors.iter().map(|s| s.to_string()).collect(),
+            load: 0.0,
+            capacity,
+        }
+    }
+
+    #[test]
+    fn bfs_spanning_tree_connected_graph() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Coordinator, &["B", "C"], 100.0),
+            make_mesh_node("B", MeshRole::Relay, &["A", "D"], 80.0),
+            make_mesh_node("C", MeshRole::Leaf, &["A"], 40.0),
+            make_mesh_node("D", MeshRole::Leaf, &["B"], 30.0),
+        ];
+        let tree = bfs_spanning_tree(&mesh, "A");
+        assert_eq!(tree.nodes_reached, 4);
+        assert_eq!(tree.root, "A");
+        assert_eq!(tree.depth["A"], 0);
+        assert_eq!(tree.depth["B"], 1);
+        assert_eq!(tree.depth["C"], 1);
+        assert_eq!(tree.depth["D"], 2);
+        assert_eq!(tree.parent["B"], "A");
+        assert_eq!(tree.parent["D"], "B");
+    }
+
+    #[test]
+    fn bfs_spanning_tree_missing_root() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Leaf, &[], 10.0),
+        ];
+        let tree = bfs_spanning_tree(&mesh, "Z");
+        assert_eq!(tree.nodes_reached, 0);
+    }
+
+    #[test]
+    fn detect_partitions_connected() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Coordinator, &["B"], 100.0),
+            make_mesh_node("B", MeshRole::Relay, &["A", "C"], 80.0),
+            make_mesh_node("C", MeshRole::Leaf, &["B"], 40.0),
+        ];
+        let report = detect_partitions(&mesh);
+        assert!(report.is_connected);
+        assert_eq!(report.partitions.len(), 1);
+        assert_eq!(report.largest_partition_size, 3);
+    }
+
+    #[test]
+    fn detect_partitions_disconnected() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Coordinator, &["B"], 100.0),
+            make_mesh_node("B", MeshRole::Relay, &["A"], 80.0),
+            make_mesh_node("C", MeshRole::Leaf, &["D"], 40.0),
+            make_mesh_node("D", MeshRole::Leaf, &["C"], 30.0),
+        ];
+        let report = detect_partitions(&mesh);
+        assert!(!report.is_connected);
+        assert_eq!(report.partitions.len(), 2);
+        assert_eq!(report.largest_partition_size, 2);
+    }
+
+    #[test]
+    fn propose_repairs_connected_noop() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Coordinator, &["B"], 100.0),
+            make_mesh_node("B", MeshRole::Leaf, &["A"], 50.0),
+        ];
+        let report = detect_partitions(&mesh);
+        let repairs = propose_repairs(&mesh, &report);
+        assert!(repairs.is_empty());
+    }
+
+    #[test]
+    fn propose_repairs_adds_bridge_edge() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Coordinator, &["B"], 100.0),
+            make_mesh_node("B", MeshRole::Relay, &["A"], 80.0),
+            make_mesh_node("C", MeshRole::Leaf, &["D"], 40.0),
+            make_mesh_node("D", MeshRole::Leaf, &["C"], 60.0),
+        ];
+        let report = detect_partitions(&mesh);
+        let repairs = propose_repairs(&mesh, &report);
+        let bridge = repairs.iter().find(|r| r.action_type == RepairType::AddEdge);
+        assert!(bridge.is_some());
+        let b = bridge.unwrap();
+        // Highest capacity in partition 0 is A (100), partition 1 is D (60)
+        assert_eq!(b.from_node, "A");
+        assert_eq!(b.to_node, "D");
+    }
+
+    #[test]
+    fn propose_repairs_promotes_high_capacity_leaf() {
+        let mesh = vec![
+            make_mesh_node("A", MeshRole::Coordinator, &[], 100.0),
+            make_mesh_node("B", MeshRole::Leaf, &[], 75.0),
+        ];
+        let report = detect_partitions(&mesh);
+        let repairs = propose_repairs(&mesh, &report);
+        let promote = repairs.iter().find(|r| r.action_type == RepairType::PromoteRelay);
+        assert!(promote.is_some());
+        assert_eq!(promote.unwrap().from_node, "B");
+    }
+
+    #[test]
+    fn swarm_node_self_heal_connected() {
+        let mut node = SwarmNode::new("coord");
+        node.mesh = vec![
+            make_mesh_node("coord", MeshRole::Coordinator, &["r1"], 100.0),
+            make_mesh_node("r1", MeshRole::Relay, &["coord", "l1"], 80.0),
+            make_mesh_node("l1", MeshRole::Leaf, &["r1"], 40.0),
+        ];
+        let (report, repairs) = node.self_heal();
+        assert!(report.is_connected);
+        assert!(repairs.is_empty());
+    }
+
+    #[test]
+    fn swarm_node_self_heal_partitioned() {
+        let mut node = SwarmNode::new("coord");
+        node.mesh = vec![
+            make_mesh_node("coord", MeshRole::Coordinator, &["r1"], 100.0),
+            make_mesh_node("r1", MeshRole::Relay, &["coord"], 80.0),
+            make_mesh_node("iso", MeshRole::Leaf, &[], 60.0),
+        ];
+        let (report, repairs) = node.self_heal();
+        assert!(!report.is_connected);
+        assert!(!repairs.is_empty());
+    }
+
+    #[test]
+    fn swarm_node_apply_repair_adds_edge() {
+        let mut node = SwarmNode::new("coord");
+        node.mesh = vec![
+            make_mesh_node("coord", MeshRole::Coordinator, &[], 100.0),
+            make_mesh_node("iso", MeshRole::Leaf, &[], 60.0),
+        ];
+        let repair = RepairAction {
+            action_type: RepairType::AddEdge,
+            from_node: "coord".into(),
+            to_node: "iso".into(),
+            reason: "bridge".into(),
+        };
+        node.apply_repair(&repair);
+        assert!(node.mesh[0].neighbors.contains(&"iso".to_string()));
+        assert!(node.mesh[1].neighbors.contains(&"coord".to_string()));
+        // After repair, the mesh should be connected
+        let (report, _) = node.self_heal();
+        assert!(report.is_connected);
+    }
+
+    #[test]
+    fn swarm_node_apply_repair_promotes_relay() {
+        let mut node = SwarmNode::new("coord");
+        node.mesh = vec![
+            make_mesh_node("coord", MeshRole::Coordinator, &["l1"], 100.0),
+            make_mesh_node("l1", MeshRole::Leaf, &["coord"], 60.0),
+        ];
+        let repair = RepairAction {
+            action_type: RepairType::PromoteRelay,
+            from_node: "l1".into(),
+            to_node: "l1".into(),
+            reason: "promote".into(),
+        };
+        node.apply_repair(&repair);
+        assert_eq!(node.mesh[1].role, MeshRole::Relay);
+    }
+
+    #[test]
+    fn spanning_tree_from_swarm_node() {
+        let mut node = SwarmNode::new("coord");
+        node.mesh = vec![
+            make_mesh_node("coord", MeshRole::Coordinator, &["r1", "r2"], 100.0),
+            make_mesh_node("r1", MeshRole::Relay, &["coord", "l1"], 80.0),
+            make_mesh_node("r2", MeshRole::Relay, &["coord"], 70.0),
+            make_mesh_node("l1", MeshRole::Leaf, &["r1"], 40.0),
+        ];
+        let tree = node.spanning_tree();
+        assert_eq!(tree.nodes_reached, 4);
+        assert_eq!(tree.root, "coord");
     }
 }

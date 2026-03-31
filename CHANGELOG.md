@@ -2,6 +2,20 @@
 
 All notable changes to SentinelEdge are documented in this file.
 
+## [0.14.0] — 2026-04-01
+
+### Added
+- **Phase 16 — Production hardening & self-healing** (T147–T150).
+- **ML-DSA-65 post-quantum hybrid signatures** (T147): `MlDsaKeyPair` with deterministic signing, `HybridSignature` dual-verification (classical Lamport + PQ ML-DSA), `PqHybridCheckpoint` with `sign_checkpoint_hybrid()` / `verify_checkpoint_hybrid()`. 8 new tests.
+- **TLS server configuration module** (T148): `TlsConfig` with cert/key paths, mTLS client CA, TLS version enforcement (1.2/1.3), cipher suite selection, Unix key-permission checks, `ListenerMode` abstraction. `GET /api/tls/status` endpoint. 10 unit + 1 integration test.
+- **Zero-downtime config hot-reload** (T149): `ConfigPatch` partial-update struct, `apply()` with validation and automatic rollback on failure, `HotReloadResult`. `GET /api/config/current` and `POST /api/config/reload` endpoints. 3 unit + 4 integration tests.
+- **Mesh self-healing topology** (T150): BFS spanning-tree computation, connected-component partition detection, repair proposal algorithm (AddEdge, PromoteRelay, Reroute), `SwarmNode::self_heal()` and `apply_repair()` methods. `GET /api/mesh/health` and `POST /api/mesh/heal` endpoints. 12 unit + 2 integration tests.
+
+### Changed
+- Version bumped to 0.14.0.
+- Status manifest: 81/81 tasks, 16 phases (was 77/77, 15 phases).
+- Total test count: 369 (292 unit + 77 integration), up from 329.
+
 ## [0.13.0] — 2026-03-31
 
 ### Added

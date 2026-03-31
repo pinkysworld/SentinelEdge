@@ -138,9 +138,16 @@ This backlog lists the next concrete tasks in build order.
 - [x] T145: Update PAPER_TARGETS.md — close 5 Paper 1 gaps (latency benchmark, audit scaling, contribution aggregation, fixed-threshold comparator, criterion benchmarks), update Papers 2 and 3 prerequisites from "not started" to "met".
 - [x] T146: Documentation and version updates — bump version 0.13.0, update all counts (77/77 tasks, 329 tests, 16 phases), update STATUS.md, CHANGELOG.md, README.md, site pages.
 
+## Phase 16 — Production hardening & self-healing (completed)
+
+- [x] T147: ML-DSA-65 post-quantum hybrid signatures — `MlDsaKeyPair` with deterministic signing, `HybridSignature` dual-verification (classical Lamport + PQ ML-DSA), `PqHybridCheckpoint` with sign/verify helpers. 8 new tests.
+- [x] T148: TLS server configuration module — `TlsConfig` with cert/key paths, mTLS client CA, TLS version enforcement, cipher suite selection, Unix key-permission checks, `ListenerMode` abstraction. `GET /api/tls/status` endpoint. 10 unit + 1 integration test.
+- [x] T149: Zero-downtime config hot-reload — `ConfigPatch` partial-update struct with validation and automatic rollback, `HotReloadResult`. `GET /api/config/current` and `POST /api/config/reload` endpoints. 3 unit + 4 integration tests.
+- [x] T150: Mesh self-healing topology — BFS spanning-tree computation, connected-component partition detection, repair proposal algorithm (AddEdge, PromoteRelay, Reroute), `SwarmNode::self_heal()` and `apply_repair()`. `GET /api/mesh/health` and `POST /api/mesh/heal` endpoints. 12 unit + 2 integration tests.
+
 ## Recommended next build order
 
-77 of 77 backlog items are complete. Phases 0–15 are complete.
+81 of 81 backlog items are complete. Phases 0–16 are complete.
 
 All tasks are done.
 

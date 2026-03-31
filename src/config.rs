@@ -148,9 +148,114 @@ impl Config {
     }
 }
 
+// ── Hot-Reload Support ───────────────────────────────────────────────
+
+/// Result of a hot-reload operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotReloadResult {
+    pub success: bool,
+    pub applied_fields: Vec<String>,
+    pub previous_values: std::collections::HashMap<String, String>,
+    pub error: Option<String>,
+}
+
+/// A partial config update for hot-reloading.
+/// Only fields that are `Some` will be applied.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConfigPatch {
+    #[serde(default)]
+    pub warmup_samples: Option<usize>,
+    #[serde(default)]
+    pub smoothing: Option<f32>,
+    #[serde(default)]
+    pub learn_threshold: Option<f32>,
+    #[serde(default)]
+    pub critical_score: Option<f32>,
+    #[serde(default)]
+    pub severe_score: Option<f32>,
+    #[serde(default)]
+    pub elevated_score: Option<f32>,
+    #[serde(default)]
+    pub critical_integrity_drift: Option<f32>,
+    #[serde(default)]
+    pub low_battery_threshold: Option<f32>,
+}
+
+impl ConfigPatch {
+    /// Apply this patch to a Config, validate the result, and return
+    /// the list of changed fields with their previous values.
+    pub fn apply(&self, config: &mut Config) -> HotReloadResult {
+        let mut applied = Vec::new();
+        let mut previous = std::collections::HashMap::new();
+
+        // Snapshot the original config for rollback on validation failure
+        let original = config.clone();
+
+        if let Some(v) = self.warmup_samples {
+            previous.insert("warmup_samples".into(), config.detector.warmup_samples.to_string());
+            config.detector.warmup_samples = v;
+            applied.push("warmup_samples".into());
+        }
+        if let Some(v) = self.smoothing {
+            previous.insert("smoothing".into(), config.detector.smoothing.to_string());
+            config.detector.smoothing = v;
+            applied.push("smoothing".into());
+        }
+        if let Some(v) = self.learn_threshold {
+            previous.insert("learn_threshold".into(), config.detector.learn_threshold.to_string());
+            config.detector.learn_threshold = v;
+            applied.push("learn_threshold".into());
+        }
+        if let Some(v) = self.critical_score {
+            previous.insert("critical_score".into(), config.policy.critical_score.to_string());
+            config.policy.critical_score = v;
+            applied.push("critical_score".into());
+        }
+        if let Some(v) = self.severe_score {
+            previous.insert("severe_score".into(), config.policy.severe_score.to_string());
+            config.policy.severe_score = v;
+            applied.push("severe_score".into());
+        }
+        if let Some(v) = self.elevated_score {
+            previous.insert("elevated_score".into(), config.policy.elevated_score.to_string());
+            config.policy.elevated_score = v;
+            applied.push("elevated_score".into());
+        }
+        if let Some(v) = self.critical_integrity_drift {
+            previous.insert("critical_integrity_drift".into(), config.policy.critical_integrity_drift.to_string());
+            config.policy.critical_integrity_drift = v;
+            applied.push("critical_integrity_drift".into());
+        }
+        if let Some(v) = self.low_battery_threshold {
+            previous.insert("low_battery_threshold".into(), config.policy.low_battery_threshold.to_string());
+            config.policy.low_battery_threshold = v;
+            applied.push("low_battery_threshold".into());
+        }
+
+        // Validate the patched config
+        if let Err(e) = config.validate() {
+            // Rollback
+            *config = original;
+            return HotReloadResult {
+                success: false,
+                applied_fields: Vec::new(),
+                previous_values: std::collections::HashMap::new(),
+                error: Some(e),
+            };
+        }
+
+        HotReloadResult {
+            success: true,
+            applied_fields: applied,
+            previous_values: previous,
+            error: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::Config;
+    use super::{Config, ConfigPatch};
 
     #[test]
     fn default_round_trip_toml() {
@@ -217,5 +322,47 @@ mod tests {
         config.output.checkpoint_interval = 0;
         let err = config.validate().unwrap_err();
         assert!(err.contains("checkpoint_interval"), "error: {err}");
+    }
+
+    #[test]
+    fn hot_reload_applies_partial_patch() {
+        let mut config = Config::default();
+        let patch = ConfigPatch {
+            smoothing: Some(0.35),
+            critical_score: Some(6.0),
+            ..Default::default()
+        };
+        let result = patch.apply(&mut config);
+        assert!(result.success);
+        assert_eq!(result.applied_fields.len(), 2);
+        assert!((config.detector.smoothing - 0.35).abs() < 0.001);
+        assert!((config.policy.critical_score - 6.0).abs() < 0.001);
+        // Previous values recorded
+        assert!(result.previous_values.contains_key("smoothing"));
+    }
+
+    #[test]
+    fn hot_reload_rolls_back_on_invalid() {
+        let mut config = Config::default();
+        let original_critical = config.policy.critical_score;
+        // Set critical_score below severe_score (invalid)
+        let patch = ConfigPatch {
+            critical_score: Some(1.0),
+            ..Default::default()
+        };
+        let result = patch.apply(&mut config);
+        assert!(!result.success);
+        assert!(result.error.is_some());
+        // Config should be rolled back
+        assert!((config.policy.critical_score - original_critical).abs() < 0.001);
+    }
+
+    #[test]
+    fn hot_reload_empty_patch_is_noop() {
+        let mut config = Config::default();
+        let patch = ConfigPatch::default();
+        let result = patch.apply(&mut config);
+        assert!(result.success);
+        assert!(result.applied_fields.is_empty());
     }
 }

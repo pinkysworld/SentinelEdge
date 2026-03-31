@@ -407,6 +407,18 @@ const backlogPhases = [
       { id: "T146", title: "Documentation & version update", desc: "Version 0.13.0, updated counts (77/77 tasks, 329 tests, 16 phases), backlog, changelog, status, README.", done: true },
     ],
   },
+  {
+    id: "phase-16",
+    tag: "Phase 16",
+    tagClass: "done",
+    title: "Production Hardening & Self-Healing (complete)",
+    tasks: [
+      { id: "T147", title: "ML-DSA-65 hybrid signatures", desc: "Post-quantum hybrid signing with classical Lamport + ML-DSA-65 dual verification, PqHybridCheckpoint.", done: true },
+      { id: "T148", title: "TLS server configuration", desc: "TlsConfig with mTLS, version enforcement, cipher suite selection, ListenerMode abstraction, /api/tls/status.", done: true },
+      { id: "T149", title: "Config hot-reload", desc: "ConfigPatch partial update with validation and automatic rollback, /api/config/current and /api/config/reload.", done: true },
+      { id: "T150", title: "Mesh self-healing topology", desc: "BFS spanning tree, partition detection, repair proposals (AddEdge/PromoteRelay/Reroute), /api/mesh/health and /api/mesh/heal.", done: true },
+    ],
+  },
 ];
 
 // Research track data is loaded from the canonical source at

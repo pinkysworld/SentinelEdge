@@ -1,6 +1,7 @@
 //! Post-quantum cryptography, quantum-walk propagation, and key rotation.
 //!
 //! Implements Lamport one-time signatures (hash-based, quantum-resistant),
+//! ML-DSA-65 hybrid signatures (lattice-based, NIST FIPS 204 simulation),
 //! quantum-walk threat propagation models, and automated key rotation.
 //! Covers research tracks R04 (quantum walk), R11 (PQ audit), R21 (PQ key rotation).
 
@@ -433,6 +434,187 @@ pub fn verify_checkpoint(checkpoint: &PqSignedCheckpoint, public_key: &LamportPu
     public_key.verify(message.as_bytes(), &checkpoint.signature)
 }
 
+// ── ML-DSA-65 Hybrid Signatures (FIPS 204 Simulation) ─────────────────────────
+
+/// Post-quantum algorithm identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PqAlgorithm {
+    /// NIST FIPS 204 (ML-DSA, formerly Dilithium) — lattice-based.
+    MlDsa65,
+    /// Hash-based Lamport OTS (fallback).
+    LamportSha256,
+}
+
+/// Simulated ML-DSA-65 keypair.
+///
+/// Uses a deterministic lattice-style construction based on SHA-256
+/// hashing of a seed. This is a research simulation — production use
+/// requires the actual ML-DSA-65 implementation from `pqcrypto-dilithium`
+/// or the RustCrypto `ml-dsa` crate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MlDsaKeyPair {
+    pub key_id: String,
+    /// Seed from which signing/verification keys are derived (32 bytes hex).
+    seed: String,
+    /// Simulated public key hash (derived from seed).
+    pub public_key_hash: String,
+    pub algorithm: PqAlgorithm,
+}
+
+impl MlDsaKeyPair {
+    /// Generate a new ML-DSA-65 keypair (simulated).
+    pub fn generate() -> Self {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let seed_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
+        let seed = hex::encode(&seed_bytes);
+        let pk_hash = sha256_hex(format!("mldsa65-pk:{seed}").as_bytes());
+        let key_id = hex::encode(&seed_bytes[..8]);
+        Self {
+            key_id,
+            seed,
+            public_key_hash: pk_hash,
+            algorithm: PqAlgorithm::MlDsa65,
+        }
+    }
+
+    /// Sign a message using the simulated ML-DSA-65 scheme.
+    ///
+    /// Produces a deterministic signature: HMAC-like construction
+    /// H(seed || message) to simulate the lattice-based signature output.
+    pub fn sign(&self, message: &[u8]) -> MlDsaSignature {
+        let msg_hash = sha256_hex(message);
+        // Simulated signature: H(seed || "sign" || msg_hash)
+        let sig_input = format!("{}:sign:{}", self.seed, msg_hash);
+        let signature = sha256_hex(sig_input.as_bytes());
+        // In real ML-DSA-65, the signature is ~3293 bytes.
+        // We produce a compact simulation for testing.
+        MlDsaSignature {
+            signature,
+            key_id: self.key_id.clone(),
+            algorithm: PqAlgorithm::MlDsa65,
+        }
+    }
+
+    /// Verify a signature against this keypair.
+    pub fn verify(&self, message: &[u8], signature: &MlDsaSignature) -> bool {
+        if signature.key_id != self.key_id {
+            return false;
+        }
+        let expected = self.sign(message);
+        expected.signature == signature.signature
+    }
+}
+
+/// A simulated ML-DSA-65 signature.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MlDsaSignature {
+    /// Hex-encoded signature value.
+    pub signature: String,
+    pub key_id: String,
+    pub algorithm: PqAlgorithm,
+}
+
+/// A hybrid signature combining classical (Lamport OTS) and post-quantum (ML-DSA-65).
+///
+/// Follows the design from DESIGN_POST_QUANTUM.md:
+/// verification requires both signatures to be valid.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridSignature {
+    /// Classical hash-based signature (Lamport OTS).
+    pub classical: LamportSignature,
+    /// Post-quantum lattice-based signature (ML-DSA-65).
+    pub post_quantum: MlDsaSignature,
+    /// Algorithm identifier for the PQ component.
+    pub pq_algorithm: PqAlgorithm,
+}
+
+/// A hybrid keypair combining Lamport OTS and ML-DSA-65.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridKeyPair {
+    pub lamport_private: LamportPrivateKey,
+    pub lamport_public: LamportPublicKey,
+    pub mldsa: MlDsaKeyPair,
+    pub key_id: String,
+}
+
+impl HybridKeyPair {
+    /// Generate a new hybrid keypair.
+    pub fn generate() -> Self {
+        let lamport_private = LamportPrivateKey::generate();
+        let lamport_public = lamport_private.public_key();
+        let mldsa = MlDsaKeyPair::generate();
+        let key_id = sha256_hex(
+            format!("hybrid:{}:{}", lamport_public.key_id, mldsa.key_id).as_bytes(),
+        )[..16]
+            .to_string();
+        Self {
+            lamport_private,
+            lamport_public,
+            mldsa,
+            key_id,
+        }
+    }
+
+    /// Sign a message with both classical and post-quantum schemes.
+    pub fn sign(&mut self, message: &[u8]) -> HybridSignature {
+        let classical = self.lamport_private.sign(message);
+        let post_quantum = self.mldsa.sign(message);
+        HybridSignature {
+            classical,
+            post_quantum,
+            pq_algorithm: PqAlgorithm::MlDsa65,
+        }
+    }
+
+    /// Verify a hybrid signature — both components must be valid.
+    pub fn verify(&self, message: &[u8], sig: &HybridSignature) -> bool {
+        let classical_ok = self.lamport_public.verify(message, &sig.classical);
+        let pq_ok = self.mldsa.verify(message, &sig.post_quantum);
+        classical_ok && pq_ok
+    }
+}
+
+/// Sign an audit checkpoint with a hybrid (classical + PQ) signature.
+pub fn sign_checkpoint_hybrid(
+    seq: u64,
+    cumulative_hash: &str,
+    keypair: &mut HybridKeyPair,
+    epoch: u64,
+) -> PqHybridCheckpoint {
+    let message = format!("{seq}:{cumulative_hash}:{epoch}");
+    let signature = keypair.sign(message.as_bytes());
+    PqHybridCheckpoint {
+        sequence: seq,
+        cumulative_hash: cumulative_hash.to_string(),
+        epoch,
+        key_id: keypair.key_id.clone(),
+        signature,
+    }
+}
+
+/// A PQ-hybrid-signed audit checkpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PqHybridCheckpoint {
+    pub sequence: u64,
+    pub cumulative_hash: String,
+    pub epoch: u64,
+    pub key_id: String,
+    pub signature: HybridSignature,
+}
+
+/// Verify a PQ-hybrid-signed checkpoint.
+pub fn verify_checkpoint_hybrid(
+    checkpoint: &PqHybridCheckpoint,
+    keypair: &HybridKeyPair,
+) -> bool {
+    let message = format!(
+        "{}:{}:{}",
+        checkpoint.sequence, checkpoint.cumulative_hash, checkpoint.epoch
+    );
+    keypair.verify(message.as_bytes(), &checkpoint.signature)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -573,5 +755,74 @@ mod tests {
         checkpoint.cumulative_hash = "tampered-hash".into();
 
         assert!(!verify_checkpoint(&checkpoint, &public));
+    }
+
+    // ── ML-DSA-65 Tests ──
+
+    #[test]
+    fn mldsa_keygen_and_sign_verify() {
+        let kp = MlDsaKeyPair::generate();
+        let msg = b"SentinelEdge ML-DSA test message";
+        let sig = kp.sign(msg);
+        assert!(kp.verify(msg, &sig));
+        assert_eq!(sig.algorithm, PqAlgorithm::MlDsa65);
+    }
+
+    #[test]
+    fn mldsa_rejects_tampered_message() {
+        let kp = MlDsaKeyPair::generate();
+        let sig = kp.sign(b"original");
+        assert!(!kp.verify(b"tampered", &sig));
+    }
+
+    #[test]
+    fn mldsa_rejects_wrong_key() {
+        let kp1 = MlDsaKeyPair::generate();
+        let kp2 = MlDsaKeyPair::generate();
+        let sig = kp1.sign(b"test");
+        assert!(!kp2.verify(b"test", &sig));
+    }
+
+    #[test]
+    fn mldsa_deterministic_signature() {
+        let kp = MlDsaKeyPair::generate();
+        let sig1 = kp.sign(b"same message");
+        let sig2 = kp.sign(b"same message");
+        assert_eq!(sig1.signature, sig2.signature);
+    }
+
+    // ── Hybrid Signature Tests ──
+
+    #[test]
+    fn hybrid_keygen_sign_and_verify() {
+        let mut kp = HybridKeyPair::generate();
+        let msg = b"hybrid PQ test";
+        let sig = kp.sign(msg);
+        assert!(kp.verify(msg, &sig));
+        assert_eq!(sig.pq_algorithm, PqAlgorithm::MlDsa65);
+    }
+
+    #[test]
+    fn hybrid_rejects_tampered_message() {
+        let mut kp = HybridKeyPair::generate();
+        let sig = kp.sign(b"original");
+        assert!(!kp.verify(b"tampered", &sig));
+    }
+
+    #[test]
+    fn hybrid_checkpoint_roundtrip() {
+        let mut kp = HybridKeyPair::generate();
+        let cp = sign_checkpoint_hybrid(99, "abcdef123456", &mut kp, 3);
+        assert_eq!(cp.sequence, 99);
+        assert_eq!(cp.epoch, 3);
+        assert!(verify_checkpoint_hybrid(&cp, &kp));
+    }
+
+    #[test]
+    fn hybrid_checkpoint_rejects_tamper() {
+        let mut kp = HybridKeyPair::generate();
+        let mut cp = sign_checkpoint_hybrid(99, "original", &mut kp, 3);
+        cp.cumulative_hash = "tampered".into();
+        assert!(!verify_checkpoint_hybrid(&cp, &kp));
     }
 }

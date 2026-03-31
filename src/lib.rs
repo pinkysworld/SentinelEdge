@@ -32,4 +32,5 @@ pub mod state_machine;
 pub mod swarm;
 pub mod telemetry;
 pub mod threat_intel;
+pub mod tls;
 pub mod wasm_engine;

@@ -7,6 +7,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use crate::actions::DeviceController;
 use crate::checkpoint::CheckpointStore;
 use crate::compliance::{ComplianceManager, CausalGraph};
+use crate::config::Config;
 use crate::correlation;
 use crate::detector::{AdaptationMode, AnomalyDetector, DriftDetector};
 use crate::digital_twin::DigitalTwinEngine;
@@ -27,6 +28,7 @@ use crate::state_machine::PolicyStateMachine;
 use crate::swarm::{DeviceRecord, DeviceStatus, SwarmNode};
 use crate::telemetry::TelemetrySample;
 use crate::threat_intel::{DeceptionEngine, ThreatIntelStore};
+use crate::tls::ListenerMode;
 use crate::wasm_engine::PolicyVm;
 
 struct AppState {
@@ -54,6 +56,8 @@ struct AppState {
     deception: DeceptionEngine,
     patches: PatchManager,
     causal: CausalGraph,
+    listener_mode: ListenerMode,
+    config: Config,
 }
 
 pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
@@ -92,6 +96,8 @@ pub fn run_server(port: u16, site_dir: &Path) -> Result<(), String> {
         deception: DeceptionEngine::new(),
         patches: PatchManager::new(),
         causal: CausalGraph::new(),
+        listener_mode: ListenerMode::Plain { port },
+        config: Config::default(),
     }));
 
     let site_dir = site_dir.to_path_buf();
@@ -133,6 +139,8 @@ pub fn spawn_test_server() -> (u16, String) {
         deception: DeceptionEngine::new(),
         patches: PatchManager::new(),
         causal: CausalGraph::new(),
+        listener_mode: ListenerMode::Plain { port },
+        config: Config::default(),
     }));
     let site_dir = PathBuf::from("site");
     std::thread::spawn(move || {
@@ -242,6 +250,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             | (Method::Post, "/api/drift/reset")
             | (Method::Post, "/api/offload/decide")
             | (Method::Post, "/api/energy/harvest")
+            | (Method::Post, "/api/config/reload")
     );
 
     if needs_auth && !check_auth(&request, state) {
@@ -687,6 +696,48 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             json_response(&info.to_string(), 200)
         }
 
+        // ── TLS Status ───────────────────────────────────────────
+        (Method::Get, "/api/tls/status") => {
+            let s = state.lock().unwrap();
+            let info = serde_json::json!({
+                "tls_enabled": s.listener_mode.is_tls(),
+                "scheme": s.listener_mode.scheme(),
+                "port": s.listener_mode.port(),
+            });
+            json_response(&info.to_string(), 200)
+        }
+
+        // ── Mesh Health / Self-Healing ────────────────────────────
+        (Method::Get, "/api/mesh/health") => {
+            let s = state.lock().unwrap();
+            let (report, repairs) = s.swarm.self_heal();
+            let info = serde_json::json!({
+                "is_connected": report.is_connected,
+                "partition_count": report.partitions.len(),
+                "largest_partition_size": report.largest_partition_size,
+                "partitions": report.partitions,
+                "proposed_repairs": repairs,
+            });
+            json_response(&info.to_string(), 200)
+        }
+        (Method::Post, "/api/mesh/heal") => {
+            let mut s = state.lock().unwrap();
+            let (report, repairs) = s.swarm.self_heal();
+            let applied = repairs.len();
+            for repair in &repairs {
+                s.swarm.apply_repair(repair);
+            }
+            let (post_report, _) = s.swarm.self_heal();
+            let info = serde_json::json!({
+                "repairs_applied": applied,
+                "was_connected": report.is_connected,
+                "now_connected": post_report.is_connected,
+                "partitions_before": report.partitions.len(),
+                "partitions_after": post_report.partitions.len(),
+            });
+            json_response(&info.to_string(), 200)
+        }
+
         // ── Energy Harvesting ─────────────────────────────────────
         (Method::Post, "/api/energy/harvest") => {
             let mut s = state.lock().unwrap();
@@ -699,6 +750,19 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&info.to_string(), 200)
         }
+
+        // ── Config Hot-Reload ─────────────────────────────────────
+        (Method::Get, "/api/config/current") => {
+            let s = state.lock().unwrap();
+            match serde_json::to_string_pretty(&s.config) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
+        (Method::Post, "/api/config/reload") => {
+            handle_config_reload(&mut request, state)
+        }
+
         (Method::Options, _) => {
             let data: Vec<u8> = Vec::new();
             Response::new(
@@ -1191,6 +1255,29 @@ fn handle_policy_compose(
         })),
     });
     json_response(&info.to_string(), 200)
+}
+
+fn handle_config_reload(
+    request: &mut Request,
+    state: &Arc<Mutex<AppState>>,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let mut body = String::new();
+    if std::io::Read::read_to_string(request.as_reader(), &mut body).is_err() {
+        return error_json("failed to read request body", 400);
+    }
+    let patch: crate::config::ConfigPatch = match serde_json::from_str(&body) {
+        Ok(p) => p,
+        Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+    };
+    let mut s = state.lock().unwrap();
+    let result = patch.apply(&mut s.config);
+    match serde_json::to_string_pretty(&result) {
+        Ok(json) => {
+            let status = if result.success { 200 } else { 400 };
+            json_response(&json, status)
+        }
+        Err(e) => error_json(&format!("serialization error: {e}"), 500),
+    }
 }
 
 fn serve_static(request: Request, site_dir: &Path) {
