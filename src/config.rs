@@ -141,6 +141,80 @@ pub struct Config {
     pub agent: AgentSettings,
     #[serde(default)]
     pub rollout: RolloutSettings,
+    #[serde(default)]
+    pub security: SecuritySettings,
+    #[serde(default)]
+    pub retention: RetentionSettings,
+}
+
+/// Security-related settings for token management and session control.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecuritySettings {
+    /// Token time-to-live in seconds (0 = no expiry).
+    #[serde(default = "default_token_ttl_secs")]
+    pub token_ttl_secs: u64,
+    /// Whether to require mTLS client certificates for agent connections.
+    #[serde(default)]
+    pub require_mtls_agents: bool,
+    /// Path to CA certificate for verifying agent client certs.
+    #[serde(default)]
+    pub agent_ca_cert_path: Option<String>,
+}
+
+fn default_token_ttl_secs() -> u64 {
+    3600
+}
+
+impl Default for SecuritySettings {
+    fn default() -> Self {
+        Self {
+            token_ttl_secs: default_token_ttl_secs(),
+            require_mtls_agents: false,
+            agent_ca_cert_path: None,
+        }
+    }
+}
+
+/// Data retention policy settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionSettings {
+    /// Maximum number of audit records to keep (0 = unlimited).
+    #[serde(default = "default_audit_max_records")]
+    pub audit_max_records: usize,
+    /// Maximum number of alerts to keep (0 = unlimited).
+    #[serde(default = "default_alert_max_records")]
+    pub alert_max_records: usize,
+    /// Maximum number of events to keep (0 = unlimited).
+    #[serde(default = "default_event_max_records")]
+    pub event_max_records: usize,
+    /// Maximum age in seconds for audit records (0 = no age limit).
+    #[serde(default)]
+    pub audit_max_age_secs: u64,
+    /// Remote syslog endpoint for log forwarding (e.g. "udp://syslog.example.com:514").
+    #[serde(default)]
+    pub remote_syslog_endpoint: Option<String>,
+}
+
+fn default_audit_max_records() -> usize {
+    100_000
+}
+fn default_alert_max_records() -> usize {
+    50_000
+}
+fn default_event_max_records() -> usize {
+    100_000
+}
+
+impl Default for RetentionSettings {
+    fn default() -> Self {
+        Self {
+            audit_max_records: default_audit_max_records(),
+            alert_max_records: default_alert_max_records(),
+            event_max_records: default_event_max_records(),
+            audit_max_age_secs: 0,
+            remote_syslog_endpoint: None,
+        }
+    }
 }
 
 /// Agent-mode settings (for `wardex agent`).
@@ -644,5 +718,36 @@ mod tests {
         assert!(result.success);
         assert!(!config.monitor.scope.file_integrity);
         assert!(config.monitor.scope.systemd_units);
+    }
+
+    #[test]
+    fn security_settings_defaults() {
+        let config = Config::default();
+        assert_eq!(config.security.token_ttl_secs, 3600);
+        assert!(!config.security.require_mtls_agents);
+        assert!(config.security.agent_ca_cert_path.is_none());
+    }
+
+    #[test]
+    fn retention_settings_defaults() {
+        let config = Config::default();
+        assert_eq!(config.retention.audit_max_records, 100_000);
+        assert_eq!(config.retention.alert_max_records, 50_000);
+        assert_eq!(config.retention.event_max_records, 100_000);
+        assert_eq!(config.retention.audit_max_age_secs, 0);
+        assert!(config.retention.remote_syslog_endpoint.is_none());
+    }
+
+    #[test]
+    fn security_and_retention_round_trip_toml() {
+        let mut config = Config::default();
+        config.security.token_ttl_secs = 7200;
+        config.retention.audit_max_records = 5000;
+        config.retention.remote_syslog_endpoint = Some("udp://syslog:514".into());
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.security.token_ttl_secs, 7200);
+        assert_eq!(parsed.retention.audit_max_records, 5000);
+        assert_eq!(parsed.retention.remote_syslog_endpoint.as_deref(), Some("udp://syslog:514"));
     }
 }

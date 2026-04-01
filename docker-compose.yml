@@ -1,0 +1,31 @@
+# Wardex container — docker-compose reference
+# Start: docker compose up -d
+# Logs:  docker compose logs -f wardex
+# Stop:  docker compose down
+
+services:
+  wardex:
+    build: .
+    image: wardex:latest
+    container_name: wardex
+    ports:
+      - "8080:8080"
+    volumes:
+      - wardex-data:/app/var
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - SENTINEL_CORS_ORIGIN=http://localhost:8080
+    healthcheck:
+      test: ["CMD", "/app/wardex", "status-json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  wardex-data:

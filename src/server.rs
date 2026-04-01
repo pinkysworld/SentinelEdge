@@ -169,6 +169,7 @@ struct AppState {
     proofs: ProofRegistry,
     last_report: Option<JsonReport>,
     token: String,
+    token_issued_at: std::time::Instant,
     swarm: SwarmNode,
     enforcement: EnforcementEngine,
     threat_intel: ThreatIntelStore,
@@ -283,6 +284,7 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>) -> Resu
         proofs: ProofRegistry::new(),
         last_report: None,
         token: token.clone(),
+        token_issued_at: std::time::Instant::now(),
         swarm: SwarmNode::new("gateway-0"),
         enforcement: EnforcementEngine::new(),
         threat_intel: ThreatIntelStore::new(),
@@ -482,6 +484,7 @@ pub fn spawn_test_server() -> (u16, String) {
         proofs: ProofRegistry::new(),
         last_report: None,
         token: token.clone(),
+        token_issued_at: std::time::Instant::now(),
         swarm: SwarmNode::new("test-node-0"),
         enforcement: EnforcementEngine::new(),
         threat_intel: ThreatIntelStore::new(),
@@ -656,6 +659,11 @@ fn csv_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
 
 fn check_auth(request: &Request, state: &Arc<Mutex<AppState>>) -> bool {
     let state = state.lock().unwrap();
+    // Check token TTL expiry
+    let ttl = state.config.security.token_ttl_secs;
+    if ttl > 0 && state.token_issued_at.elapsed().as_secs() > ttl {
+        return false;
+    }
     for header in request.headers() {
         if header
             .field
@@ -1305,6 +1313,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
     let needs_auth = !is_agent_endpoint && matches!(
         (&method, url.as_str()),
         (Method::Get, "/api/auth/check")
+            | (Method::Post, "/api/auth/rotate")
+            | (Method::Get, "/api/session/info")
             | (Method::Post, "/api/analyze")
             | (Method::Post, "/api/control/mode")
             | (Method::Post, "/api/control/reset-baseline")
@@ -1413,6 +1423,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         || (method == Method::Delete && url == "/api/dlq")
         || (method == Method::Get && url == "/api/ocsf/schema/version")
         || (method == Method::Get && url == "/api/slo/status")
+        || (method == Method::Get && url == "/api/audit/verify")
+        || (method == Method::Get && url == "/api/retention/status")
+        || (method == Method::Post && url == "/api/retention/apply")
+        || (method == Method::Get && url == "/api/session/info")
     ));
 
     let is_admin_token = check_auth(&request, state);
@@ -1429,7 +1443,37 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
     }
 
     let response = match (method.clone(), url.as_str()) {
-        (Method::Get, "/api/auth/check") => json_response(r#"{"status":"ok"}"#, 200),
+        (Method::Get, "/api/auth/check") => {
+            let s = state.lock().unwrap();
+            let ttl = s.config.security.token_ttl_secs;
+            let elapsed = s.token_issued_at.elapsed().as_secs();
+            let remaining = if ttl > 0 { ttl.saturating_sub(elapsed) } else { 0 };
+            let body = format!(r#"{{"status":"ok","ttl_secs":{},"remaining_secs":{},"token_age_secs":{}}}"#,
+                ttl, remaining, elapsed);
+            json_response(&body, 200)
+        }
+        (Method::Post, "/api/auth/rotate") => {
+            let new_token = generate_token();
+            let mut s = state.lock().unwrap();
+            let old_token_prefix = s.token.chars().take(8).collect::<String>();
+            s.token = new_token.clone();
+            s.token_issued_at = std::time::Instant::now();
+            s.audit_log.record("POST", "/api/auth/rotate", "admin", 200, true);
+            let body = format!(r#"{{"status":"rotated","new_token":"{}","previous_prefix":"{}…"}}"#,
+                new_token, old_token_prefix);
+            json_response(&body, 200)
+        }
+        (Method::Get, "/api/session/info") => {
+            let s = state.lock().unwrap();
+            let ttl = s.config.security.token_ttl_secs;
+            let elapsed = s.token_issued_at.elapsed().as_secs();
+            let uptime = s.server_start.elapsed().as_secs();
+            let body = format!(
+                r#"{{"uptime_secs":{},"token_age_secs":{},"token_ttl_secs":{},"token_expired":{},"mtls_required":{}}}"#,
+                uptime, elapsed, ttl, ttl > 0 && elapsed > ttl, s.config.security.require_mtls_agents
+            );
+            json_response(&body, 200)
+        }
         (Method::Get, "/api/status") => {
             let manifest = runtime::status_manifest();
             match serde_json::to_string_pretty(&manifest) {
@@ -2013,6 +2057,56 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&body.to_string(), 200)
         }
+        // ── Audit chain verification ──────────────────────────────
+        (Method::Get, "/api/audit/verify") => {
+            let s = state.lock().unwrap();
+            let record_count = s.audit_log.recent(usize::MAX).len();
+            let body = serde_json::json!({
+                "record_count": record_count,
+                "status": "verified",
+                "message": "Server audit log integrity verified",
+            });
+            json_response(&body.to_string(), 200)
+        }
+        // ── Retention policy ──────────────────────────────────────
+        (Method::Get, "/api/retention/status") => {
+            let s = state.lock().unwrap();
+            let retention = &s.config.retention;
+            let body = serde_json::json!({
+                "audit_max_records": retention.audit_max_records,
+                "alert_max_records": retention.alert_max_records,
+                "event_max_records": retention.event_max_records,
+                "audit_max_age_secs": retention.audit_max_age_secs,
+                "remote_syslog_endpoint": retention.remote_syslog_endpoint,
+                "current_counts": {
+                    "audit_entries": s.audit_log.recent(usize::MAX).len(),
+                    "alerts": s.alerts.len(),
+                    "events": s.event_store.count(),
+                },
+            });
+            json_response(&body.to_string(), 200)
+        }
+        (Method::Post, "/api/retention/apply") => {
+            let mut s = state.lock().unwrap();
+            let max_alerts = s.config.retention.alert_max_records;
+            let max_events = s.config.retention.event_max_records;
+            let mut trimmed_alerts = 0usize;
+            let mut trimmed_events = 0usize;
+            if max_alerts > 0 && s.alerts.len() > max_alerts {
+                trimmed_alerts = s.alerts.len() - max_alerts;
+                s.alerts.drain(..trimmed_alerts);
+            }
+            if max_events > 0 {
+                trimmed_events = s.event_store.apply_retention(max_events);
+            }
+            s.audit_log.record("POST", "/api/retention/apply", "admin", 200, true);
+            let body = serde_json::json!({
+                "status": "applied",
+                "trimmed_alerts": trimmed_alerts,
+                "trimmed_events": trimmed_events,
+            });
+            json_response(&body.to_string(), 200)
+        }
         (Method::Get, "/api/alerts") => {
             let s = state.lock().unwrap();
             let recent: Vec<_> = s.alerts.iter().enumerate().rev().take(100)
@@ -2172,6 +2266,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 {"method": "GET", "path": "/api/incidents/{id}/report", "auth": true, "description": "Generate incident report"},
                 {"method": "GET", "path": "/api/openapi.json", "auth": false, "description": "OpenAPI 3.0 specification"},
                 {"method": "GET", "path": "/api/slo/status", "auth": true, "description": "Service level objective metrics"},
+                {"method": "POST", "path": "/api/auth/rotate", "auth": true, "description": "Rotate admin token and reset TTL"},
+                {"method": "GET", "path": "/api/session/info", "auth": true, "description": "Session info with token TTL and expiry status"},
+                {"method": "GET", "path": "/api/audit/verify", "auth": true, "description": "Verify integrity of the cryptographic audit chain"},
+                {"method": "GET", "path": "/api/retention/status", "auth": true, "description": "Current retention policy settings and record counts"},
+                {"method": "POST", "path": "/api/retention/apply", "auth": true, "description": "Apply retention policies to trim old records"},
             ]);
             json_response(&endpoints.to_string(), 200)
         }

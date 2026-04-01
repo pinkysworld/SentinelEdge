@@ -540,6 +540,23 @@ impl EventStore {
         self.next_id = 1;
         self.persist();
     }
+
+    /// Return the total number of stored events.
+    pub fn count(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Trim events to at most `max` entries, removing oldest first.
+    /// Returns the number of events removed.
+    pub fn apply_retention(&mut self, max: usize) -> usize {
+        if self.events.len() <= max {
+            return 0;
+        }
+        let trim = self.events.len() - max;
+        self.events.drain(..trim);
+        self.persist();
+        trim
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

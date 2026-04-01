@@ -2,6 +2,28 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.29.0] — Production hardening: session management, retention, container & service deployment
+
+### Added
+- **Token TTL & session expiry** — configurable `security.token_ttl_secs` (default: 1 hour) with automatic rejection of expired tokens in `check_auth()`. `GET /api/auth/check` now returns TTL metadata (`ttl_secs`, `remaining_secs`, `token_age_secs`).
+- **Token rotation** — `POST /api/auth/rotate` generates a new admin token and resets the TTL clock, immediately invalidating the previous token.
+- **Session info** — `GET /api/session/info` returns uptime, token age, TTL, expiry status, and mTLS requirement.
+- **Configurable retention policies** — new `[retention]` config section with `audit_max_records`, `alert_max_records`, `event_max_records`, `audit_max_age_secs`, and `remote_syslog_endpoint`. `GET /api/retention/status` shows policy and current counts. `POST /api/retention/apply` trims alerts and events to configured limits.
+- **Audit chain verification endpoint** — `GET /api/audit/verify` reports audit log integrity status, record count, and chain verification result. Added `verify_and_report()` and `apply_retention()` to the cryptographic `AuditLog`.
+- **Spool per-tenant partitioning** — `SpoolEntry` now carries an optional `tenant_id`. Added `enqueue_with_tenant()`, `entries_for_tenant()`, and `tenant_counts()` for multi-tenant event isolation.
+- **mTLS configuration** — new `[security]` config section with `require_mtls_agents` and `agent_ca_cert_path` fields, wiring into the existing TLS module's `with_mtls()` support.
+- **Remote log forwarding** — `retention.remote_syslog_endpoint` config field for remote syslog destination, complementing the existing SIEM connector push capabilities.
+- **Dockerfile** — multi-stage container build with non-root user, health check, read-only filesystem, and volume for persistent state. Includes `docker-compose.yml` reference.
+- **Systemd service unit** — `deploy/wardex.service` with full security hardening (NoNewPrivileges, ProtectSystem, MemoryDenyWriteExecute, etc.), journal logging, and restart policy.
+- **Launchd plist** — `deploy/com.wardex.agent.plist` for macOS service deployment with KeepAlive and throttle interval.
+- **Chaos/fault injection tests** — 5 new integration tests: rapid token rotation stress (10 cycles), concurrent burst load (50 requests), malformed JSON resilience, expired token rejection across endpoints, and path traversal rejection.
+- **6 new API integration tests** — token rotation, session info, auth check TTL metadata, audit verify, retention status, retention apply.
+- **8 new unit tests** — security/retention config round-trips, audit verify/report, audit retention trimming, spool tenant-aware enqueue/filter/persist.
+
+### Improved
+- **EventStore** — added `count()` and `apply_retention(max)` methods for policy-driven event trimming.
+- **656 tests** (531 unit + 125 integration), all passing.
+
 ## [0.28.0] — Research tracks UI, monitoring UX, and code review hardening
 
 ### Added

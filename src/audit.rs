@@ -161,6 +161,60 @@ impl AuditLog {
 
         fs::write(path, self.render())
     }
+
+    /// Return the total number of audit records.
+    pub fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
+    /// Verify chain integrity and return a structured report.
+    pub fn verify_and_report(&self) -> AuditVerifyReport {
+        let record_count = self.records.len();
+        let checkpoint_count = self.checkpoints.len();
+        match self.verify_chain() {
+            Ok(()) => AuditVerifyReport {
+                intact: true,
+                record_count,
+                checkpoint_count,
+                head_hash: self.records.last().map(|r| r.current_hash.clone()),
+                error: None,
+            },
+            Err(e) => AuditVerifyReport {
+                intact: false,
+                record_count,
+                checkpoint_count,
+                head_hash: None,
+                error: Some(e),
+            },
+        }
+    }
+
+    /// Apply retention: keep only the last `max_records` entries.
+    /// Returns the number trimmed.
+    pub fn apply_retention(&mut self, max_records: usize) -> usize {
+        if max_records == 0 || self.records.len() <= max_records {
+            return 0;
+        }
+        let trim = self.records.len() - max_records;
+        self.records.drain(..trim);
+        // Reset the chain continuity for remaining records
+        if let Some(first) = self.records.first() {
+            self.previous_hash = self.records.last()
+                .map(|r| r.current_hash.clone())
+                .unwrap_or_else(|| first.previous_hash.clone());
+        }
+        trim
+    }
+}
+
+/// Result of an audit chain verification.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AuditVerifyReport {
+    pub intact: bool,
+    pub record_count: usize,
+    pub checkpoint_count: usize,
+    pub head_hash: Option<String>,
+    pub error: Option<String>,
 }
 
 #[cfg(test)]
@@ -205,5 +259,41 @@ mod tests {
         assert_eq!(audit.checkpoints().len(), 3);
         assert_eq!(audit.checkpoints()[0].after_sequence, 3);
         assert_eq!(audit.checkpoints()[2].after_sequence, 9);
+    }
+
+    #[test]
+    fn verify_and_report_intact() {
+        let mut audit = AuditLog::with_checkpoint_interval(2);
+        audit.record("boot", "started");
+        audit.record("detect", "score=1.0");
+        audit.record("detect", "score=2.0");
+        let report = audit.verify_and_report();
+        assert!(report.intact);
+        assert_eq!(report.record_count, 3);
+        assert_eq!(report.checkpoint_count, 1);
+        assert!(report.head_hash.is_some());
+        assert!(report.error.is_none());
+    }
+
+    #[test]
+    fn apply_retention_trims_records() {
+        let mut audit = AuditLog::new();
+        for i in 0..10 {
+            audit.record("test", format!("entry {i}"));
+        }
+        assert_eq!(audit.record_count(), 10);
+
+        let trimmed = audit.apply_retention(5);
+        assert_eq!(trimmed, 5);
+        assert_eq!(audit.record_count(), 5);
+    }
+
+    #[test]
+    fn apply_retention_noop_when_under_limit() {
+        let mut audit = AuditLog::new();
+        audit.record("test", "entry");
+        let trimmed = audit.apply_retention(100);
+        assert_eq!(trimmed, 0);
+        assert_eq!(audit.record_count(), 1);
     }
 }

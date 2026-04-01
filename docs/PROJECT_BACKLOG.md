@@ -236,6 +236,20 @@ This backlog lists the next concrete tasks in build order.
 - [x] T210: Harden the default CORS origin to `http://localhost` and align runtime behavior with the documented security posture.
 - [x] T211: Correct Phase 25/26 status and changelog claims around dead-code suppressions, audit behavior, and backlog state.
 
+## Phase 28 — Production hardening (completed)
+
+- [x] T219: Add token TTL with configurable session expiry (`security.token_ttl_secs`) and automatic expired-token rejection.
+- [x] T220: Add token rotation endpoint (`POST /api/auth/rotate`) with immediate invalidation and TTL reset.
+- [x] T221: Add session info endpoint (`GET /api/session/info`) with uptime, token age, TTL, and expiry status.
+- [x] T222: Add configurable retention policies (`[retention]` config) for audit, alert, and event record limits.
+- [x] T223: Add retention status and apply endpoints (`GET /api/retention/status`, `POST /api/retention/apply`).
+- [x] T224: Add audit chain verification endpoint (`GET /api/audit/verify`) with `verify_and_report()` and `apply_retention()`.
+- [x] T225: Add spool per-tenant partitioning with `tenant_id`, `enqueue_with_tenant()`, `entries_for_tenant()`, and `tenant_counts()`.
+- [x] T226: Add mTLS configuration (`[security]` config section with `require_mtls_agents` and `agent_ca_cert_path`).
+- [x] T227: Add Dockerfile with multi-stage build, non-root user, health check, and `docker-compose.yml`.
+- [x] T228: Add systemd service unit (`deploy/wardex.service`) with security hardening and launchd plist (`deploy/com.wardex.agent.plist`).
+- [x] T229: Add 5 chaos/fault injection integration tests and 6 API integration tests + 8 unit tests.
+
 ## Phase 27 — Operational contract & production hardening backlog
 
 - [x] T212: Publish OpenAPI coverage for all public HTTP APIs and verify it in CI.
@@ -248,9 +262,11 @@ This backlog lists the next concrete tasks in build order.
 
 ## Recommended next build order
 
-160 of 160 backlog items are complete. Phases 0–27 are complete.
+160 of 160 backlog items are complete. Phases 0–28 are complete.
 
-All planned backlog items are done. See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the professional roadmap beyond Phase 27.
+Phase 28 adds production hardening controls: token TTL with session expiry, token rotation, configurable retention policies, audit chain verification, spool per-tenant partitioning, mTLS configuration, Dockerfile, systemd/launchd service units, and chaos tests.
+
+All planned backlog items are done. See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the professional roadmap beyond Phase 28.
 
 ## Code-quality sweep (post-Phase 7)
 

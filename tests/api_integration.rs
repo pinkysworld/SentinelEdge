@@ -2338,3 +2338,236 @@ fn heartbeat_returns_monitor_scope() {
     assert!(body.get("monitor_scope").is_some());
     assert!(body["monitor_scope"]["cpu_load"].is_boolean());
 }
+
+// ── Token rotation ─────────────────────────────────────────────
+
+#[test]
+fn auth_rotate_generates_new_token() {
+    let (port, token) = spawn_test_server();
+
+    // Rotate the token
+    let resp = ureq::post(&format!("{}/api/auth/rotate", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("rotate token");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"].as_str().unwrap(), "rotated");
+    let new_token = body["new_token"].as_str().unwrap();
+    assert!(!new_token.is_empty());
+    assert_ne!(new_token, token);
+
+    // Old token should be rejected
+    let err = ureq::get(&format!("{}/api/auth/check", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call();
+    assert!(err.is_err() || {
+        let resp = err.unwrap();
+        resp.status() == 401
+    });
+
+    // New token works
+    let resp = ureq::get(&format!("{}/api/auth/check", base(port)))
+        .set("Authorization", &auth_header(new_token))
+        .call()
+        .expect("auth check with new token");
+    assert_eq!(resp.status(), 200);
+}
+
+// ── Session info ───────────────────────────────────────────────
+
+#[test]
+fn session_info_returns_uptime_and_ttl() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/session/info", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("session info");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body.get("uptime_secs").is_some());
+    assert!(body.get("token_age_secs").is_some());
+    assert!(body.get("token_ttl_secs").is_some());
+    assert!(body.get("token_expired").is_some());
+}
+
+// ── Auth check returns TTL info ────────────────────────────────
+
+#[test]
+fn auth_check_includes_ttl_metadata() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/auth/check", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("auth check");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"].as_str().unwrap(), "ok");
+    assert!(body.get("ttl_secs").is_some());
+    assert!(body.get("remaining_secs").is_some());
+}
+
+// ── Audit verify ───────────────────────────────────────────────
+
+#[test]
+fn audit_verify_returns_chain_status() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/audit/verify", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("audit verify");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"].as_str().unwrap(), "verified");
+    assert!(body.get("record_count").is_some());
+}
+
+// ── Retention status ───────────────────────────────────────────
+
+#[test]
+fn retention_status_returns_policy_and_counts() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/retention/status", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("retention status");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body.get("audit_max_records").is_some());
+    assert!(body.get("alert_max_records").is_some());
+    assert!(body.get("current_counts").is_some());
+}
+
+// ── Retention apply ────────────────────────────────────────────
+
+#[test]
+fn retention_apply_trims_records() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::post(&format!("{}/api/retention/apply", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("retention apply");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"].as_str().unwrap(), "applied");
+}
+
+// ── Chaos / Fault Injection Tests ──────────────────────────────
+
+#[test]
+fn chaos_rapid_token_rotation_stress() {
+    let (port, token) = spawn_test_server();
+    let mut current_token = token;
+    // Rapidly rotate token 10 times to verify no state corruption
+    for _ in 0..10 {
+        let resp = ureq::post(&format!("{}/api/auth/rotate", base(port)))
+            .set("Authorization", &auth_header(&current_token))
+            .call()
+            .expect("rotate");
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = resp.into_json().unwrap();
+        current_token = body["new_token"].as_str().unwrap().to_string();
+    }
+    // Final token should still work
+    let resp = ureq::get(&format!("{}/api/auth/check", base(port)))
+        .set("Authorization", &auth_header(&current_token))
+        .call()
+        .expect("auth check after rotation storm");
+    assert_eq!(resp.status(), 200);
+}
+
+#[test]
+fn chaos_concurrent_requests_under_load() {
+    let (port, token) = spawn_test_server();
+    // Fire 50 rapid requests to test stability under burst load
+    for i in 0..50 {
+        let url = match i % 5 {
+            0 => format!("{}/api/health", base(port)),
+            1 => format!("{}/api/alerts/count", base(port)),
+            2 => format!("{}/api/status", base(port)),
+            3 => format!("{}/api/slo/status", base(port)),
+            _ => format!("{}/api/session/info", base(port)),
+        };
+        let builder = ureq::get(&url).set("Authorization", &auth_header(&token));
+        // Some might fail due to rate limiting, but server should not crash
+        let _ = builder.call();
+    }
+    // Server should still respond after burst
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after burst");
+    assert_eq!(resp.status(), 200);
+}
+
+#[test]
+fn chaos_malformed_json_does_not_crash() {
+    let (port, token) = spawn_test_server();
+    // Send various malformed bodies to POST endpoints
+    let bad_payloads = [
+        "",
+        "{",
+        "null",
+        "{\"key\":}",
+        "not json at all <>!@#$%",
+        &"x".repeat(1000),
+    ];
+    for payload in &bad_payloads {
+        let _ = ureq::post(&format!("{}/api/config/reload", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .set("Content-Type", "application/json")
+            .send_string(payload);
+    }
+    // Server should still be healthy
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after malformed payloads");
+    assert_eq!(resp.status(), 200);
+}
+
+#[test]
+fn chaos_expired_token_rejected() {
+    let (port, token) = spawn_test_server();
+    // Rotate token to invalidate original
+    let resp = ureq::post(&format!("{}/api/auth/rotate", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("rotate");
+    assert_eq!(resp.status(), 200);
+
+    // Old token should be rejected on all sensitive endpoints
+    let endpoints = [
+        "/api/auth/check",
+        "/api/session/info",
+        "/api/retention/status",
+        "/api/audit/verify",
+    ];
+    for ep in &endpoints {
+        let result = ureq::get(&format!("{}{}", base(port), ep))
+            .set("Authorization", &auth_header(&token))
+            .call();
+        match result {
+            Ok(resp) => assert_eq!(resp.status(), 401, "Expected 401 for {}", ep),
+            Err(ureq::Error::Status(status, _)) => assert_eq!(status, 401, "Expected 401 for {}", ep),
+            Err(e) => panic!("Unexpected error for {}: {}", ep, e),
+        }
+    }
+}
+
+#[test]
+fn chaos_path_traversal_rejected() {
+    let (port, _) = spawn_test_server();
+    // Attempt path traversal on static file serving
+    let traversal_attempts = [
+        "/../../etc/passwd",
+        "/../../../Cargo.toml",
+        "/..%2f..%2fetc/passwd",
+        "/site/../../Cargo.toml",
+    ];
+    for path in &traversal_attempts {
+        let resp = ureq::get(&format!("{}{}", base(port), path)).call();
+        match resp {
+            Ok(r) => assert_ne!(r.status(), 200, "Path traversal should not succeed: {}", path),
+            Err(_) => {} // 404 or error is expected
+        }
+    }
+}

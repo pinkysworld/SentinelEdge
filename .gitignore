@@ -4,3 +4,4 @@ var/
 *.code-workspace
 site/admin.html.bak
 site/generate_admin.py
+release/

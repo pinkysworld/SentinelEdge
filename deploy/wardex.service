@@ -1,0 +1,41 @@
+[Unit]
+Description=Wardex XDR Security Agent
+Documentation=https://github.com/pinkysworld/Wardex
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wardex
+Group=wardex
+ExecStart=/usr/local/bin/wardex serve --port 8080
+WorkingDirectory=/var/lib/wardex
+Environment=SENTINEL_CORS_ORIGIN=http://localhost:8080
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/wardex
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wardex
+
+[Install]
+WantedBy=multi-user.target

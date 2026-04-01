@@ -49,6 +49,9 @@ pub struct SpoolEntry {
     pub payload: String,
     /// Destination tag (e.g. "control-plane", "siem-splunk").
     pub destination: String,
+    /// Tenant identifier for multi-tenant isolation.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
 }
 
 // ── Encrypted spool ─────────────────────────────────────────────
@@ -87,12 +90,18 @@ impl EncryptedSpool {
 
     /// Enqueue an event payload. Encrypts at rest.
     pub fn enqueue(&mut self, payload: &str, destination: &str, timestamp: &str) -> u64 {
+        self.enqueue_with_tenant(payload, destination, timestamp, None)
+    }
+
+    /// Enqueue an event payload with tenant isolation. Encrypts at rest.
+    pub fn enqueue_with_tenant(&mut self, payload: &str, destination: &str, timestamp: &str, tenant_id: Option<&str>) -> u64 {
         let entry = SpoolEntry {
             seq: self.next_seq,
             enqueued_at: timestamp.into(),
             attempts: 0,
             payload: payload.into(),
             destination: destination.into(),
+            tenant_id: tenant_id.map(|s| s.to_string()),
         };
         let seq = self.next_seq;
         self.next_seq += 1;
@@ -107,6 +116,30 @@ impl EncryptedSpool {
         }
         self.queue.push_back(encrypted);
         seq
+    }
+
+    /// List entries for a specific tenant (decrypts all to filter).
+    pub fn entries_for_tenant(&self, tenant_id: &str) -> Vec<SpoolEntry> {
+        self.queue.iter()
+            .filter_map(|encrypted| {
+                let decrypted = spool_cipher(encrypted, &self.key);
+                serde_json::from_slice::<SpoolEntry>(&decrypted).ok()
+            })
+            .filter(|e| e.tenant_id.as_deref() == Some(tenant_id))
+            .collect()
+    }
+
+    /// Count entries by tenant.
+    pub fn tenant_counts(&self) -> std::collections::HashMap<String, usize> {
+        let mut counts = std::collections::HashMap::new();
+        for encrypted in &self.queue {
+            let decrypted = spool_cipher(encrypted, &self.key);
+            if let Ok(entry) = serde_json::from_slice::<SpoolEntry>(&decrypted) {
+                let key = entry.tenant_id.unwrap_or_else(|| "default".to_string());
+                *counts.entry(key).or_insert(0) += 1;
+            }
+        }
+        counts
     }
 
     /// Peek at the next entry without removing it.
@@ -399,5 +432,39 @@ mod tests {
         assert_eq!(stats.current_depth, 1);
         assert_eq!(stats.total_enqueued, 2);
         assert_eq!(stats.total_delivered, 1);
+    }
+
+    #[test]
+    fn tenant_aware_enqueue_and_filter() {
+        let mut spool = EncryptedSpool::new(b"tenant-test-key!", 100);
+        spool.enqueue_with_tenant("event-a", "dst", "t1", Some("tenant-1"));
+        spool.enqueue_with_tenant("event-b", "dst", "t2", Some("tenant-2"));
+        spool.enqueue_with_tenant("event-c", "dst", "t3", Some("tenant-1"));
+        spool.enqueue("event-d", "dst", "t4"); // no tenant
+
+        let t1 = spool.entries_for_tenant("tenant-1");
+        assert_eq!(t1.len(), 2);
+        assert_eq!(t1[0].payload, "event-a");
+        assert_eq!(t1[1].payload, "event-c");
+
+        let t2 = spool.entries_for_tenant("tenant-2");
+        assert_eq!(t2.len(), 1);
+
+        let counts = spool.tenant_counts();
+        assert_eq!(counts["tenant-1"], 2);
+        assert_eq!(counts["tenant-2"], 1);
+        assert_eq!(counts["default"], 1);
+    }
+
+    #[test]
+    fn tenant_id_preserved_in_persist_restore() {
+        let mut spool = EncryptedSpool::new(b"persist-tenant!!", 100);
+        spool.enqueue_with_tenant("ev1", "dst", "t", Some("acme-corp"));
+        let persisted = spool.persist();
+
+        let mut restored = EncryptedSpool::new(b"persist-tenant!!", 100);
+        restored.restore(&persisted).unwrap();
+        let entry = restored.dequeue().unwrap();
+        assert_eq!(entry.tenant_id.as_deref(), Some("acme-corp"));
     }
 }
