@@ -2,6 +2,18 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.23.0] — Fleet drilldowns and remote deployments
+
+### Added
+- **Remote agent update assignment**: Operators can now assign a published release to a specific enrolled agent. Assigned versions are surfaced in heartbeat responses and prioritized during agent update checks.
+- **Agent drilldown API and UI**: Fleet now exposes per-agent detail views with recent event timelines, risk transitions, aggregate risk metrics, and pending deployment visibility.
+- **Filtered event exploration and CSV export**: `GET /api/events` now supports agent, severity, reason, and correlation filters, and `GET /api/events/export` exports the filtered result set as CSV for incident triage.
+- **Monitoring path health checks**: Settings now report whether active file-integrity and persistence baseline paths exist and are readable on the current host.
+
+### Changed
+- **Fleet dashboard payload**: The Fleet summary now includes recent release catalog data and pending deployment counts so the admin console can drive remote rollout actions directly.
+- **Agent update client flow**: Agent downloads now resolve relative update URLs correctly and can react immediately to server-assigned deployment targets instead of waiting only for periodic polling.
+
 ## [0.22.0] — XDR analytics and monitoring visibility
 
 ### Added

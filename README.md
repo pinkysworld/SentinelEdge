@@ -111,7 +111,7 @@ Then open `http://localhost:8080/admin.html` in a browser. The token printed to 
 
 The Settings view includes an OS-aware Monitoring Scope section that shows recommended monitoring points for the current host platform, explains why specific signals are recommended or unavailable, lets you control supported collectors including auth events and platform-specific persistence baselines, and previews the exact active monitoring paths.
 
-The Fleet & Agents view now includes fleet-wide XDR analytics: top attack reasons, severity mix, hot-agent risk summaries, correlation rate, and policy history.
+The Fleet & Agents view now includes fleet-wide XDR analytics, per-agent drilldowns, filtered event export, monitoring-path health feedback, and remote update deployment controls for enrolled agents.
 
 Run tests:
 

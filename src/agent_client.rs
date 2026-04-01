@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::thread;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,15 @@ pub struct AgentClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HeartbeatPayload {
     version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HeartbeatResponse {
+    heartbeat_interval_secs: u64,
+    #[serde(default)]
+    update_assigned: bool,
+    #[serde(default)]
+    target_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,7 +81,7 @@ impl AgentClient {
     }
 
     /// Send heartbeat to server.
-    pub fn heartbeat(&self) -> Result<(), String> {
+    pub fn heartbeat(&self) -> Result<Option<String>, String> {
         let agent_id = self.agent_id.as_ref().ok_or("not enrolled")?;
         let payload = HeartbeatPayload {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -88,7 +98,12 @@ impl AgentClient {
         if resp.status() != 200 {
             return Err(format!("heartbeat rejected: status {}", resp.status()));
         }
-        Ok(())
+
+        let response: HeartbeatResponse = resp
+            .into_json()
+            .map_err(|e| format!("invalid heartbeat response: {e}"))?;
+        self.self_log_update_hint(&response);
+        Ok(response.target_version)
     }
 
     /// Forward alert events to the server.
@@ -137,6 +152,44 @@ impl AgentClient {
         Ok(Some(policy))
     }
 
+    fn self_log_update_hint(&self, response: &HeartbeatResponse) {
+        if response.update_assigned {
+            if let Some(version) = &response.target_version {
+                eprintln!("[update] Server assigned remote deployment for v{version}");
+            }
+        }
+    }
+
+    fn process_update(&self, target_version: Option<&str>) {
+        match self.check_update() {
+            Ok(Some(info)) => {
+                if let Some(expected) = target_version {
+                    if info.version != expected {
+                        eprintln!("[update] Assigned target {expected}, but server returned {}", info.version);
+                        return;
+                    }
+                }
+                eprintln!("[update] New version available: v{}", info.version);
+                if info.mandatory {
+                    eprintln!("[update] Mandatory update - downloading...");
+                }
+                match self.download_update(&info) {
+                    Ok(binary) => {
+                        eprintln!("[update] Downloaded {} bytes, checksum verified", binary.len());
+                        if let Err(e) = apply_update(&binary, &info.version) {
+                            eprintln!("[update] Failed to apply: {e}");
+                        } else {
+                            eprintln!("[update] Update applied — restart required");
+                        }
+                    }
+                    Err(e) => eprintln!("[update] Download failed: {e}"),
+                }
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("[update] Check failed: {e}"),
+        }
+    }
+
     /// Check for available updates from the server.
     pub fn check_update(&self) -> Result<Option<UpdateInfo>, String> {
         let agent_id = self.agent_id.as_ref().ok_or("not enrolled")?;
@@ -164,7 +217,13 @@ impl AgentClient {
 
     /// Download an update binary from the server.
     pub fn download_update(&self, info: &UpdateInfo) -> Result<Vec<u8>, String> {
-        let resp = ureq::get(&info.download_url)
+        let download_url = if info.download_url.starts_with("http://") || info.download_url.starts_with("https://") {
+            info.download_url.clone()
+        } else {
+            format!("{}{}", self.server_url, info.download_url)
+        };
+
+        let resp = ureq::get(&download_url)
             .call()
             .map_err(|e| format!("download failed: {e}"))?;
 
@@ -255,8 +314,13 @@ pub fn run_agent(
             if heartbeat_shutdown.load(Ordering::Relaxed) {
                 break;
             }
-            if let Err(e) = hb_client.heartbeat() {
-                eprintln!("heartbeat error: {e}");
+            match hb_client.heartbeat() {
+                Ok(target_version) => {
+                    if target_version.is_some() {
+                        hb_client.process_update(target_version.as_deref());
+                    }
+                }
+                Err(e) => eprintln!("heartbeat error: {e}"),
             }
         }
     });
@@ -277,27 +341,7 @@ pub fn run_agent(
             if update_shutdown.load(Ordering::Relaxed) {
                 break;
             }
-            match upd_client.check_update() {
-                Ok(Some(info)) => {
-                    eprintln!("[update] New version available: v{}", info.version);
-                    if info.mandatory {
-                        eprintln!("[update] Mandatory update — downloading...");
-                    }
-                    match upd_client.download_update(&info) {
-                        Ok(binary) => {
-                            eprintln!("[update] Downloaded {} bytes, checksum verified", binary.len());
-                            if let Err(e) = apply_update(&binary, &info.version) {
-                                eprintln!("[update] Failed to apply: {e}");
-                            } else {
-                                eprintln!("[update] Update applied — restart required");
-                            }
-                        }
-                        Err(e) => eprintln!("[update] Download failed: {e}"),
-                    }
-                }
-                Ok(None) => {} // no update available
-                Err(e) => eprintln!("[update] Check failed: {e}"),
-            }
+            upd_client.process_update(None);
         }
     });
 

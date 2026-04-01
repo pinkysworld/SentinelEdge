@@ -139,6 +139,12 @@ impl UpdateManager {
         &self.releases
     }
 
+    pub fn get_release(&self, version: &str, platform: &str) -> Option<&Release> {
+        self.releases.iter().find(|release| {
+            release.version == version && (release.platform == platform || release.platform == "universal")
+        })
+    }
+
     fn save(&self) {
         let index_path = format!("{}/releases.json", self.store_dir);
         if let Ok(json) = serde_json::to_string_pretty(&self.releases) {

@@ -809,6 +809,17 @@ input::placeholder{color:var(--ink-3);}
           </div>
           <div id="xdr-token-display" style="margin-top:.4rem;font-family:var(--mono);font-size:.78rem;word-break:break-all;"></div>
         </div>
+        <div style="margin-top:.9rem;padding-top:.85rem;border-top:1px solid var(--border);">
+          <h3>Remote Update Deployment</h3>
+          <div class="btn-row">
+            <select id="xdr-release-select" style="min-width:220px;background:var(--bg-alt);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;">
+              <option value="">No published releases</option>
+            </select>
+            <button class="btn btn-sm primary" id="btn-deploy-update">Deploy Update</button>
+          </div>
+          <div id="xdr-selected-agent" class="monitor-note" style="margin-top:.45rem;">Select an agent row to inspect or deploy.</div>
+          <div id="xdr-deploy-status" class="monitor-note" style="margin-top:.2rem;"></div>
+        </div>
       </div>
 
       <div class="card mt-1">
@@ -837,6 +848,37 @@ input::placeholder{color:var(--ink-3);}
           <div id="xdr-hot-agents" class="text-muted"><em>No agent risk data yet</em></div>
           <h3 style="margin-top:.8rem;">Policy History</h3>
           <div id="xdr-policy-history" class="text-muted"><em>No published policy history</em></div>
+        </div>
+      </div>
+
+      <div class="card-grid cols-2 mt-1">
+        <div class="card">
+          <h2><span class="dot dot-purple"></span> Agent Drilldown</h2>
+          <div id="xdr-agent-detail"><em class="text-muted">Select an agent to inspect recent risk transitions and event history.</em></div>
+        </div>
+        <div class="card">
+          <h2><span class="dot dot-orange"></span> Event Explorer</h2>
+          <div class="btn-row" style="margin-bottom:.75rem;">
+            <select id="xdr-filter-agent" style="min-width:150px;background:var(--bg-alt);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;">
+              <option value="">All agents</option>
+            </select>
+            <select id="xdr-filter-severity" style="min-width:130px;background:var(--bg-alt);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;">
+              <option value="">All severities</option>
+              <option value="Critical">Critical</option>
+              <option value="Severe">Severe</option>
+              <option value="Elevated">Elevated</option>
+              <option value="Nominal">Nominal</option>
+            </select>
+            <select id="xdr-filter-correlated" style="min-width:130px;background:var(--bg-alt);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;">
+              <option value="">Any correlation</option>
+              <option value="true">Correlated</option>
+              <option value="false">Not correlated</option>
+            </select>
+            <input type="text" id="xdr-filter-reason" placeholder="Reason filter" style="min-width:140px;background:var(--bg-alt);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;">
+            <button class="btn btn-sm" id="btn-refresh-xdr-events">Apply</button>
+            <button class="btn btn-sm" id="btn-export-xdr-events">Export CSV</button>
+          </div>
+          <div id="xdr-event-table"><em class="text-muted">No events loaded</em></div>
         </div>
       </div>
     </div>
@@ -1390,6 +1432,9 @@ input::placeholder{color:var(--ink-3);}
   let lastAlertCount = 0;
   let alertPollTimer = null;
   let monitoringOptionsData = null;
+  let selectedAgentId = null;
+  let fleetAgentsCache = [];
+  let xdrReleaseCatalog = [];
   let demoMode = false;
   let demoTimer = null;
   const AUTO_REFRESH_BASE = 5000;
@@ -1405,6 +1450,32 @@ input::placeholder{color:var(--ink-3);}
     return div.innerHTML;
   }
   const esc = escapeHtml;
+
+  function xdrEventQuery() {
+    const params = new URLSearchParams();
+    const agentId = $('#xdr-filter-agent') ? $('#xdr-filter-agent').value : '';
+    const severity = $('#xdr-filter-severity') ? $('#xdr-filter-severity').value : '';
+    const correlated = $('#xdr-filter-correlated') ? $('#xdr-filter-correlated').value : '';
+    const reason = $('#xdr-filter-reason') ? $('#xdr-filter-reason').value.trim() : '';
+    if (agentId) params.set('agent_id', agentId);
+    if (severity) params.set('severity', severity);
+    if (correlated) params.set('correlated', correlated);
+    if (reason) params.set('reason', reason);
+    params.set('limit', '100');
+    return params.toString();
+  }
+
+  function downloadBlob(text, fileName, mimeType) {
+    const blob = new Blob([text], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 
   function setAuthenticated(authed) {
     document.body.classList.toggle('authenticated', authed);
@@ -1995,6 +2066,16 @@ input::placeholder{color:var(--ink-3);}
         $('#xdr-siem').textContent = d.siem?.enabled ? 'Enabled' : 'Disabled';
         $('#xdr-pushed').textContent = d.siem?.total_pushed ?? '0';
         $('#xdr-pulled').textContent = d.siem?.total_pulled ?? '0';
+        xdrReleaseCatalog = d.updates?.release_catalog || [];
+        const releaseSelect = $('#xdr-release-select');
+        if (xdrReleaseCatalog.length > 0) {
+          releaseSelect.innerHTML = xdrReleaseCatalog.map(release =>
+            '<option value="' + esc(release.version) + '|' + esc(release.platform) + '">v' + esc(release.version) + ' (' + esc(release.platform) + ')</option>'
+          ).join('');
+        } else {
+          releaseSelect.innerHTML = '<option value="">No published releases</option>';
+        }
+        $('#xdr-deploy-status').textContent = 'Pending deployments: ' + (d.updates?.pending_deployments ?? 0);
         $('#xdr-correlation-rate').textContent = typeof analytics.correlation_rate === 'number' ? (analytics.correlation_rate * 100).toFixed(1) + '%' : '0%';
         $('#xdr-critical-events').textContent = analytics.severity_counts?.critical ?? '0';
         $('#xdr-severe-events').textContent = analytics.severity_counts?.severe ?? '0';
@@ -2027,15 +2108,33 @@ input::placeholder{color:var(--ink-3);}
       }
       if (agentsRes.ok) {
         const agents = await agentsRes.json();
+        fleetAgentsCache = agents;
         const tblEl = $('#xdr-agent-table');
+        const filterSelect = $('#xdr-filter-agent');
+        filterSelect.innerHTML = '<option value="">All agents</option>' + agents.map(a =>
+          '<option value="' + esc(a.id) + '" ' + (selectedAgentId === a.id ? 'selected' : '') + '>' + esc(a.hostname || a.id) + '</option>'
+        ).join('');
         if (agents.length > 0) {
+          if (!selectedAgentId || !agents.some(agent => agent.id === selectedAgentId)) selectedAgentId = agents[0].id;
           let html = '<table class="data-table"><tr><th>ID</th><th>Host</th><th>Platform</th><th>Status</th><th>Version</th></tr>';
           agents.forEach(a => {
             const sc = a.status === 'online' ? 'var(--accent)' : a.status === 'stale' ? 'var(--orange)' : 'var(--red)';
-            html += '<tr><td style="font-family:var(--mono);">' + esc(a.id?.substring(0,8) ?? '') + '...</td><td>' + esc(a.hostname ?? '') + '</td><td>' + esc(a.platform ?? '') + '</td><td><span style="color:' + sc + ';">&#9679;</span> ' + esc(a.status ?? '') + '</td><td>' + esc(a.version ?? '') + '</td></tr>';
+            const rowStyle = selectedAgentId === a.id ? ' style="background:var(--accent-light);"' : '';
+            html += '<tr class="alert-row" data-agent-row="' + esc(a.id) + '"' + rowStyle + '><td style="font-family:var(--mono);">' + esc(a.id?.substring(0,8) ?? '') + '...</td><td>' + esc(a.hostname ?? '') + '</td><td>' + esc(a.platform ?? '') + '</td><td><span style="color:' + sc + ';">&#9679;</span> ' + esc(a.status ?? '') + '</td><td>' + esc(a.version ?? '') + '</td></tr>';
           });
           html += '</table>';
           tblEl.innerHTML = html;
+          $$('[data-agent-row]').forEach(row => {
+            row.addEventListener('click', () => {
+              selectedAgentId = row.dataset.agentRow;
+              const selected = fleetAgentsCache.find(agent => agent.id === selectedAgentId);
+              $('#xdr-selected-agent').textContent = selected ? ('Selected: ' + selected.hostname + ' (' + selected.id + ')') : 'Select an agent row to inspect or deploy.';
+              refreshXdr();
+              refreshAgentDetail();
+            });
+          });
+          const selected = fleetAgentsCache.find(agent => agent.id === selectedAgentId);
+          $('#xdr-selected-agent').textContent = selected ? ('Selected: ' + selected.hostname + ' (' + selected.id + ')') : 'Select an agent row to inspect or deploy.';
         } else { tblEl.innerHTML = '<em class="text-muted">No agents enrolled</em>'; }
       }
       if (policyHistoryRes.ok) {
@@ -2051,6 +2150,7 @@ input::placeholder{color:var(--ink-3);}
           historyEl.innerHTML = '<em class="text-muted">No published policy history</em>';
         }
       }
+      await Promise.all([refreshAgentDetail(), refreshXdrEvents()]);
       log('XDR dashboard refreshed');
     } catch(e) { log('XDR refresh failed: ' + e.message); }
   }
@@ -2064,6 +2164,109 @@ input::placeholder{color:var(--ink-3);}
       $('#xdr-token-display').innerHTML = '<strong style="color:var(--accent);">' + esc(data.token) + '</strong> (uses: ' + data.max_uses + ')';
       flash('Enrollment token created', 'success'); log('Created enrollment token: ' + data.token.substring(0, 8) + '...');
     } catch(e) { flash('Token creation failed: ' + e.message, 'error'); }
+  }
+
+  async function refreshAgentDetail() {
+    const detailEl = $('#xdr-agent-detail');
+    if (!selectedAgentId) {
+      detailEl.innerHTML = '<em class="text-muted">Select an agent to inspect recent risk transitions and event history.</em>';
+      return;
+    }
+    try {
+      const res = await fetch(API + '/api/agents/' + encodeURIComponent(selectedAgentId) + '/details', { headers: authHeaders() });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const timeline = data.timeline?.length ? data.timeline.map(item =>
+        '<div style="padding:.35rem 0;border-bottom:1px solid var(--border);">' +
+        '<strong>' + esc(item.level) + '</strong> score ' + Number(item.score || 0).toFixed(2) +
+        ' at ' + esc(item.received_at) +
+        '<br><span style="color:var(--ink-3);">' + esc((item.reasons || []).join(', ') || 'no reasons') + '</span></div>'
+      ).join('') : '<em class="text-muted">No recent events for this agent</em>';
+      const transitions = data.risk_transitions?.length ? data.risk_transitions.map(item =>
+        '<div style="padding:.25rem 0;border-bottom:1px solid var(--border);">' + esc(item.from) + ' → ' + esc(item.to) + ' at ' + esc(item.received_at) + '</div>'
+      ).join('') : '<em class="text-muted">No risk transitions recorded yet</em>';
+      detailEl.innerHTML =
+        '<dl class="kv-grid">' +
+          '<dt>Host</dt><dd>' + esc(data.agent?.hostname || '—') + '</dd>' +
+          '<dt>Status</dt><dd>' + esc(data.agent?.status || '—') + '</dd>' +
+          '<dt>Platform</dt><dd>' + esc(data.agent?.platform || '—') + '</dd>' +
+          '<dt>Version</dt><dd>' + esc(data.agent?.version || '—') + '</dd>' +
+          '<dt>Risk</dt><dd>' + esc(data.analytics?.risk || 'Nominal') + '</dd>' +
+          '<dt>Last Seen</dt><dd>' + esc(data.agent?.last_seen || '—') + '</dd>' +
+          '<dt>Events</dt><dd>' + esc(data.analytics?.event_count ?? 0) + '</dd>' +
+          '<dt>Correlated</dt><dd>' + esc(data.analytics?.correlated_count ?? 0) + '</dd>' +
+        '</dl>' +
+        '<h3 style="margin-top:.9rem;">Deployment</h3>' +
+        (data.deployment ?
+          '<div style="padding:.45rem 0;border-bottom:1px solid var(--border);">Assigned v' + esc(data.deployment.version) + ' (' + esc(data.deployment.platform) + ') at ' + esc(data.deployment.assigned_at) + '</div>' :
+          '<div class="text-muted">No pending deployment</div>') +
+        '<h3 style="margin-top:.9rem;">Risk Transitions</h3>' + transitions +
+        '<h3 style="margin-top:.9rem;">Recent Timeline</h3>' + timeline;
+    } catch(e) {
+      detailEl.innerHTML = '<em class="text-muted">Failed to load agent detail: ' + esc(e.message) + '</em>';
+    }
+  }
+
+  async function refreshXdrEvents() {
+    const tableEl = $('#xdr-event-table');
+    try {
+      const query = xdrEventQuery();
+      const res = await fetch(API + '/api/events' + (query ? ('?' + query) : ''), { headers: authHeaders() });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const events = await res.json();
+      if (!events.length) {
+        tableEl.innerHTML = '<em class="text-muted">No events match the current filters</em>';
+        return;
+      }
+      let html = '<table class="data-table"><tr><th>Agent</th><th>Level</th><th>Score</th><th>Correlated</th><th>Reason</th><th>Received</th></tr>';
+      events.forEach(event => {
+        html += '<tr><td>' + esc(event.agent_id || '') + '</td><td>' + esc(event.alert?.level || '') + '</td><td>' + Number(event.alert?.score || 0).toFixed(2) + '</td><td>' + (event.correlated ? 'Yes' : 'No') + '</td><td>' + esc((event.alert?.reasons || []).join(', ')) + '</td><td>' + esc(event.received_at || '') + '</td></tr>';
+      });
+      html += '</table>';
+      tableEl.innerHTML = html;
+    } catch(e) {
+      tableEl.innerHTML = '<em class="text-muted">Failed to load events: ' + esc(e.message) + '</em>';
+    }
+  }
+
+  async function deployRemoteUpdate() {
+    if (!selectedAgentId) {
+      flash('Select an agent first', 'error');
+      return;
+    }
+    const releaseValue = $('#xdr-release-select').value;
+    if (!releaseValue) {
+      flash('Publish a release before assigning updates', 'error');
+      return;
+    }
+    const [version, platform] = releaseValue.split('|');
+    try {
+      const res = await fetch(API + '/api/updates/deploy', {
+        method: 'POST',
+        headers: authHeaders('application/json'),
+        body: JSON.stringify({ agent_id: selectedAgentId, version, platform })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      flash('Deployment assigned to ' + selectedAgentId, 'success');
+      $('#xdr-deploy-status').textContent = 'Assigned v' + data.deployment.version + ' to ' + data.agent_id;
+      await Promise.all([refreshXdr(), refreshAgentDetail()]);
+    } catch(e) {
+      flash('Deployment failed: ' + e.message, 'error');
+    }
+  }
+
+  async function exportXdrEvents() {
+    try {
+      const query = xdrEventQuery();
+      const res = await fetch(API + '/api/events/export' + (query ? ('?' + query) : ''), { headers: authHeaders() });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const csv = await res.text();
+      downloadBlob(csv, 'sentineledge-events.csv', 'text/csv;charset=utf-8');
+      log('Exported filtered XDR events');
+    } catch(e) {
+      flash('Export failed: ' + e.message, 'error');
+    }
   }
 
   // ── Digital Twin & Testing ──
@@ -2567,10 +2770,16 @@ input::placeholder{color:var(--ink-3);}
         const preview = $('#monitoring-path-preview');
         const filePaths = paths.file_integrity_paths || [];
         const persistencePaths = paths.persistence_paths || [];
+        const healthLines = ([]).concat(paths.file_integrity_health || [], paths.persistence_health || [])
+          .filter(item => item.health !== 'ok')
+          .map(item => '<li>' + esc(item.path) + ' — ' + esc(item.health) + ' (' + esc(item.note || '') + ')</li>')
+          .join('');
         preview.innerHTML =
           '<strong>Active path preview:</strong>' +
           '<br>File integrity: ' + (filePaths.length ? filePaths.map(esc).join(', ') : 'disabled or not configured') +
-          '<br>Persistence: ' + (persistencePaths.length ? persistencePaths.map(esc).join(', ') : 'disabled or not supported');
+          '<br>Persistence: ' + (persistencePaths.length ? persistencePaths.map(esc).join(', ') : 'disabled or not supported') +
+          '<br>Health issues: ' + esc(paths.summary?.unhealthy_paths ?? 0) +
+          (healthLines ? '<ul>' + healthLines + '</ul>' : '');
       }
       syncWatchPathsState();
       log('Settings loaded from server');
@@ -2832,6 +3041,13 @@ input::placeholder{color:var(--ink-3);}
   $('#btn-register-device').addEventListener('click', registerDevice);
   $('#btn-refresh-xdr').addEventListener('click', refreshXdr);
   $('#btn-create-token').addEventListener('click', createEnrollmentToken);
+  $('#btn-deploy-update').addEventListener('click', deployRemoteUpdate);
+  $('#btn-refresh-xdr-events').addEventListener('click', refreshXdrEvents);
+  $('#btn-export-xdr-events').addEventListener('click', exportXdrEvents);
+  $('#xdr-filter-agent').addEventListener('change', refreshXdrEvents);
+  $('#xdr-filter-severity').addEventListener('change', refreshXdrEvents);
+  $('#xdr-filter-correlated').addEventListener('change', refreshXdrEvents);
+  $('#xdr-filter-reason').addEventListener('keydown', (e) => { if (e.key === 'Enter') refreshXdrEvents(); });
 
   // Security Policy
   $('#btn-compose').addEventListener('click', composePolicy);

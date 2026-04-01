@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,6 +73,7 @@ struct AppState {
     event_store: EventStore,
     policy_store: PolicyStore,
     update_manager: UpdateManager,
+    remote_deployments: HashMap<String, AgentDeployment>,
     siem_connector: SiemConnector,
     // Local host telemetry (ring buffer, last 300 samples)
     local_telemetry: Vec<TelemetrySample>,
@@ -82,6 +84,25 @@ struct AppState {
     compound: CompoundThreatDetector,
     // Phase 22: shutdown support
     shutdown: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct AgentDeployment {
+    agent_id: String,
+    version: String,
+    platform: String,
+    mandatory: bool,
+    release_notes: String,
+    assigned_at: String,
+}
+
+#[derive(Debug, Default)]
+struct EventQuery {
+    agent_id: Option<String>,
+    severity: Option<String>,
+    reason: Option<String>,
+    correlated: Option<bool>,
+    limit: usize,
 }
 
 pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>) -> Result<(), String> {
@@ -128,6 +149,7 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>) -> Resu
         event_store: EventStore::new(10_000),
         policy_store: PolicyStore::new(),
         update_manager: UpdateManager::new("var/updates"),
+        remote_deployments: HashMap::new(),
         siem_connector: SiemConnector::new(crate::siem::SiemConfig::default()),
         local_telemetry: Vec::new(),
         local_host_info: detect_platform(),
@@ -305,6 +327,7 @@ pub fn spawn_test_server() -> (u16, String) {
         event_store: EventStore::new(1000),
         policy_store: PolicyStore::new(),
         update_manager: UpdateManager::new(&format!("/tmp/wardex_test_{port}/updates")),
+        remote_deployments: HashMap::new(),
         siem_connector: SiemConnector::new(crate::siem::SiemConfig::default()),
         local_telemetry: Vec::new(),
         local_host_info: detect_platform(),
@@ -399,6 +422,26 @@ fn text_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> 
     )
 }
 
+fn csv_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
+    let origin = cors_origin();
+    let data = body.as_bytes().to_vec();
+    let len = data.len();
+    Response::new(
+        tiny_http::StatusCode(status),
+        vec![
+            Header::from_bytes(b"Content-Type", b"text/csv; charset=utf-8").unwrap(),
+            Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
+            Header::from_bytes(b"Vary", b"Origin").unwrap(),
+            Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
+            Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
+            Header::from_bytes(b"Cache-Control", b"no-store").unwrap(),
+        ],
+        std::io::Cursor::new(data),
+        Some(len),
+        None,
+    )
+}
+
 fn check_auth(request: &Request, state: &Arc<Mutex<AppState>>) -> bool {
     let state = state.lock().unwrap();
     for header in request.headers() {
@@ -424,6 +467,162 @@ fn host_platform_key(platform: HostPlatform) -> &'static str {
         HostPlatform::Windows | HostPlatform::WindowsServer => "windows",
         HostPlatform::Unknown => "unknown",
     }
+}
+
+fn parse_query_string(url: &str) -> HashMap<String, String> {
+    let query = url.split('?').nth(1).unwrap_or("");
+    let mut params = HashMap::new();
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let mut parts = pair.splitn(2, '=');
+        let key = parts.next().unwrap_or("");
+        let value = parts.next().unwrap_or("");
+        if !key.is_empty() {
+            params.insert(key.to_string(), value.to_string());
+        }
+    }
+    params
+}
+
+fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse = |value: &str| -> Vec<u32> {
+        value
+            .split('.')
+            .map(|part| part.parse::<u32>().unwrap_or(0))
+            .collect()
+    };
+    parse(a).cmp(&parse(b))
+}
+
+fn severity_rank(level: &str) -> u8 {
+    match level.to_ascii_lowercase().as_str() {
+        "critical" => 3,
+        "severe" => 2,
+        "elevated" => 1,
+        _ => 0,
+    }
+}
+
+fn path_health(path: &str) -> serde_json::Value {
+    let path_ref = Path::new(path);
+    match fs::metadata(path_ref) {
+        Ok(metadata) => {
+            let kind = if metadata.is_dir() {
+                "directory"
+            } else if metadata.is_file() {
+                "file"
+            } else {
+                "other"
+            };
+            let readable = if metadata.is_dir() {
+                fs::read_dir(path_ref).is_ok()
+            } else {
+                fs::File::open(path_ref).is_ok()
+            };
+            serde_json::json!({
+                "path": path,
+                "exists": true,
+                "type": kind,
+                "readable": readable,
+                "health": if readable { "ok" } else { "restricted" },
+                "note": if readable { "Path is available to the current process." } else { "Path exists but could not be read by the current process." },
+            })
+        }
+        Err(_) => serde_json::json!({
+            "path": path,
+            "exists": false,
+            "type": "missing",
+            "readable": false,
+            "health": "missing",
+            "note": "Path is not present on this host.",
+        }),
+    }
+}
+
+fn parse_event_query(url: &str) -> EventQuery {
+    let params = parse_query_string(url);
+    let limit = params
+        .get("limit")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(200)
+        .clamp(1, 1000);
+    EventQuery {
+        agent_id: params.get("agent_id").cloned().filter(|value| !value.is_empty()),
+        severity: params.get("severity").cloned().filter(|value| !value.is_empty()),
+        reason: params.get("reason").cloned().filter(|value| !value.is_empty()),
+        correlated: params.get("correlated").and_then(|value| match value.as_str() {
+            "true" | "1" => Some(true),
+            "false" | "0" => Some(false),
+            _ => None,
+        }),
+        limit,
+    }
+}
+
+fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQuery) -> bool {
+    if let Some(agent_id) = &query.agent_id {
+        if &event.agent_id != agent_id {
+            return false;
+        }
+    }
+    if let Some(severity) = &query.severity {
+        if !event.alert.level.eq_ignore_ascii_case(severity) {
+            return false;
+        }
+    }
+    if let Some(reason) = &query.reason {
+        if !event
+            .alert
+            .reasons
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(reason))
+        {
+            return false;
+        }
+    }
+    if let Some(correlated) = query.correlated {
+        if event.correlated != correlated {
+            return false;
+        }
+    }
+    true
+}
+
+fn filtered_events<'a>(store: &'a EventStore, query: &EventQuery) -> Vec<&'a crate::event_forward::StoredEvent> {
+    store
+        .list(None, 10_000)
+        .into_iter()
+        .filter(|event| event_matches_query(event, query))
+        .take(query.limit)
+        .collect()
+}
+
+fn csv_escape(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn events_to_csv(events: &[&crate::event_forward::StoredEvent]) -> String {
+    let mut out = String::from("id,agent_id,received_at,level,score,confidence,correlated,reasons,hostname,platform,action\n");
+    for event in events {
+        let row = [
+            event.id.to_string(),
+            csv_escape(&event.agent_id),
+            csv_escape(&event.received_at),
+            csv_escape(&event.alert.level),
+            event.alert.score.to_string(),
+            event.alert.confidence.to_string(),
+            event.correlated.to_string(),
+            csv_escape(&event.alert.reasons.join("|")),
+            csv_escape(&event.alert.hostname),
+            csv_escape(&event.alert.platform),
+            csv_escape(&event.alert.action),
+        ];
+        out.push_str(&row.join(","));
+        out.push('\n');
+    }
+    out
 }
 
 fn monitoring_option(
@@ -702,9 +901,21 @@ fn monitoring_paths_payload(host: &HostInfo, config: &Config) -> serde_json::Val
         Vec::new()
     };
     let persistence_paths = crate::collector::persistence_watch_paths(host.platform, &config.monitor.scope);
+    let file_health = file_paths.iter().map(|path| path_health(path)).collect::<Vec<_>>();
+    let persistence_health = persistence_paths.iter().map(|path| path_health(path)).collect::<Vec<_>>();
+    let unhealthy = file_health
+        .iter()
+        .chain(persistence_health.iter())
+        .filter(|entry| entry["health"] != "ok")
+        .count();
     serde_json::json!({
         "file_integrity_paths": file_paths,
         "persistence_paths": persistence_paths,
+        "file_integrity_health": file_health,
+        "persistence_health": persistence_health,
+        "summary": {
+            "unhealthy_paths": unhealthy,
+        },
         "scope": {
             "file_integrity": config.monitor.scope.file_integrity,
             "service_persistence": config.monitor.scope.service_persistence,
@@ -765,6 +976,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             | (Method::Post, "/api/agents/token")
             | (Method::Post, "/api/policy/publish")
             | (Method::Post, "/api/updates/publish")
+            | (Method::Post, "/api/updates/deploy")
             | (Method::Post, "/api/shutdown")
             | (Method::Post, "/api/mesh/heal")
             | (Method::Delete, "/api/alerts")
@@ -774,6 +986,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         || (method == Method::Get && url == "/api/agents")
         || (method == Method::Get && url == "/api/events")
         || (method == Method::Get && url.starts_with("/api/events?"))
+        || (method == Method::Get && url == "/api/events/export")
+        || (method == Method::Get && url.starts_with("/api/events/export?"))
         || (method == Method::Get && url == "/api/events/summary")
         || (method == Method::Get && url == "/api/policy/history")
         || (method == Method::Get && url == "/api/telemetry/current")
@@ -792,6 +1006,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         || (method == Method::Get && url == "/api/monitoring/paths")
         || (method == Method::Get && url == "/api/endpoints")
         || (method == Method::Get && url == "/api/status")
+        || (method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/details"))
         || (method == Method::Delete && url.starts_with("/api/agents/"))
     ));
 
@@ -1493,7 +1708,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 {"method": "GET", "path": "/api/threads/status", "auth": true, "description": "Background thread status and collection stats"},
                 {"method": "GET", "path": "/api/detection/summary", "auth": true, "description": "Velocity, entropy, compound detector state"},
                 {"method": "GET", "path": "/api/events/summary", "auth": true, "description": "XDR fleet event analytics summary"},
+                {"method": "GET", "path": "/api/events/export", "auth": true, "description": "Export filtered XDR events as CSV"},
                 {"method": "GET", "path": "/api/policy/history", "auth": true, "description": "Published policy history"},
+                {"method": "POST", "path": "/api/updates/deploy", "auth": true, "description": "Assign a published release to a specific agent"},
             ]);
             json_response(&endpoints.to_string(), 200)
         }
@@ -1521,11 +1738,18 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
         (Method::Get, "/api/events") => {
             let s = state.lock().unwrap();
-            let events = s.event_store.list(None, 200);
+            let query = parse_event_query(&url);
+            let events = filtered_events(&s.event_store, &query);
             match serde_json::to_string(&events) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
+        }
+        (Method::Get, "/api/events/export") => {
+            let s = state.lock().unwrap();
+            let query = parse_event_query(&url);
+            let events = filtered_events(&s.event_store, &query);
+            csv_response(&events_to_csv(&events), 200)
         }
         (Method::Get, "/api/events/summary") => {
             let s = state.lock().unwrap();
@@ -1561,6 +1785,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         // ── XDR Update Distribution ──────────────────────────────
         (Method::Post, "/api/updates/publish") => {
             handle_update_publish(&mut request, state)
+        }
+        (Method::Post, "/api/updates/deploy") => {
+            handle_update_deploy(&mut request, state)
         }
 
         // ── Detection Analysis ─────────────────────────────────
@@ -1625,6 +1852,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 },
                 "updates": {
                     "available_releases": releases.len(),
+                    "pending_deployments": s.remote_deployments.len(),
+                    "release_catalog": releases.iter().rev().take(10).cloned().collect::<Vec<_>>(),
                 },
                 "siem": {
                     "enabled": siem_status.enabled,
@@ -1670,12 +1899,30 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             if method == Method::Get && (url == "/api/agents/update" || url.starts_with("/api/agents/update?")) {
                 // GET /api/agents/update?current_version=xxx&platform=yyy
                 handle_agent_update_check(&mut request, state)
+            } else if method == Method::Get && url.starts_with("/api/events/export?") {
+                let s = state.lock().unwrap();
+                let query = parse_event_query(&url);
+                let events = filtered_events(&s.event_store, &query);
+                csv_response(&events_to_csv(&events), 200)
+            } else if method == Method::Get && url.starts_with("/api/events?") {
+                let s = state.lock().unwrap();
+                let query = parse_event_query(&url);
+                let events = filtered_events(&s.event_store, &query);
+                match serde_json::to_string(&events) {
+                    Ok(json) => json_response(&json, 200),
+                    Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                }
             } else if method == Method::Post && url.ends_with("/heartbeat") && url.starts_with("/api/agents/") {
                 // POST /api/agents/{id}/heartbeat
                 let agent_id = url.strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/heartbeat"))
                     .unwrap_or("");
                 handle_agent_heartbeat(&mut request, state, agent_id)
+            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/details") {
+                let agent_id = url.strip_prefix("/api/agents/")
+                    .and_then(|rest| rest.strip_suffix("/details"))
+                    .unwrap_or("");
+                handle_agent_details(state, agent_id)
             } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/status") {
                 // GET /api/agents/{id}/status
                 let agent_id = url.strip_prefix("/api/agents/")
@@ -2366,12 +2613,121 @@ fn handle_agent_heartbeat(
     });
     let mut s = state.lock().unwrap();
     match s.agent_registry.heartbeat(agent_id, &req.version) {
-        Ok(()) => json_response(
-            &format!(r#"{{"status":"ok","interval_secs":{}}}"#, s.agent_registry.heartbeat_interval()),
-            200,
-        ),
+        Ok(()) => {
+            let mut target_version = None;
+            if let Some(deployment) = s.remote_deployments.get(agent_id) {
+                if deployment.version == req.version {
+                    s.remote_deployments.remove(agent_id);
+                } else {
+                    target_version = Some(deployment.version.clone());
+                }
+            }
+            let heartbeat_interval = s.agent_registry.heartbeat_interval();
+            let payload = serde_json::json!({
+                "status": "ok",
+                "interval_secs": heartbeat_interval,
+                "heartbeat_interval_secs": heartbeat_interval,
+                "update_assigned": target_version.is_some(),
+                "target_version": target_version,
+            });
+            json_response(&payload.to_string(), 200)
+        }
         Err(e) => error_json(&e, 404),
     }
+}
+
+fn handle_agent_details(
+    state: &Arc<Mutex<AppState>>,
+    agent_id: &str,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let s = state.lock().unwrap();
+    let agent = match s.agent_registry.get(agent_id) {
+        Some(agent) => agent,
+        None => return error_json("agent not found", 404),
+    };
+
+    let events = s.event_store.list(Some(agent_id), 500);
+    let total_events = events.len();
+    let correlated_count = events.iter().filter(|event| event.correlated).count();
+    let critical_count = events
+        .iter()
+        .filter(|event| severity_rank(&event.alert.level) >= 3)
+        .count();
+    let average_score = if total_events > 0 {
+        events.iter().map(|event| event.alert.score).sum::<f32>() / total_events as f32
+    } else {
+        0.0
+    };
+    let max_score = events.iter().map(|event| event.alert.score).fold(0.0f32, f32::max);
+    let highest_level = events
+        .iter()
+        .map(|event| severity_rank(&event.alert.level))
+        .max()
+        .unwrap_or(0);
+
+    let timeline = events
+        .iter()
+        .take(25)
+        .map(|event| {
+            serde_json::json!({
+                "event_id": event.id,
+                "received_at": event.received_at,
+                "level": event.alert.level,
+                "score": event.alert.score,
+                "correlated": event.correlated,
+                "reasons": event.alert.reasons,
+                "action": event.alert.action,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut chronological = events.clone();
+    chronological.reverse();
+    let mut transitions = Vec::new();
+    let mut previous_level: Option<String> = None;
+    for event in chronological {
+        if previous_level.as_deref() != Some(event.alert.level.as_str()) {
+            if let Some(from) = previous_level.clone() {
+                transitions.push(serde_json::json!({
+                    "event_id": event.id,
+                    "received_at": event.received_at,
+                    "from": from,
+                    "to": event.alert.level,
+                }));
+            }
+            previous_level = Some(event.alert.level.clone());
+        }
+    }
+
+    let payload = serde_json::json!({
+        "agent": agent,
+        "deployment": s.remote_deployments.get(agent_id),
+        "analytics": {
+            "event_count": total_events,
+            "correlated_count": correlated_count,
+            "critical_count": critical_count,
+            "average_score": average_score,
+            "max_score": max_score,
+            "highest_level": match highest_level {
+                3 => "Critical",
+                2 => "Severe",
+                1 => "Elevated",
+                _ => "Nominal",
+            },
+            "risk": if highest_level >= 3 || correlated_count >= 2 {
+                "Critical"
+            } else if highest_level >= 2 || average_score >= 3.0 {
+                "Severe"
+            } else if highest_level >= 1 || average_score >= 1.5 {
+                "Elevated"
+            } else {
+                "Nominal"
+            },
+        },
+        "timeline": timeline,
+        "risk_transitions": transitions,
+    });
+    json_response(&payload.to_string(), 200)
 }
 
 fn handle_agent_update_check(
@@ -2379,26 +2735,94 @@ fn handle_agent_update_check(
     state: &Arc<Mutex<AppState>>,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     // Agent sends GET /api/agents/update?agent_id=xxx&current_version=yyy
-    let url = request.url().to_string();
-    let query = url.split('?').nth(1).unwrap_or("");
-    let mut current_version = String::new();
-    let mut platform = String::from("universal");
-    for param in query.split('&') {
-        if let Some(val) = param.strip_prefix("current_version=") {
-            current_version = val.to_string();
-        } else if let Some(val) = param.strip_prefix("platform=") {
-            platform = val.to_string();
-        }
-    }
+    let params = parse_query_string(request.url());
+    let agent_id = params.get("agent_id").cloned();
+    let mut current_version = params.get("current_version").cloned().unwrap_or_default();
+    let mut platform = params.get("platform").cloned().unwrap_or_else(|| "universal".to_string());
     if current_version.is_empty() {
         current_version = env!("CARGO_PKG_VERSION").to_string();
     }
     let s = state.lock().unwrap();
+    if let Some(agent_id) = agent_id.as_deref() {
+        if platform == "universal" {
+            if let Some(agent) = s.agent_registry.get(agent_id) {
+                platform = agent.platform.clone();
+            }
+        }
+        if let Some(deployment) = s.remote_deployments.get(agent_id) {
+            if compare_versions(&deployment.version, &current_version) == std::cmp::Ordering::Greater {
+                if let Some(release) = s.update_manager.get_release(&deployment.version, &platform) {
+                    let resp = crate::auto_update::UpdateCheckResponse {
+                        update_available: true,
+                        version: Some(release.version.clone()),
+                        download_url: Some(format!("/api/updates/download/{}", release.file_name)),
+                        sha256: Some(release.sha256.clone()),
+                        release_notes: Some(release.release_notes.clone()),
+                        mandatory: Some(release.mandatory),
+                    };
+                    return match serde_json::to_string(&resp) {
+                        Ok(json) => json_response(&json, 200),
+                        Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                    };
+                }
+            }
+        }
+    }
     let resp = s.update_manager.check_update(&current_version, &platform);
     match serde_json::to_string(&resp) {
         Ok(json) => json_response(&json, 200),
         Err(e) => error_json(&format!("serialization error: {e}"), 500),
     }
+}
+
+fn handle_update_deploy(
+    request: &mut Request,
+    state: &Arc<Mutex<AppState>>,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+        Ok(b) => b,
+        Err(e) => return error_json(&e, 400),
+    };
+    #[derive(serde::Deserialize)]
+    struct DeployReq {
+        agent_id: String,
+        version: String,
+        #[serde(default)]
+        platform: Option<String>,
+    }
+
+    let req: DeployReq = match serde_json::from_str(&body) {
+        Ok(req) => req,
+        Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+    };
+
+    let mut s = state.lock().unwrap();
+    let agent = match s.agent_registry.get(&req.agent_id) {
+        Some(agent) => agent,
+        None => return error_json("agent not found", 404),
+    };
+    let platform = req.platform.unwrap_or_else(|| agent.platform.clone());
+    let release = match s.update_manager.get_release(&req.version, &platform) {
+        Some(release) => release.clone(),
+        None => return error_json("release not found for agent platform", 404),
+    };
+
+    let deployment = AgentDeployment {
+        agent_id: req.agent_id.clone(),
+        version: release.version.clone(),
+        platform: platform.clone(),
+        mandatory: release.mandatory,
+        release_notes: release.release_notes.clone(),
+        assigned_at: chrono::Utc::now().to_rfc3339(),
+    };
+    s.remote_deployments.insert(req.agent_id.clone(), deployment.clone());
+
+    let payload = serde_json::json!({
+        "status": "assigned",
+        "agent_id": req.agent_id,
+        "deployment": deployment,
+    });
+    json_response(&payload.to_string(), 200)
 }
 
 fn handle_event_ingest(
