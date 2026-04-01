@@ -589,7 +589,17 @@ fn generate_token() -> String {
 }
 
 fn cors_origin() -> String {
-    std::env::var("SENTINEL_CORS_ORIGIN").unwrap_or_else(|_| "http://localhost".into())
+    let origin = std::env::var("SENTINEL_CORS_ORIGIN").unwrap_or_else(|_| "http://localhost".into());
+    // Block wildcard CORS origin — credentials must not use "*"
+    if origin == "*" {
+        return "http://localhost".into();
+    }
+    // Validate origin looks like a URL scheme
+    if origin.starts_with("http://") || origin.starts_with("https://") {
+        origin
+    } else {
+        "http://localhost".into()
+    }
 }
 
 fn json_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
@@ -673,7 +683,17 @@ fn check_auth(request: &Request, state: &Arc<Mutex<AppState>>) -> bool {
         {
             let val = header.value.as_str();
             if let Some(token) = val.strip_prefix("Bearer ") {
-                return token.trim() == state.token;
+                let input = token.trim().as_bytes();
+                let expected = state.token.as_bytes();
+                // Constant-time comparison to prevent timing attacks
+                if input.len() != expected.len() {
+                    return false;
+                }
+                let mut diff = 0u8;
+                for (a, b) in input.iter().zip(expected.iter()) {
+                    diff |= a ^ b;
+                }
+                return diff == 0;
             }
         }
     }
@@ -892,7 +912,13 @@ fn filtered_events<'a>(store: &'a EventStore, query: &EventQuery) -> Vec<&'a cra
 }
 
 fn csv_escape(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
+    let safe = value.replace('"', "\"\"");
+    // Prevent CSV formula injection (=, +, -, @, |, tab)
+    if safe.starts_with(['=', '+', '-', '@', '|', '\t']) {
+        format!("\"'{}\"", safe)
+    } else {
+        format!("\"{}\"", safe)
+    }
 }
 
 fn ocsf_class_for_event(event: &crate::event_forward::StoredEvent) -> u32 {

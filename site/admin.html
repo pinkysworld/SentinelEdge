@@ -1601,6 +1601,67 @@ input::placeholder{color:var(--ink-3);}
         </div>
       </div>
 
+      <div class="card" style="margin-top:1rem;">
+        <h2><span class="dot dot-orange"></span> Session Management</h2>
+        <p class="text-muted" style="margin-bottom:.75rem;font-size:.82rem;">Monitor token TTL, rotate credentials, and view session health.</p>
+        <div class="card-grid cols-2" style="margin-bottom:.75rem;">
+          <div style="padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt);">
+            <h3 style="margin-bottom:.5rem;">Session Info</h3>
+            <dl class="kv-grid">
+              <dt>Uptime</dt><dd id="sess-uptime">—</dd>
+              <dt>Token Age</dt><dd id="sess-token-age">—</dd>
+              <dt>TTL</dt><dd id="sess-ttl">—</dd>
+              <dt>Expires In</dt><dd id="sess-expires">—</dd>
+              <dt>Status</dt><dd id="sess-status">—</dd>
+              <dt>mTLS Required</dt><dd id="sess-mtls">—</dd>
+            </dl>
+          </div>
+          <div style="padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt);">
+            <h3 style="margin-bottom:.5rem;">Token Rotation</h3>
+            <p class="text-muted" style="font-size:.8rem;margin-bottom:.5rem;">Generate a new admin token. The current token will be immediately invalidated.</p>
+            <div class="btn-row">
+              <button class="btn btn-sm primary" id="btn-rotate-token">Rotate Token</button>
+              <button class="btn btn-sm" id="btn-refresh-session">Refresh</button>
+            </div>
+            <div id="session-rotate-result" style="margin-top:.5rem;font-family:var(--mono);font-size:.78rem;word-break:break-all;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1rem;">
+        <h2><span class="dot dot-blue"></span> Audit &amp; Retention</h2>
+        <p class="text-muted" style="margin-bottom:.75rem;font-size:.82rem;">Verify audit chain integrity and manage data retention policies.</p>
+        <div class="card-grid cols-2" style="margin-bottom:.75rem;">
+          <div style="padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt);">
+            <h3 style="margin-bottom:.5rem;">Audit Chain</h3>
+            <dl class="kv-grid">
+              <dt>Records</dt><dd id="audit-records">—</dd>
+              <dt>Checkpoints</dt><dd id="audit-checkpoints">—</dd>
+              <dt>Integrity</dt><dd id="audit-integrity">—</dd>
+              <dt>Head Hash</dt><dd id="audit-head" style="font-size:.72rem;word-break:break-all;">—</dd>
+            </dl>
+            <div class="btn-row mt-1">
+              <button class="btn btn-sm primary" id="btn-verify-audit">Verify Chain</button>
+            </div>
+          </div>
+          <div style="padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt);">
+            <h3 style="margin-bottom:.5rem;">Retention Policy</h3>
+            <dl class="kv-grid">
+              <dt>Max Audit Records</dt><dd id="ret-audit-max">—</dd>
+              <dt>Max Alert Records</dt><dd id="ret-alert-max">—</dd>
+              <dt>Max Event Records</dt><dd id="ret-event-max">—</dd>
+              <dt>Current Alerts</dt><dd id="ret-alert-cur">—</dd>
+              <dt>Current Events</dt><dd id="ret-event-cur">—</dd>
+            </dl>
+            <div class="btn-row mt-1">
+              <button class="btn btn-sm" id="btn-refresh-retention">Refresh</button>
+              <button class="btn btn-sm danger" id="btn-apply-retention">Apply Retention</button>
+            </div>
+            <div id="retention-result" class="text-muted" style="margin-top:.4rem;font-size:.8rem;"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="card" style="margin-top:1rem;border-left:3px solid var(--danger);">
         <h3 style="color:var(--danger);margin:0 0 .5rem;">Danger Zone</h3>
         <p class="text-muted" style="margin-bottom:.75rem;font-size:.82rem;">These actions are destructive and cannot be undone.</p>
@@ -2117,7 +2178,7 @@ input::placeholder{color:var(--ink-3);}
     else if (sectionId === 'incident-response') { refreshTwin(); refreshAnalysis(); refreshProcessTree(); refreshResponseOrchestration(); }
     else if (sectionId === 'infrastructure') { refreshInfra(); }
     else if (sectionId === 'reports-exports') { refreshReport(); }
-    else if (sectionId === 'settings') { loadSettings(); }
+    else if (sectionId === 'settings') { loadSettings(); refreshSessionInfo(); refreshRetention(); }
     else if (sectionId === 'research-tracks') { loadResearchTracks(); }
     else if (sectionId === 'help-docs') { loadApiEndpoints(); }
     else if (sectionId === 'dashboard') { refreshDashboard(); }
@@ -4309,6 +4370,13 @@ input::placeholder{color:var(--ink-3);}
   $('#btn-test-webhook').addEventListener('click', testWebhook);
   $('#btn-shutdown-server').addEventListener('click', shutdownServer);
 
+  // Session Management
+  if ($('#btn-rotate-token')) $('#btn-rotate-token').addEventListener('click', rotateAdminToken);
+  if ($('#btn-refresh-session')) $('#btn-refresh-session').addEventListener('click', refreshSessionInfo);
+  if ($('#btn-verify-audit')) $('#btn-verify-audit').addEventListener('click', verifyAuditChain);
+  if ($('#btn-refresh-retention')) $('#btn-refresh-retention').addEventListener('click', refreshRetention);
+  if ($('#btn-apply-retention')) $('#btn-apply-retention').addEventListener('click', applyRetention);
+
   // Sigma / Cases / Alert Queue / RBAC / Feature Flags
   $('#btn-sigma-refresh').addEventListener('click', refreshSigma);
   if ($('#btn-cases-refresh')) $('#btn-cases-refresh').addEventListener('click', refreshCases);
@@ -4450,6 +4518,85 @@ input::placeholder{color:var(--ink-3);}
       const res = await apiFetch('/api/rbac/users/' + encodeURIComponent(username), { method: 'DELETE' });
       if (res.ok) { log('User removed: ' + username); refreshRbac(); }
     } catch(e) { log('Error: ' + e.message); }
+  }
+
+  // ── Session Management ──
+  async function refreshSessionInfo() {
+    try {
+      const res = await apiFetch('/api/session/info');
+      if (!res.ok) return;
+      const d = await res.json();
+      $('#sess-uptime').textContent = typeof d.uptime_secs === 'number' ? formatUptime(d.uptime_secs) : '—';
+      $('#sess-token-age').textContent = typeof d.token_age_secs === 'number' ? formatUptime(d.token_age_secs) : '—';
+      $('#sess-ttl').textContent = typeof d.ttl_secs === 'number' ? d.ttl_secs + 's' : '—';
+      const remaining = typeof d.remaining_secs === 'number' ? d.remaining_secs : null;
+      if (remaining !== null) {
+        $('#sess-expires').textContent = remaining > 0 ? formatUptime(remaining) : 'Expired';
+        $('#sess-expires').style.color = remaining > 300 ? 'var(--accent)' : remaining > 0 ? 'var(--orange)' : 'var(--red)';
+      } else { $('#sess-expires').textContent = '—'; }
+      $('#sess-status').innerHTML = d.expired ? '<span style="color:var(--red);">Expired</span>' : '<span style="color:var(--accent);">Active</span>';
+      $('#sess-mtls').textContent = d.mtls_required ? 'Yes' : 'No';
+    } catch(e) { log('Session info error: ' + e.message); }
+  }
+
+  async function rotateAdminToken() {
+    if (!confirm('Rotate the admin token? The current token will be immediately invalidated.')) return;
+    try {
+      const res = await apiFetch('/api/auth/rotate', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      if (d.token) {
+        $('#auth-token').value = d.token;
+        localStorage.setItem('wardex.adminToken', d.token);
+        $('#session-rotate-result').innerHTML = '<span style="color:var(--accent);">New token:</span> ' + esc(d.token);
+        toast('Token rotated — new token applied', 'success');
+        log('Admin token rotated');
+        refreshSessionInfo();
+      }
+    } catch(e) { toast('Token rotation failed: ' + e.message, 'error'); }
+  }
+
+  async function verifyAuditChain() {
+    try {
+      const res = await apiFetch('/api/audit/verify');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      $('#audit-records').textContent = d.record_count ?? '—';
+      $('#audit-checkpoints').textContent = d.checkpoint_count ?? '—';
+      $('#audit-integrity').innerHTML = d.intact ? '<span style="color:var(--accent);">Intact</span>' : '<span style="color:var(--red);">Broken</span>';
+      $('#audit-head').textContent = d.head_hash ? d.head_hash.substring(0, 24) + '…' : '—';
+      if (d.error) { toast('Audit chain error: ' + d.error, 'error'); }
+      else { toast('Audit chain verified: ' + d.record_count + ' records', d.intact ? 'success' : 'error'); }
+    } catch(e) { toast('Audit verify failed: ' + e.message, 'error'); }
+  }
+
+  async function refreshRetention() {
+    try {
+      const res = await apiFetch('/api/retention/status');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      const policy = d.policy || {};
+      const current = d.current || {};
+      $('#ret-audit-max').textContent = policy.audit_max_records ?? '—';
+      $('#ret-alert-max').textContent = policy.alert_max_records ?? '—';
+      $('#ret-event-max').textContent = policy.event_max_records ?? '—';
+      $('#ret-alert-cur').textContent = current.alert_count ?? current.alerts ?? '—';
+      $('#ret-event-cur').textContent = current.event_count ?? current.events ?? '—';
+      $('#retention-result').textContent = '';
+    } catch(e) { toast('Retention refresh failed: ' + e.message, 'error'); }
+  }
+
+  async function applyRetention() {
+    if (!confirm('Apply retention policies? This will trim data exceeding configured limits.')) return;
+    try {
+      const res = await apiFetch('/api/retention/apply', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      const trimmed = (d.alerts_trimmed || 0) + (d.events_trimmed || 0);
+      toast('Retention applied — ' + trimmed + ' records trimmed', 'success');
+      $('#retention-result').textContent = 'Alerts trimmed: ' + (d.alerts_trimmed || 0) + ', Events trimmed: ' + (d.events_trimmed || 0);
+      refreshRetention();
+    } catch(e) { toast('Retention apply failed: ' + e.message, 'error'); }
   }
 
   // ── Feature Flags ──

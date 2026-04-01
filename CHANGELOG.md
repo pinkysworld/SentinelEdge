@@ -2,6 +2,20 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.29.1] — Code review hardening & admin panel improvements
+
+### Fixed
+- **CORS origin validation** — `cors_origin()` now rejects wildcard `"*"` origins and validates that the `SENTINEL_CORS_ORIGIN` value uses an `http://` or `https://` scheme, defaulting to `"http://localhost"` for invalid or missing values.
+- **CSV formula injection** — `csv_escape()` now prefixes cell values starting with `=`, `+`, `-`, `@`, `|`, or tab with a single-quote character to prevent spreadsheet formula injection in exported CSV files.
+
+### Added
+- **Session Management panel** (admin console Settings) — displays session info (uptime, token age, TTL, expiry countdown, status, mTLS requirement) and provides one-click token rotation with automatic UI credential refresh.
+- **Audit & Retention panel** (admin console Settings) — shows audit chain integrity status (record count, checkpoint count, head hash) with verify button, and retention policy controls (max records per category, current counts) with apply/refresh actions.
+- **Auto-load on navigation** — opening the Settings section now automatically refreshes session info and retention status alongside existing settings data.
+
+### Improved
+- **Comprehensive code review** — 38-point review covering security, error handling, logic, code quality, API design, test coverage, performance, and deployment. Verified constant-time token comparison and checkpoint interval guards were already in place from v0.29.0.
+
 ## [0.29.0] — Production hardening: session management, retention, container & service deployment
 
 ### Added
