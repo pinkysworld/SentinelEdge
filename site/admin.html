@@ -532,6 +532,60 @@ input::placeholder{color:var(--ink-3);}
         </div>
       </div>
 
+      <div class="card-grid cols-2" style="margin-bottom:1.25rem;">
+        <div class="card">
+          <h2><span class="dot dot-orange"></span> Threat Response</h2>
+          <p class="text-muted" style="font-size:.82rem;margin-bottom:.75rem;">Quick actions to contain and respond to active threats directly from the dashboard.</p>
+          <div style="display:flex;flex-direction:column;gap:.75rem;">
+            <div>
+              <label style="font-size:.8rem;color:var(--ink-3);display:block;margin-bottom:.25rem;">Detection Mode</label>
+              <div class="btn-row" style="gap:.35rem;">
+                <button class="btn btn-sm" id="dash-mode-normal" data-dash-mode="normal">Normal</button>
+                <button class="btn btn-sm" id="dash-mode-frozen" data-dash-mode="frozen">Frozen</button>
+                <button class="btn btn-sm danger" id="dash-mode-decay" data-dash-mode="decay">Decay</button>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:.8rem;color:var(--ink-3);display:block;margin-bottom:.25rem;">Quick Quarantine</label>
+              <div style="display:flex;gap:.35rem;">
+                <input type="text" id="dash-quarantine-target" placeholder="Target ID" style="width:140px;font-size:.85rem;">
+                <button class="btn btn-sm danger" id="btn-dash-quarantine">Quarantine</button>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:.8rem;color:var(--ink-3);display:block;margin-bottom:.25rem;">Create Incident</label>
+              <div style="display:flex;flex-direction:column;gap:.35rem;">
+                <input type="text" id="dash-incident-title" placeholder="Incident title" style="font-size:.85rem;">
+                <div style="display:flex;gap:.35rem;">
+                  <select id="dash-incident-severity" style="font-size:.85rem;">
+                    <option value="Critical">Critical</option>
+                    <option value="Severe">Severe</option>
+                    <option value="Elevated" selected>Elevated</option>
+                  </select>
+                  <button class="btn btn-sm primary" id="btn-dash-create-incident">Create</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="dash-action-result" style="margin-top:.5rem;font-size:.82rem;color:var(--teal);display:none;"></div>
+        </div>
+        <div class="card">
+          <h2><span class="dot dot-teal"></span> Active Threats Summary</h2>
+          <p class="text-muted" style="font-size:.82rem;margin-bottom:.75rem;">Pending items requiring analyst attention.</p>
+          <dl class="kv-grid" id="dash-threat-summary">
+            <dt>Pending Queue</dt><dd id="dash-queue-pending">—</dd>
+            <dt>Unacked Alerts</dt><dd id="dash-queue-unacked">—</dd>
+            <dt>Open Incidents</dt><dd id="dash-open-incidents">—</dd>
+            <dt>Pending Response</dt><dd id="dash-pending-response">—</dd>
+            <dt>Detection Mode</dt><dd id="dash-current-mode">—</dd>
+            <dt>Active IOCs</dt><dd id="dash-ioc-count">—</dd>
+          </dl>
+          <div class="btn-row mt-1">
+            <button class="btn btn-sm" id="btn-dash-refresh-threats">Refresh</button>
+          </div>
+        </div>
+      </div>
+
       <div class="card-grid cols-2">
         <div class="card">
           <h2><span class="dot dot-green"></span> Host Information</h2>
@@ -566,10 +620,10 @@ input::placeholder{color:var(--ink-3);}
 
       <div class="card mt-1">
         <h2><span class="dot dot-orange"></span> Recent Alerts</h2>
-        <div class="table-wrap" style="max-height:240px;overflow-y:auto;">
+        <div class="table-wrap" style="max-height:300px;overflow-y:auto;">
           <table class="data-table" id="dash-alert-table">
-            <thead><tr><th>Time</th><th>Score</th><th>Level</th><th>Action</th><th>Reason</th></tr></thead>
-            <tbody id="dash-alert-tbody"><tr><td colspan="5" class="text-muted">No alerts recorded yet.</td></tr></tbody>
+            <thead><tr><th>Time</th><th>Score</th><th>Level</th><th>Action</th><th>Reason</th><th style="width:120px;">Actions</th></tr></thead>
+            <tbody id="dash-alert-tbody"><tr><td colspan="6" class="text-muted">No alerts recorded yet.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2232,6 +2286,7 @@ input::placeholder{color:var(--ink-3);}
     refreshHealth();
     refreshTelemetry(true);
     refreshHostInfo();
+    refreshDashThreatSummary();
   }
 
   async function refreshTelemetry(includeHistory) {
@@ -3457,19 +3512,123 @@ input::placeholder{color:var(--ink-3);}
     const tbody = $('#dash-alert-tbody');
     tbody.innerHTML = '';
     if (!alerts.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No alerts recorded yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No alerts recorded yet.</td></tr>';
       return;
     }
     const recent = alerts.slice(0, 10);
-    recent.forEach(a => {
+    recent.forEach((a, idx) => {
       const tr = document.createElement('tr');
       const lvl = esc(a.level || '');
       const reasonCount = (a.reasons && a.reasons.length) || 0;
       const reason = reasonCount ? esc(a.reasons[0]) : '—';
       const badge = reasonCount > 1 ? ' <span style="opacity:.6;font-size:.75rem;">+' + (reasonCount - 1) + '</span>' : '';
-      tr.innerHTML = '<td>' + esc(a.timestamp || '') + '</td><td>' + (typeof a.score === 'number' ? a.score.toFixed(2) : '—') + '</td><td class="level-' + lvl + '">' + lvl + '</td><td>' + esc(a.action || '') + '</td><td>' + reason + badge + '</td>';
+      const actions = '<button class="btn btn-sm" data-dash-ack="' + idx + '" style="font-size:.72rem;padding:2px 6px;">Ack</button> <button class="btn btn-sm danger" data-dash-escalate="' + idx + '" style="font-size:.72rem;padding:2px 6px;">Escalate</button>';
+      tr.innerHTML = '<td>' + esc(a.timestamp || '') + '</td><td>' + (typeof a.score === 'number' ? a.score.toFixed(2) : '—') + '</td><td class="level-' + lvl + '">' + lvl + '</td><td>' + esc(a.action || '') + '</td><td>' + reason + badge + '</td><td>' + actions + '</td>';
       tbody.appendChild(tr);
     });
+  }
+
+  // ── Dashboard Threat Actions ──
+
+  function showDashActionResult(msg, isError) {
+    const el = $('#dash-action-result');
+    el.textContent = msg;
+    el.style.color = isError ? 'var(--danger)' : 'var(--teal)';
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+
+  async function dashSetMode(mode) {
+    try {
+      const res = await fetch(API + '/api/mode/' + mode, { method: 'POST', headers: authHeaders() });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      showDashActionResult('Detection mode set to ' + mode);
+      log('Detection mode → ' + mode);
+      refreshDashThreatSummary();
+    } catch(e) { showDashActionResult('Mode change failed: ' + e.message, true); }
+  }
+
+  async function dashQuarantine() {
+    const target = $('#dash-quarantine-target').value.trim();
+    if (!target) { showDashActionResult('Enter a target ID', true); return; }
+    try {
+      const res = await fetch(API + '/api/enforcement/quarantine', { method: 'POST', headers: authHeaders('application/json'), body: JSON.stringify({ target }) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      showDashActionResult('Quarantined: ' + target + ' (' + (d.actions || 0) + ' actions)');
+      log('Dashboard quarantine: ' + target);
+      $('#dash-quarantine-target').value = '';
+    } catch(e) { showDashActionResult('Quarantine failed: ' + e.message, true); }
+  }
+
+  async function dashCreateIncident() {
+    const title = $('#dash-incident-title').value.trim();
+    const severity = $('#dash-incident-severity').value;
+    if (!title) { showDashActionResult('Enter an incident title', true); return; }
+    try {
+      const res = await fetch(API + '/api/incidents', { method: 'POST', headers: authHeaders('application/json'), body: JSON.stringify({ title, severity, summary: 'Created from Dashboard', event_ids: [], agent_ids: [] }) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      showDashActionResult('Incident created: ' + (d.id || title));
+      log('Incident created from dashboard: ' + title);
+      $('#dash-incident-title').value = '';
+      refreshDashThreatSummary();
+    } catch(e) { showDashActionResult('Incident creation failed: ' + e.message, true); }
+  }
+
+  async function dashAckAlert(alertIndex) {
+    try {
+      const res = await fetch(API + '/api/queue/acknowledge', { method: 'POST', headers: authHeaders('application/json'), body: JSON.stringify({ alert_id: alertIndex }) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      toast('Alert #' + alertIndex + ' acknowledged', 'success');
+      log('Alert #' + alertIndex + ' acknowledged from dashboard');
+    } catch(e) { toast('Ack failed: ' + e.message, 'error'); }
+  }
+
+  async function dashEscalateAlert(alertIndex) {
+    const title = 'Escalated alert #' + alertIndex;
+    try {
+      const res = await fetch(API + '/api/incidents', { method: 'POST', headers: authHeaders('application/json'), body: JSON.stringify({ title, severity: 'Critical', summary: 'Auto-escalated from Dashboard alert #' + alertIndex, event_ids: [alertIndex], agent_ids: [] }) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      toast('Alert #' + alertIndex + ' escalated to incident', 'success');
+      log('Alert #' + alertIndex + ' escalated to incident');
+      refreshDashThreatSummary();
+    } catch(e) { toast('Escalate failed: ' + e.message, 'error'); }
+  }
+
+  async function refreshDashThreatSummary() {
+    try {
+      const [queueRes, incRes, respRes, detRes, tiRes] = await Promise.all([
+        fetch(API + '/api/queue/stats', { headers: authHeaders() }).catch(() => null),
+        fetch(API + '/api/incidents', { headers: authHeaders() }).catch(() => null),
+        fetch(API + '/api/response/stats', { headers: authHeaders() }).catch(() => null),
+        fetch(API + '/api/detection/summary', { headers: authHeaders() }).catch(() => null),
+        fetch(API + '/api/threat-intel/status', { headers: authHeaders() }).catch(() => null),
+      ]);
+      if (queueRes && queueRes.ok) {
+        const st = await queueRes.json();
+        $('#dash-queue-pending').textContent = st.pending ?? '—';
+        $('#dash-queue-unacked').textContent = (st.pending ?? 0) - (st.acknowledged ?? 0);
+      }
+      if (incRes && incRes.ok) {
+        const incs = await incRes.json();
+        const arr = Array.isArray(incs) ? incs : (incs.incidents || []);
+        const open = arr.filter(i => i.status !== 'resolved' && i.status !== 'false_positive').length;
+        $('#dash-open-incidents').textContent = open;
+      }
+      if (respRes && respRes.ok) {
+        const rs = await respRes.json();
+        $('#dash-pending-response').textContent = rs.pending ?? '—';
+      }
+      if (detRes && detRes.ok) {
+        const det = await detRes.json();
+        $('#dash-current-mode').textContent = det.mode ?? '—';
+      }
+      if (tiRes && tiRes.ok) {
+        const ti = await tiRes.json();
+        $('#dash-ioc-count').textContent = ti.ioc_count ?? ti.total ?? '—';
+      }
+    } catch(e) { log('Threat summary refresh error: ' + e.message); }
   }
 
   async function clearAlerts() {
@@ -4284,6 +4443,17 @@ input::placeholder{color:var(--ink-3);}
 
   // Dashboard
   $('#btn-refresh-status').addEventListener('click', refreshStatus);
+  $('#btn-dash-quarantine').addEventListener('click', dashQuarantine);
+  $('#btn-dash-create-incident').addEventListener('click', dashCreateIncident);
+  $('#btn-dash-refresh-threats').addEventListener('click', refreshDashThreatSummary);
+  $$('[data-dash-mode]').forEach(btn => { btn.addEventListener('click', () => dashSetMode(btn.dataset.dashMode)); });
+  // Dashboard alert table: delegate Ack / Escalate clicks
+  $('#dash-alert-tbody').addEventListener('click', (e) => {
+    const ackBtn = e.target.closest('[data-dash-ack]');
+    const escBtn = e.target.closest('[data-dash-escalate]');
+    if (ackBtn) dashAckAlert(parseInt(ackBtn.dataset.dashAck, 10));
+    if (escBtn) dashEscalateAlert(parseInt(escBtn.dataset.dashEscalate, 10));
+  });
 
   // Threat Detection
   $$('[data-mode]').forEach(btn => { btn.addEventListener('click', () => setMode(btn.dataset.mode)); });
