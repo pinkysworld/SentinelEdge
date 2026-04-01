@@ -665,8 +665,8 @@ pub fn status_manifest() -> StatusManifest {
         updated_at: "current".into(),
         backlog_completed: 120,
         backlog_total: 120,
-        completed_phases: 25,
-        total_phases: 25,
+        completed_phases: 26,
+        total_phases: 26,
         cli_commands: vec![
             "demo".into(),
             "analyze".into(),
@@ -866,7 +866,7 @@ mod tests {
         let manifest = status_manifest();
         assert_eq!(manifest.backlog_completed, 120);
         assert_eq!(manifest.backlog_total, 120);
-        assert_eq!(manifest.total_phases, 25);
+        assert_eq!(manifest.total_phases, 26);
         assert!(manifest.cli_commands.iter().any(|cmd| cmd == "status-json"));
         assert!(manifest.partially_wired.is_empty());
         assert!(manifest.not_implemented.is_empty());

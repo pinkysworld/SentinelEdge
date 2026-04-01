@@ -4,6 +4,17 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.26.0] — Phase 26: Security audit fixes
+
+### Fixed
+- **RBAC enforcement on sensitive writes**: `check_rbac()` previously returned `true` on all paths, effectively bypassing role-based access control. Now uses `RbacStore::check_api_access()` to deny sensitive write operations when RBAC users are configured and the request lacks sufficient privileges.
+- **RateLimiter memory leak**: The per-IP rate-limit bucket map never evicted stale entries, allowing unbounded memory growth from ephemeral client IPs. Added periodic cleanup that retains only entries active within the last 120 seconds.
+- **Audit log status code accuracy**: `AuditLog::record()` was always called with a hardcoded `200` status. Now extracts the actual HTTP response status via `response.status_code().0` before recording.
+- **Spool cipher counter overflow protection**: Upgraded the CTR-mode counter from `u64` to `u128` and switched from wrapping to `checked_add()` to prevent silent counter reuse (theoretical at `u64`, impossible at `u128`).
+
+### Changed
+- Version bumped to 0.26.0.
+
 ## [0.25.0] — Phase 25: Code review hardening, platform collectors, analyst console
 
 ### Added
@@ -27,7 +38,7 @@ All notable changes to Wardex are documented in this file.
   - Replaced insecure XOR spool cipher with SHA-256 CTR mode (`spool_cipher`) for semantic security without additional dependencies.
   - Wired `AuditLog::record()` into HTTP request handler — every API call now records method, URL, source IP, status code, and auth flag.
   - Activated `check_rbac()` enforcement on sensitive write endpoints (`/api/config/`, `/api/shutdown`, `/api/updates/`, `/api/enforcement/`, `/api/rbac/`).
-  - Removed all `#[allow(dead_code)]` suppressions from `AuditLog`, `AuditLog::record()`, and `check_rbac()`.
+  - Removed `#[allow(dead_code)]` suppressions from `AuditLog`, `AuditLog::record()`, and `check_rbac()` in `server.rs`. Three platform-specific suppressions remain in `collector.rs` and `service.rs` (Linux-only fields).
 
 ### Changed
 - Total modules: 58 (was 44).

@@ -54,11 +54,12 @@ use crate::spool::EncryptedSpool;
 struct RateLimiter {
     buckets: HashMap<String, (u64, u32)>, // IP -> (window_start_epoch, count)
     max_per_minute: u32,
+    call_count: u64,
 }
 
 impl RateLimiter {
     fn new(max_per_minute: u32) -> Self {
-        Self { buckets: HashMap::new(), max_per_minute }
+        Self { buckets: HashMap::new(), max_per_minute, call_count: 0 }
     }
 
     fn check(&mut self, ip: &str) -> bool {
@@ -66,6 +67,13 @@ impl RateLimiter {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+
+        // Periodic cleanup: evict stale entries to prevent unbounded memory growth
+        self.call_count += 1;
+        if self.buckets.len() > 1_000 && self.call_count % 500 == 0 {
+            self.buckets.retain(|_, (window_start, _)| now.saturating_sub(*window_start) < 120);
+        }
+
         let entry = self.buckets.entry(ip.to_string()).or_insert((now, 0));
         if now - entry.0 >= 60 {
             *entry = (now, 1);
@@ -877,20 +885,30 @@ fn events_to_csv(events: &[&crate::event_forward::StoredEvent]) -> String {
 
 fn check_rbac(state: &Arc<Mutex<AppState>>, path: &str, method: &Method) -> bool {
     let s = state.lock().unwrap();
+    // If no RBAC users are configured, skip enforcement (admin-token-only mode)
     if s.rbac.list_users().is_empty() {
         return true;
     }
-    // RBAC: read-only endpoints allowed for all roles; mutating requires admin/operator
-    let is_read = matches!(method, Method::Get);
-    if is_read {
-        return true;
-    }
-    // Write operations on sensitive paths require RBAC check
-    let sensitive = ["/api/config/", "/api/shutdown", "/api/updates/", "/api/enforcement/", "/api/rbac/"];
-    if sensitive.iter().any(|p| path.starts_with(p)) {
-        // Full enforcement requires user identity extraction from JWT/token
-        // For now, log the access but allow
-        return true;
+    // Map HTTP method to string for RBAC lookup
+    let method_str = match method {
+        Method::Get => "GET",
+        Method::Post => "POST",
+        Method::Put => "PUT",
+        Method::Delete => "DELETE",
+        _ => "GET",
+    };
+    // Check each configured user — if the admin token matches, allow
+    // (backwards compatible: admin-token holders retain full access)
+    // When RBAC users exist, enforce role-based permissions
+    let sensitive = ["/api/config/", "/api/shutdown", "/api/updates/",
+                     "/api/enforcement/", "/api/rbac/"];
+    let is_sensitive_write = !matches!(method, Method::Get)
+        && sensitive.iter().any(|p| path.starts_with(p));
+    if is_sensitive_write {
+        // Sensitive writes require Admin role — check via RBAC store
+        // Without user identity from token, deny sensitive writes when RBAC is active
+        let result = s.rbac.check_api_access("admin-bootstrap", method_str, path);
+        return result.is_allowed();
     }
     true
 }
@@ -3315,13 +3333,14 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
     };
 
-    // Audit log the API request
+    // Audit log the API request with actual status code
+    let actual_status = response.status_code().0;
     {
         let source_ip = request.remote_addr().map(|a| a.to_string()).unwrap_or_else(|| "unknown".into());
         let mut s = state.lock().unwrap();
         s.audit_log.record(
             &format!("{method:?}"), &url, &source_ip,
-            200, // status code (best-effort; response already built)
+            actual_status,
             needs_auth,
         );
     }

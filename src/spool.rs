@@ -17,7 +17,7 @@ fn spool_cipher(data: &[u8], key: &[u8]) -> Vec<u8> {
     use sha2::{Sha256, Digest};
     let mut result = Vec::with_capacity(data.len());
     let mut offset = 0;
-    let mut counter: u64 = 0;
+    let mut counter: u128 = 0;
     while offset < data.len() {
         let mut hasher = Sha256::new();
         hasher.update(key);
@@ -29,7 +29,7 @@ fn spool_cipher(data: &[u8], key: &[u8]) -> Vec<u8> {
             result.push(data[offset + i] ^ block[i]);
         }
         offset += take;
-        counter += 1;
+        counter = counter.checked_add(1).expect("spool cipher counter overflow");
     }
     result
 }
