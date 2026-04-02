@@ -2272,6 +2272,17 @@ body.light .modal-box{background:#ffffff;}
     if (wrap) wrap.classList.toggle('watch-paths-disabled', !enabled);
   }
 
+  function applyMonitorScope(scope) {
+    const nextScope = scope || defaultMonitorScope();
+    $$('[data-monitor-scope]').forEach(el => {
+      const key = el.dataset.monitorScope;
+      if (Object.prototype.hasOwnProperty.call(nextScope, key)) {
+        el.checked = !!nextScope[key];
+      }
+    });
+    syncWatchPathsState();
+  }
+
   function monitorBadge(label, cls) {
     return '<span class="monitor-badge ' + cls + '">' + esc(label) + '</span>';
   }
@@ -3665,6 +3676,10 @@ body.light .modal-box{background:#ffffff;}
 
   function renderAlertTable(alerts) {
     const tbody = $('#alert-tbody');
+    if (!tbody) {
+      log('Alert table body missing; skipping alert table render');
+      return;
+    }
     // Save currently open detail row state before re-render
     const openRow = tbody.querySelector('.alert-detail-row.open');
     if (openRow) {
@@ -3781,6 +3796,10 @@ body.light .modal-box{background:#ffffff;}
 
   function renderDashAlertTable(alerts) {
     const tbody = $('#dash-alert-tbody');
+    if (!tbody) {
+      log('Dashboard alert table body missing; skipping dashboard alert render');
+      return;
+    }
     tbody.innerHTML = '';
     if (!alerts.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No alerts recorded yet.</td></tr>';
@@ -4048,6 +4067,7 @@ body.light .modal-box{background:#ffffff;}
   // ── Settings ──
   async function loadSettings() {
     try {
+      let monitorScope = defaultMonitorScope();
       const [res, monitoringRes, monitoringPathsRes] = await Promise.all([
         fetch(API + '/api/config/current', { headers: authHeaders() }),
         fetch(API + '/api/monitoring/options', { headers: authHeaders() }),
@@ -4077,9 +4097,11 @@ body.light .modal-box{background:#ffffff;}
         $('#set-cef').checked = !!cfg.monitor.cef;
         const paths = cfg.monitor.watch_paths ?? [];
         $('#set-watch-paths').value = paths.join('\n');
+        monitorScope = cfg.monitor.scope || monitorScope;
       }
       if (monitoringRes.ok) {
         renderMonitoringOptions(await monitoringRes.json());
+        applyMonitorScope(monitorScope);
       }
       if (monitoringPathsRes.ok) {
         const paths = await monitoringPathsRes.json();
@@ -4097,7 +4119,7 @@ body.light .modal-box{background:#ffffff;}
           '<br>Health issues: ' + esc(paths.summary?.unhealthy_paths ?? 0) +
           (healthLines ? '<ul>' + healthLines + '</ul>' : '');
       }
-      syncWatchPathsState();
+      applyMonitorScope(monitorScope);
       log('Settings loaded from server');
     } catch(e) { log('Settings load failed: ' + e.message); }
   }
@@ -4125,7 +4147,7 @@ body.light .modal-box{background:#ffffff;}
       if (reloadRes.status === 401) { flash('Unauthorized', 'error'); return; }
       if (!reloadRes.ok) { const err = await reloadRes.json().catch(() => ({})); flash('Save failed: ' + (err.error || reloadRes.statusText), 'error'); return; }
       const saveRes = await fetch(API + '/api/config/save', { method: 'POST', headers: authHeaders('application/json') });
-      if (saveRes.ok) { toast('Settings saved', 'success'); log('Settings saved to disk'); }
+      if (saveRes.ok) { await loadSettings(); toast('Settings saved', 'success'); log('Settings saved to disk'); }
       else { toast('Applied but not persisted', 'error'); log('Config applied but disk save failed'); }
     } catch(e) { flash('Save failed: ' + e.message, 'error'); }
   }

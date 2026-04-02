@@ -492,7 +492,7 @@ fn print_usage() {
 }
 
 fn load_or_create_config() -> Config {
-    let config_path = PathBuf::from("var/wardex.toml");
+    let config_path = wardex::config::runtime_config_path();
     if config_path.exists() {
         match Config::load_from_path(&config_path) {
             Ok(c) => return c,

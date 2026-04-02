@@ -2040,13 +2040,13 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
         (Method::Post, "/api/config/save") => {
             let s = state.lock().unwrap();
-            let config_path = std::path::Path::new("var/wardex.toml");
+            let config_path = crate::config::runtime_config_path();
             match toml::to_string_pretty(&s.config) {
                 Ok(toml_str) => {
                     if let Some(parent) = config_path.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
-                    match std::fs::write(config_path, &toml_str) {
+                    match std::fs::write(&config_path, &toml_str) {
                         Ok(()) => json_response(
                             &format!(r#"{{"status":"saved","path":"{}"}}"#, config_path.display()),
                             200,

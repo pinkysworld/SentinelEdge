@@ -1111,6 +1111,60 @@ fn config_reload_applies_valid_patch() {
 }
 
 #[test]
+fn config_reload_updates_monitor_scope_and_current_config() {
+    let (port, token) = spawn_test_server();
+
+    let patch = serde_json::json!({
+        "monitor": {
+            "interval_secs": 9,
+            "alert_threshold": 4.4,
+            "alert_log": "var/alerts.jsonl",
+            "dry_run": false,
+            "duration_secs": 0,
+            "webhook_url": null,
+            "syslog": false,
+            "cef": false,
+            "watch_paths": ["/tmp/wardex-scope-test"],
+            "scope": {
+                "cpu_load": true,
+                "memory_pressure": true,
+                "network_activity": true,
+                "disk_pressure": true,
+                "process_activity": true,
+                "auth_events": false,
+                "thermal_state": true,
+                "battery_state": true,
+                "file_integrity": false,
+                "service_persistence": true,
+                "launch_agents": false,
+                "systemd_units": false,
+                "scheduled_tasks": false
+            }
+        }
+    });
+
+    let reload_body: serde_json::Value = ureq::post(&format!("{}/api/config/reload", base(port)))
+        .set("Authorization", &format!("Bearer {token}"))
+        .send_json(patch)
+        .unwrap()
+        .into_json()
+        .unwrap();
+    assert_eq!(reload_body["success"], true);
+
+    let current: serde_json::Value = ureq::get(&format!("{}/api/config/current", base(port)))
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+        .unwrap()
+        .into_json()
+        .unwrap();
+
+    assert_eq!(current["monitor"]["interval_secs"], 9);
+    assert_eq!(current["monitor"]["scope"]["auth_events"], false);
+    assert_eq!(current["monitor"]["scope"]["file_integrity"], false);
+    assert_eq!(current["monitor"]["scope"]["service_persistence"], true);
+}
+
+#[test]
 fn config_reload_rejects_invalid_patch() {
     let (port, token) = spawn_test_server();
     // critical_score=1.0 < severe_score=3.0 → invalid

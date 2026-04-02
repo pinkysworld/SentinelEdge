@@ -1,8 +1,41 @@
 use crate::siem::SiemConfig;
 
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+fn looks_like_runtime_root(path: &Path) -> bool {
+    path.join("var/wardex.toml").exists()
+        || path.join("site/admin.html").exists()
+        || path.join("Cargo.toml").exists()
+        || path.join("SentinelEdge.code-workspace").exists()
+}
+
+pub fn runtime_root_dir() -> PathBuf {
+    let mut candidates = Vec::new();
+
+    if let Ok(current_dir) = env::current_dir() {
+        candidates.push(current_dir);
+    }
+
+    if let Ok(exe_path) = env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            for ancestor in parent.ancestors() {
+                candidates.push(ancestor.to_path_buf());
+            }
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|path| looks_like_runtime_root(path))
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+pub fn runtime_config_path() -> PathBuf {
+    runtime_root_dir().join("var/wardex.toml")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectorSettings {
