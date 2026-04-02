@@ -236,6 +236,12 @@ impl ReportStore {
         let total_alerts: usize = self.reports.iter().map(|r| r.report.summary.alert_count).sum();
         let total_critical: usize = self.reports.iter().map(|r| r.report.summary.critical_count).sum();
         let max_score = self.reports.iter().map(|r| r.report.summary.max_score).fold(0.0f32, f32::max);
+        let avg_score: Option<f32> = if !self.reports.is_empty() {
+            let sum: f32 = self.reports.iter().map(|r| r.report.summary.average_score).sum();
+            Some(sum / self.reports.len() as f32)
+        } else {
+            None
+        };
 
         let incidents = incident_store.list();
         let open_incidents = incidents.iter().filter(|i| {
@@ -252,21 +258,35 @@ impl ReportStore {
         top_techniques.sort_by(|a, b| b.1.cmp(&a.1));
         top_techniques.truncate(5);
 
+        // Aggregate detection reasons across all report samples
+        let mut reason_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for stored in &self.reports {
+            for sample in &stored.report.samples {
+                for reason in &sample.reasons {
+                    *reason_counts.entry(reason.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut top_reasons: Vec<_> = reason_counts.into_iter().collect();
+        top_reasons.sort_by(|a, b| b.1.cmp(&a.1));
+        top_reasons.truncate(10);
+
         serde_json::json!({
+            "total_reports": total_reports,
+            "total_events": total_events,
+            "total_alerts": total_alerts,
+            "critical_alerts": total_critical,
+            "avg_score": avg_score,
+            "max_score": max_score,
+            "incidents_total": incidents.len(),
+            "incidents_open": open_incidents,
+            "top_mitre_techniques": top_techniques,
+            "top_reasons": top_reasons,
             "period": {
                 "total_reports": total_reports,
                 "first_report": self.reports.first().map(|r| &r.generated_at),
                 "last_report": self.reports.last().map(|r| &r.generated_at),
             },
-            "total_events": total_events,
-            "total_alerts": total_alerts,
-            "total_critical": total_critical,
-            "max_score": max_score,
-            "incidents": {
-                "total": incidents.len(),
-                "open": open_incidents,
-            },
-            "top_techniques": top_techniques,
         })
     }
 }

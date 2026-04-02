@@ -266,7 +266,7 @@ struct EventQuery {
     limit: usize,
 }
 
-pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>) -> Result<(), String> {
+pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>, initial_config: Config) -> Result<(), String> {
     let addr = format!("0.0.0.0:{port}");
     let server = Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?;
 
@@ -313,7 +313,7 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>) -> Resu
         update_manager: UpdateManager::new("var/updates"),
         remote_deployments: load_remote_deployments("var/deployments.json"),
         deployment_store_path: "var/deployments.json".to_string(),
-        siem_connector: SiemConnector::new(crate::siem::SiemConfig::default()),
+        siem_connector: SiemConnector::new(initial_config.siem.clone()),
         taxii_client: crate::siem::TaxiiClient::new(crate::siem::TaxiiConfig::default()),
         local_telemetry: Vec::new(),
         local_host_info: detect_platform(),
@@ -340,6 +340,12 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>) -> Resu
         request_count: 0,
         error_count: 0,
     }));
+
+    // Apply loaded config
+    {
+        let mut s = state.lock().unwrap();
+        s.config = initial_config;
+    }
 
     // ── Spawn local host monitoring thread ──────────────────────────
     {
@@ -1375,6 +1381,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             | (Method::Post, "/api/shutdown")
             | (Method::Post, "/api/mesh/heal")
             | (Method::Delete, "/api/alerts")
+            | (Method::Post, "/api/alerts/sample")
     ) || (!is_agent_endpoint && (
         (method == Method::Get && url == "/api/fleet/dashboard")
         || (method == Method::Get && url == "/api/siem/status")
@@ -2176,6 +2183,69 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 200,
             )
         }
+        (Method::Post, "/api/alerts/sample") => {
+            let body = read_body_limited(&mut request, 4096);
+            let severity = match body {
+                Ok(b) => {
+                    #[derive(serde::Deserialize)]
+                    struct SampleReq { #[serde(default = "default_severity")] severity: String }
+                    fn default_severity() -> String { "elevated".into() }
+                    let req: SampleReq = serde_json::from_str(&b).unwrap_or(SampleReq { severity: default_severity() });
+                    req.severity.to_lowercase()
+                }
+                Err(_) => "elevated".into(),
+            };
+            let (score, level) = match severity.as_str() {
+                "critical" => (6.5_f32, "Critical"),
+                "severe" => (4.2_f32, "Severe"),
+                _ => (3.0_f32, "Elevated"),
+            };
+            let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+            let host = {
+                let s = state.lock().unwrap();
+                s.local_host_info.hostname.clone()
+            };
+            let sample = crate::telemetry::TelemetrySample {
+                timestamp_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+                cpu_load_pct: if severity == "critical" { 95.0 } else { 65.0 },
+                memory_load_pct: if severity == "critical" { 88.0 } else { 55.0 },
+                network_kbps: if severity == "critical" { 800.0 } else { 120.0 },
+                disk_pressure_pct: 45.0,
+                process_count: if severity == "critical" { 350 } else { 180 },
+                auth_failures: if severity == "critical" { 25 } else { 5 },
+                temperature_c: 0.5,
+                battery_pct: 80.0,
+                integrity_drift: 0.0,
+            };
+            let reasons = match severity.as_str() {
+                "critical" => vec!["[SAMPLE] CPU spike 95%".into(), "[SAMPLE] Auth brute-force 25 failures".into(), "[SAMPLE] Network anomaly 800 Kbps".into()],
+                "severe" => vec!["[SAMPLE] CPU elevated 65%".into(), "[SAMPLE] Process burst 180".into()],
+                _ => vec!["[SAMPLE] Test alert — elevated anomaly score".into()],
+            };
+            let alert = crate::collector::AlertRecord {
+                timestamp: now,
+                hostname: host,
+                platform: "sample".into(),
+                score,
+                confidence: 0.85,
+                level: level.into(),
+                action: "sample_alert".into(),
+                reasons,
+                sample,
+                enforced: false,
+                mitre: vec![],
+            };
+            let mut s = state.lock().unwrap();
+            if s.alerts.len() >= 10_000 { s.alerts.remove(0); }
+            s.alerts.push(alert);
+            json_response(
+                &format!(r#"{{"status":"injected","severity":"{severity}","score":{score:.2}}}"#),
+                200,
+            )
+        }
         // ── Local Telemetry ──────────────────────────────────────
         (Method::Get, "/api/telemetry/current") => {
             let s = state.lock().unwrap();
@@ -2550,6 +2620,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             error_json(&e, 400)
                         } else {
                             let mut s = state.lock().unwrap();
+                            s.config.siem = new_cfg.clone();
                             s.siem_connector.update_config(new_cfg);
                             json_response(r#"{"status":"ok","message":"SIEM configuration updated"}"#, 200)
                         }

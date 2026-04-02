@@ -43,8 +43,9 @@ fn run() -> Result<(), String> {
             // Spawn server in background thread
             let site_dir_clone = site_dir.clone();
             let shutdown_clone = shutdown.clone();
+            let server_config = config.clone();
             std::thread::spawn(move || {
-                if let Err(e) = server::run_server(port, &site_dir_clone, shutdown_clone) {
+                if let Err(e) = server::run_server(port, &site_dir_clone, shutdown_clone, server_config) {
                     eprintln!("server error: {e}");
                 }
             });
@@ -313,11 +314,12 @@ fn run() -> Result<(), String> {
                 return Err("too many arguments for `serve`".into());
             }
 
+            let config = load_or_create_config();
             let shutdown = Arc::new(AtomicBool::new(false));
             let shutdown_sig = shutdown.clone();
             let _ = register_ctrlc(shutdown_sig);
 
-            server::run_server(port, &site_dir, shutdown)?;
+            server::run_server(port, &site_dir, shutdown, config)?;
         }
         "server" => {
             // XDR server mode — central management + event correlation
@@ -338,7 +340,7 @@ fn run() -> Result<(), String> {
             let _ = register_ctrlc(shutdown_sig);
 
             eprintln!("Wardex XDR Server v{}", env!("CARGO_PKG_VERSION"));
-            server::run_server(port, &site_dir, shutdown)?;
+            server::run_server(port, &site_dir, shutdown, config)?;
         }
         "agent" => {
             // XDR agent mode — enroll with server and run local monitoring

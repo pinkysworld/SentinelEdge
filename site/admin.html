@@ -529,7 +529,6 @@ body.light .modal-box{background:#ffffff;}
     <div class="nav-item" data-section="incident-response" data-label="Incident Response" tabindex="0" role="button"><span class="nav-icon" aria-hidden="true">&#9889;</span><span class="nav-label"> Incident Response</span></div>
     <div class="nav-item" data-section="infrastructure" data-label="Infrastructure" tabindex="0" role="button"><span class="nav-icon" aria-hidden="true">&#9955;</span><span class="nav-label"> Infrastructure</span></div>
     <div class="nav-item" data-section="reports-exports" data-label="Reports &amp; Exports" tabindex="0" role="button"><span class="nav-icon" aria-hidden="true">&#9776;</span><span class="nav-label"> Reports &amp; Exports</span></div>
-    <div class="nav-item" data-section="research-tracks" data-label="Research Tracks" tabindex="0" role="button"><span class="nav-icon" aria-hidden="true">&#9670;</span><span class="nav-label"> Research Tracks</span></div>
     <div class="nav-item" data-section="settings" data-label="Settings" tabindex="0" role="button"><span class="nav-icon" aria-hidden="true">&#9881;</span><span class="nav-label"> Settings</span></div>
     <div class="nav-item" data-section="help-docs" data-label="Help &amp; Docs" tabindex="0" role="button"><span class="nav-icon" aria-hidden="true">&#9432;</span><span class="nav-label"> Help &amp; Docs</span></div>
   </nav>
@@ -649,6 +648,17 @@ body.light .modal-box{background:#ffffff;}
                   </select>
                   <button class="btn btn-sm primary" id="btn-dash-create-incident">Create</button>
                 </div>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:.8rem;color:var(--ink-3);display:block;margin-bottom:.25rem;">Test Alert</label>
+              <div style="display:flex;gap:.35rem;align-items:center;">
+                <select id="dash-sample-severity" style="font-size:.85rem;">
+                  <option value="critical">Critical</option>
+                  <option value="severe">Severe</option>
+                  <option value="elevated" selected>Elevated</option>
+                </select>
+                <button class="btn btn-sm primary" id="btn-send-sample-alert">Send Sample Alert</button>
               </div>
             </div>
           </div>
@@ -1590,6 +1600,12 @@ body.light .modal-box{background:#ffffff;}
           <div class="metric-card orange"><div class="metric-label">Critical Alerts</div><div class="metric-value" id="exec-critical">0</div></div>
           <div class="metric-card blue"><div class="metric-label">Avg Score</div><div class="metric-value" id="exec-avg-score">—</div></div>
         </div>
+        <div class="card-grid cols-4" style="margin-bottom:1rem;">
+          <div class="metric-card purple"><div class="metric-label">Total Incidents</div><div class="metric-value" id="exec-incidents-total">0</div></div>
+          <div class="metric-card red"><div class="metric-label">Open Incidents</div><div class="metric-value" id="exec-incidents-open">0</div></div>
+          <div class="metric-card blue"><div class="metric-label">Total Events</div><div class="metric-value" id="exec-total-events">0</div></div>
+          <div class="metric-card teal"><div class="metric-label">Max Score</div><div class="metric-value" id="exec-max-score">—</div></div>
+        </div>
         <div class="card-grid cols-2">
           <div>
             <h3>Detection Method Breakdown</h3>
@@ -1881,26 +1897,6 @@ body.light .modal-box{background:#ffffff;}
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- SECTION: Research Tracks                                    -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="section" id="sec-research-tracks">
-      <div class="section-header">
-        <h1>Research Tracks</h1>
-        <p>40 research tracks (R01–R40) across 8 groups define the scientific roadmap behind Wardex. Each track progresses from <span class="track-badge foundation">Foundation</span> through <span class="track-badge scaffolded">Scaffolded</span> and <span class="track-badge planned">Planned</span> to <span class="track-badge future">Future</span>.</p>
-      </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
-          <span class="text-muted" style="font-size:.82rem;">Filter by status:</span>
-          <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="foundation" checked> <span class="track-badge foundation">Foundation</span></label>
-          <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="scaffolded" checked> <span class="track-badge scaffolded">Scaffolded</span></label>
-          <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="planned" checked> <span class="track-badge planned">Planned</span></label>
-          <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="future" checked> <span class="track-badge future">Future</span></label>
-          <span class="text-muted" style="font-size:.78rem;margin-left:auto;" id="rt-count"></span>
-        </div>
-        <div id="research-tracks-container"><em class="text-muted">Loading research tracks…</em></div>
-      </div>
-    </div>
-
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- SECTION: Help & Docs                                        -->
     <!-- ═══════════════════════════════════════════════════════════ -->
@@ -2107,6 +2103,29 @@ body.light .modal-box{background:#ffffff;}
           </div>
         </div>
 
+      </div>
+
+      <!-- ── Research Agenda ─────────────────────────── -->
+      <div class="help-category">
+        <div class="help-category-title">Research Agenda</div>
+
+        <div class="accordion">
+          <div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+            Research Tracks (R01–R40) <span class="arrow">&#9654;</span>
+          </div>
+          <div class="accordion-body">
+            <p>40 research tracks across 8 groups define the scientific roadmap behind Wardex. Each track progresses from <span class="track-badge foundation">Foundation</span> through <span class="track-badge scaffolded">Scaffolded</span> and <span class="track-badge planned">Planned</span> to <span class="track-badge future">Future</span>.</p>
+            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
+              <span class="text-muted" style="font-size:.82rem;">Filter:</span>
+              <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="foundation" checked> <span class="track-badge foundation">Foundation</span></label>
+              <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="scaffolded" checked> <span class="track-badge scaffolded">Scaffolded</span></label>
+              <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="planned" checked> <span class="track-badge planned">Planned</span></label>
+              <label style="font-size:.82rem;cursor:pointer;"><input type="checkbox" class="rt-filter" value="future" checked> <span class="track-badge future">Future</span></label>
+              <span class="text-muted" style="font-size:.78rem;margin-left:auto;" id="rt-count"></span>
+            </div>
+            <div id="research-tracks-container"><em class="text-muted">Loading research tracks…</em></div>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -2468,10 +2487,9 @@ body.light .modal-box{background:#ffffff;}
     else if (sectionId === 'security-policy') { refreshCompliance(); refreshQuantum(); }
     else if (sectionId === 'incident-response') { refreshTwin(); refreshAnalysis(); refreshProcessTree(); refreshResponseOrchestration(); }
     else if (sectionId === 'infrastructure') { refreshInfra(); }
-    else if (sectionId === 'reports-exports') { refreshReport(); }
+    else if (sectionId === 'reports-exports') { refreshReport(); refreshExecutiveSummary(); }
     else if (sectionId === 'settings') { loadSettings(); refreshSessionInfo(); refreshRetention(); loadSiemConfig(); }
-    else if (sectionId === 'research-tracks') { loadResearchTracks(); }
-    else if (sectionId === 'help-docs') { loadApiEndpoints(); }
+    else if (sectionId === 'help-docs') { loadApiEndpoints(); loadResearchTracks(); }
     else if (sectionId === 'dashboard') { refreshDashboard(); }
 
     // Trigger chart resize after section becomes visible
@@ -2732,9 +2750,11 @@ body.light .modal-box{background:#ffffff;}
       if (!res.ok) throw new Error(res.statusText);
       const d = await res.json();
       renderReport(d);
-      flash('Demo analysis complete', 'success');
+      flash('Demo analysis complete — ' + d.summary.total_samples + ' samples, ' + d.summary.alert_count + ' alerts. Switched to Reports.', 'success');
       log('Demo analysis ran — ' + d.summary.total_samples + ' samples, ' + d.summary.alert_count + ' alerts');
-    } catch(e) { flash('Failed: ' + e.message, 'error'); }
+      // Navigate to Reports section to show the result
+      switchSection('reports-exports');
+    } catch(e) { flash('Demo analysis failed: ' + e.message, 'error'); }
     finally { btn.disabled = false; }
   }
 
@@ -3791,7 +3811,7 @@ body.light .modal-box{background:#ffffff;}
 
   async function dashSetMode(mode) {
     try {
-      const res = await fetch(API + '/api/mode/' + mode, { method: 'POST', headers: authHeaders() });
+      const res = await fetch(API + '/api/control/mode', { method: 'POST', headers: authHeaders('application/json'), body: JSON.stringify({ mode }) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       showDashActionResult('Detection mode set to ' + mode);
       log('Detection mode → ' + mode);
@@ -3825,6 +3845,18 @@ body.light .modal-box{background:#ffffff;}
       $('#dash-incident-title').value = '';
       refreshDashThreatSummary();
     } catch(e) { showDashActionResult('Incident creation failed: ' + e.message, true); }
+  }
+
+  async function dashSendSampleAlert() {
+    const severity = $('#dash-sample-severity').value;
+    try {
+      const res = await fetch(API + '/api/alerts/sample', { method: 'POST', headers: authHeaders('application/json'), body: JSON.stringify({ severity }) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      showDashActionResult('Sample ' + severity + ' alert injected (score ' + (d.score || 0).toFixed(2) + ')');
+      log('Sample alert sent: ' + severity);
+      refreshDashThreatSummary();
+    } catch(e) { showDashActionResult('Sample alert failed: ' + e.message, true); }
   }
 
   async function dashAckAlert(alertIndex) {
@@ -4697,6 +4729,10 @@ body.light .modal-box{background:#ffffff;}
         if ($('#exec-critical')) $('#exec-critical').textContent = data.critical_alerts || 0;
         const avg = data.avg_score;
         if ($('#exec-avg-score')) $('#exec-avg-score').textContent = avg != null ? avg.toFixed(2) : '—';
+        if ($('#exec-incidents-total')) $('#exec-incidents-total').textContent = data.incidents_total || 0;
+        if ($('#exec-incidents-open')) $('#exec-incidents-open').textContent = data.incidents_open || 0;
+        if ($('#exec-total-events')) $('#exec-total-events').textContent = data.total_events || 0;
+        if ($('#exec-max-score')) $('#exec-max-score').textContent = data.max_score != null && data.max_score > 0 ? data.max_score.toFixed(2) : '—';
 
         // Top MITRE techniques
         const mitreEl = $('#exec-mitre-list');
@@ -4781,6 +4817,7 @@ body.light .modal-box{background:#ffffff;}
   $('#btn-refresh-status').addEventListener('click', refreshStatus);
   $('#btn-dash-quarantine').addEventListener('click', dashQuarantine);
   $('#btn-dash-create-incident').addEventListener('click', dashCreateIncident);
+  $('#btn-send-sample-alert').addEventListener('click', dashSendSampleAlert);
   $('#btn-dash-refresh-threats').addEventListener('click', refreshDashThreatSummary);
   $$('[data-dash-mode]').forEach(btn => { btn.addEventListener('click', () => dashSetMode(btn.dataset.dashMode)); });
   // Dashboard alert table: delegate Ack / Escalate clicks
