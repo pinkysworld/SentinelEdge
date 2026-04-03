@@ -13,7 +13,8 @@ Read it in this order:
 
 Reference material:
 
-- [`openapi.yaml`](openapi.yaml) — HTTP API contract
+- live HTTP API contract: [`/api/openapi.json`](/api/openapi.json) on a running server
+- [`openapi.yaml`](openapi.yaml) — legacy reference snapshot kept for historical context
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — trust boundaries and abuse cases
 - [`DISASTER_RECOVERY.md`](DISASTER_RECOVERY.md) — backup and restore planning
 - [`SLO_POLICY.md`](SLO_POLICY.md) — service-level objectives and error budget guidance

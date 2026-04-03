@@ -243,7 +243,15 @@ impl OpenApiBuilder {
         self
     }
 
-    pub fn path(mut self, path: &str, method: &str, op: Operation) -> Self {
+    pub fn path(mut self, path: &str, method: &str, mut op: Operation) -> Self {
+        for parameter in inferred_path_parameters(path) {
+            let exists = op.parameters.iter().any(|existing| {
+                existing.location == parameter.location && existing.name == parameter.name
+            });
+            if !exists {
+                op.parameters.push(parameter);
+            }
+        }
         let item = self.spec.paths.entry(path.into()).or_default();
         match method {
             "get" => item.get = Some(op),
@@ -263,15 +271,26 @@ impl OpenApiBuilder {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn json_response(desc: &str) -> BTreeMap<String, Response> {
-    json_response_status("200", desc)
+fn object_schema() -> SchemaRef {
+    SchemaRef::Inline(Schema {
+        schema_type: Some("object".into()),
+        ..Default::default()
+    })
 }
 
-fn json_response_201(desc: &str) -> BTreeMap<String, Response> {
-    json_response_status("201", desc)
+fn string_schema() -> SchemaRef {
+    SchemaRef::Inline(Schema {
+        schema_type: Some("string".into()),
+        ..Default::default()
+    })
 }
 
-fn json_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> {
+fn content_response_status(
+    status: &str,
+    desc: &str,
+    content_type: &str,
+    schema: SchemaRef,
+) -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
     m.insert(
         status.into(),
@@ -279,15 +298,7 @@ fn json_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> 
             description: desc.into(),
             content: Some({
                 let mut c = BTreeMap::new();
-                c.insert(
-                    "application/json".into(),
-                    MediaType {
-                        schema: SchemaRef::Inline(Schema {
-                            schema_type: Some("object".into()),
-                            ..Default::default()
-                        }),
-                    },
-                );
+                c.insert(content_type.into(), MediaType { schema });
                 c
             }),
         },
@@ -295,32 +306,82 @@ fn json_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> 
     m
 }
 
+fn json_response(desc: &str) -> BTreeMap<String, Response> {
+    json_response_status("200", desc)
+}
+
+fn json_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> {
+    content_response_status(status, desc, "application/json", object_schema())
+}
+
 fn error_responses() -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
-    m.insert("401".into(), Response { description: "Unauthorized — missing or invalid Bearer token".into(), content: None });
-    m.insert("404".into(), Response { description: "Resource not found".into(), content: None });
-    m.insert("429".into(), Response { description: "Rate limit exceeded".into(), content: None });
+    m.insert(
+        "401".into(),
+        Response {
+            description: "Unauthorized — missing or invalid Bearer token".into(),
+            content: None,
+        },
+    );
+    m.insert(
+        "404".into(),
+        Response {
+            description: "Resource not found".into(),
+            content: None,
+        },
+    );
+    m.insert(
+        "429".into(),
+        Response {
+            description: "Rate limit exceeded".into(),
+            content: None,
+        },
+    );
     m
 }
 
-fn json_body(desc: &str) -> Option<RequestBody> {
+fn public_error_responses() -> BTreeMap<String, Response> {
+    let mut m = BTreeMap::new();
+    m.insert(
+        "404".into(),
+        Response {
+            description: "Resource not found".into(),
+            content: None,
+        },
+    );
+    m.insert(
+        "429".into(),
+        Response {
+            description: "Rate limit exceeded".into(),
+            content: None,
+        },
+    );
+    m
+}
+
+fn json_request_body(desc: &str, required: bool) -> Option<RequestBody> {
     Some(RequestBody {
         description: Some(desc.into()),
-        required: true,
+        required,
         content: {
             let mut c = BTreeMap::new();
             c.insert(
                 "application/json".into(),
                 MediaType {
-                    schema: SchemaRef::Inline(Schema {
-                        schema_type: Some("object".into()),
-                        ..Default::default()
-                    }),
+                    schema: object_schema(),
                 },
             );
             c
         },
     })
+}
+
+fn json_body(desc: &str) -> Option<RequestBody> {
+    json_request_body(desc, true)
+}
+
+fn optional_json_body(desc: &str) -> Option<RequestBody> {
+    json_request_body(desc, false)
 }
 
 fn bearer_auth() -> Vec<BTreeMap<String, Vec<String>>> {
@@ -331,264 +392,1225 @@ fn bearer_auth() -> Vec<BTreeMap<String, Vec<String>>> {
     }]
 }
 
-fn op(id: &str, summary: &str, tags: &[&str]) -> Operation {
-    let mut resp = json_response(summary);
-    resp.extend(error_responses());
+fn operation(
+    id: &str,
+    summary: &str,
+    tags: &[&str],
+    request_body: Option<RequestBody>,
+    responses: BTreeMap<String, Response>,
+    security: Vec<BTreeMap<String, Vec<String>>>,
+) -> Operation {
     Operation {
         summary: summary.into(),
         description: None,
         operation_id: id.into(),
         tags: tags.iter().map(|t| t.to_string()).collect(),
         parameters: vec![],
-        request_body: None,
-        responses: resp,
-        security: bearer_auth(),
+        request_body,
+        responses,
+        security,
     }
 }
 
-fn op_post(id: &str, summary: &str, tags: &[&str], body_desc: &str) -> Operation {
-    let mut resp = json_response_201(summary);
+fn op(id: &str, summary: &str, tags: &[&str]) -> Operation {
+    let mut resp = json_response(summary);
     resp.extend(error_responses());
-    Operation {
-        summary: summary.into(),
-        description: None,
-        operation_id: id.into(),
-        tags: tags.iter().map(|t| t.to_string()).collect(),
-        parameters: vec![],
-        request_body: json_body(body_desc),
-        responses: resp,
-        security: bearer_auth(),
-    }
+    operation(id, summary, tags, None, resp, bearer_auth())
+}
+
+fn op_with_responses(
+    id: &str,
+    summary: &str,
+    tags: &[&str],
+    responses: BTreeMap<String, Response>,
+) -> Operation {
+    let mut resp = responses;
+    resp.extend(error_responses());
+    operation(id, summary, tags, None, resp, bearer_auth())
+}
+
+fn op_post(id: &str, summary: &str, tags: &[&str], body_desc: &str) -> Operation {
+    let mut resp = json_response(summary);
+    resp.extend(error_responses());
+    operation(id, summary, tags, json_body(body_desc), resp, bearer_auth())
+}
+
+fn op_post_status(
+    status: &str,
+    id: &str,
+    summary: &str,
+    tags: &[&str],
+    body_desc: &str,
+) -> Operation {
+    let mut resp = json_response_status(status, summary);
+    resp.extend(error_responses());
+    operation(id, summary, tags, json_body(body_desc), resp, bearer_auth())
+}
+
+fn op_post_optional(id: &str, summary: &str, tags: &[&str], body_desc: &str) -> Operation {
+    let mut resp = json_response(summary);
+    resp.extend(error_responses());
+    operation(
+        id,
+        summary,
+        tags,
+        optional_json_body(body_desc),
+        resp,
+        bearer_auth(),
+    )
+}
+
+fn op_post_without_body(id: &str, summary: &str, tags: &[&str]) -> Operation {
+    let mut resp = json_response(summary);
+    resp.extend(error_responses());
+    operation(id, summary, tags, None, resp, bearer_auth())
 }
 
 fn op_public(id: &str, summary: &str, tags: &[&str]) -> Operation {
     let mut resp = json_response(summary);
-    resp.extend(error_responses());
-    Operation {
-        summary: summary.into(),
-        description: None,
-        operation_id: id.into(),
-        tags: tags.iter().map(|t| t.to_string()).collect(),
-        parameters: vec![],
-        request_body: None,
-        responses: resp,
-        security: vec![BTreeMap::new()], // explicit empty = no auth required
+    resp.extend(public_error_responses());
+    operation(
+        id,
+        summary,
+        tags,
+        None,
+        resp,
+        vec![BTreeMap::new()], // explicit empty = no auth required
+    )
+}
+
+fn op_public_with_responses(
+    id: &str,
+    summary: &str,
+    tags: &[&str],
+    responses: BTreeMap<String, Response>,
+) -> Operation {
+    let mut resp = responses;
+    resp.extend(public_error_responses());
+    operation(id, summary, tags, None, resp, vec![BTreeMap::new()])
+}
+
+fn with_parameters(mut op: Operation, parameters: Vec<Parameter>) -> Operation {
+    op.parameters.extend(parameters);
+    op
+}
+
+fn string_parameter(name: &str, location: &str, description: &str, required: bool) -> Parameter {
+    Parameter {
+        name: name.into(),
+        location: location.into(),
+        description: Some(description.into()),
+        required,
+        schema: string_schema(),
     }
+}
+
+fn integer_parameter(name: &str, location: &str, description: &str, required: bool) -> Parameter {
+    Parameter {
+        name: name.into(),
+        location: location.into(),
+        description: Some(description.into()),
+        required,
+        schema: SchemaRef::Inline(Schema {
+            schema_type: Some("integer".into()),
+            format: Some("int64".into()),
+            ..Default::default()
+        }),
+    }
+}
+
+fn inferred_path_parameters(path: &str) -> Vec<Parameter> {
+    path.split('/')
+        .filter_map(|segment| {
+            segment
+                .strip_prefix('{')
+                .and_then(|trimmed| trimmed.strip_suffix('}'))
+                .map(|name| {
+                    string_parameter(name, "path", &format!("Path parameter `{name}`"), true)
+                })
+        })
+        .collect()
 }
 
 // ── Wardex spec factory ──────────────────────────────────────────────────────
 
 pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
     OpenApiBuilder::new("Wardex XDR/SIEM API", version)
-        // Tags
         .tag("auth", "Authentication, session, and token management")
         .tag("status", "Platform health, status, and diagnostics")
         .tag("detection", "Detection engineering, rules, and analysis")
         .tag("alerts", "Alert queue, triage, and analysis")
         .tag("incidents", "Incident and case management")
-        .tag("fleet", "Fleet enrollment, agents, and heartbeats")
-        .tag("response", "Response orchestration and enforcement")
-        .tag("policy", "Policy composition, publishing, and VM execution")
-        .tag("threat-intel", "Threat intelligence, IoCs, and deception")
+        .tag("fleet", "Fleet enrollment, agents, and inventory")
+        .tag("response", "Response orchestration and approvals")
+        .tag("policy", "Policy publishing and version history")
+        .tag(
+            "threat-intel",
+            "Threat intelligence, enrichment, and investigation pivots",
+        )
         .tag("telemetry", "Telemetry collection and event forwarding")
-        .tag("compliance", "Compliance scoring and evidence")
         .tag("config", "Configuration management")
         .tag("reports", "Reports, exports, and executive summaries")
         .tag("updates", "Agent updates, releases, and rollouts")
-        .tag("hunts", "Saved hunts, scheduling, and detection content")
-        .tag("quantum", "Post-quantum cryptography status and key rotation")
-        .tag("swarm", "Mesh networking, swarm posture, and peer management")
-        .tag("observability", "Metrics, logging, and monitoring")
-        // Schemas
-        .schema("Error", Schema {
-            schema_type: Some("object".into()),
-            properties: {
-                let mut p = BTreeMap::new();
-                p.insert("error".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p
+        .tag("hunts", "Saved hunts, rule lifecycle, and content packs")
+        .tag("observability", "Metrics, audit, and SLO monitoring")
+        .schema(
+            "Error",
+            Schema {
+                schema_type: Some("object".into()),
+                properties: {
+                    let mut p = BTreeMap::new();
+                    p.insert(
+                        "error".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p
+                },
+                ..Default::default()
             },
-            ..Default::default()
-        })
-        .schema("Alert", Schema {
-            schema_type: Some("object".into()),
-            properties: {
-                let mut p = BTreeMap::new();
-                p.insert("id".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("level".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), enum_values: Some(vec!["nominal".into(), "elevated".into(), "severe".into(), "critical".into()]), ..Default::default() }));
-                p.insert("timestamp".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), format: Some("date-time".into()), ..Default::default() }));
-                p.insert("device_id".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("reasons".into(), SchemaRef::Inline(Schema { schema_type: Some("array".into()), items: Some(Box::new(SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }))), ..Default::default() }));
-                p.insert("score".into(), SchemaRef::Inline(Schema { schema_type: Some("number".into()), format: Some("float".into()), ..Default::default() }));
-                p
+        )
+        .schema(
+            "Alert",
+            Schema {
+                schema_type: Some("object".into()),
+                properties: {
+                    let mut p = BTreeMap::new();
+                    p.insert(
+                        "id".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("integer".into()),
+                            format: Some("int64".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "level".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            enum_values: Some(vec![
+                                "Nominal".into(),
+                                "Elevated".into(),
+                                "Severe".into(),
+                                "Critical".into(),
+                            ]),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "timestamp".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            format: Some("date-time".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "score".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("number".into()),
+                            format: Some("float".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p
+                },
+                required: vec![
+                    "id".into(),
+                    "level".into(),
+                    "timestamp".into(),
+                    "score".into(),
+                ],
+                ..Default::default()
             },
-            required: vec!["id".into(), "level".into(), "timestamp".into()],
-            ..Default::default()
-        })
-        .schema("Incident", Schema {
-            schema_type: Some("object".into()),
-            properties: {
-                let mut p = BTreeMap::new();
-                p.insert("id".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("title".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("severity".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("status".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), enum_values: Some(vec!["open".into(), "investigating".into(), "contained".into(), "closed".into()]), ..Default::default() }));
-                p.insert("created_at".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), format: Some("date-time".into()), ..Default::default() }));
-                p
+        )
+        .schema(
+            "Incident",
+            Schema {
+                schema_type: Some("object".into()),
+                properties: {
+                    let mut p = BTreeMap::new();
+                    p.insert(
+                        "id".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("integer".into()),
+                            format: Some("int64".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "title".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "severity".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "status".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            enum_values: Some(vec![
+                                "Open".into(),
+                                "Investigating".into(),
+                                "Contained".into(),
+                                "Resolved".into(),
+                                "FalsePositive".into(),
+                            ]),
+                            ..Default::default()
+                        }),
+                    );
+                    p
+                },
+                required: vec!["id".into(), "title".into(), "severity".into()],
+                ..Default::default()
             },
-            required: vec!["id".into(), "title".into(), "severity".into()],
-            ..Default::default()
-        })
-        .schema("Agent", Schema {
-            schema_type: Some("object".into()),
-            properties: {
-                let mut p = BTreeMap::new();
-                p.insert("agent_id".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("hostname".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("os".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("version".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), ..Default::default() }));
-                p.insert("last_heartbeat".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), format: Some("date-time".into()), ..Default::default() }));
-                p.insert("status".into(), SchemaRef::Inline(Schema { schema_type: Some("string".into()), enum_values: Some(vec!["online".into(), "offline".into(), "stale".into()]), ..Default::default() }));
-                p
+        )
+        .schema(
+            "Agent",
+            Schema {
+                schema_type: Some("object".into()),
+                properties: {
+                    let mut p = BTreeMap::new();
+                    p.insert(
+                        "id".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "hostname".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "platform".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "version".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            ..Default::default()
+                        }),
+                    );
+                    p.insert(
+                        "status".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            enum_values: Some(vec![
+                                "online".into(),
+                                "offline".into(),
+                                "stale".into(),
+                            ]),
+                            ..Default::default()
+                        }),
+                    );
+                    p
+                },
+                ..Default::default()
             },
-            ..Default::default()
-        })
-        // ── Auth ──
-        .path("/api/auth/check", "get", op("authCheck", "Check authentication status", &["auth"]))
-        .path("/api/auth/rotate", "post", op_post("authRotate", "Rotate API token", &["auth"], "Token rotation request"))
-        .path("/api/session/info", "get", op("sessionInfo", "Get session metadata, uptime, and TTL", &["auth"]))
-        // ── Status & Health ──
-        .path("/api/status", "get", op_public("getStatus", "Platform status and fleet overview", &["status"]))
-        .path("/api/health", "get", op_public("getHealth", "Health check", &["status"]))
-        .path("/api/report", "get", op_public("getReport", "Latest analysis report with samples", &["reports"]))
-        .path("/api/host/info", "get", op("getHostInfo", "Host system information", &["status"]))
-        .path("/api/platform/capabilities", "get", op("getPlatformCapabilities", "Platform feature capabilities", &["status"]))
-        .path("/api/diagnostics/bundle", "get", op("getDiagnosticsBundle", "Diagnostics bundle for support", &["status"]))
-        // ── Telemetry ──
-        .path("/api/telemetry/current", "get", op("getTelemetryCurrent", "Current telemetry snapshot", &["telemetry"]))
-        .path("/api/telemetry/history", "get", op("getTelemetryHistory", "Telemetry time-series history", &["telemetry"]))
-        .path("/api/events", "post", op_post("pushEvents", "Push telemetry events from agent", &["telemetry"], "Array of telemetry events"))
-        .path("/api/events", "get", op("getEvents", "List stored events", &["telemetry"]))
-        .path("/api/events/bulk-triage", "post", op_post("bulkTriageEvents", "Bulk triage events by filter", &["telemetry"], "Triage filter and action"))
-        // ── Alerts ──
-        .path("/api/alerts", "get", op("getAlerts", "List alerts with optional severity filter", &["alerts"]))
-        .path("/api/alerts", "delete", op("clearAlerts", "Clear all alerts", &["alerts"]))
-        .path("/api/alerts/count", "get", op("getAlertCount", "Alert count by severity", &["alerts"]))
-        .path("/api/alerts/sample", "post", op_post("sendSampleAlert", "Send a sample alert for testing", &["alerts"], "Sample alert definition"))
-        .path("/api/alerts/analysis", "post", op_post("triggerAlertAnalysis", "Trigger alert analysis pipeline", &["alerts"], "Analysis parameters"))
-        .path("/api/queue/alerts", "get", op("getAlertQueue", "SOC alert queue with SLA status", &["alerts"]))
-        // ── Analysis ──
-        .path("/api/analyze", "post", op_post("analyzeData", "Run detection pipeline on uploaded data", &["detection"], "Telemetry payload (JSONL or CSV)"))
-        // ── Detection ──
-        .path("/api/detection/rules", "get", op("getDetectionRules", "List active detection rules", &["detection"]))
-        .path("/api/detection/test", "post", op_post("testDetectionRule", "Test a detection rule against sample data", &["detection"], "Rule definition and test data"))
-        .path("/api/velocity/status", "get", op("getVelocityStatus", "Velocity anomaly detector status", &["detection"]))
-        .path("/api/entropy/status", "get", op("getEntropyStatus", "Entropy anomaly detector status", &["detection"]))
-        .path("/api/beacon/connections", "get", op("getBeaconConnections", "Beacon detector connections", &["detection"]))
-        .path("/api/beacon/dns", "get", op("getBeaconDns", "DNS tunnelling analysis", &["detection"]))
-        .path("/api/correlation", "get", op("getCorrelation", "Signal correlation matrix", &["detection"]))
-        .path("/api/side-channel/status", "get", op("getSideChannelStatus", "Side-channel analysis report", &["detection"]))
-        .path("/api/kill-chain/reconstruct", "post", op_post("reconstructKillChain", "Reconstruct kill-chain phases from alerts", &["detection"], "Alert IDs to reconstruct"))
-        .path("/api/lateral/analyze", "post", op_post("analyzeLateral", "Lateral movement graph analysis", &["detection"], "Connection log entries"))
-        .path("/api/ueba/observe", "post", op_post("uebaObserve", "Submit UEBA observation", &["detection"], "User/entity behavior observation"))
-        .path("/api/ueba/risky", "get", op("getUebaRisky", "Top risky entities from UEBA", &["detection"]))
-        // ── Hunts & Content ──
-        .path("/api/hunts", "get", op("listHunts", "List saved hunts", &["hunts"]))
-        .path("/api/hunts", "post", op_post("createHunt", "Create a new saved hunt", &["hunts"], "Hunt definition"))
-        .path("/api/content/rules", "get", op("listContentRules", "List detection content rules", &["hunts"]))
-        .path("/api/content/rules", "post", op_post("createContentRule", "Create detection content rule", &["hunts"], "Rule definition"))
-        .path("/api/content/packs", "get", op("listContentPacks", "List content packs", &["hunts"]))
-        .path("/api/content/packs", "post", op_post("createContentPack", "Create content pack", &["hunts"], "Pack definition"))
-        .path("/api/coverage/mitre", "get", op("getMitreCoverage", "MITRE ATT&CK technique coverage", &["hunts"]))
-        .path("/api/suppressions", "get", op("listSuppressions", "List alert suppressions", &["hunts"]))
-        .path("/api/suppressions", "post", op_post("createSuppression", "Create alert suppression rule", &["hunts"], "Suppression definition"))
-        // ── Incidents & Cases ──
-        .path("/api/incidents", "get", op("listIncidents", "List incidents", &["incidents"]))
-        .path("/api/incidents", "post", op_post("createIncident", "Create a new incident", &["incidents"], "Incident title and severity"))
-        .path("/api/cases", "get", op("listCases", "List investigation cases", &["incidents"]))
-        .path("/api/cases", "post", op_post("createCase", "Create investigation case", &["incidents"], "Case definition"))
-        // ── Fleet & Agents ──
-        .path("/api/fleet/register", "post", op_post("registerFleet", "Register new fleet member", &["fleet"], "Fleet registration payload"))
-        .path("/api/fleet/agents", "get", op("listAgents", "List enrolled agents", &["fleet"]))
-        .path("/api/fleet/dashboard", "get", op("fleetDashboard", "Fleet operations dashboard", &["fleet"]))
-        .path("/api/agents/enroll", "post", op_post("enrollAgent", "Enroll a new agent", &["fleet"], "Agent enrollment request"))
-        .path("/api/agents/token", "post", op_post("issueAgentToken", "Issue agent API token", &["fleet"], "Agent ID"))
-        // ── Response & Enforcement ──
-        .path("/api/response/request", "post", op_post("requestResponse", "Request a response action", &["response"], "Response action request"))
-        .path("/api/response/approve", "post", op_post("approveResponse", "Approve a pending response action", &["response"], "Approval payload"))
-        .path("/api/response/execute", "post", op_post("executeResponse", "Execute an approved response action", &["response"], "Execution payload"))
-        .path("/api/enforcement/quarantine", "post", op_post("quarantineDevice", "Quarantine a device", &["response"], "Device ID and reason"))
-        .path("/api/enforcement/status", "get", op("getEnforcementStatus", "Enforcement status and history", &["response"]))
-        // ── Control Plane ──
-        .path("/api/control/mode", "post", op_post("setMode", "Set detection mode (normal/frozen/decay)", &["config"], "Mode name"))
-        .path("/api/control/reset-baseline", "post", op("resetBaseline", "Reset detection baseline", &["config"]))
-        .path("/api/control/run-demo", "post", op("runDemo", "Run demo analysis", &["config"]))
-        .path("/api/control/checkpoint", "post", op("createCheckpoint", "Create state checkpoint", &["config"]))
-        .path("/api/control/restore-checkpoint", "post", op_post("restoreCheckpoint", "Restore from checkpoint", &["config"], "Checkpoint ID"))
-        // ── Policy ──
-        .path("/api/policy/compose", "post", op_post("composePolicy", "Compose policy from operators", &["policy"], "Policy composition request"))
-        .path("/api/policy/publish", "post", op_post("publishPolicy", "Publish a policy version", &["policy"], "Policy payload"))
-        .path("/api/policy/current", "get", op_public("getCurrentPolicy", "Get current active policy", &["policy"]))
-        .path("/api/policy/history", "get", op("getPolicyHistory", "Policy version history", &["policy"]))
-        .path("/api/policy-vm/execute", "post", op_post("executePolicyVm", "Execute policy in Wasm VM", &["policy"], "Wasm execution request"))
-        // ── Threat Intel ──
-        .path("/api/threat-intel/status", "get", op("getThreatIntelStatus", "Threat intelligence status", &["threat-intel"]))
-        .path("/api/threat-intel/ioc", "post", op_post("addIoc", "Add indicator of compromise", &["threat-intel"], "IoC definition"))
-        .path("/api/deception/deploy", "post", op_post("deployDeception", "Deploy deception canary", &["threat-intel"], "Canary configuration"))
-        .path("/api/deception/status", "get", op("getDeceptionStatus", "Deception engine status", &["threat-intel"]))
-        // ── Digital Twin & Energy ──
-        .path("/api/digital-twin/simulate", "post", op_post("simulateTwin", "Run digital twin simulation", &["detection"], "Simulation parameters"))
-        .path("/api/digital-twin/status", "get", op("getTwinStatus", "Digital twin status", &["detection"]))
-        .path("/api/energy/budget", "get", op("getEnergyBudget", "Energy budget status", &["config"]))
-        .path("/api/energy/consume", "post", op_post("consumeEnergy", "Report energy consumption", &["config"], "Consumption data"))
-        // ── Quantum ──
-        .path("/api/quantum/status", "get", op("getQuantumStatus", "Post-quantum key status", &["quantum"]))
-        .path("/api/quantum/rotate", "post", op("rotateQuantumKeys", "Rotate post-quantum keys", &["quantum"]))
-        // ── Updates & Rollouts ──
-        .path("/api/updates/releases", "get", op("listReleases", "List published releases", &["updates"]))
-        .path("/api/updates/publish", "post", op_post("publishRelease", "Publish a new release", &["updates"], "Release payload"))
-        .path("/api/updates/deploy", "post", op_post("deployUpdate", "Deploy update to agent group", &["updates"], "Deployment target and version"))
-        .path("/api/updates/rollback", "post", op_post("rollbackUpdate", "Rollback a deployment", &["updates"], "Rollback parameters"))
-        .path("/api/updates/cancel", "post", op_post("cancelUpdate", "Cancel an in-progress deployment", &["updates"], "Deployment ID"))
-        .path("/api/updates/check", "get", op("checkForUpdates", "Check for available updates", &["updates"]))
-        // ── Swarm & Mesh ──
-        .path("/api/swarm/posture", "get", op("getSwarmPosture", "Swarm cluster posture", &["swarm"]))
-        .path("/api/mesh/peers", "get", op("getMeshPeers", "List mesh peers", &["swarm"]))
-        .path("/api/mesh/heal", "post", op("healMesh", "Trigger mesh self-healing", &["swarm"]))
-        // ── Compliance ──
-        .path("/api/compliance/score", "get", op("getComplianceScore", "Overall compliance score", &["compliance"]))
-        .path("/api/compliance/evidence", "get", op("getComplianceEvidence", "Compliance evidence packages", &["compliance"]))
-        // ── Config ──
-        .path("/api/config", "get", op("getConfig", "Current configuration", &["config"]))
-        .path("/api/config/reload", "post", op("reloadConfig", "Hot-reload configuration", &["config"]))
-        .path("/api/config/save", "post", op_post("saveConfig", "Save configuration changes", &["config"], "Config patch"))
-        // ── Audit & Retention ──
-        .path("/api/audit/log", "get", op("getAuditLog", "Audit log entries", &["observability"]))
-        .path("/api/retention/status", "get", op("getRetentionStatus", "Data retention policy status", &["config"]))
-        .path("/api/retention/apply", "post", op("applyRetention", "Apply retention policy now", &["config"]))
-        // ── SIEM ──
-        .path("/api/siem/status", "get", op("getSiemStatus", "SIEM connector status", &["telemetry"]))
-        .path("/api/siem/config", "post", op_post("configureSiem", "Configure SIEM connector", &["telemetry"], "SIEM connector configuration"))
-        // ── Metrics ──
-        .path("/api/metrics", "get", op_public("getMetrics", "Prometheus-format metrics", &["observability"]))
-        .path("/api/openapi.json", "get", op_public("getOpenApiSpec", "This OpenAPI specification", &["status"]))
-        // ── Shutdown ──
-        .path("/api/shutdown", "post", op("shutdownServer", "Gracefully shut down the server", &["config"]))
-        // ── Workbench ──
-        .path("/api/workbench/overview", "get", op("getWorkbenchOverview", "SOC Workbench overview", &["incidents"]))
-        .path("/api/manager/overview", "get", op("getManagerOverview", "Manager operational overview", &["reports"]))
-        // ── Research & Advanced ──
-        .path("/api/drift/status", "get", op("getDriftStatus", "Feature drift status", &["detection"]))
-        .path("/api/drift/reset", "post", op("resetDrift", "Reset drift tracking", &["detection"]))
-        .path("/api/fingerprint/status", "get", op("getFingerprintStatus", "Device fingerprint status", &["detection"]))
-        .path("/api/harness/run", "post", op_post("runHarness", "Run adversarial harness test", &["detection"], "Harness scenario"))
-        .path("/api/privacy/budget", "get", op("getPrivacyBudget", "Differential privacy budget status", &["compliance"]))
-        .path("/api/offload/decide", "post", op_post("decideOffload", "Edge/cloud offload decision", &["config"], "Offload parameters"))
-        .path("/api/tenants", "get", op("listTenants", "List tenants", &["fleet"]))
-        .path("/api/tenants/count", "get", op("getTenantCount", "Tenant count", &["fleet"]))
-        // ── Entities & Enrichment ──
-        .path("/api/enrichments/connectors", "get", op("listEnrichmentConnectors", "List enrichment connectors", &["threat-intel"]))
-        .path("/api/enrichments/connectors", "post", op_post("addEnrichmentConnector", "Add enrichment connector", &["threat-intel"], "Connector definition"))
-        .path("/api/tickets/sync", "post", op_post("syncTickets", "Sync with external ticket system", &["incidents"], "Ticket sync request"))
+        )
+        // Auth
+        .path(
+            "/api/auth/check",
+            "get",
+            op("authCheck", "Check authentication status", &["auth"]),
+        )
+        .path(
+            "/api/auth/rotate",
+            "post",
+            op_post_without_body("authRotate", "Rotate API token", &["auth"]),
+        )
+        .path(
+            "/api/session/info",
+            "get",
+            op(
+                "sessionInfo",
+                "Get session metadata, uptime, and TTL",
+                &["auth"],
+            ),
+        )
+        // Public diagnostics
+        .path(
+            "/api/health",
+            "get",
+            op_public("getHealth", "Health check", &["status"]),
+        )
+        .path(
+            "/api/openapi.json",
+            "get",
+            op_public(
+                "getOpenApiSpec",
+                "Stable OpenAPI specification for the public Wardex API surface",
+                &["status"],
+            ),
+        )
+        .path(
+            "/api/metrics",
+            "get",
+            op_public_with_responses(
+                "getMetrics",
+                "Prometheus-format metrics",
+                &["observability"],
+                content_response_status(
+                    "200",
+                    "Prometheus-format metrics",
+                    "text/plain",
+                    string_schema(),
+                ),
+            ),
+        )
+        .path(
+            "/api/policy/current",
+            "get",
+            op_public("getCurrentPolicy", "Get current active policy", &["policy"]),
+        )
+        // Status & reports
+        .path(
+            "/api/status",
+            "get",
+            op("getStatus", "Platform status manifest", &["status"]),
+        )
+        .path(
+            "/api/report",
+            "get",
+            op(
+                "getReport",
+                "Latest analysis report with samples",
+                &["reports"],
+            ),
+        )
+        .path(
+            "/api/host/info",
+            "get",
+            op("getHostInfo", "Host system information", &["status"]),
+        )
+        .path(
+            "/api/slo/status",
+            "get",
+            op(
+                "getSloStatus",
+                "Service level objective metrics",
+                &["observability"],
+            ),
+        )
+        .path(
+            "/api/reports",
+            "get",
+            op("listReports", "List stored reports", &["reports"]),
+        )
+        .path(
+            "/api/reports/{id}",
+            "get",
+            op("getReportById", "Retrieve a specific report", &["reports"]),
+        )
+        .path(
+            "/api/reports/{id}/html",
+            "get",
+            op_with_responses(
+                "getReportHtml",
+                "HTML report download",
+                &["reports"],
+                content_response_status(
+                    "200",
+                    "HTML report download",
+                    "text/html",
+                    string_schema(),
+                ),
+            ),
+        )
+        .path(
+            "/api/reports/executive-summary",
+            "get",
+            op(
+                "getExecutiveSummary",
+                "Executive summary across reports and incidents",
+                &["reports"],
+            ),
+        )
+        .path(
+            "/api/workbench/overview",
+            "get",
+            op(
+                "getWorkbenchOverview",
+                "SOC Workbench overview",
+                &["incidents"],
+            ),
+        )
+        .path(
+            "/api/manager/overview",
+            "get",
+            op(
+                "getManagerOverview",
+                "Manager operational overview",
+                &["reports"],
+            ),
+        )
+        // Config
+        .path(
+            "/api/config/current",
+            "get",
+            op("getConfig", "Current configuration", &["config"]),
+        )
+        .path(
+            "/api/config/reload",
+            "post",
+            op_post(
+                "reloadConfig",
+                "Hot-reload configuration",
+                &["config"],
+                "Config patch",
+            ),
+        )
+        .path(
+            "/api/config/save",
+            "post",
+            op_post(
+                "saveConfig",
+                "Persist configuration changes to disk",
+                &["config"],
+                "Config patch",
+            ),
+        )
+        .path(
+            "/api/monitoring/options",
+            "get",
+            op(
+                "getMonitoringOptions",
+                "OS-aware monitoring points and recommendations",
+                &["config"],
+            ),
+        )
+        .path(
+            "/api/monitoring/paths",
+            "get",
+            op(
+                "getMonitoringPaths",
+                "Active file-integrity and persistence monitoring paths",
+                &["config"],
+            ),
+        )
+        .path(
+            "/api/retention/status",
+            "get",
+            op(
+                "getRetentionStatus",
+                "Data retention policy status",
+                &["config"],
+            ),
+        )
+        .path(
+            "/api/retention/apply",
+            "post",
+            op_post(
+                "applyRetention",
+                "Apply retention policy now",
+                &["config"],
+                "Retention application payload",
+            ),
+        )
+        // Telemetry & alerts
+        .path(
+            "/api/telemetry/current",
+            "get",
+            op(
+                "getTelemetryCurrent",
+                "Current telemetry snapshot",
+                &["telemetry"],
+            ),
+        )
+        .path(
+            "/api/telemetry/history",
+            "get",
+            op(
+                "getTelemetryHistory",
+                "Telemetry time-series history",
+                &["telemetry"],
+            ),
+        )
+        .path(
+            "/api/events",
+            "get",
+            op("getEvents", "List stored events", &["telemetry"]),
+        )
+        .path(
+            "/api/events",
+            "post",
+            op_post(
+                "pushEvents",
+                "Push an event batch from an agent",
+                &["telemetry"],
+                "Event batch payload",
+            ),
+        )
+        .path(
+            "/api/events/export",
+            "get",
+            op_with_responses(
+                "exportEvents",
+                "Export filtered events as CSV",
+                &["telemetry"],
+                content_response_status(
+                    "200",
+                    "Export filtered events as CSV",
+                    "text/csv",
+                    string_schema(),
+                ),
+            ),
+        )
+        .path(
+            "/api/events/summary",
+            "get",
+            op(
+                "getEventsSummary",
+                "Fleet event analytics summary",
+                &["telemetry"],
+            ),
+        )
+        .path(
+            "/api/events/{id}/triage",
+            "post",
+            op_post(
+                "triageEvent",
+                "Update event triage state, assignee, tags, and notes",
+                &["telemetry"],
+                "Triage update payload",
+            ),
+        )
+        .path(
+            "/api/alerts",
+            "get",
+            with_parameters(
+                op("getAlerts", "List recent alerts", &["alerts"]),
+                vec![
+                    integer_parameter("limit", "query", "Maximum alerts to return", false),
+                    integer_parameter(
+                        "offset",
+                        "query",
+                        "Number of alerts to skip before returning results",
+                        false,
+                    ),
+                ],
+            ),
+        )
+        .path(
+            "/api/alerts/{id}",
+            "get",
+            op("getAlert", "Get alert detail", &["alerts"]),
+        )
+        .path(
+            "/api/alerts",
+            "delete",
+            op("clearAlerts", "Clear all alerts", &["alerts"]),
+        )
+        .path(
+            "/api/alerts/count",
+            "get",
+            op("getAlertCount", "Alert count by severity", &["alerts"]),
+        )
+        .path(
+            "/api/alerts/analysis",
+            "get",
+            op(
+                "getAlertAnalysis",
+                "Latest alert pattern analysis",
+                &["alerts"],
+            ),
+        )
+        .path(
+            "/api/alerts/analysis",
+            "post",
+            op_post_optional(
+                "runAlertAnalysis",
+                "Run on-demand alert analysis",
+                &["alerts"],
+                "Alert analysis parameters",
+            ),
+        )
+        .path(
+            "/api/alerts/grouped",
+            "get",
+            op(
+                "getGroupedAlerts",
+                "Alerts grouped by reason fingerprint",
+                &["alerts"],
+            ),
+        )
+        .path(
+            "/api/queue/alerts",
+            "get",
+            op(
+                "getAlertQueue",
+                "SOC alert queue with SLA status",
+                &["alerts"],
+            ),
+        )
+        .path(
+            "/api/queue/acknowledge",
+            "post",
+            op_post(
+                "acknowledgeQueueAlert",
+                "Acknowledge a queued alert",
+                &["alerts"],
+                "Queue acknowledgement payload",
+            ),
+        )
+        .path(
+            "/api/detection/summary",
+            "get",
+            op(
+                "getDetectionSummary",
+                "Detector state across velocity, entropy, and compound models",
+                &["detection"],
+            ),
+        )
+        .path(
+            "/api/detection/weights",
+            "get",
+            op(
+                "getDetectionWeights",
+                "Current per-dimension detection weights",
+                &["detection"],
+            ),
+        )
+        .path(
+            "/api/detection/weights",
+            "post",
+            op_post(
+                "setDetectionWeights",
+                "Set per-dimension detection weights",
+                &["detection"],
+                "Detection weight payload",
+            ),
+        )
+        // Incidents & cases
+        .path(
+            "/api/cases",
+            "get",
+            op("listCases", "List investigation cases", &["incidents"]),
+        )
+        .path(
+            "/api/cases",
+            "post",
+            op_post_status(
+                "201",
+                "createCase",
+                "Create investigation case",
+                &["incidents"],
+                "Case definition",
+            ),
+        )
+        .path(
+            "/api/cases/{id}",
+            "get",
+            op("getCase", "Get case detail", &["incidents"]),
+        )
+        .path(
+            "/api/incidents",
+            "get",
+            with_parameters(
+                op("listIncidents", "List incidents", &["incidents"]),
+                vec![
+                    string_parameter("status", "query", "Filter incidents by status", false),
+                    string_parameter("severity", "query", "Filter incidents by severity", false),
+                    integer_parameter("limit", "query", "Maximum incidents to return", false),
+                    integer_parameter(
+                        "offset",
+                        "query",
+                        "Number of incidents to skip before returning results",
+                        false,
+                    ),
+                ],
+            ),
+        )
+        .path(
+            "/api/incidents",
+            "post",
+            op_post(
+                "createIncident",
+                "Create a new incident",
+                &["incidents"],
+                "Incident title, severity, and optional links",
+            ),
+        )
+        .path(
+            "/api/incidents/{id}",
+            "get",
+            op("getIncident", "Get incident detail", &["incidents"]),
+        )
+        .path(
+            "/api/incidents/{id}/update",
+            "post",
+            op_post(
+                "updateIncident",
+                "Update incident status, assignee, or notes",
+                &["incidents"],
+                "Incident update payload",
+            ),
+        )
+        .path(
+            "/api/incidents/{id}/report",
+            "get",
+            op(
+                "getIncidentReport",
+                "Generate incident report",
+                &["incidents"],
+            ),
+        )
+        .path(
+            "/api/incidents/{id}/storyline",
+            "get",
+            op(
+                "getIncidentStoryline",
+                "Narrative storyline and evidence package",
+                &["incidents"],
+            ),
+        )
+        // Fleet & agents
+        .path(
+            "/api/agents",
+            "get",
+            op("listAgents", "List enrolled agents", &["fleet"]),
+        )
+        .path(
+            "/api/agents/{id}/details",
+            "get",
+            op(
+                "getAgentDetails",
+                "Retrieve detailed agent snapshot",
+                &["fleet"],
+            ),
+        )
+        .path(
+            "/api/agents/{id}/activity",
+            "get",
+            op(
+                "getAgentActivity",
+                "Deep activity snapshot for a single agent",
+                &["fleet"],
+            ),
+        )
+        .path(
+            "/api/agents/{id}/logs",
+            "get",
+            op("getAgentLogs", "Retrieve agent logs", &["fleet"]),
+        )
+        .path(
+            "/api/agents/{id}/inventory",
+            "get",
+            op("getAgentInventory", "Retrieve agent inventory", &["fleet"]),
+        )
+        .path(
+            "/api/fleet/inventory",
+            "get",
+            op(
+                "getFleetInventory",
+                "Fleet-wide inventory summary",
+                &["fleet"],
+            ),
+        )
+        .path(
+            "/api/updates/releases",
+            "get",
+            op("listReleases", "List published releases", &["updates"]),
+        )
+        .path(
+            "/api/updates/publish",
+            "post",
+            op_post(
+                "publishRelease",
+                "Publish a new agent release",
+                &["updates"],
+                "Release payload",
+            ),
+        )
+        .path(
+            "/api/updates/deploy",
+            "post",
+            op_post(
+                "deployUpdate",
+                "Assign a published release to an agent",
+                &["updates"],
+                "Deployment target and version",
+            ),
+        )
+        .path(
+            "/api/updates/rollback",
+            "post",
+            op_post(
+                "rollbackUpdate",
+                "Rollback a deployment",
+                &["updates"],
+                "Rollback parameters",
+            ),
+        )
+        .path(
+            "/api/updates/cancel",
+            "post",
+            op_post(
+                "cancelUpdate",
+                "Cancel an in-progress deployment",
+                &["updates"],
+                "Deployment ID",
+            ),
+        )
+        // Response
+        .path(
+            "/api/response/request",
+            "post",
+            op_post(
+                "requestResponse",
+                "Submit an approval-gated response action",
+                &["response"],
+                "Response action request",
+            ),
+        )
+        .path(
+            "/api/response/requests",
+            "get",
+            op(
+                "listResponseRequests",
+                "List response requests with approval state",
+                &["response"],
+            ),
+        )
+        .path(
+            "/api/response/approve",
+            "post",
+            op_post(
+                "approveResponse",
+                "Approve or deny a pending response action",
+                &["response"],
+                "Approval payload",
+            ),
+        )
+        .path(
+            "/api/response/execute",
+            "post",
+            op_post_optional(
+                "executeResponse",
+                "Execute approved response actions",
+                &["response"],
+                "Optional execution payload",
+            ),
+        )
+        .path(
+            "/api/response/approvals",
+            "get",
+            op(
+                "listResponseApprovals",
+                "Approval history for response actions",
+                &["response"],
+            ),
+        )
+        // Policy
+        .path(
+            "/api/policy/history",
+            "get",
+            op("getPolicyHistory", "Policy version history", &["policy"]),
+        )
+        .path(
+            "/api/policy/publish",
+            "post",
+            op_post(
+                "publishPolicy",
+                "Publish a policy version",
+                &["policy"],
+                "Policy payload",
+            ),
+        )
+        // Hunts & content
+        .path(
+            "/api/hunts",
+            "get",
+            op("listHunts", "List saved hunts", &["hunts"]),
+        )
+        .path(
+            "/api/hunts",
+            "post",
+            op_post_status(
+                "201",
+                "saveHunt",
+                "Create or update a saved hunt",
+                &["hunts"],
+                "Hunt definition",
+            ),
+        )
+        .path(
+            "/api/hunts/{id}/run",
+            "post",
+            op_post_optional(
+                "runHunt",
+                "Execute a saved hunt immediately",
+                &["hunts"],
+                "Optional hunt execution payload",
+            ),
+        )
+        .path(
+            "/api/hunts/{id}/history",
+            "get",
+            op(
+                "getHuntHistory",
+                "Retrieve saved hunt run history",
+                &["hunts"],
+            ),
+        )
+        .path(
+            "/api/content/rules",
+            "get",
+            op(
+                "listContentRules",
+                "List detection content rules",
+                &["hunts"],
+            ),
+        )
+        .path(
+            "/api/content/rules",
+            "post",
+            op_post_status(
+                "201",
+                "saveContentRule",
+                "Create or update managed content rules",
+                &["hunts"],
+                "Rule definition",
+            ),
+        )
+        .path(
+            "/api/content/rules/{id}/test",
+            "post",
+            op_post(
+                "testContentRule",
+                "Replay a content rule against retained events",
+                &["hunts"],
+                "Rule test payload",
+            ),
+        )
+        .path(
+            "/api/content/rules/{id}/promote",
+            "post",
+            op_post(
+                "promoteContentRule",
+                "Promote a content rule through its lifecycle",
+                &["hunts"],
+                "Promotion payload",
+            ),
+        )
+        .path(
+            "/api/content/rules/{id}/rollback",
+            "post",
+            op_post(
+                "rollbackContentRule",
+                "Rollback a content rule to a previous lifecycle state",
+                &["hunts"],
+                "Rollback payload",
+            ),
+        )
+        .path(
+            "/api/content/packs",
+            "get",
+            op("listContentPacks", "List content packs", &["hunts"]),
+        )
+        .path(
+            "/api/content/packs",
+            "post",
+            op_post_status(
+                "201",
+                "saveContentPack",
+                "Create or update a content pack",
+                &["hunts"],
+                "Pack definition",
+            ),
+        )
+        .path(
+            "/api/coverage/mitre",
+            "get",
+            op(
+                "getMitreCoverage",
+                "MITRE ATT&CK coverage across rules and packs",
+                &["hunts"],
+            ),
+        )
+        .path(
+            "/api/suppressions",
+            "get",
+            op("listSuppressions", "List alert suppressions", &["hunts"]),
+        )
+        .path(
+            "/api/suppressions",
+            "post",
+            op_post_status(
+                "201",
+                "saveSuppression",
+                "Create or update an alert suppression",
+                &["hunts"],
+                "Suppression definition",
+            ),
+        )
+        // Enterprise investigation & admin
+        .path(
+            "/api/entities/{kind}/{id}",
+            "get",
+            op(
+                "getEntityProfile",
+                "Entity profile pivot",
+                &["threat-intel"],
+            ),
+        )
+        .path(
+            "/api/entities/{kind}/{id}/timeline",
+            "get",
+            op(
+                "getEntityTimeline",
+                "Entity timeline pivot",
+                &["threat-intel"],
+            ),
+        )
+        .path(
+            "/api/enrichments/connectors",
+            "get",
+            op(
+                "listEnrichmentConnectors",
+                "List enrichment connectors",
+                &["threat-intel"],
+            ),
+        )
+        .path(
+            "/api/enrichments/connectors",
+            "post",
+            op_post(
+                "saveEnrichmentConnector",
+                "Create or update an enrichment connector",
+                &["threat-intel"],
+                "Connector definition",
+            ),
+        )
+        .path(
+            "/api/tickets/sync",
+            "post",
+            op_post(
+                "syncTickets",
+                "Sync a case or incident to an external ticket system",
+                &["incidents"],
+                "Ticket sync request",
+            ),
+        )
+        .path(
+            "/api/threat-intel/status",
+            "get",
+            op(
+                "getThreatIntelStatus",
+                "Threat intelligence indicator inventory status",
+                &["threat-intel"],
+            ),
+        )
+        .path(
+            "/api/threat-intel/ioc",
+            "post",
+            op_post(
+                "submitThreatIntelIoc",
+                "Submit a new indicator of compromise",
+                &["threat-intel"],
+                "Indicator submission payload",
+            ),
+        )
+        .path(
+            "/api/idp/providers",
+            "get",
+            op(
+                "listIdentityProviders",
+                "List configured identity providers",
+                &["auth"],
+            ),
+        )
+        .path(
+            "/api/idp/providers",
+            "post",
+            op_post(
+                "saveIdentityProvider",
+                "Create or update an identity provider",
+                &["auth"],
+                "Identity provider definition",
+            ),
+        )
+        .path(
+            "/api/scim/config",
+            "get",
+            op(
+                "getScimConfig",
+                "Get SCIM provisioning configuration",
+                &["auth"],
+            ),
+        )
+        .path(
+            "/api/scim/config",
+            "post",
+            op_post(
+                "saveScimConfig",
+                "Update SCIM provisioning configuration",
+                &["auth"],
+                "SCIM configuration",
+            ),
+        )
+        .path(
+            "/api/audit/admin",
+            "get",
+            op(
+                "getAdminAudit",
+                "Enterprise admin audit trail",
+                &["observability"],
+            ),
+        )
+        .path(
+            "/api/audit/log",
+            "get",
+            op(
+                "getAuditLog",
+                "Recent API audit log entries",
+                &["observability"],
+            ),
+        )
+        .path(
+            "/api/audit/verify",
+            "get",
+            op(
+                "verifyAuditLog",
+                "Verify integrity of the cryptographic audit chain",
+                &["observability"],
+            ),
+        )
+        .path(
+            "/api/support/diagnostics",
+            "get",
+            op(
+                "getSupportDiagnostics",
+                "Support diagnostics bundle",
+                &["status"],
+            ),
+        )
+        .path(
+            "/api/system/health/dependencies",
+            "get",
+            op(
+                "getDependencyHealth",
+                "Dependency and rollout health",
+                &["status"],
+            ),
+        )
         .build()
 }
 
@@ -613,10 +1635,11 @@ mod tests {
     #[test]
     fn spec_has_paths() {
         let spec = wardex_openapi_spec("0.35.0");
-        assert!(spec.paths.len() > 80);
+        assert!(spec.paths.len() > 50);
         assert!(spec.paths.contains_key("/api/status"));
         assert!(spec.paths.contains_key("/api/alerts"));
-        assert!(spec.paths.contains_key("/api/fleet/agents"));
+        assert!(spec.paths.contains_key("/api/agents"));
+        assert!(spec.paths.contains_key("/api/config/current"));
     }
 
     #[test]
@@ -658,7 +1681,7 @@ mod tests {
     #[test]
     fn operations_have_ids() {
         let spec = wardex_openapi_spec("0.35.0");
-        for (_path, item) in &spec.paths {
+        for item in spec.paths.values() {
             if let Some(ref o) = item.get {
                 assert!(!o.operation_id.is_empty());
             }
@@ -674,23 +1697,122 @@ mod tests {
         let posts_with_body: Vec<&str> = spec
             .paths
             .iter()
-            .filter(|(_, item)| item.post.as_ref().map_or(false, |o| o.request_body.is_some()))
+            .filter(|(_, item)| item.post.as_ref().is_some_and(|o| o.request_body.is_some()))
             .map(|(p, _)| p.as_str())
             .collect();
-        assert!(posts_with_body.contains(&"/api/analyze"));
+        assert!(posts_with_body.contains(&"/api/events"));
         assert!(posts_with_body.contains(&"/api/response/request"));
     }
 
     #[test]
     fn public_endpoints_have_empty_security() {
         let spec = wardex_openapi_spec("0.35.0");
+        let health_op = spec.paths.get("/api/health").unwrap().get.as_ref().unwrap();
+        assert_eq!(health_op.security.len(), 1);
+        assert!(health_op.security[0].is_empty());
         let status_op = spec.paths.get("/api/status").unwrap().get.as_ref().unwrap();
-        assert!(!status_op.security.is_empty());
+        assert_eq!(status_op.security.len(), 1);
+        assert!(status_op.security[0].contains_key("bearerAuth"));
     }
 
     #[test]
     fn metrics_endpoint_included() {
         let spec = wardex_openapi_spec("0.35.0");
         assert!(spec.paths.contains_key("/api/metrics"));
+    }
+
+    #[test]
+    fn dynamic_paths_include_path_parameters() {
+        let spec = wardex_openapi_spec("0.35.0");
+        let report_html = spec
+            .paths
+            .get("/api/reports/{id}/html")
+            .unwrap()
+            .get
+            .as_ref()
+            .unwrap();
+        assert!(report_html
+            .parameters
+            .iter()
+            .any(|parameter| parameter.location == "path" && parameter.name == "id"));
+    }
+
+    #[test]
+    fn metrics_and_html_routes_use_non_json_content_types() {
+        let spec = wardex_openapi_spec("0.35.0");
+        let metrics = spec
+            .paths
+            .get("/api/metrics")
+            .unwrap()
+            .get
+            .as_ref()
+            .unwrap();
+        let metrics_response = metrics.responses.get("200").unwrap();
+        assert!(metrics_response
+            .content
+            .as_ref()
+            .unwrap()
+            .contains_key("text/plain"));
+
+        let report_html = spec
+            .paths
+            .get("/api/reports/{id}/html")
+            .unwrap()
+            .get
+            .as_ref()
+            .unwrap();
+        let report_html_response = report_html.responses.get("200").unwrap();
+        assert!(report_html_response
+            .content
+            .as_ref()
+            .unwrap()
+            .contains_key("text/html"));
+    }
+
+    #[test]
+    fn optional_and_bodyless_posts_are_described_correctly() {
+        let spec = wardex_openapi_spec("0.35.0");
+        let auth_rotate = spec
+            .paths
+            .get("/api/auth/rotate")
+            .unwrap()
+            .post
+            .as_ref()
+            .unwrap();
+        assert!(auth_rotate.request_body.is_none());
+
+        let execute_response = spec
+            .paths
+            .get("/api/response/execute")
+            .unwrap()
+            .post
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            execute_response.request_body.as_ref().unwrap().required,
+            false
+        );
+    }
+
+    #[test]
+    fn create_endpoints_use_created_status_when_server_returns_201() {
+        let spec = wardex_openapi_spec("0.35.0");
+        for path in [
+            "/api/cases",
+            "/api/hunts",
+            "/api/content/rules",
+            "/api/content/packs",
+            "/api/suppressions",
+        ] {
+            let post = spec.paths.get(path).unwrap().post.as_ref().unwrap();
+            assert!(
+                post.responses.contains_key("201"),
+                "{path} should document 201"
+            );
+            assert!(
+                !post.responses.contains_key("200"),
+                "{path} should not claim 200"
+            );
+        }
     }
 }

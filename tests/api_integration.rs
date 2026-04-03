@@ -1,6 +1,6 @@
 use wardex::agent_client::AgentClient;
-use wardex::server::spawn_test_server;
 use wardex::config::Config;
+use wardex::server::spawn_test_server;
 
 fn base(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
@@ -781,8 +781,7 @@ fn quantum_rotate_increments_epoch() {
 #[test]
 fn quantum_rotate_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let err = ureq::post(&format!("{}/api/quantum/rotate", base(port)))
-        .send_string("");
+    let err = ureq::post(&format!("{}/api/quantum/rotate", base(port))).send_string("");
     match err {
         Err(ureq::Error::Status(401, _)) => {}
         other => panic!("expected 401, got {other:?}"),
@@ -861,8 +860,7 @@ fn harness_run_returns_evasion_metrics() {
 #[test]
 fn harness_run_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let err = ureq::post(&format!("{}/api/harness/run", base(port)))
-        .send_string("");
+    let err = ureq::post(&format!("{}/api/harness/run", base(port))).send_string("");
     match err {
         Err(ureq::Error::Status(401, _)) => {}
         other => panic!("expected 401, got {other:?}"),
@@ -974,8 +972,8 @@ fn policy_compose_unknown_operator_returns_400() {
 #[test]
 fn policy_compose_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let err = ureq::post(&format!("{}/api/policy/compose", base(port)))
-        .send_json(serde_json::json!({
+    let err =
+        ureq::post(&format!("{}/api/policy/compose", base(port))).send_json(serde_json::json!({
             "operator": "max",
             "score_a": 0.5, "battery_a": 50.0,
             "score_b": 0.5, "battery_b": 50.0
@@ -1016,8 +1014,7 @@ fn drift_reset_clears_detector() {
 #[test]
 fn drift_reset_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let err = ureq::post(&format!("{}/api/drift/reset", base(port)))
-        .send_string("");
+    let err = ureq::post(&format!("{}/api/drift/reset", base(port))).send_string("");
     match err {
         Err(ureq::Error::Status(401, _)) => {}
         other => panic!("expected 401, got {other:?}"),
@@ -1072,8 +1069,7 @@ fn offload_decide_returns_decisions() {
 #[test]
 fn offload_decide_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let err = ureq::post(&format!("{}/api/offload/decide", base(port)))
-        .send_string("");
+    let err = ureq::post(&format!("{}/api/offload/decide", base(port))).send_string("");
     match err {
         Err(ureq::Error::Status(401, _)) => {}
         other => panic!("expected 401, got {other:?}"),
@@ -1112,8 +1108,7 @@ fn energy_harvest_recharges_budget() {
 #[test]
 fn energy_harvest_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let err = ureq::post(&format!("{}/api/energy/harvest", base(port)))
-        .send_string("");
+    let err = ureq::post(&format!("{}/api/energy/harvest", base(port))).send_string("");
     match err {
         Err(ureq::Error::Status(401, _)) => {}
         other => panic!("expected 401, got {other:?}"),
@@ -1289,7 +1284,10 @@ fn taxii_config_persists_to_disk() {
     let persisted = std::fs::read_to_string(&config_path).expect("config persisted to disk");
     let parsed: Config = toml::from_str(&persisted).expect("persisted config parses as TOML");
     assert!(parsed.taxii.enabled);
-    assert_eq!(parsed.taxii.url, "https://taxii.example.test/collections/alpha/objects/");
+    assert_eq!(
+        parsed.taxii.url,
+        "https://taxii.example.test/collections/alpha/objects/"
+    );
     assert_eq!(parsed.taxii.auth_token, "taxii-token");
     assert_eq!(parsed.taxii.poll_interval_secs, 180);
 }
@@ -1380,6 +1378,73 @@ fn alerts_returns_empty_list_initially() {
     assert!(arr.is_empty());
 }
 
+#[test]
+fn alerts_query_supports_limit_and_offset() {
+    let (port, token) = spawn_test_server();
+    for severity in ["elevated", "severe", "critical"] {
+        let resp = ureq::post(&format!("{}/api/alerts/sample", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .send_json(serde_json::json!({ "severity": severity }))
+            .expect("inject sample alert");
+        assert_eq!(resp.status(), 200);
+    }
+
+    let resp = ureq::get(&format!("{}/api/alerts?limit=1&offset=1", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("alerts with pagination");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let arr = body.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["id"].as_u64(), Some(1));
+    assert_eq!(arr[0]["_index"].as_u64(), Some(1));
+    assert_eq!(arr[0]["level"].as_str(), Some("Severe"));
+}
+
+#[test]
+fn alerts_query_without_auth_returns_401() {
+    let (port, _token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/alerts?limit=1", base(port))).call();
+    assert!(resp.is_err());
+    let err = resp.unwrap_err();
+    if let ureq::Error::Status(code, _) = err {
+        assert_eq!(code, 401);
+    } else {
+        panic!("expected HTTP error");
+    }
+}
+
+#[test]
+fn incidents_query_supports_limit_and_offset() {
+    let (port, token) = spawn_test_server();
+    let mut created_ids = Vec::new();
+    for title in ["Incident one", "Incident two", "Incident three"] {
+        let created: serde_json::Value = ureq::post(&format!("{}/api/incidents", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .send_json(serde_json::json!({
+                "title": title,
+                "severity": "High",
+                "summary": format!("{title} summary"),
+            }))
+            .expect("create incident")
+            .into_json()
+            .unwrap();
+        created_ids.push(created["id"].as_u64().unwrap());
+    }
+
+    let resp = ureq::get(&format!("{}/api/incidents?limit=1&offset=1", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("incidents with pagination");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let arr = body.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["id"].as_u64(), Some(created_ids[1]));
+    assert_eq!(arr[0]["title"].as_str(), Some("Incident two"));
+}
+
 // ── GET /api/alerts/count ──────────────────────────────────────
 
 #[test]
@@ -1437,8 +1502,64 @@ fn endpoints_returns_array() {
     let body: serde_json::Value = resp.into_json().unwrap();
     let arr = body.as_array().unwrap();
     assert!(arr.len() >= 10);
-    assert!(arr.iter().any(|entry| entry["path"] == "/api/monitoring/options" && entry["auth"] == true));
-    assert!(arr.iter().any(|entry| entry["path"] == "/api/host/info" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/monitoring/options" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/host/info" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/alerts/{id}" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/threat-intel/status" && entry["auth"] == true));
+}
+
+#[test]
+fn query_string_subroutes_still_hit_exact_handlers() {
+    let (port, token) = spawn_test_server();
+
+    let injected = ureq::post(&format!("{}/api/alerts/sample", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({ "severity": "severe" }))
+        .expect("inject sample alert");
+    assert_eq!(injected.status(), 200);
+
+    let report_resp = ureq::get(&format!(
+        "{}/api/reports/executive-summary?noop=1",
+        base(port)
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("executive summary with query");
+    assert_eq!(report_resp.status(), 200);
+    let report_body: serde_json::Value = report_resp.into_json().unwrap();
+    assert!(report_body.is_object());
+
+    let analysis_resp = ureq::get(&format!("{}/api/alerts/analysis?noop=1", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("alert analysis with query");
+    assert_eq!(analysis_resp.status(), 200);
+    let analysis_body: serde_json::Value = analysis_resp.into_json().unwrap();
+    assert!(analysis_body["total_alerts"].as_u64().unwrap() >= 1);
+
+    let grouped_resp = ureq::get(&format!("{}/api/alerts/grouped?noop=1", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("grouped alerts with query");
+    assert_eq!(grouped_resp.status(), 200);
+    let grouped_body: serde_json::Value = grouped_resp.into_json().unwrap();
+    assert!(grouped_body.as_array().is_some());
+
+    let stats_resp = ureq::get(&format!("{}/api/cases/stats?noop=1", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("case stats with query");
+    assert_eq!(stats_resp.status(), 200);
+    let stats_body: serde_json::Value = stats_resp.into_json().unwrap();
+    assert!(stats_body["total"].as_u64().is_some());
 }
 
 #[test]
@@ -1465,9 +1586,21 @@ fn monitoring_options_returns_grouped_payload() {
     assert!(body["groups"].as_array().unwrap().len() >= 2);
     let first_group = &body["groups"].as_array().unwrap()[0];
     assert!(first_group["label"].is_string());
-    assert!(first_group["options"].as_array().unwrap().iter().all(|option| option["id"].is_string()));
-    assert!(body["summary"]["platform_guidance"].as_array().unwrap().len() >= 1);
-    let auth_option = body["groups"].as_array().unwrap()
+    assert!(first_group["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|option| option["id"].is_string()));
+    assert!(
+        body["summary"]["platform_guidance"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 1
+    );
+    let auth_option = body["groups"]
+        .as_array()
+        .unwrap()
         .iter()
         .flat_map(|group| group["options"].as_array().unwrap().iter())
         .find(|option| option["id"] == "auth_events")
@@ -1480,8 +1613,7 @@ fn monitoring_options_returns_grouped_payload() {
 #[test]
 fn config_save_without_auth_returns_401() {
     let (port, _token) = spawn_test_server();
-    let resp = ureq::post(&format!("{}/api/config/save", base(port)))
-        .send_string("");
+    let resp = ureq::post(&format!("{}/api/config/save", base(port))).send_string("");
     assert!(resp.is_err());
     let err = resp.unwrap_err();
     if let ureq::Error::Status(code, _) = err {
@@ -1812,9 +1944,12 @@ fn monitoring_paths_requires_auth_and_returns_payload() {
 #[test]
 fn update_check_no_updates_available() {
     let (port, _token) = spawn_test_server();
-    let resp = ureq::get(&format!("{}/api/agents/update?current_version=0.15.0&platform=linux", base(port)))
-        .call()
-        .expect("update check");
+    let resp = ureq::get(&format!(
+        "{}/api/agents/update?current_version=0.15.0&platform=linux",
+        base(port)
+    ))
+    .call()
+    .expect("update check");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["update_available"].as_bool().unwrap(), false);
@@ -1835,12 +1970,15 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
 
     let enrolled = ureq::post(&format!("{}/api/agents/enroll", base(port)))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "enrollment_token": enrollment_token,
-            "hostname": "update-agent",
-            "platform": "linux",
-            "version": "0.15.0",
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "enrollment_token": enrollment_token,
+                "hostname": "update-agent",
+                "platform": "linux",
+                "version": "0.15.0",
+            })
+            .to_string(),
+        )
         .expect("enroll agent")
         .into_json::<serde_json::Value>()
         .unwrap();
@@ -1849,30 +1987,42 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "0.16.0",
-            "platform": "linux",
-            "binary_base64": "aGVsbG8=",
-            "release_notes": "security fix",
-            "mandatory": true,
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "0.16.0",
+                "platform": "linux",
+                "binary_base64": "aGVsbG8=",
+                "release_notes": "security fix",
+                "mandatory": true,
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     let deployed = ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id,
-            "version": "0.16.0",
-            "platform": "linux",
-            "rollout_group": "canary",
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id,
+                "version": "0.16.0",
+                "platform": "linux",
+                "rollout_group": "canary",
+            })
+            .to_string(),
+        )
         .expect("assign deployment")
         .into_json::<serde_json::Value>()
         .unwrap();
     assert_eq!(deployed["status"].as_str().unwrap(), "assigned");
-    assert_eq!(deployed["deployment"]["rollout_group"].as_str().unwrap(), "canary");
-    assert_eq!(deployed["deployment"]["allow_downgrade"].as_bool().unwrap(), false);
+    assert_eq!(
+        deployed["deployment"]["rollout_group"].as_str().unwrap(),
+        "canary"
+    );
+    assert_eq!(
+        deployed["deployment"]["allow_downgrade"].as_bool().unwrap(),
+        false
+    );
 
     let heartbeat = ureq::post(&format!("{}/api/agents/{}/heartbeat", base(port), agent_id))
         .set("Content-Type", "application/json")
@@ -1890,18 +2040,31 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
         .into_json::<serde_json::Value>()
         .unwrap();
     assert_eq!(details["health"]["pending_alerts"].as_u64().unwrap(), 2);
-    assert_eq!(details["deployment"]["status"].as_str().unwrap(), "downloading");
-    assert_eq!(details["deployment"]["rollout_group"].as_str().unwrap(), "canary");
+    assert_eq!(
+        details["deployment"]["status"].as_str().unwrap(),
+        "downloading"
+    );
+    assert_eq!(
+        details["deployment"]["rollout_group"].as_str().unwrap(),
+        "canary"
+    );
     assert!(details["deployment"]["acknowledged_at"].is_string());
 
-    let update = ureq::get(&format!("{}/api/agents/update?agent_id={}&current_version=0.15.0", base(port), agent_id))
-        .call()
-        .expect("targeted update check")
-        .into_json::<serde_json::Value>()
-        .unwrap();
+    let update = ureq::get(&format!(
+        "{}/api/agents/update?agent_id={}&current_version=0.15.0",
+        base(port),
+        agent_id
+    ))
+    .call()
+    .expect("targeted update check")
+    .into_json::<serde_json::Value>()
+    .unwrap();
     assert_eq!(update["update_available"].as_bool().unwrap(), true);
     assert_eq!(update["version"].as_str().unwrap(), "0.16.0");
-    assert!(update["download_url"].as_str().unwrap().starts_with("/api/updates/download/"));
+    assert!(update["download_url"]
+        .as_str()
+        .unwrap()
+        .starts_with("/api/updates/download/"));
 }
 
 #[test]
@@ -1984,12 +2147,15 @@ fn event_filters_export_and_agent_details_return_expected_data() {
 
     let enrolled = ureq::post(&format!("{}/api/agents/enroll", base(port)))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "enrollment_token": enrollment_token,
-            "hostname": "detail-agent",
-            "platform": "linux",
-            "version": "0.15.0",
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "enrollment_token": enrollment_token,
+                "hostname": "detail-agent",
+                "platform": "linux",
+                "version": "0.15.0",
+            })
+            .to_string(),
+        )
         .expect("enroll agent")
         .into_json::<serde_json::Value>()
         .unwrap();
@@ -2039,41 +2205,65 @@ fn event_filters_export_and_agent_details_return_expected_data() {
     let triaged = ureq::post(&format!("{}/api/events/2/triage", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "status": "investigating",
-            "assignee": "alice",
-            "tags": ["cpu", "urgent"],
-            "note": "SOC opened an investigation"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "status": "investigating",
+                "assignee": "alice",
+                "tags": ["cpu", "urgent"],
+                "note": "SOC opened an investigation"
+            })
+            .to_string(),
+        )
         .expect("triage event")
         .into_json::<serde_json::Value>()
         .unwrap();
-    assert_eq!(triaged["event"]["triage"]["status"].as_str().unwrap(), "investigating");
-    assert_eq!(triaged["event"]["triage"]["assignee"].as_str().unwrap(), "alice");
+    assert_eq!(
+        triaged["event"]["triage"]["status"].as_str().unwrap(),
+        "investigating"
+    );
+    assert_eq!(
+        triaged["event"]["triage"]["assignee"].as_str().unwrap(),
+        "alice"
+    );
 
-    let filtered = ureq::get(&format!("{}/api/events?agent_id={}&severity=Critical&reason=high_cpu", base(port), agent_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("filtered events")
-        .into_json::<serde_json::Value>()
-        .unwrap();
+    let filtered = ureq::get(&format!(
+        "{}/api/events?agent_id={}&severity=Critical&reason=high_cpu",
+        base(port),
+        agent_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("filtered events")
+    .into_json::<serde_json::Value>()
+    .unwrap();
     assert_eq!(filtered.as_array().unwrap().len(), 1);
 
-    let triage_filtered = ureq::get(&format!("{}/api/events?agent_id={}&triage_status=investigating", base(port), agent_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("triage filtered events")
-        .into_json::<serde_json::Value>()
-        .unwrap();
+    let triage_filtered = ureq::get(&format!(
+        "{}/api/events?agent_id={}&triage_status=investigating",
+        base(port),
+        agent_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("triage filtered events")
+    .into_json::<serde_json::Value>()
+    .unwrap();
     assert_eq!(triage_filtered.as_array().unwrap().len(), 1);
-    assert_eq!(triage_filtered[0]["triage"]["status"].as_str().unwrap(), "investigating");
+    assert_eq!(
+        triage_filtered[0]["triage"]["status"].as_str().unwrap(),
+        "investigating"
+    );
 
-    let csv = ureq::get(&format!("{}/api/events/export?agent_id={}&reason=high_cpu", base(port), agent_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("export csv")
-        .into_string()
-        .unwrap();
+    let csv = ureq::get(&format!(
+        "{}/api/events/export?agent_id={}&reason=high_cpu",
+        base(port),
+        agent_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("export csv")
+    .into_string()
+    .unwrap();
     assert!(csv.contains("id,agent_id,received_at"));
     assert!(csv.contains("triage_status"));
     assert!(csv.contains("high_cpu"));
@@ -2084,9 +2274,15 @@ fn event_filters_export_and_agent_details_return_expected_data() {
         .expect("agent details")
         .into_json::<serde_json::Value>()
         .unwrap();
-    assert_eq!(details["agent"]["hostname"].as_str().unwrap(), "detail-agent");
+    assert_eq!(
+        details["agent"]["hostname"].as_str().unwrap(),
+        "detail-agent"
+    );
     assert_eq!(details["analytics"]["event_count"].as_u64().unwrap(), 2);
-    assert_eq!(details["timeline"][0]["triage"]["status"].as_str().unwrap(), "investigating");
+    assert_eq!(
+        details["timeline"][0]["triage"]["status"].as_str().unwrap(),
+        "investigating"
+    );
     assert!(!details["risk_transitions"].as_array().unwrap().is_empty());
 }
 
@@ -2105,12 +2301,15 @@ fn remote_update_deploy_blocks_downgrades_without_override() {
 
     let enrolled = ureq::post(&format!("{}/api/agents/enroll", base(port)))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "enrollment_token": enrollment_token,
-            "hostname": "stable-agent",
-            "platform": "linux",
-            "version": "0.16.0",
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "enrollment_token": enrollment_token,
+                "hostname": "stable-agent",
+                "platform": "linux",
+                "version": "0.16.0",
+            })
+            .to_string(),
+        )
         .expect("enroll agent")
         .into_json::<serde_json::Value>()
         .unwrap();
@@ -2119,23 +2318,29 @@ fn remote_update_deploy_blocks_downgrades_without_override() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "0.15.5",
-            "platform": "linux",
-            "binary_base64": "aGVsbG8=",
-            "release_notes": "rollback build",
-            "mandatory": false,
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "0.15.5",
+                "platform": "linux",
+                "binary_base64": "aGVsbG8=",
+                "release_notes": "rollback build",
+                "mandatory": false,
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     let err = ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id,
-            "version": "0.15.5",
-            "platform": "linux"
-        }).to_string());
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id,
+                "version": "0.15.5",
+                "platform": "linux"
+            })
+            .to_string(),
+        );
     match err {
         Err(ureq::Error::Status(409, _)) => {}
         other => panic!("expected 409, got {other:?}"),
@@ -2157,12 +2362,15 @@ fn remote_update_deploy_allows_downgrades_when_explicitly_enabled() {
 
     let enrolled = ureq::post(&format!("{}/api/agents/enroll", base(port)))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "enrollment_token": enrollment_token,
-            "hostname": "rollback-agent",
-            "platform": "linux",
-            "version": "0.16.0",
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "enrollment_token": enrollment_token,
+                "hostname": "rollback-agent",
+                "platform": "linux",
+                "version": "0.16.0",
+            })
+            .to_string(),
+        )
         .expect("enroll agent")
         .into_json::<serde_json::Value>()
         .unwrap();
@@ -2171,34 +2379,47 @@ fn remote_update_deploy_allows_downgrades_when_explicitly_enabled() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "0.15.5",
-            "platform": "linux",
-            "binary_base64": "aGVsbG8=",
-            "release_notes": "rollback build",
-            "mandatory": false,
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "0.15.5",
+                "platform": "linux",
+                "binary_base64": "aGVsbG8=",
+                "release_notes": "rollback build",
+                "mandatory": false,
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     let deployed = ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id,
-            "version": "0.15.5",
-            "platform": "linux",
-            "allow_downgrade": true
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id,
+                "version": "0.15.5",
+                "platform": "linux",
+                "allow_downgrade": true
+            })
+            .to_string(),
+        )
         .expect("assign rollback deployment")
         .into_json::<serde_json::Value>()
         .unwrap();
-    assert_eq!(deployed["deployment"]["allow_downgrade"].as_bool().unwrap(), true);
+    assert_eq!(
+        deployed["deployment"]["allow_downgrade"].as_bool().unwrap(),
+        true
+    );
 
-    let update = ureq::get(&format!("{}/api/agents/update?agent_id={}&current_version=0.16.0", base(port), agent_id))
-        .call()
-        .expect("rollback update check")
-        .into_json::<serde_json::Value>()
-        .unwrap();
+    let update = ureq::get(&format!(
+        "{}/api/agents/update?agent_id={}&current_version=0.16.0",
+        base(port),
+        agent_id
+    ))
+    .call()
+    .expect("rollback update check")
+    .into_json::<serde_json::Value>()
+    .unwrap();
     assert_eq!(update["update_available"].as_bool().unwrap(), true);
     assert_eq!(update["version"].as_str().unwrap(), "0.15.5");
 }
@@ -2233,9 +2454,12 @@ fn event_triage_rejects_invalid_status() {
     let err = ureq::post(&format!("{}/api/events/1/triage", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "status": "queued"
-        }).to_string());
+        .send_string(
+            &serde_json::json!({
+                "status": "queued"
+            })
+            .to_string(),
+        );
 
     match err {
         Err(ureq::Error::Status(400, _)) => {}
@@ -2259,7 +2483,12 @@ fn monitoring_paths_include_health_summary() {
 
 // ── Helper: create token + enroll agent + ingest events ────────
 
-fn setup_agent_with_events(port: u16, token: &str, agent_name: &str, count: u32) -> (String, Vec<u64>) {
+fn setup_agent_with_events(
+    port: u16,
+    token: &str,
+    agent_name: &str,
+    count: u32,
+) -> (String, Vec<u64>) {
     // Create enrollment token
     let resp = ureq::post(&format!("{}/api/agents/token", base(port)))
         .set("Authorization", &auth_header(token))
@@ -2316,7 +2545,8 @@ fn setup_agent_with_events(port: u16, token: &str, agent_name: &str, count: u32)
         .call()
         .unwrap();
     let all_events: Vec<serde_json::Value> = resp.into_json().unwrap();
-    let ids: Vec<u64> = all_events.iter()
+    let ids: Vec<u64> = all_events
+        .iter()
         .filter(|e| e["agent_id"].as_str() == Some(&agent_id))
         .filter_map(|e| e["id"].as_u64())
         .collect();
@@ -2353,13 +2583,16 @@ fn case_detail_includes_linked_incidents_and_events() {
     let incident: serde_json::Value = ureq::post(&format!("{}/api/incidents", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "title": "Case linked incident",
-            "severity": "Critical",
-            "event_ids": [event_id],
-            "agent_ids": [agent_id],
-            "summary": "linked incident for case detail"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "title": "Case linked incident",
+                "severity": "Critical",
+                "event_ids": [event_id],
+                "agent_ids": [agent_id],
+                "summary": "linked incident for case detail"
+            })
+            .to_string(),
+        )
         .expect("create incident")
         .into_json()
         .unwrap();
@@ -2368,14 +2601,17 @@ fn case_detail_includes_linked_incidents_and_events() {
     let case: serde_json::Value = ureq::post(&format!("{}/api/cases", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "title": "Case with linked refs",
-            "priority": "high",
-            "description": "link incident and event",
-            "incident_ids": [incident_id],
-            "event_ids": [event_id],
-            "tags": ["linked"]
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "title": "Case with linked refs",
+                "priority": "high",
+                "description": "link incident and event",
+                "incident_ids": [incident_id],
+                "event_ids": [event_id],
+                "tags": ["linked"]
+            })
+            .to_string(),
+        )
         .expect("create case")
         .into_json()
         .unwrap();
@@ -2391,7 +2627,10 @@ fn case_detail_includes_linked_incidents_and_events() {
     assert_eq!(detail["id"].as_u64().unwrap(), case_id);
     assert_eq!(detail["linked_incidents"].as_array().unwrap().len(), 1);
     assert_eq!(detail["linked_events"].as_array().unwrap().len(), 1);
-    assert_eq!(detail["linked_incidents"][0]["id"].as_u64().unwrap(), incident_id);
+    assert_eq!(
+        detail["linked_incidents"][0]["id"].as_u64().unwrap(),
+        incident_id
+    );
     assert_eq!(detail["linked_events"][0]["id"].as_u64().unwrap(), event_id);
 }
 
@@ -2401,13 +2640,15 @@ fn timeline_endpoints_support_query_string_routing() {
     let (agent_id, event_ids) = setup_agent_with_events(port, &token, "timeline-host", 2);
     assert_eq!(event_ids.len(), 2);
 
-    let host_timeline: serde_json::Value =
-        ureq::get(&format!("{}/api/timeline/host?hostname=timeline-host", base(port)))
-            .set("Authorization", &auth_header(&token))
-            .call()
-            .expect("host timeline")
-            .into_json()
-            .unwrap();
+    let host_timeline: serde_json::Value = ureq::get(&format!(
+        "{}/api/timeline/host?hostname=timeline-host",
+        base(port)
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("host timeline")
+    .into_json()
+    .unwrap();
     assert_eq!(host_timeline["host"].as_str().unwrap(), "timeline-host");
     assert_eq!(host_timeline["count"].as_u64().unwrap(), 2);
 
@@ -2433,13 +2674,16 @@ fn workbench_overview_surfaces_queue_cases_incidents_and_ready_actions() {
     let case: serde_json::Value = ureq::post(&format!("{}/api/cases", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "title": "Workbench case",
-            "priority": "critical",
-            "description": "created for overview",
-            "event_ids": [event_ids[0]],
-            "tags": ["overview"]
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "title": "Workbench case",
+                "priority": "critical",
+                "description": "created for overview",
+                "event_ids": [event_ids[0]],
+                "tags": ["overview"]
+            })
+            .to_string(),
+        )
         .expect("create workbench case")
         .into_json()
         .unwrap();
@@ -2448,13 +2692,16 @@ fn workbench_overview_surfaces_queue_cases_incidents_and_ready_actions() {
     let incident: serde_json::Value = ureq::post(&format!("{}/api/incidents", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "title": "Workbench incident",
-            "severity": "Critical",
-            "event_ids": [event_ids[0]],
-            "agent_ids": [agent_id],
-            "summary": "created for workbench overview"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "title": "Workbench incident",
+                "severity": "Critical",
+                "event_ids": [event_ids[0]],
+                "agent_ids": [agent_id],
+                "summary": "created for workbench overview"
+            })
+            .to_string(),
+        )
         .expect("create workbench incident")
         .into_json()
         .unwrap();
@@ -2497,7 +2744,10 @@ fn workbench_overview_surfaces_queue_cases_incidents_and_ready_actions() {
     assert!(overview["queue"]["items"][0]["age_secs"].is_u64());
     assert_eq!(overview["cases"]["total"].as_u64().unwrap(), 1);
     assert_eq!(overview["incidents"]["total"].as_u64().unwrap(), 1);
-    assert_eq!(overview["response"]["ready_to_execute"].as_u64().unwrap(), 1);
+    assert_eq!(
+        overview["response"]["ready_to_execute"].as_u64().unwrap(),
+        1
+    );
     assert!(!overview["urgent_items"].as_array().unwrap().is_empty());
 }
 
@@ -2510,24 +2760,30 @@ fn manager_overview_tracks_fleet_queue_and_deployment_health() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "9.9.9",
-            "platform": "linux",
-            "binary_base64": "aGVsbG8=",
-            "release_notes": "manager overview release",
-            "mandatory": true
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "9.9.9",
+                "platform": "linux",
+                "binary_base64": "aGVsbG8=",
+                "release_notes": "manager overview release",
+                "mandatory": true
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id,
-            "version": "9.9.9",
-            "platform": "linux",
-            "rollout_group": "canary"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id,
+                "version": "9.9.9",
+                "platform": "linux",
+                "rollout_group": "canary"
+            })
+            .to_string(),
+        )
         .expect("deploy release");
 
     let overview: serde_json::Value = ureq::get(&format!("{}/api/manager/overview", base(port)))
@@ -2540,7 +2796,12 @@ fn manager_overview_tracks_fleet_queue_and_deployment_health() {
     assert_eq!(overview["fleet"]["total_agents"].as_u64().unwrap(), 1);
     assert_eq!(overview["fleet"]["online"].as_u64().unwrap(), 1);
     assert!(overview["queue"]["pending"].as_u64().unwrap() >= 1);
-    assert!(overview["deployments"]["published_releases"].as_u64().unwrap() >= 1);
+    assert!(
+        overview["deployments"]["published_releases"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
     assert!(overview["deployments"]["pending"].as_u64().unwrap() >= 1);
     assert!(overview["compliance"]["score"].is_number());
 }
@@ -2554,24 +2815,30 @@ fn agent_activity_snapshot_includes_deployment_and_event_analytics() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "0.24.0",
-            "platform": "linux",
-            "binary_base64": "aGVsbG8=",
-            "release_notes": "activity release",
-            "mandatory": false
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "0.24.0",
+                "platform": "linux",
+                "binary_base64": "aGVsbG8=",
+                "release_notes": "activity release",
+                "mandatory": false
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id,
-            "version": "0.24.0",
-            "platform": "linux",
-            "rollout_group": "ring-1"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id,
+                "version": "0.24.0",
+                "platform": "linux",
+                "rollout_group": "ring-1"
+            })
+            .to_string(),
+        )
         .expect("deploy release");
 
     ureq::post(&format!("{}/api/agents/{}/heartbeat", base(port), agent_id))
@@ -2579,17 +2846,24 @@ fn agent_activity_snapshot_includes_deployment_and_event_analytics() {
         .send_string(r#"{"version":"0.23.0","health":{"pending_alerts":3,"telemetry_queue_depth":1,"update_state":"downloading","update_target_version":"0.24.0"}}"#)
         .expect("heartbeat");
 
-    let activity: serde_json::Value = ureq::get(&format!("{}/api/agents/{}/activity", base(port), agent_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("agent activity")
-        .into_json()
-        .unwrap();
+    let activity: serde_json::Value =
+        ureq::get(&format!("{}/api/agents/{}/activity", base(port), agent_id))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("agent activity")
+            .into_json()
+            .unwrap();
 
     assert_eq!(activity["agent"]["id"].as_str().unwrap(), agent_id);
     assert_eq!(activity["computed_status"].as_str().unwrap(), "online");
-    assert_eq!(activity["deployment"]["version"].as_str().unwrap(), "0.24.0");
-    assert_eq!(activity["deployment"]["rollout_group"].as_str().unwrap(), "ring-1");
+    assert_eq!(
+        activity["deployment"]["version"].as_str().unwrap(),
+        "0.24.0"
+    );
+    assert_eq!(
+        activity["deployment"]["rollout_group"].as_str().unwrap(),
+        "ring-1"
+    );
     assert_eq!(activity["health"]["pending_alerts"].as_u64().unwrap(), 3);
     assert!(activity["analytics"]["event_count"].as_u64().unwrap() >= 2);
     assert!(activity["timeline"].as_array().unwrap().len() >= 2);
@@ -2603,24 +2877,30 @@ fn agents_summary_includes_freshness_versions_and_rollout_fields() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "1.2.3",
-            "platform": "linux",
-            "binary_base64": "aGVsbG8=",
-            "release_notes": "summary release",
-            "mandatory": false
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "1.2.3",
+                "platform": "linux",
+                "binary_base64": "aGVsbG8=",
+                "release_notes": "summary release",
+                "mandatory": false
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id,
-            "version": "1.2.3",
-            "platform": "linux",
-            "rollout_group": "canary"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id,
+                "version": "1.2.3",
+                "platform": "linux",
+                "rollout_group": "canary"
+            })
+            .to_string(),
+        )
         .expect("deploy release");
 
     let agents: serde_json::Value = ureq::get(&format!("{}/api/agents", base(port)))
@@ -2658,13 +2938,16 @@ fn analyst_flow_links_queue_case_incident_and_response_actions() {
     let case: serde_json::Value = ureq::post(&format!("{}/api/cases", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "title": "Analyst flow case",
-            "priority": "high",
-            "description": "created from queue",
-            "event_ids": [event_id],
-            "tags": ["analyst-flow"]
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "title": "Analyst flow case",
+                "priority": "high",
+                "description": "created from queue",
+                "event_ids": [event_id],
+                "tags": ["analyst-flow"]
+            })
+            .to_string(),
+        )
         .expect("create case")
         .into_json()
         .unwrap();
@@ -2673,13 +2956,16 @@ fn analyst_flow_links_queue_case_incident_and_response_actions() {
     let incident: serde_json::Value = ureq::post(&format!("{}/api/incidents", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "title": "Analyst flow incident",
-            "severity": "Critical",
-            "event_ids": [event_id],
-            "agent_ids": [agent_id],
-            "summary": "escalated from analyst flow"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "title": "Analyst flow incident",
+                "severity": "Critical",
+                "event_ids": [event_id],
+                "agent_ids": [agent_id],
+                "summary": "escalated from analyst flow"
+            })
+            .to_string(),
+        )
         .expect("create incident")
         .into_json()
         .unwrap();
@@ -2742,7 +3028,10 @@ fn analyst_flow_links_queue_case_incident_and_response_actions() {
         .expect("response requests")
         .into_json()
         .unwrap();
-    assert_eq!(requests["requests"][0]["status"].as_str().unwrap(), "Executed");
+    assert_eq!(
+        requests["requests"][0]["status"].as_str().unwrap(),
+        "Executed"
+    );
 }
 
 // ── POST /api/events/bulk-triage ───────────────────────────────
@@ -2806,13 +3095,16 @@ fn updates_releases_lists_published_releases() {
         ureq::post(&format!("{}/api/updates/publish", base(port)))
             .set("Authorization", &auth_header(&token))
             .set("Content-Type", "application/json")
-            .send_string(&serde_json::json!({
-                "version": version,
-                "platform": platform,
-                "binary_base64": "aGVsbG8=",
-                "release_notes": format!("release {version}"),
-                "mandatory": false
-            }).to_string())
+            .send_string(
+                &serde_json::json!({
+                    "version": version,
+                    "platform": platform,
+                    "binary_base64": "aGVsbG8=",
+                    "release_notes": format!("release {version}"),
+                    "mandatory": false
+                })
+                .to_string(),
+            )
             .expect("publish release");
     }
 
@@ -2844,21 +3136,27 @@ fn cancel_deployment_works() {
     ureq::post(&format!("{}/api/updates/publish", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "version": "1.0.0", "platform": "linux",
-            "sha256": "abc123", "url": "http://example.com/v1",
-            "release_notes": "test release"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "version": "1.0.0", "platform": "linux",
+                "sha256": "abc123", "url": "http://example.com/v1",
+                "release_notes": "test release"
+            })
+            .to_string(),
+        )
         .expect("publish release");
 
     // Deploy
     ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id, "version": "1.0.0", "platform": "linux",
-            "rollout_group": "direct"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id, "version": "1.0.0", "platform": "linux",
+                "rollout_group": "direct"
+            })
+            .to_string(),
+        )
         .expect("deploy update");
 
     // Cancel
@@ -2897,11 +3195,14 @@ fn rollback_deployment_works() {
         ureq::post(&format!("{}/api/updates/publish", base(port)))
             .set("Authorization", &auth_header(&token))
             .set("Content-Type", "application/json")
-            .send_string(&serde_json::json!({
-                "version": v, "platform": "linux",
-                "sha256": "abc123", "url": "http://example.com/v",
-                "release_notes": format!("v{v}")
-            }).to_string())
+            .send_string(
+                &serde_json::json!({
+                    "version": v, "platform": "linux",
+                    "sha256": "abc123", "url": "http://example.com/v",
+                    "release_notes": format!("v{v}")
+                })
+                .to_string(),
+            )
             .expect("publish release");
     }
 
@@ -2909,25 +3210,34 @@ fn rollback_deployment_works() {
     ureq::post(&format!("{}/api/updates/deploy", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id, "version": "2.0.0", "platform": "linux",
-            "rollout_group": "direct"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id, "version": "2.0.0", "platform": "linux",
+                "rollout_group": "direct"
+            })
+            .to_string(),
+        )
         .expect("deploy v2");
 
     // Rollback to v1
     let resp = ureq::post(&format!("{}/api/updates/rollback", base(port)))
         .set("Authorization", &auth_header(&token))
         .set("Content-Type", "application/json")
-        .send_string(&serde_json::json!({
-            "agent_id": agent_id, "target_version": "1.0.0"
-        }).to_string())
+        .send_string(
+            &serde_json::json!({
+                "agent_id": agent_id, "target_version": "1.0.0"
+            })
+            .to_string(),
+        )
         .expect("rollback");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["status"].as_str().unwrap(), "rollback_assigned");
     assert_eq!(body["deployment"]["version"].as_str().unwrap(), "1.0.0");
-    assert_eq!(body["deployment"]["allow_downgrade"].as_bool().unwrap(), true);
+    assert_eq!(
+        body["deployment"]["allow_downgrade"].as_bool().unwrap(),
+        true
+    );
 }
 
 // ── Agent Monitoring Scope ─────────────────────────────────────
@@ -3069,10 +3379,12 @@ fn auth_rotate_generates_new_token() {
     let err = ureq::get(&format!("{}/api/auth/check", base(port)))
         .set("Authorization", &auth_header(&token))
         .call();
-    assert!(err.is_err() || {
-        let resp = err.unwrap();
-        resp.status() == 401
-    });
+    assert!(
+        err.is_err() || {
+            let resp = err.unwrap();
+            resp.status() == 401
+        }
+    );
 
     // New token works
     let resp = ureq::get(&format!("{}/api/auth/check", base(port)))
@@ -3179,11 +3491,30 @@ fn response_request_approval_execute_flow_works() {
     assert_eq!(submitted.status(), 200);
     let submitted_body: serde_json::Value = submitted.into_json().unwrap();
     assert_eq!(submitted_body["status"].as_str().unwrap(), "submitted");
-    assert_eq!(submitted_body["request"]["tier"].as_str().unwrap(), "SingleApproval");
-    assert_eq!(submitted_body["request"]["status"].as_str().unwrap(), "Pending");
-    assert_eq!(submitted_body["request"]["target_hostname"].as_str().unwrap(), "workstation-7");
-    assert_eq!(submitted_body["request"]["approval_count"].as_u64().unwrap(), 0);
-    let request_id = submitted_body["request"]["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        submitted_body["request"]["tier"].as_str().unwrap(),
+        "SingleApproval"
+    );
+    assert_eq!(
+        submitted_body["request"]["status"].as_str().unwrap(),
+        "Pending"
+    );
+    assert_eq!(
+        submitted_body["request"]["target_hostname"]
+            .as_str()
+            .unwrap(),
+        "workstation-7"
+    );
+    assert_eq!(
+        submitted_body["request"]["approval_count"]
+            .as_u64()
+            .unwrap(),
+        0
+    );
+    let request_id = submitted_body["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     let listed = ureq::get(&format!("{}/api/response/requests", base(port)))
         .set("Authorization", &auth_header(&token))
@@ -3192,7 +3523,12 @@ fn response_request_approval_execute_flow_works() {
     assert_eq!(listed.status(), 200);
     let listed_body: serde_json::Value = listed.into_json().unwrap();
     assert_eq!(listed_body["count"].as_u64().unwrap(), 1);
-    assert_eq!(listed_body["requests"][0]["blast_radius"]["risk_level"].as_str().unwrap(), "medium");
+    assert_eq!(
+        listed_body["requests"][0]["blast_radius"]["risk_level"]
+            .as_str()
+            .unwrap(),
+        "medium"
+    );
 
     let approved = ureq::post(&format!("{}/api/response/approve", base(port)))
         .set("Authorization", &auth_header(&token))
@@ -3229,7 +3565,10 @@ fn response_request_approval_execute_flow_works() {
         .call()
         .expect("list response requests after execute");
     let listed_after_body: serde_json::Value = listed_after.into_json().unwrap();
-    assert_eq!(listed_after_body["requests"][0]["status"].as_str().unwrap(), "Executed");
+    assert_eq!(
+        listed_after_body["requests"][0]["status"].as_str().unwrap(),
+        "Executed"
+    );
 }
 
 #[test]
@@ -3292,32 +3631,35 @@ fn enterprise_hunts_support_manual_runs_and_scheduler_history() {
         .unwrap();
     let hunt_id = created["hunt"]["id"].as_str().unwrap().to_string();
 
-    let manual_run: serde_json::Value = ureq::post(&format!("{}/api/hunts/{}/run", base(port), hunt_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("run hunt")
-        .into_json()
-        .unwrap();
+    let manual_run: serde_json::Value =
+        ureq::post(&format!("{}/api/hunts/{}/run", base(port), hunt_id))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("run hunt")
+            .into_json()
+            .unwrap();
     assert_eq!(manual_run["status"].as_str().unwrap(), "completed");
     assert!(manual_run["run"]["threshold_exceeded"].as_bool().unwrap());
     assert!(manual_run["run"]["match_count"].as_u64().unwrap() >= 2);
 
-    let initial_history: serde_json::Value = ureq::get(&format!("{}/api/hunts/{}/history", base(port), hunt_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("hunt history")
-        .into_json()
-        .unwrap();
+    let initial_history: serde_json::Value =
+        ureq::get(&format!("{}/api/hunts/{}/history", base(port), hunt_id))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("hunt history")
+            .into_json()
+            .unwrap();
     assert_eq!(initial_history["count"].as_u64().unwrap(), 1);
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     let scheduled_history = loop {
-        let polled: serde_json::Value = ureq::get(&format!("{}/api/hunts/{}/history", base(port), hunt_id))
-            .set("Authorization", &auth_header(&token))
-            .call()
-            .expect("poll hunt history")
-            .into_json()
-            .unwrap();
+        let polled: serde_json::Value =
+            ureq::get(&format!("{}/api/hunts/{}/history", base(port), hunt_id))
+                .set("Authorization", &auth_header(&token))
+                .call()
+                .expect("poll hunt history")
+                .into_json()
+                .unwrap();
         if polled["count"].as_u64().unwrap() >= 2 {
             break polled;
         }
@@ -3328,16 +3670,24 @@ fn enterprise_hunts_support_manual_runs_and_scheduler_history() {
     };
     assert!(scheduled_history["count"].as_u64().unwrap() >= 2);
 
-    let diagnostics: serde_json::Value = ureq::get(&format!("{}/api/support/diagnostics", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("support diagnostics")
-        .into_json()
-        .unwrap();
-    assert!(diagnostics["bundle"]["operations"]["metrics"]["hunt_runs_total"].as_u64().unwrap() >= 2);
-    assert!(diagnostics["bundle"]["change_control"].as_array().unwrap().iter().any(|entry| {
-        entry["category"].as_str() == Some("hunt")
-    }));
+    let diagnostics: serde_json::Value =
+        ureq::get(&format!("{}/api/support/diagnostics", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("support diagnostics")
+            .into_json()
+            .unwrap();
+    assert!(
+        diagnostics["bundle"]["operations"]["metrics"]["hunt_runs_total"]
+            .as_u64()
+            .unwrap()
+            >= 2
+    );
+    assert!(diagnostics["bundle"]["change_control"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| { entry["category"].as_str() == Some("hunt") }));
 }
 
 #[test]
@@ -3368,27 +3718,38 @@ fn enterprise_content_rules_suppressions_and_coverage_work() {
         .expect("create content rule")
         .into_json()
         .unwrap();
-    let rule_id = created["rule"]["metadata"]["id"].as_str().unwrap().to_string();
+    let rule_id = created["rule"]["metadata"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
-    let tested: serde_json::Value = ureq::post(&format!("{}/api/content/rules/{}/test", base(port), rule_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("test rule")
-        .into_json()
-        .unwrap();
+    let tested: serde_json::Value = ureq::post(&format!(
+        "{}/api/content/rules/{}/test",
+        base(port),
+        rule_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("test rule")
+    .into_json()
+    .unwrap();
     assert_eq!(tested["status"].as_str().unwrap(), "tested");
     assert!(tested["result"]["match_count"].as_u64().unwrap() >= 2);
     assert_eq!(tested["result"]["suppressed_count"].as_u64().unwrap(), 0);
 
-    let promoted: serde_json::Value = ureq::post(&format!("{}/api/content/rules/{}/promote", base(port), rule_id))
-        .set("Authorization", &auth_header(&token))
-        .send_json(serde_json::json!({
-            "target_status": "canary",
-            "reason": "integration rollout"
-        }))
-        .expect("promote rule")
-        .into_json()
-        .unwrap();
+    let promoted: serde_json::Value = ureq::post(&format!(
+        "{}/api/content/rules/{}/promote",
+        base(port),
+        rule_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .send_json(serde_json::json!({
+        "target_status": "canary",
+        "reason": "integration rollout"
+    }))
+    .expect("promote rule")
+    .into_json()
+    .unwrap();
     assert_eq!(promoted["status"].as_str().unwrap(), "promoted");
     assert_eq!(promoted["rule"]["lifecycle"].as_str().unwrap(), "canary");
 
@@ -3406,21 +3767,29 @@ fn enterprise_content_rules_suppressions_and_coverage_work() {
         .unwrap();
     assert_eq!(suppression["status"].as_str().unwrap(), "saved");
 
-    let retested: serde_json::Value = ureq::post(&format!("{}/api/content/rules/{}/test", base(port), rule_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("retest rule")
-        .into_json()
-        .unwrap();
+    let retested: serde_json::Value = ureq::post(&format!(
+        "{}/api/content/rules/{}/test",
+        base(port),
+        rule_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("retest rule")
+    .into_json()
+    .unwrap();
     assert_eq!(retested["result"]["match_count"].as_u64().unwrap(), 0);
     assert!(retested["result"]["suppressed_count"].as_u64().unwrap() >= 2);
 
-    let rolled_back: serde_json::Value = ureq::post(&format!("{}/api/content/rules/{}/rollback", base(port), rule_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("rollback rule")
-        .into_json()
-        .unwrap();
+    let rolled_back: serde_json::Value = ureq::post(&format!(
+        "{}/api/content/rules/{}/rollback",
+        base(port),
+        rule_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("rollback rule")
+    .into_json()
+    .unwrap();
     assert_eq!(rolled_back["status"].as_str().unwrap(), "rolled_back");
 
     let coverage: serde_json::Value = ureq::get(&format!("{}/api/coverage/mitre", base(port)))
@@ -3429,9 +3798,11 @@ fn enterprise_content_rules_suppressions_and_coverage_work() {
         .expect("mitre coverage")
         .into_json()
         .unwrap();
-    assert!(coverage["techniques"].as_array().unwrap().iter().any(|technique| {
-        technique["technique_id"].as_str() == Some("T1110")
-    }));
+    assert!(coverage["techniques"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|technique| { technique["technique_id"].as_str() == Some("T1110") }));
 }
 
 #[test]
@@ -3498,41 +3869,58 @@ fn enterprise_entities_storyline_and_incident_report_include_context() {
         .unwrap();
     assert_eq!(synced["status"].as_str().unwrap(), "synced");
 
-    let entity: serde_json::Value = ureq::get(&format!("{}/api/entities/host/story-host", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("entity profile")
-        .into_json()
-        .unwrap();
+    let entity: serde_json::Value =
+        ureq::get(&format!("{}/api/entities/host/story-host", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("entity profile")
+            .into_json()
+            .unwrap();
     assert_eq!(entity["kind"].as_str().unwrap(), "host");
     assert!(entity["related_event_count"].as_u64().unwrap() >= 2);
     assert!(entity["ticket_syncs"].as_array().unwrap().len() >= 1);
 
-    let timeline: serde_json::Value = ureq::get(&format!("{}/api/entities/host/story-host/timeline", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("entity timeline")
-        .into_json()
-        .unwrap();
+    let timeline: serde_json::Value = ureq::get(&format!(
+        "{}/api/entities/host/story-host/timeline",
+        base(port)
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("entity timeline")
+    .into_json()
+    .unwrap();
     assert!(timeline["count"].as_u64().unwrap() >= 2);
 
-    let storyline: serde_json::Value = ureq::get(&format!("{}/api/incidents/{}/storyline", base(port), incident_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("incident storyline")
-        .into_json()
-        .unwrap();
+    let storyline: serde_json::Value = ureq::get(&format!(
+        "{}/api/incidents/{}/storyline",
+        base(port),
+        incident_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("incident storyline")
+    .into_json()
+    .unwrap();
     assert!(storyline["linked_cases"].as_array().unwrap().len() >= 1);
     assert!(storyline["response_actions"].as_array().unwrap().len() >= 1);
     assert!(storyline["ticket_syncs"].as_array().unwrap().len() >= 1);
-    assert!(storyline["evidence_package"]["case_count"].as_u64().unwrap() >= 1);
+    assert!(
+        storyline["evidence_package"]["case_count"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
 
-    let report: serde_json::Value = ureq::get(&format!("{}/api/incidents/{}/report", base(port), incident_id))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("incident report")
-        .into_json()
-        .unwrap();
+    let report: serde_json::Value = ureq::get(&format!(
+        "{}/api/incidents/{}/report",
+        base(port),
+        incident_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .call()
+    .expect("incident report")
+    .into_json()
+    .unwrap();
     assert!(report.get("storyline").is_some());
     assert!(report.get("evidence_package").is_some());
     assert!(report["linked_cases"].as_array().unwrap().len() >= 1);
@@ -3590,12 +3978,16 @@ fn enterprise_governance_and_support_endpoints_enforce_roles() {
         .unwrap();
     let rule_id = rule["rule"]["metadata"]["id"].as_str().unwrap();
 
-    match ureq::post(&format!("{}/api/content/rules/{}/promote", base(port), rule_id))
-        .set("Authorization", &auth_header(&analyst_token))
-        .send_json(serde_json::json!({
-            "target_status": "active",
-            "reason": "analyst should be blocked"
-        })) {
+    match ureq::post(&format!(
+        "{}/api/content/rules/{}/promote",
+        base(port),
+        rule_id
+    ))
+    .set("Authorization", &auth_header(&analyst_token))
+    .send_json(serde_json::json!({
+        "target_status": "active",
+        "reason": "analyst should be blocked"
+    })) {
         Err(ureq::Error::Status(403, _)) => {}
         other => panic!("expected 403 for analyst promotion, got {other:?}"),
     }
@@ -3643,22 +4035,33 @@ fn enterprise_governance_and_support_endpoints_enforce_roles() {
         .unwrap();
     assert!(audit["change_control"].as_array().unwrap().len() >= 2);
 
-    let diagnostics: serde_json::Value = ureq::get(&format!("{}/api/support/diagnostics", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("support diagnostics")
-        .into_json()
-        .unwrap();
+    let diagnostics: serde_json::Value =
+        ureq::get(&format!("{}/api/support/diagnostics", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("support diagnostics")
+            .into_json()
+            .unwrap();
     assert!(diagnostics["digest"].as_str().unwrap().len() >= 32);
-    assert!(diagnostics["bundle"]["auth"]["idp_providers"].as_array().unwrap().len() >= 1);
+    assert!(
+        diagnostics["bundle"]["auth"]["idp_providers"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 1
+    );
 
-    let dependencies: serde_json::Value = ureq::get(&format!("{}/api/system/health/dependencies", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .call()
-        .expect("dependency health")
-        .into_json()
-        .unwrap();
-    assert_eq!(dependencies["identity"]["status"].as_str().unwrap(), "configured");
+    let dependencies: serde_json::Value =
+        ureq::get(&format!("{}/api/system/health/dependencies", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .expect("dependency health")
+            .into_json()
+            .unwrap();
+    assert_eq!(
+        dependencies["identity"]["status"].as_str().unwrap(),
+        "configured"
+    );
     assert!(dependencies["ha_mode"]["leader"].as_bool().unwrap());
 }
 
@@ -3757,7 +4160,9 @@ fn chaos_expired_token_rejected() {
             .call();
         match result {
             Ok(resp) => assert_eq!(resp.status(), 401, "Expected 401 for {}", ep),
-            Err(ureq::Error::Status(status, _)) => assert_eq!(status, 401, "Expected 401 for {}", ep),
+            Err(ureq::Error::Status(status, _)) => {
+                assert_eq!(status, 401, "Expected 401 for {}", ep)
+            }
             Err(e) => panic!("Unexpected error for {}: {}", ep, e),
         }
     }
@@ -3776,8 +4181,100 @@ fn chaos_path_traversal_rejected() {
     for path in &traversal_attempts {
         let resp = ureq::get(&format!("{}{}", base(port), path)).call();
         match resp {
-            Ok(r) => assert_ne!(r.status(), 200, "Path traversal should not succeed: {}", path),
+            Ok(r) => assert_ne!(
+                r.status(),
+                200,
+                "Path traversal should not succeed: {}",
+                path
+            ),
             Err(_) => {} // 404 or error is expected
         }
     }
+}
+
+#[test]
+fn openapi_endpoint_returns_live_json_spec() {
+    let (port, _) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/openapi.json", base(port)))
+        .call()
+        .expect("openapi");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().expect("openapi json");
+    assert_eq!(body["openapi"].as_str(), Some("3.0.3"));
+    assert!(
+        body.get("spec_format").is_none(),
+        "legacy YAML wrapper should be gone"
+    );
+    let paths = body["paths"].as_object().expect("paths object");
+    assert!(paths.contains_key("/api/agents"));
+    assert!(paths.contains_key("/api/alerts/{id}"));
+    assert!(paths.contains_key("/api/config/current"));
+    assert!(paths.contains_key("/api/openapi.json"));
+    assert!(paths.contains_key("/api/threat-intel/status"));
+    assert!(paths.contains_key("/api/threat-intel/ioc"));
+
+    let metrics = &paths["/api/metrics"]["get"]["responses"]["200"]["content"];
+    assert!(metrics.get("text/plain").is_some());
+
+    let events_export = &paths["/api/events/export"]["get"]["responses"]["200"]["content"];
+    assert!(events_export.get("text/csv").is_some());
+
+    let report_html = &paths["/api/reports/{id}/html"]["get"]["responses"]["200"]["content"];
+    assert!(report_html.get("text/html").is_some());
+
+    assert!(paths["/api/auth/rotate"]["post"]["requestBody"].is_null());
+    assert_eq!(
+        paths["/api/response/execute"]["post"]["requestBody"]["required"].as_bool(),
+        Some(false)
+    );
+
+    let alert_params = paths["/api/alerts"]["get"]["parameters"]
+        .as_array()
+        .expect("alert params");
+    assert!(alert_params.iter().any(|param| {
+        param["in"].as_str() == Some("query") && param["name"].as_str() == Some("limit")
+    }));
+    assert!(alert_params.iter().any(|param| {
+        param["in"].as_str() == Some("query") && param["name"].as_str() == Some("offset")
+    }));
+
+    let incident_params = paths["/api/incidents"]["get"]["parameters"]
+        .as_array()
+        .expect("incident params");
+    for name in ["status", "severity", "limit", "offset"] {
+        assert!(incident_params
+            .iter()
+            .any(|param| param["name"].as_str() == Some(name)));
+    }
+
+    let report_html_params = paths["/api/reports/{id}/html"]["get"]["parameters"]
+        .as_array()
+        .expect("report html path params");
+    assert!(report_html_params.iter().any(|param| {
+        param["in"].as_str() == Some("path") && param["name"].as_str() == Some("id")
+    }));
+
+    for path in [
+        "/api/cases",
+        "/api/hunts",
+        "/api/content/rules",
+        "/api/content/packs",
+        "/api/suppressions",
+    ] {
+        assert!(paths[path]["post"]["responses"]["201"].is_object());
+        assert!(paths[path]["post"]["responses"]["200"].is_null());
+    }
+}
+
+#[test]
+fn metrics_endpoint_returns_prometheus_text() {
+    let (port, _) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/metrics", base(port)))
+        .call()
+        .expect("metrics");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_string().expect("metrics text");
+    assert!(body.contains("wardex_up 1"));
+    assert!(body.contains("wardex_requests_total"));
+    assert!(body.contains("wardex_agents_total"));
 }

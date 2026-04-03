@@ -9,20 +9,25 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use crate::actions::DeviceController;
 use crate::auto_update::UpdateManager;
 use crate::checkpoint::CheckpointStore;
-use crate::compliance::{ComplianceManager, CausalGraph};
-use crate::collector::{AlertRecord, CollectorState, FileIntegrityMonitor, HostInfo, HostPlatform, detect_platform};
+use crate::collector::{
+    detect_platform, AlertRecord, CollectorState, FileIntegrityMonitor, HostInfo, HostPlatform,
+};
+use crate::compliance::{CausalGraph, ComplianceManager};
 use crate::config::Config;
 use crate::correlation;
-use crate::detector::{AdaptationMode, AnomalyDetector, CompoundThreatDetector, DriftDetector, EntropyDetector, VelocityDetector};
-use crate::digital_twin::DigitalTwinEngine;
-use crate::edge_cloud::{PlatformCapabilities, PatchManager};
-use crate::enforcement::EnforcementEngine;
-use crate::enterprise::{
-    build_content_rules_view, build_entity_profile, build_entity_timeline, build_incident_storyline,
-    build_mitre_coverage, ContentLifecycle, EnterpriseStore,
+use crate::detector::{
+    AdaptationMode, AnomalyDetector, CompoundThreatDetector, DriftDetector, EntropyDetector,
+    VelocityDetector,
 };
+use crate::digital_twin::DigitalTwinEngine;
+use crate::edge_cloud::{PatchManager, PlatformCapabilities};
 use crate::energy::EnergyBudget;
+use crate::enforcement::EnforcementEngine;
 use crate::enrollment::{AgentHealth, AgentIdentity, AgentRegistry};
+use crate::enterprise::{
+    build_content_rules_view, build_entity_profile, build_entity_timeline,
+    build_incident_storyline, build_mitre_coverage, ContentLifecycle, EnterpriseStore,
+};
 use crate::event_forward::{EventAnalytics, EventStore};
 use crate::fingerprint::DeviceFingerprint;
 use crate::incident::IncidentStore;
@@ -44,14 +49,18 @@ use crate::threat_intel::{DeceptionEngine, ThreatIntelStore};
 use crate::tls::ListenerMode;
 use crate::wasm_engine::PolicyVm;
 
-use crate::analyst::{AlertQueue, ApprovalDecision as RemediationDecision, ApprovalLog, CaseStore, CasePriority, CaseStatus};
+use crate::analyst::{
+    AlertQueue, ApprovalDecision as RemediationDecision, ApprovalLog, CasePriority, CaseStatus,
+    CaseStore,
+};
 use crate::feature_flags::FeatureFlagRegistry;
 use crate::ocsf::{self, DeadLetterQueue, SchemaVersion};
 use crate::process_tree::ProcessTree;
 use crate::rbac::{RbacStore, Role, User};
 use crate::response::{
-    ActionTier, ApprovalDecision as ResponseApprovalDecision, ApprovalRecord as ResponseApprovalRecord,
-    ApprovalStatus, ResponseAction, ResponseOrchestrator, ResponseRequest, ResponseTarget,
+    ActionTier, ApprovalDecision as ResponseApprovalDecision,
+    ApprovalRecord as ResponseApprovalRecord, ApprovalStatus, ResponseAction, ResponseOrchestrator,
+    ResponseRequest, ResponseTarget,
 };
 use crate::sigma::SigmaEngine;
 use crate::spool::EncryptedSpool;
@@ -86,14 +95,16 @@ impl RateLimiter {
         // Periodic cleanup: evict stale entries to prevent unbounded memory growth
         self.call_count += 1;
         if self.buckets.len() > 1_000 && self.call_count % 500 == 0 {
-            self.buckets.retain(|_, (window_start, _)| now.saturating_sub(*window_start) < 120);
+            self.buckets
+                .retain(|_, (window_start, _)| now.saturating_sub(*window_start) < 120);
         }
 
         let path = path.split('?').next().unwrap_or(path);
         let (bucket_suffix, limit) = if !path.starts_with("/api/") {
             ("static", self.static_max_per_minute)
         } else if matches!(method, Method::Get)
-            && matches!(path,
+            && matches!(
+                path,
                 "/api/status"
                     | "/api/report"
                     | "/api/health"
@@ -102,7 +113,8 @@ impl RateLimiter {
                     | "/api/host/info"
                     | "/api/alerts"
                     | "/api/alerts/count"
-                    | "/api/threads/status")
+                    | "/api/threads/status"
+            )
         {
             ("status-read", self.read_max_per_minute)
         } else if matches!(method, Method::Get) {
@@ -144,10 +156,20 @@ struct AuditLog {
 
 impl AuditLog {
     fn new(max_entries: usize) -> Self {
-        Self { entries: Vec::new(), max_entries }
+        Self {
+            entries: Vec::new(),
+            max_entries,
+        }
     }
 
-    fn record(&mut self, method: &str, path: &str, source_ip: &str, status_code: u16, auth_used: bool) {
+    fn record(
+        &mut self,
+        method: &str,
+        path: &str,
+        source_ip: &str,
+        status_code: u16,
+        auth_used: bool,
+    ) {
         let entry = AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             method: method.to_string(),
@@ -520,7 +542,12 @@ struct AgentActivitySnapshot {
     log_summary: AgentLogSummary,
 }
 
-pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>, initial_config: Config) -> Result<(), String> {
+pub fn run_server(
+    port: u16,
+    site_dir: &Path,
+    shutdown: Arc<AtomicBool>,
+    initial_config: Config,
+) -> Result<(), String> {
     let addr = format!("0.0.0.0:{port}");
     let server = Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?;
     let config_path = crate::config::runtime_config_path();
@@ -652,7 +679,8 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>, initial
                     file_watch_cache.clear();
                 }
 
-                let persistence_paths = crate::collector::persistence_watch_paths(host_platform, &scope);
+                let persistence_paths =
+                    crate::collector::persistence_watch_paths(host_platform, &scope);
                 if persistence_paths != persistence_watch_cache {
                     persistence_monitor = if persistence_paths.is_empty() {
                         None
@@ -704,11 +732,16 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>, initial
                         consecutive_elevated += 1;
                         // Critical/Severe bypass confirmation — alert immediately
                         // Elevated requires consecutive confirmation to suppress noise
-                        let confirmed = signal.score >= sev || consecutive_elevated >= CONFIRM_SAMPLES;
+                        let confirmed =
+                            signal.score >= sev || consecutive_elevated >= CONFIRM_SAMPLES;
                         if confirmed {
-                            let level = if signal.score >= crit { "Critical" }
-                                else if signal.score >= sev { "Severe" }
-                                else { "Elevated" };
+                            let level = if signal.score >= crit {
+                                "Critical"
+                            } else if signal.score >= sev {
+                                "Severe"
+                            } else {
+                                "Elevated"
+                            };
                             let host = s.local_host_info.clone();
                             let mitre = crate::telemetry::map_alert_to_mitre(&signal.reasons);
                             let alert = AlertRecord {
@@ -733,7 +766,9 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>, initial
                             if alert.score >= sev {
                                 let swarm_id = s.swarm.id.clone();
                                 for reason in &alert.reasons {
-                                    if reason.contains("network burst") || reason.contains("velocity-spike") {
+                                    if reason.contains("network burst")
+                                        || reason.contains("velocity-spike")
+                                    {
                                         let _msg = s.swarm.broadcast_threat_intel(
                                             crate::swarm::GossipPayload::ThreatIntelUpdate {
                                                 ioc_type: "network_anomaly".into(),
@@ -761,13 +796,11 @@ pub fn run_server(port: u16, site_dir: &Path, shutdown: Arc<AtomicBool>, initial
     // ── Spawn background alert analysis thread (every 5 minutes) ────
     {
         let analysis_state = Arc::clone(&state);
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(300));
-                let mut s = analysis_state.lock().unwrap();
-                let analysis = crate::alert_analysis::analyze_alerts(&s.alerts, 5);
-                s.last_alert_analysis = Some(analysis);
-            }
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(300));
+            let mut s = analysis_state.lock().unwrap();
+            let analysis = crate::alert_analysis::analyze_alerts(&s.alerts, 5);
+            s.last_alert_analysis = Some(analysis);
         });
     }
 
@@ -821,11 +854,19 @@ pub fn spawn_test_server() -> (u16, String) {
         alerts: Vec::new(),
         server_start: std::time::Instant::now(),
         agent_registry: AgentRegistry::new(&state_root.join("agents.json").to_string_lossy()),
-        event_store: EventStore::with_persistence(1000, state_root.join("events.json").to_string_lossy().to_string()),
+        event_store: EventStore::with_persistence(
+            1000,
+            state_root.join("events.json").to_string_lossy().to_string(),
+        ),
         policy_store: PolicyStore::new(),
         update_manager: UpdateManager::new(&state_root.join("updates").to_string_lossy()),
-        remote_deployments: load_remote_deployments(&state_root.join("deployments.json").to_string_lossy()),
-        deployment_store_path: state_root.join("deployments.json").to_string_lossy().to_string(),
+        remote_deployments: load_remote_deployments(
+            &state_root.join("deployments.json").to_string_lossy(),
+        ),
+        deployment_store_path: state_root
+            .join("deployments.json")
+            .to_string_lossy()
+            .to_string(),
         siem_connector: SiemConnector::new(crate::siem::SiemConfig::default()),
         taxii_client: crate::siem::TaxiiClient::new(crate::siem::TaxiiConfig::default()),
         local_telemetry: Vec::new(),
@@ -839,7 +880,9 @@ pub fn spawn_test_server() -> (u16, String) {
         incident_store: IncidentStore::new(&state_root.join("incidents.json").to_string_lossy()),
         agent_logs: HashMap::new(),
         agent_inventories: HashMap::new(),
-        report_store: crate::report::ReportStore::new(&state_root.join("reports.json").to_string_lossy()),
+        report_store: crate::report::ReportStore::new(
+            &state_root.join("reports.json").to_string_lossy(),
+        ),
         sigma_engine: SigmaEngine::new(),
         response_orchestrator: ResponseOrchestrator::new(),
         feature_flags: FeatureFlagRegistry::new(),
@@ -883,7 +926,10 @@ fn serve_loop(server: &Server, state: &Arc<Mutex<AppState>>, site_dir: &Path) {
             Ok(Some(request)) => {
                 let url = request.url().to_string();
                 let method = request.method().clone();
-                let remote_addr = request.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+                let remote_addr = request
+                    .remote_addr()
+                    .map(|a| a.ip().to_string())
+                    .unwrap_or_default();
 
                 // Rate limiting
                 {
@@ -933,7 +979,8 @@ fn generate_token() -> String {
 }
 
 fn cors_origin() -> String {
-    let origin = std::env::var("SENTINEL_CORS_ORIGIN").unwrap_or_else(|_| "http://localhost".into());
+    let origin =
+        std::env::var("SENTINEL_CORS_ORIGIN").unwrap_or_else(|_| "http://localhost".into());
     // Block wildcard CORS origin — credentials must not use "*"
     if origin == "*" {
         return "http://localhost".into();
@@ -1011,6 +1058,134 @@ fn csv_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
     )
 }
 
+fn recent_alerts_json(
+    alerts: &[AlertRecord],
+    limit: usize,
+    offset: usize,
+) -> Result<String, String> {
+    let capped_limit = limit.min(1000);
+    let recent: Vec<_> = alerts
+        .iter()
+        .enumerate()
+        .rev()
+        .skip(offset)
+        .take(capped_limit)
+        .map(|(i, a)| {
+            let mut obj = serde_json::to_value(a).unwrap_or_default();
+            if let Some(map) = obj.as_object_mut() {
+                map.insert("id".to_string(), serde_json::json!(i));
+                map.insert("_index".to_string(), serde_json::json!(i));
+            }
+            obj
+        })
+        .collect();
+    serde_json::to_string(&recent).map_err(|e| format!("serialization error: {e}"))
+}
+
+fn incidents_json(
+    incident_store: &IncidentStore,
+    query: &HashMap<String, String>,
+) -> Result<String, String> {
+    let status = query.get("status").map(|value| value.as_str());
+    let severity = query.get("severity").map(|value| value.as_str());
+    let offset = query
+        .get("offset")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    let limit = query
+        .get("limit")
+        .and_then(|value| value.parse::<usize>().ok())
+        .map(|value| value.min(1000));
+
+    let incidents = incident_store.list_filtered(status, severity);
+    let paged: Vec<_> = match limit {
+        Some(limit) => incidents.into_iter().skip(offset).take(limit).collect(),
+        None => incidents.into_iter().skip(offset).collect(),
+    };
+    serde_json::to_string(&paged).map_err(|e| format!("serialization error: {e}"))
+}
+
+fn prometheus_metrics_payload(state: &AppState) -> String {
+    let agents = state.agent_registry.list();
+    let heartbeat_interval = state.agent_registry.heartbeat_interval();
+    let total_agents = agents.len();
+    let online_agents = agents
+        .iter()
+        .filter(|agent| computed_agent_status(agent, heartbeat_interval).0 == "online")
+        .count();
+    let pending_deployments = state
+        .remote_deployments
+        .values()
+        .filter(|deployment| deployment_is_pending(deployment, &state.agent_registry))
+        .count();
+
+    let metrics = [
+        ("wardex_up", "gauge", 1_u64),
+        ("wardex_alerts_total", "gauge", state.alerts.len() as u64),
+        (
+            "wardex_events_total",
+            "gauge",
+            state.event_store.count() as u64,
+        ),
+        ("wardex_agents_total", "gauge", total_agents as u64),
+        ("wardex_agents_online", "gauge", online_agents as u64),
+        (
+            "wardex_incidents_total",
+            "gauge",
+            state.incident_store.list().len() as u64,
+        ),
+        (
+            "wardex_cases_total",
+            "gauge",
+            state.case_store.list().len() as u64,
+        ),
+        (
+            "wardex_reports_total",
+            "gauge",
+            state.report_store.list().len() as u64,
+        ),
+        (
+            "wardex_response_requests_total",
+            "gauge",
+            state.response_orchestrator.all_requests().len() as u64,
+        ),
+        (
+            "wardex_response_pending_total",
+            "gauge",
+            state.response_orchestrator.pending_requests().len() as u64,
+        ),
+        (
+            "wardex_deployments_pending_total",
+            "gauge",
+            pending_deployments as u64,
+        ),
+        ("wardex_requests_total", "counter", state.request_count),
+        ("wardex_request_errors_total", "counter", state.error_count),
+        (
+            "wardex_uptime_seconds",
+            "gauge",
+            state.server_start.elapsed().as_secs(),
+        ),
+    ];
+
+    let mut body = String::new();
+    for (name, metric_type, value) in metrics {
+        body.push_str("# HELP ");
+        body.push_str(name);
+        body.push('\n');
+        body.push_str("# TYPE ");
+        body.push_str(name);
+        body.push(' ');
+        body.push_str(metric_type);
+        body.push('\n');
+        body.push_str(name);
+        body.push(' ');
+        body.push_str(&value.to_string());
+        body.push('\n');
+    }
+    body
+}
+
 fn respond_api(
     request: Request,
     state: &Arc<Mutex<AppState>>,
@@ -1029,8 +1204,13 @@ fn respond_api(
         if status_code >= 400 {
             s.error_count += 1;
         }
-        s.audit_log
-            .record(&format!("{method:?}"), url, &source_ip, status_code, auth_used);
+        s.audit_log.record(
+            &format!("{method:?}"),
+            url,
+            &source_ip,
+            status_code,
+            auth_used,
+        );
     }
     let _ = request.respond(response);
 }
@@ -1128,8 +1308,15 @@ fn parse_query_string(url: &str) -> HashMap<String, String> {
     params
 }
 
+fn url_path(url: &str) -> &str {
+    url.split('?').next().unwrap_or(url)
+}
+
 fn url_param(url: &str, key: &str) -> Option<String> {
-    parse_query_string(url).get(key).cloned().filter(|v| !v.is_empty())
+    parse_query_string(url)
+        .get(key)
+        .cloned()
+        .filter(|v| !v.is_empty())
 }
 
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
@@ -1151,7 +1338,12 @@ fn default_rollout_group() -> String {
 }
 
 fn normalize_rollout_group(value: Option<&str>) -> String {
-    match value.unwrap_or("direct").trim().to_ascii_lowercase().as_str() {
+    match value
+        .unwrap_or("direct")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "canary" => "canary".to_string(),
         "ring-1" | "ring1" => "ring-1".to_string(),
         "ring-2" | "ring2" => "ring-2".to_string(),
@@ -1234,7 +1426,10 @@ fn response_status_counts(requests: &[ResponseRequest]) -> HashMap<String, usize
     counts
 }
 
-fn queue_alert_summary(item: &crate::analyst::QueuedAlert, event_store: &EventStore) -> QueueAlertSummary {
+fn queue_alert_summary(
+    item: &crate::analyst::QueuedAlert,
+    event_store: &EventStore,
+) -> QueueAlertSummary {
     let linked_event = event_store.get_event(item.event_id);
     let age_secs = age_secs_since(&item.timestamp);
     let sla_breached = item
@@ -1357,8 +1552,16 @@ fn build_workbench_overview(
     });
 
     let queue_pending = queue_items.len();
-    let queue_acknowledged = alert_queue.all().iter().filter(|item| item.acknowledged).count();
-    let queue_assigned = alert_queue.all().iter().filter(|item| item.assignee.is_some()).count();
+    let queue_acknowledged = alert_queue
+        .all()
+        .iter()
+        .filter(|item| item.acknowledged)
+        .count();
+    let queue_assigned = alert_queue
+        .all()
+        .iter()
+        .filter(|item| item.assignee.is_some())
+        .count();
     let queue_breached = queue_items.iter().filter(|item| item.sla_breached).count();
 
     let mut cases = case_store.list_filtered(None, None, None);
@@ -1366,12 +1569,7 @@ fn build_workbench_overview(
     let case_total = cases.len();
     let case_open = cases
         .iter()
-        .filter(|case| {
-            !matches!(
-                case.status,
-                CaseStatus::Resolved | CaseStatus::Closed
-            )
-        })
+        .filter(|case| !matches!(case.status, CaseStatus::Resolved | CaseStatus::Closed))
         .count();
     let case_resolved = cases
         .iter()
@@ -1392,7 +1590,8 @@ fn build_workbench_overview(
         .filter(|incident| {
             matches!(
                 incident.status,
-                crate::incident::IncidentStatus::Open | crate::incident::IncidentStatus::Investigating
+                crate::incident::IncidentStatus::Open
+                    | crate::incident::IncidentStatus::Investigating
             )
         })
         .count();
@@ -1402,7 +1601,8 @@ fn build_workbench_overview(
             incident.severity.eq_ignore_ascii_case("critical")
                 && matches!(
                     incident.status,
-                    crate::incident::IncidentStatus::Open | crate::incident::IncidentStatus::Investigating
+                    crate::incident::IncidentStatus::Open
+                        | crate::incident::IncidentStatus::Investigating
                 )
         })
         .count();
@@ -1453,7 +1653,11 @@ fn build_workbench_overview(
             reference_id: item.event_id.to_string(),
         });
     }
-    for incident in incident_items.iter().filter(|incident| incident.severity.eq_ignore_ascii_case("critical")).take(2) {
+    for incident in incident_items
+        .iter()
+        .filter(|incident| incident.severity.eq_ignore_ascii_case("critical"))
+        .take(2)
+    {
         urgent_items.push(UrgentItem {
             kind: "incident".to_string(),
             severity: incident.severity.clone(),
@@ -1478,7 +1682,13 @@ fn build_workbench_overview(
         urgent_items.push(UrgentItem {
             kind: "agent".to_string(),
             severity: "Elevated".to_string(),
-            title: format!("{} requires attention", agent.hostname.clone().unwrap_or_else(|| agent.agent_id.clone())),
+            title: format!(
+                "{} requires attention",
+                agent
+                    .hostname
+                    .clone()
+                    .unwrap_or_else(|| agent.agent_id.clone())
+            ),
             subtitle: format!("{} endpoint with risk {}", agent.status, agent.risk),
             reference_id: agent.agent_id.clone(),
         });
@@ -1498,7 +1708,11 @@ fn build_workbench_overview(
             open: case_open,
             resolved: case_resolved,
             active: case_total.saturating_sub(case_resolved),
-            items: cases.iter().take(8).map(|case| case_summary(case)).collect(),
+            items: cases
+                .iter()
+                .take(8)
+                .map(|case| case_summary(case))
+                .collect(),
         },
         incidents: WorkbenchIncidentsOverview {
             total: incident_items.len(),
@@ -1539,7 +1753,10 @@ fn build_manager_overview(
     let mut stale = 0usize;
     let mut offline = 0usize;
     for agent in agents.iter().copied() {
-        match computed_agent_status(agent, agent_registry.heartbeat_interval()).0.as_str() {
+        match computed_agent_status(agent, agent_registry.heartbeat_interval())
+            .0
+            .as_str()
+        {
             "online" => online += 1,
             "stale" => stale += 1,
             "offline" => offline += 1,
@@ -1550,7 +1767,10 @@ fn build_manager_overview(
     let queue_items = alert_queue.all();
     let queue_pending = queue_items.iter().filter(|item| !item.acknowledged).count();
     let queue_acknowledged = queue_items.iter().filter(|item| item.acknowledged).count();
-    let queue_assigned = queue_items.iter().filter(|item| item.assignee.is_some()).count();
+    let queue_assigned = queue_items
+        .iter()
+        .filter(|item| item.assignee.is_some())
+        .count();
     let queue_breached = queue_items
         .iter()
         .filter(|item| {
@@ -1613,19 +1833,33 @@ fn build_manager_overview(
                 .count(),
             investigating: incidents
                 .iter()
-                .filter(|incident| matches!(incident.status, crate::incident::IncidentStatus::Investigating))
+                .filter(|incident| {
+                    matches!(
+                        incident.status,
+                        crate::incident::IncidentStatus::Investigating
+                    )
+                })
                 .count(),
             contained: incidents
                 .iter()
-                .filter(|incident| matches!(incident.status, crate::incident::IncidentStatus::Contained))
+                .filter(|incident| {
+                    matches!(incident.status, crate::incident::IncidentStatus::Contained)
+                })
                 .count(),
             resolved: incidents
                 .iter()
-                .filter(|incident| matches!(incident.status, crate::incident::IncidentStatus::Resolved))
+                .filter(|incident| {
+                    matches!(incident.status, crate::incident::IncidentStatus::Resolved)
+                })
                 .count(),
             false_positive: incidents
                 .iter()
-                .filter(|incident| matches!(incident.status, crate::incident::IncidentStatus::FalsePositive))
+                .filter(|incident| {
+                    matches!(
+                        incident.status,
+                        crate::incident::IncidentStatus::FalsePositive
+                    )
+                })
                 .count(),
         },
         deployments: ManagerDeploymentOverview {
@@ -1641,12 +1875,16 @@ fn build_manager_overview(
             total_reports: report_summary["total_reports"].as_u64().unwrap_or(0) as usize,
             total_alerts: report_summary["total_alerts"].as_u64().unwrap_or(0) as usize,
             critical_alerts: report_summary["critical_alerts"].as_u64().unwrap_or(0) as usize,
-            avg_score: report_summary["avg_score"].as_f64().map(|value| value as f32),
+            avg_score: report_summary["avg_score"]
+                .as_f64()
+                .map(|value| value as f32),
             max_score: report_summary["max_score"].as_f64().unwrap_or(0.0) as f32,
             open_incidents: report_summary["incidents_open"].as_u64().unwrap_or(0) as usize,
         },
         siem: siem_status,
-        compliance: ManagerComplianceOverview { score: compliance_score },
+        compliance: ManagerComplianceOverview {
+            score: compliance_score,
+        },
         tenants: tenant_count,
         operations: ManagerOperationsOverview {
             pending_approvals: response_orchestrator.pending_requests().len(),
@@ -1656,7 +1894,10 @@ fn build_manager_overview(
     }
 }
 
-fn build_agent_activity_snapshot(state: &AppState, agent_id: &str) -> Result<AgentActivitySnapshot, String> {
+fn build_agent_activity_snapshot(
+    state: &AppState,
+    agent_id: &str,
+) -> Result<AgentActivitySnapshot, String> {
     let agent = state
         .agent_registry
         .get(agent_id)
@@ -1673,7 +1914,10 @@ fn build_agent_activity_snapshot(state: &AppState, agent_id: &str) -> Result<Age
     } else {
         0.0
     };
-    let max_score = events.iter().map(|event| event.alert.score).fold(0.0f32, f32::max);
+    let max_score = events
+        .iter()
+        .map(|event| event.alert.score)
+        .fold(0.0f32, f32::max);
     let highest_level = events
         .iter()
         .map(|event| severity_rank(&event.alert.level))
@@ -1729,14 +1973,17 @@ fn build_agent_activity_snapshot(state: &AppState, agent_id: &str) -> Result<Age
         *log_levels.entry(format!("{:?}", record.level)).or_insert(0) += 1;
     }
 
-    let inventory = state.agent_inventories.get(agent_id).map(|inventory| AgentInventorySummary {
-        collected_at: inventory.collected_at.clone(),
-        software_count: inventory.software.len(),
-        services_count: inventory.services.len(),
-        network_ports: inventory.network.len(),
-        users_count: inventory.users.len(),
-        hardware: inventory.hardware.clone(),
-    });
+    let inventory = state
+        .agent_inventories
+        .get(agent_id)
+        .map(|inventory| AgentInventorySummary {
+            collected_at: inventory.collected_at.clone(),
+            software_count: inventory.software.len(),
+            services_count: inventory.services.len(),
+            network_ports: inventory.network.len(),
+            users_count: inventory.users.len(),
+            hardware: inventory.hardware.clone(),
+        });
 
     let (computed_status, heartbeat_age_secs) =
         computed_agent_status(agent, state.agent_registry.heartbeat_interval());
@@ -1775,7 +2022,11 @@ fn build_agent_activity_snapshot(state: &AppState, agent_id: &str) -> Result<Age
             } else {
                 "Nominal".to_string()
             },
-            top_reasons: top_reasons.into_iter().take(5).map(|entry| entry.0).collect(),
+            top_reasons: top_reasons
+                .into_iter()
+                .take(5)
+                .map(|entry| entry.0)
+                .collect(),
         },
         timeline,
         risk_transitions: transitions,
@@ -1788,9 +2039,11 @@ fn build_agent_activity_snapshot(state: &AppState, agent_id: &str) -> Result<Age
     })
 }
 
-fn case_linked_incidents(case: &crate::analyst::Case, incident_store: &IncidentStore) -> Vec<serde_json::Value> {
-    case
-        .incident_ids
+fn case_linked_incidents(
+    case: &crate::analyst::Case,
+    incident_store: &IncidentStore,
+) -> Vec<serde_json::Value> {
+    case.incident_ids
         .iter()
         .filter_map(|id| incident_store.get(*id))
         .map(|incident| {
@@ -1805,9 +2058,11 @@ fn case_linked_incidents(case: &crate::analyst::Case, incident_store: &IncidentS
         .collect()
 }
 
-fn case_linked_events(case: &crate::analyst::Case, event_store: &EventStore) -> Vec<serde_json::Value> {
-    case
-        .event_ids
+fn case_linked_events(
+    case: &crate::analyst::Case,
+    event_store: &EventStore,
+) -> Vec<serde_json::Value> {
+    case.event_ids
         .iter()
         .filter_map(|id| event_store.get_event(*id))
         .map(|event| {
@@ -1897,16 +2152,33 @@ fn parse_event_query(url: &str) -> EventQuery {
         .unwrap_or(200)
         .clamp(1, 1000);
     EventQuery {
-        agent_id: params.get("agent_id").cloned().filter(|value| !value.is_empty()),
-        severity: params.get("severity").cloned().filter(|value| !value.is_empty()),
-        reason: params.get("reason").cloned().filter(|value| !value.is_empty()),
-        correlated: params.get("correlated").and_then(|value| match value.as_str() {
-            "true" | "1" => Some(true),
-            "false" | "0" => Some(false),
-            _ => None,
-        }),
-        triage_status: params.get("triage_status").cloned().filter(|value| !value.is_empty()),
-        assignee: params.get("assignee").cloned().filter(|value| !value.is_empty()),
+        agent_id: params
+            .get("agent_id")
+            .cloned()
+            .filter(|value| !value.is_empty()),
+        severity: params
+            .get("severity")
+            .cloned()
+            .filter(|value| !value.is_empty()),
+        reason: params
+            .get("reason")
+            .cloned()
+            .filter(|value| !value.is_empty()),
+        correlated: params
+            .get("correlated")
+            .and_then(|value| match value.as_str() {
+                "true" | "1" => Some(true),
+                "false" | "0" => Some(false),
+                _ => None,
+            }),
+        triage_status: params
+            .get("triage_status")
+            .cloned()
+            .filter(|value| !value.is_empty()),
+        assignee: params
+            .get("assignee")
+            .cloned()
+            .filter(|value| !value.is_empty()),
         tag: params.get("tag").cloned().filter(|value| !value.is_empty()),
         limit,
     }
@@ -1966,7 +2238,10 @@ fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQ
     true
 }
 
-fn filtered_events<'a>(store: &'a EventStore, query: &EventQuery) -> Vec<&'a crate::event_forward::StoredEvent> {
+fn filtered_events<'a>(
+    store: &'a EventStore,
+    query: &EventQuery,
+) -> Vec<&'a crate::event_forward::StoredEvent> {
     store
         .list(None, 10_000)
         .into_iter()
@@ -1989,7 +2264,10 @@ fn ocsf_class_for_event(event: &crate::event_forward::StoredEvent) -> u32 {
     let reasons = event.alert.reasons.join(" ").to_lowercase();
     if reasons.contains("auth") || reasons.contains("login") || reasons.contains("credential") {
         3002 // Authentication
-    } else if reasons.contains("network") || reasons.contains("connection") || reasons.contains("dns") {
+    } else if reasons.contains("network")
+        || reasons.contains("connection")
+        || reasons.contains("dns")
+    {
         4001 // NetworkActivity
     } else {
         2004 // DetectionFinding (default)
@@ -1997,7 +2275,9 @@ fn ocsf_class_for_event(event: &crate::event_forward::StoredEvent) -> u32 {
 }
 
 fn events_to_csv(events: &[&crate::event_forward::StoredEvent]) -> String {
-    let mut out = String::from("id,agent_id,received_at,level,score,confidence,correlated,triage_status,assignee,tags,reasons,hostname,platform,action,ocsf_class_id\n");
+    let mut out = String::from(
+        "id,agent_id,received_at,level,score,confidence,correlated,triage_status,assignee,tags,reasons,hostname,platform,action,ocsf_class_id\n",
+    );
     for event in events {
         let row = [
             event.id.to_string(),
@@ -2022,7 +2302,12 @@ fn events_to_csv(events: &[&crate::event_forward::StoredEvent]) -> String {
     out
 }
 
-fn check_rbac(state: &Arc<Mutex<AppState>>, path: &str, method: &Method, auth: &AuthIdentity) -> bool {
+fn check_rbac(
+    state: &Arc<Mutex<AppState>>,
+    path: &str,
+    method: &Method,
+    auth: &AuthIdentity,
+) -> bool {
     if auth.is_admin() {
         return true;
     }
@@ -2068,8 +2353,8 @@ fn save_remote_deployments(path: &str, deployments: &HashMap<String, AgentDeploy
 }
 
 fn persist_config_to_path(config: &Config, path: &Path) -> Result<(), String> {
-    let toml_str = toml::to_string_pretty(config)
-        .map_err(|e| format!("failed to serialize config: {e}"))?;
+    let toml_str =
+        toml::to_string_pretty(config).map_err(|e| format!("failed to serialize config: {e}"))?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create config directory: {e}"))?;
@@ -2098,7 +2383,8 @@ fn spawn_enterprise_hunt_scheduler(state: &Arc<Mutex<AppState>>) {
         for hunt_id in due_hunt_ids {
             let started = std::time::Instant::now();
             if let Ok(run) = s.enterprise.run_hunt(&hunt_id, &events) {
-                s.enterprise.record_hunt_metrics(started.elapsed().as_millis() as u64);
+                s.enterprise
+                    .record_hunt_metrics(started.elapsed().as_millis() as u64);
                 if run.threshold_exceeded {
                     let payload = serde_json::json!({
                         "hunt_id": run.hunt_id,
@@ -2130,7 +2416,10 @@ fn read_json_value(request: &mut Request, limit: usize) -> Result<serde_json::Va
     serde_json::from_str::<serde_json::Value>(&body).map_err(|e| format!("invalid JSON: {e}"))
 }
 
-fn incident_related_events<'a>(incident: &crate::incident::Incident, events: &'a [crate::event_forward::StoredEvent]) -> Vec<crate::event_forward::StoredEvent> {
+fn incident_related_events<'a>(
+    incident: &crate::incident::Incident,
+    events: &'a [crate::event_forward::StoredEvent],
+) -> Vec<crate::event_forward::StoredEvent> {
     events
         .iter()
         .filter(|event| incident.event_ids.contains(&event.id))
@@ -2249,7 +2538,9 @@ fn monitoring_options_payload(host: &HostInfo, config: &Config) -> serde_json::V
             true,
             true,
             "configurable",
-            Some("Disable only if the host cannot expose auth logs or Security-event access is intentionally restricted."),
+            Some(
+                "Disable only if the host cannot expose auth logs or Security-event access is intentionally restricted.",
+            ),
         ),
         monitoring_option(
             "file_integrity",
@@ -2294,7 +2585,10 @@ fn monitoring_options_payload(host: &HostInfo, config: &Config) -> serde_json::V
             "Useful on mobile or battery-backed devices where power drain can be part of the attack path.",
             scope.battery_state,
             true,
-            matches!(host.platform, HostPlatform::MacOS | HostPlatform::Windows | HostPlatform::WindowsServer),
+            matches!(
+                host.platform,
+                HostPlatform::MacOS | HostPlatform::Windows | HostPlatform::WindowsServer
+            ),
             "always_on",
             Some("Collected when the host exposes battery data."),
         ),
@@ -2413,9 +2707,16 @@ fn monitoring_paths_payload(host: &HostInfo, config: &Config) -> serde_json::Val
     } else {
         Vec::new()
     };
-    let persistence_paths = crate::collector::persistence_watch_paths(host.platform, &config.monitor.scope);
-    let file_health = file_paths.iter().map(|path| path_health(path)).collect::<Vec<_>>();
-    let persistence_health = persistence_paths.iter().map(|path| path_health(path)).collect::<Vec<_>>();
+    let persistence_paths =
+        crate::collector::persistence_watch_paths(host.platform, &config.monitor.scope);
+    let file_health = file_paths
+        .iter()
+        .map(|path| path_health(path))
+        .collect::<Vec<_>>();
+    let persistence_health = persistence_paths
+        .iter()
+        .map(|path| path_health(path))
+        .collect::<Vec<_>>();
     let unhealthy = file_health
         .iter()
         .chain(persistence_health.iter())
@@ -2439,7 +2740,12 @@ fn monitoring_paths_payload(host: &HostInfo, config: &Config) -> serde_json::Val
     })
 }
 
-fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Path, server: &Server) {
+fn handle_api(
+    mut request: Request,
+    state: &Arc<Mutex<AppState>>,
+    _site_dir: &Path,
+    server: &Server,
+) {
     let url = request.url().to_string();
     let method = request.method().clone();
 
@@ -2469,52 +2775,56 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         || url.starts_with("/api/policy/current")
         || url.starts_with("/api/updates/download/")
         || (method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/logs"))
-        || (method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/inventory"))
+        || (method == Method::Post
+            && url.starts_with("/api/agents/")
+            && url.ends_with("/inventory"))
         || (method == Method::Get && url == "/api/openapi.json");
 
-    let needs_auth = !is_agent_endpoint && matches!(
-        (&method, url.as_str()),
-        (Method::Get, "/api/auth/check")
-            | (Method::Post, "/api/auth/rotate")
-            | (Method::Get, "/api/session/info")
-            | (Method::Post, "/api/analyze")
-            | (Method::Post, "/api/control/mode")
-            | (Method::Post, "/api/control/reset-baseline")
-            | (Method::Post, "/api/control/run-demo")
-            | (Method::Post, "/api/control/checkpoint")
-            | (Method::Post, "/api/control/restore-checkpoint")
-            | (Method::Post, "/api/fleet/register")
-            | (Method::Post, "/api/enforcement/quarantine")
-            | (Method::Post, "/api/threat-intel/ioc")
-            | (Method::Post, "/api/digital-twin/simulate")
-            | (Method::Post, "/api/energy/consume")
-            | (Method::Post, "/api/quantum/rotate")
-            | (Method::Post, "/api/policy-vm/execute")
-            | (Method::Post, "/api/harness/run")
-            | (Method::Post, "/api/deception/deploy")
-            | (Method::Post, "/api/policy/compose")
-            | (Method::Post, "/api/drift/reset")
-            | (Method::Post, "/api/offload/decide")
-            | (Method::Post, "/api/energy/harvest")
-            | (Method::Post, "/api/config/reload")
-            | (Method::Post, "/api/config/save")
-            | (Method::Post, "/api/agents/token")
-            | (Method::Post, "/api/policy/publish")
-            | (Method::Post, "/api/updates/publish")
-            | (Method::Post, "/api/updates/deploy")
-            | (Method::Post, "/api/updates/rollback")
-            | (Method::Post, "/api/updates/cancel")
-            | (Method::Post, "/api/events/bulk-triage")
-            | (Method::Post, "/api/response/request")
-            | (Method::Post, "/api/response/approve")
-            | (Method::Post, "/api/response/execute")
-            | (Method::Post, "/api/shutdown")
-            | (Method::Post, "/api/mesh/heal")
-            | (Method::Delete, "/api/alerts")
-            | (Method::Post, "/api/alerts/sample")
-            | (Method::Post, "/api/alerts/analysis")
-    ) || (!is_agent_endpoint && (
-        (method == Method::Get && url == "/api/fleet/dashboard")
+    let needs_auth = !is_agent_endpoint
+        && matches!(
+            (&method, url.as_str()),
+            (Method::Get, "/api/auth/check")
+                | (Method::Post, "/api/auth/rotate")
+                | (Method::Get, "/api/session/info")
+                | (Method::Post, "/api/analyze")
+                | (Method::Post, "/api/control/mode")
+                | (Method::Post, "/api/control/reset-baseline")
+                | (Method::Post, "/api/control/run-demo")
+                | (Method::Post, "/api/control/checkpoint")
+                | (Method::Post, "/api/control/restore-checkpoint")
+                | (Method::Post, "/api/fleet/register")
+                | (Method::Post, "/api/enforcement/quarantine")
+                | (Method::Post, "/api/threat-intel/ioc")
+                | (Method::Post, "/api/digital-twin/simulate")
+                | (Method::Post, "/api/energy/consume")
+                | (Method::Post, "/api/quantum/rotate")
+                | (Method::Post, "/api/policy-vm/execute")
+                | (Method::Post, "/api/harness/run")
+                | (Method::Post, "/api/deception/deploy")
+                | (Method::Post, "/api/policy/compose")
+                | (Method::Post, "/api/drift/reset")
+                | (Method::Post, "/api/offload/decide")
+                | (Method::Post, "/api/energy/harvest")
+                | (Method::Post, "/api/config/reload")
+                | (Method::Post, "/api/config/save")
+                | (Method::Post, "/api/agents/token")
+                | (Method::Post, "/api/policy/publish")
+                | (Method::Post, "/api/updates/publish")
+                | (Method::Post, "/api/updates/deploy")
+                | (Method::Post, "/api/updates/rollback")
+                | (Method::Post, "/api/updates/cancel")
+                | (Method::Post, "/api/events/bulk-triage")
+                | (Method::Post, "/api/response/request")
+                | (Method::Post, "/api/response/approve")
+                | (Method::Post, "/api/response/execute")
+                | (Method::Post, "/api/shutdown")
+                | (Method::Post, "/api/mesh/heal")
+                | (Method::Delete, "/api/alerts")
+                | (Method::Post, "/api/alerts/sample")
+                | (Method::Post, "/api/alerts/analysis")
+        )
+        || (!is_agent_endpoint
+            && ((method == Method::Get && url == "/api/fleet/dashboard")
         || (method == Method::Get && url == "/api/workbench/overview")
         || (method == Method::Get && url == "/api/manager/overview")
         || (method == Method::Get && url == "/api/hunts")
@@ -2557,6 +2867,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         || (method == Method::Get && url == "/api/checkpoints")
         || (method == Method::Get && url == "/api/correlation")
         || (method == Method::Get && url == "/api/alerts")
+        || (method == Method::Get && url.starts_with("/api/alerts?"))
         || (method == Method::Get && url == "/api/alerts/count")
         || (method == Method::Get && url == "/api/alerts/analysis")
         || (method == Method::Get && url == "/api/alerts/grouped")
@@ -2628,8 +2939,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         || (method == Method::Get && url == "/api/audit/verify")
         || (method == Method::Get && url == "/api/retention/status")
         || (method == Method::Post && url == "/api/retention/apply")
-        || (method == Method::Get && url == "/api/session/info")
-    ));
+        || (method == Method::Get && url == "/api/session/info")));
 
     let auth_identity = authenticate_request(&request, state);
     if needs_auth && !auth_identity.is_authenticated() {
@@ -2664,9 +2974,15 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let s = state.lock().unwrap();
             let ttl = s.config.security.token_ttl_secs;
             let elapsed = s.token_issued_at.elapsed().as_secs();
-            let remaining = if ttl > 0 { ttl.saturating_sub(elapsed) } else { 0 };
-            let body = format!(r#"{{"status":"ok","ttl_secs":{},"remaining_secs":{},"token_age_secs":{}}}"#,
-                ttl, remaining, elapsed);
+            let remaining = if ttl > 0 {
+                ttl.saturating_sub(elapsed)
+            } else {
+                0
+            };
+            let body = format!(
+                r#"{{"status":"ok","ttl_secs":{},"remaining_secs":{},"token_age_secs":{}}}"#,
+                ttl, remaining, elapsed
+            );
             json_response(&body, 200)
         }
         (Method::Post, "/api/auth/rotate") => {
@@ -2675,9 +2991,12 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let old_token_prefix = s.token.chars().take(8).collect::<String>();
             s.token = new_token.clone();
             s.token_issued_at = std::time::Instant::now();
-            s.audit_log.record("POST", "/api/auth/rotate", "admin", 200, true);
-            let body = format!(r#"{{"status":"rotated","new_token":"{}","previous_prefix":"{}…"}}"#,
-                new_token, old_token_prefix);
+            s.audit_log
+                .record("POST", "/api/auth/rotate", "admin", 200, true);
+            let body = format!(
+                r#"{{"status":"rotated","new_token":"{}","previous_prefix":"{}…"}}"#,
+                new_token, old_token_prefix
+            );
             json_response(&body, 200)
         }
         (Method::Get, "/api/session/info") => {
@@ -2687,7 +3006,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let uptime = s.server_start.elapsed().as_secs();
             let body = format!(
                 r#"{{"uptime_secs":{},"token_age_secs":{},"token_ttl_secs":{},"token_expired":{},"mtls_required":{}}}"#,
-                uptime, elapsed, ttl, ttl > 0 && elapsed > ttl, s.config.security.require_mtls_agents
+                uptime,
+                elapsed,
+                ttl,
+                ttl > 0 && elapsed > ttl,
+                s.config.security.require_mtls_agents
             );
             json_response(&body, 200)
         }
@@ -2710,7 +3033,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let alerts = &s.alerts;
                 let total = alerts.len();
                 let critical = alerts.iter().filter(|a| a.level == "Critical").count();
-                let avg_score = if total > 0 { alerts.iter().map(|a| a.score).sum::<f32>() / total as f32 } else { 0.0 };
+                let avg_score = if total > 0 {
+                    alerts.iter().map(|a| a.score).sum::<f32>() / total as f32
+                } else {
+                    0.0
+                };
                 let max_score = alerts.iter().map(|a| a.score).fold(0.0f32, f32::max);
                 let samples: Vec<serde_json::Value> = alerts.iter().enumerate().map(|(i, a)| {
                     serde_json::json!({
@@ -2740,7 +3067,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 });
                 json_response(&report.to_string(), 200)
             } else {
-                json_response(r#"{"generated_at":"","summary":{"total_samples":0,"alert_count":0,"critical_count":0,"average_score":0.0,"max_score":0.0},"samples":[]}"#, 200)
+                json_response(
+                    r#"{"generated_at":"","summary":{"total_samples":0,"alert_count":0,"critical_count":0,"average_score":0.0,"max_score":0.0},"samples":[]}"#,
+                    200,
+                )
             }
         }
         (Method::Post, "/api/analyze") => handle_analyze(&mut request, state),
@@ -2875,9 +3205,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
-        (Method::Post, "/api/fleet/register") => {
-            handle_fleet_register(&mut request, state)
-        }
+        (Method::Post, "/api/fleet/register") => handle_fleet_register(&mut request, state),
 
         // ── Enforcement ───────────────────────────────────────────
         (Method::Get, "/api/enforcement/status") => {
@@ -2905,9 +3233,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/threat-intel/ioc") => {
-            handle_threat_intel_ioc(&mut request, state)
-        }
+        (Method::Post, "/api/threat-intel/ioc") => handle_threat_intel_ioc(&mut request, state),
 
         // ── Digital Twin ──────────────────────────────────────────
         (Method::Get, "/api/digital-twin/status") => {
@@ -2942,9 +3268,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/energy/consume") => {
-            handle_energy_consume(&mut request, state)
-        }
+        (Method::Post, "/api/energy/consume") => handle_energy_consume(&mut request, state),
 
         // ── Multi-tenancy ─────────────────────────────────────────
         (Method::Get, "/api/tenants/count") => {
@@ -3012,9 +3336,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
 
         // ── Policy VM ─────────────────────────────────────────────
-        (Method::Post, "/api/policy-vm/execute") => {
-            handle_policy_vm_execute(&mut request, state)
-        }
+        (Method::Post, "/api/policy-vm/execute") => handle_policy_vm_execute(&mut request, state),
 
         // ── Fingerprint ───────────────────────────────────────────
         (Method::Get, "/api/fingerprint/status") => {
@@ -3053,13 +3375,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
         (Method::Get, "/api/monitor/violations") => {
             let s = state.lock().unwrap();
-            let violations: Vec<_> = s.monitor.violations().iter().map(|v| {
-                serde_json::json!({
-                    "property": v.property_name,
-                    "event_index": v.event_index,
+            let violations: Vec<_> = s
+                .monitor
+                .violations()
+                .iter()
+                .map(|v| {
+                    serde_json::json!({
+                        "property": v.property_name,
+                        "event_index": v.event_index,
+                    })
                 })
-            }).collect();
-            json_response(&serde_json::json!({ "violations": violations }).to_string(), 200)
+                .collect();
+            json_response(
+                &serde_json::json!({ "violations": violations }).to_string(),
+                200,
+            )
         }
 
         // ── Deception Engine ──────────────────────────────────────
@@ -3074,14 +3404,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/deception/deploy") => {
-            handle_deception_deploy(&mut request, state)
-        }
+        (Method::Post, "/api/deception/deploy") => handle_deception_deploy(&mut request, state),
 
         // ── Policy Composition ────────────────────────────────────
-        (Method::Post, "/api/policy/compose") => {
-            handle_policy_compose(&mut request, state)
-        }
+        (Method::Post, "/api/policy/compose") => handle_policy_compose(&mut request, state),
 
         // ── Drift Detection ───────────────────────────────────────
         (Method::Get, "/api/drift/status") => {
@@ -3130,16 +3456,37 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 latency_to_cloud_ms: 50,
             };
             let workloads = vec![
-                crate::edge_cloud::Workload { id: "w1".into(), name: "detection".into(), cpu_cost: 20.0, memory_mb: 64, latency_sensitive: true, data_size_kb: 100, tier: crate::edge_cloud::ProcessingTier::EdgePreferred },
-                crate::edge_cloud::Workload { id: "w2".into(), name: "reporting".into(), cpu_cost: 10.0, memory_mb: 32, latency_sensitive: false, data_size_kb: 200, tier: crate::edge_cloud::ProcessingTier::CloudPreferred },
+                crate::edge_cloud::Workload {
+                    id: "w1".into(),
+                    name: "detection".into(),
+                    cpu_cost: 20.0,
+                    memory_mb: 64,
+                    latency_sensitive: true,
+                    data_size_kb: 100,
+                    tier: crate::edge_cloud::ProcessingTier::EdgePreferred,
+                },
+                crate::edge_cloud::Workload {
+                    id: "w2".into(),
+                    name: "reporting".into(),
+                    cpu_cost: 10.0,
+                    memory_mb: 32,
+                    latency_sensitive: false,
+                    data_size_kb: 200,
+                    tier: crate::edge_cloud::ProcessingTier::CloudPreferred,
+                },
             ];
             let decisions = crate::edge_cloud::decide_offload(&workloads, &edge_cap);
-            let info: Vec<_> = decisions.iter().map(|d| serde_json::json!({
-                "workload": d.workload_id,
-                "run_on": d.run_on,
-                "reason": d.reason,
-                "estimated_latency_ms": d.estimated_latency_ms,
-            })).collect();
+            let info: Vec<_> = decisions
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "workload": d.workload_id,
+                        "run_on": d.run_on,
+                        "reason": d.reason,
+                        "estimated_latency_ms": d.estimated_latency_ms,
+                    })
+                })
+                .collect();
             json_response(&serde_json::json!({ "decisions": info, "platform": format!("{:?}", caps.platform) }).to_string(), 200)
         }
 
@@ -3215,9 +3562,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
-        (Method::Post, "/api/config/reload") => {
-            handle_config_reload(&mut request, state)
-        }
+        (Method::Post, "/api/config/reload") => handle_config_reload(&mut request, state),
         (Method::Post, "/api/config/save") => {
             match read_body_limited(&mut request, 10 * 1024 * 1024) {
                 Ok(body) => {
@@ -3237,7 +3582,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                         "status": "saved",
                                         "path": config_path.display().to_string(),
                                         "applied_fields": applied_fields,
-                                    }).to_string(),
+                                    })
+                                    .to_string(),
                                     200,
                                 )
                             }
@@ -3264,10 +3610,13 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             });
             json_response(&body.to_string(), 200)
         }
-        (Method::Get, "/api/openapi.json") => {
-            let spec = include_str!("../docs/openapi.yaml");
-            let body = serde_json::json!({ "spec_format": "yaml", "content": spec });
-            json_response(&body.to_string(), 200)
+        (Method::Get, "/api/openapi.json") => json_response(
+            &crate::openapi::openapi_json(env!("CARGO_PKG_VERSION")),
+            200,
+        ),
+        (Method::Get, "/api/metrics") => {
+            let s = state.lock().unwrap();
+            text_response(&prometheus_metrics_payload(&s), 200)
         }
         (Method::Get, "/api/slo/status") => {
             let s = state.lock().unwrap();
@@ -3341,7 +3690,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             if max_events > 0 {
                 trimmed_events = s.event_store.apply_retention(max_events);
             }
-            s.audit_log.record("POST", "/api/retention/apply", "admin", 200, true);
+            s.audit_log
+                .record("POST", "/api/retention/apply", "admin", 200, true);
             let body = serde_json::json!({
                 "status": "applied",
                 "trimmed_alerts": trimmed_alerts,
@@ -3351,18 +3701,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
         (Method::Get, "/api/alerts") => {
             let s = state.lock().unwrap();
-            let recent: Vec<_> = s.alerts.iter().enumerate().rev().take(100)
-                .map(|(i, a)| {
-                    let mut obj = serde_json::to_value(a).unwrap_or_default();
-                    if let Some(map) = obj.as_object_mut() {
-                        map.insert("_index".to_string(), serde_json::json!(i));
-                    }
-                    obj
-                })
-                .collect();
-            match serde_json::to_string(&recent) {
+            match recent_alerts_json(&s.alerts, 100, 0) {
                 Ok(json) => json_response(&json, 200),
-                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                Err(e) => error_json(&e, 500),
             }
         }
         (Method::Get, "/api/alerts/count") => {
@@ -3383,19 +3724,23 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let mut s = state.lock().unwrap();
             let cleared = s.alerts.len();
             s.alerts.clear();
-            json_response(
-                &format!(r#"{{"status":"cleared","count":{cleared}}}"#),
-                200,
-            )
+            json_response(&format!(r#"{{"status":"cleared","count":{cleared}}}"#), 200)
         }
         (Method::Post, "/api/alerts/sample") => {
             let body = read_body_limited(&mut request, 4096);
             let severity = match body {
                 Ok(b) => {
                     #[derive(serde::Deserialize)]
-                    struct SampleReq { #[serde(default = "default_severity")] severity: String }
-                    fn default_severity() -> String { "elevated".into() }
-                    let req: SampleReq = serde_json::from_str(&b).unwrap_or(SampleReq { severity: default_severity() });
+                    struct SampleReq {
+                        #[serde(default = "default_severity")]
+                        severity: String,
+                    }
+                    fn default_severity() -> String {
+                        "elevated".into()
+                    }
+                    let req: SampleReq = serde_json::from_str(&b).unwrap_or(SampleReq {
+                        severity: default_severity(),
+                    });
                     req.severity.to_lowercase()
                 }
                 Err(_) => "elevated".into(),
@@ -3426,8 +3771,15 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 integrity_drift: 0.0,
             };
             let reasons = match severity.as_str() {
-                "critical" => vec!["[SAMPLE] CPU spike 95%".into(), "[SAMPLE] Auth brute-force 25 failures".into(), "[SAMPLE] Network anomaly 800 Kbps".into()],
-                "severe" => vec!["[SAMPLE] CPU elevated 65%".into(), "[SAMPLE] Process burst 180".into()],
+                "critical" => vec![
+                    "[SAMPLE] CPU spike 95%".into(),
+                    "[SAMPLE] Auth brute-force 25 failures".into(),
+                    "[SAMPLE] Network anomaly 800 Kbps".into(),
+                ],
+                "severe" => vec![
+                    "[SAMPLE] CPU elevated 65%".into(),
+                    "[SAMPLE] Process burst 180".into(),
+                ],
                 _ => vec!["[SAMPLE] Test alert — elevated anomaly score".into()],
             };
             let alert = crate::collector::AlertRecord {
@@ -3444,7 +3796,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 mitre: vec![],
             };
             let mut s = state.lock().unwrap();
-            if s.alerts.len() >= 10_000 { s.alerts.remove(0); }
+            if s.alerts.len() >= 10_000 {
+                s.alerts.remove(0);
+            }
             s.alerts.push(alert);
             json_response(
                 &format!(r#"{{"status":"injected","severity":"{severity}","score":{score:.2}}}"#),
@@ -3473,9 +3827,16 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let window = match body {
                 Ok(b) => {
                     #[derive(serde::Deserialize)]
-                    struct AnalysisReq { #[serde(default = "default_window")] window_minutes: u64 }
-                    fn default_window() -> u64 { 5 }
-                    let req: AnalysisReq = serde_json::from_str(&b).unwrap_or(AnalysisReq { window_minutes: default_window() });
+                    struct AnalysisReq {
+                        #[serde(default = "default_window")]
+                        window_minutes: u64,
+                    }
+                    fn default_window() -> u64 {
+                        5
+                    }
+                    let req: AnalysisReq = serde_json::from_str(&b).unwrap_or(AnalysisReq {
+                        window_minutes: default_window(),
+                    });
                     req.window_minutes
                 }
                 Err(_) => 5,
@@ -3590,17 +3951,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Get, "/api/endpoints") => {
             let endpoints = serde_json::json!([
                 {"method": "GET", "path": "/api/health", "auth": false, "description": "Server health, version, uptime, platform"},
+                {"method": "GET", "path": "/api/metrics", "auth": false, "description": "Prometheus-format product metrics"},
                 {"method": "GET", "path": "/api/host/info", "auth": true, "description": "Detailed host info + monitoring status"},
                 {"method": "GET", "path": "/api/telemetry/current", "auth": true, "description": "Latest local telemetry sample"},
                 {"method": "GET", "path": "/api/telemetry/history", "auth": true, "description": "Last 120 local telemetry samples"},
                 {"method": "GET", "path": "/api/checkpoints", "auth": true, "description": "Saved checkpoint metadata"},
                 {"method": "GET", "path": "/api/correlation", "auth": true, "description": "Replay-buffer correlation analysis"},
                 {"method": "GET", "path": "/api/alerts", "auth": true, "description": "Last 100 alerts"},
+                {"method": "GET", "path": "/api/alerts/{id}", "auth": true, "description": "Detailed alert view for a specific alert ID"},
                 {"method": "GET", "path": "/api/alerts/count", "auth": true, "description": "Alert count by severity"},
                 {"method": "DELETE", "path": "/api/alerts", "auth": true, "description": "Clear all alerts"},
                 {"method": "GET", "path": "/api/alerts/analysis", "auth": true, "description": "Latest alert pattern analysis"},
                 {"method": "POST", "path": "/api/alerts/analysis", "auth": true, "description": "Run on-demand alert analysis with custom window"},
                 {"method": "GET", "path": "/api/alerts/grouped", "auth": true, "description": "Alerts grouped by reason fingerprint"},
+                {"method": "GET", "path": "/api/threat-intel/status", "auth": true, "description": "Threat intelligence indicator inventory status"},
+                {"method": "POST", "path": "/api/threat-intel/ioc", "auth": true, "description": "Submit a new indicator of compromise"},
                 {"method": "GET", "path": "/api/swarm/intel", "auth": true, "description": "Shared intelligence cache entries"},
                 {"method": "GET", "path": "/api/swarm/intel/stats", "auth": true, "description": "Shared intelligence cache statistics"},
                 {"method": "GET", "path": "/api/status", "auth": true, "description": "Project status manifest"},
@@ -3683,19 +4048,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
 
         // ── XDR Agent Management ──────────────────────────────────
-        (Method::Post, "/api/agents/enroll") => {
-            handle_agent_enroll(&mut request, state)
-        }
-        (Method::Post, "/api/agents/token") => {
-            handle_agent_create_token(&mut request, state)
-        }
+        (Method::Post, "/api/agents/enroll") => handle_agent_enroll(&mut request, state),
+        (Method::Post, "/api/agents/token") => handle_agent_create_token(&mut request, state),
         (Method::Get, "/api/agents") => {
             let mut s = state.lock().unwrap();
             s.agent_registry.refresh_staleness();
             let agents = s.agent_registry.list();
             let payload = agents
                 .iter()
-                .map(|agent| agent_summary_json(agent, s.remote_deployments.get(&agent.id), s.agent_registry.heartbeat_interval()))
+                .map(|agent| {
+                    agent_summary_json(
+                        agent,
+                        s.remote_deployments.get(&agent.id),
+                        s.agent_registry.heartbeat_interval(),
+                    )
+                })
                 .collect::<Vec<_>>();
             match serde_json::to_string(&payload) {
                 Ok(json) => json_response(&json, 200),
@@ -3704,9 +4071,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
 
         // ── XDR Events ────────────────────────────────────────────
-        (Method::Post, "/api/events") => {
-            handle_event_ingest(&mut request, state)
-        }
+        (Method::Post, "/api/events") => handle_event_ingest(&mut request, state),
         (Method::Get, "/api/events") => {
             let s = state.lock().unwrap();
             let query = parse_event_query(&url);
@@ -3749,26 +4114,14 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
-        (Method::Post, "/api/policy/publish") => {
-            handle_policy_publish(&mut request, state)
-        }
+        (Method::Post, "/api/policy/publish") => handle_policy_publish(&mut request, state),
 
         // ── XDR Update Distribution ──────────────────────────────
-        (Method::Post, "/api/updates/publish") => {
-            handle_update_publish(&mut request, state)
-        }
-        (Method::Post, "/api/updates/deploy") => {
-            handle_update_deploy(&mut request, state)
-        }
-        (Method::Post, "/api/updates/rollback") => {
-            handle_update_rollback(&mut request, state)
-        }
-        (Method::Post, "/api/updates/cancel") => {
-            handle_update_cancel(&mut request, state)
-        }
-        (Method::Post, "/api/events/bulk-triage") => {
-            handle_bulk_triage(&mut request, state)
-        }
+        (Method::Post, "/api/updates/publish") => handle_update_publish(&mut request, state),
+        (Method::Post, "/api/updates/deploy") => handle_update_deploy(&mut request, state),
+        (Method::Post, "/api/updates/rollback") => handle_update_rollback(&mut request, state),
+        (Method::Post, "/api/updates/cancel") => handle_update_cancel(&mut request, state),
+        (Method::Post, "/api/events/bulk-triage") => handle_bulk_triage(&mut request, state),
 
         // ── Detection Analysis ─────────────────────────────────
         (Method::Get, "/api/detection/summary") => {
@@ -3815,7 +4168,14 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
                 Ok(b) => b,
                 Err(e) => {
-                    respond_api(request, state, &method, &url, auth_used, error_json(&e, 400));
+                    respond_api(
+                        request,
+                        state,
+                        &method,
+                        &url,
+                        auth_used,
+                        error_json(&e, 400),
+                    );
                     return;
                 }
             };
@@ -3836,7 +4196,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let mut s = state.lock().unwrap();
             s.detector.set_signal_weights(weights.clone());
             drop(s);
-            json_response(&serde_json::json!({"status":"weights_updated","weights":weights}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"status":"weights_updated","weights":weights}).to_string(),
+                200,
+            )
         }
 
         // ── Audit Log ─────────────────────────────────────────────
@@ -3853,19 +4216,23 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Get, "/api/incidents") => {
             let s = state.lock().unwrap();
             let query = parse_query_string(&url);
-            let status = query.get("status").map(|s| s.as_str());
-            let severity = query.get("severity").map(|s| s.as_str());
-            let incidents = s.incident_store.list_filtered(status, severity);
-            match serde_json::to_string(&incidents) {
+            match incidents_json(&s.incident_store, &query) {
                 Ok(json) => json_response(&json, 200),
-                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                Err(e) => error_json(&e, 500),
             }
         }
         (Method::Post, "/api/incidents") => {
             let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
                 Ok(b) => b,
                 Err(e) => {
-                    respond_api(request, state, &method, &url, auth_used, error_json(&e, 400));
+                    respond_api(
+                        request,
+                        state,
+                        &method,
+                        &url,
+                        auth_used,
+                        error_json(&e, 400),
+                    );
                     return;
                 }
             };
@@ -3895,7 +4262,14 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 }
             };
             let mut s = state.lock().unwrap();
-            let inc = s.incident_store.create(req.title, req.severity, req.event_ids, req.agent_ids, vec![], req.summary);
+            let inc = s.incident_store.create(
+                req.title,
+                req.severity,
+                req.event_ids,
+                req.agent_ids,
+                vec![],
+                req.summary,
+            );
             match serde_json::to_string(inc) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -3905,17 +4279,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         // ── Fleet Inventory ──────────────────────────────────────
         (Method::Get, "/api/fleet/inventory") => {
             let s = state.lock().unwrap();
-            let summary: Vec<serde_json::Value> = s.agent_inventories.iter().map(|(id, inv)| {
-                serde_json::json!({
-                    "agent_id": id,
-                    "collected_at": inv.collected_at,
-                    "hardware": inv.hardware,
-                    "software_count": inv.software.len(),
-                    "services_count": inv.services.len(),
-                    "network_ports": inv.network.len(),
-                    "users_count": inv.users.len(),
+            let summary: Vec<serde_json::Value> = s
+                .agent_inventories
+                .iter()
+                .map(|(id, inv)| {
+                    serde_json::json!({
+                        "agent_id": id,
+                        "collected_at": inv.collected_at,
+                        "hardware": inv.hardware,
+                        "software_count": inv.software.len(),
+                        "services_count": inv.services.len(),
+                        "network_ports": inv.network.len(),
+                        "users_count": inv.users.len(),
+                    })
                 })
-            }).collect();
+                .collect();
             json_response(&serde_json::json!({"agents": summary}).to_string(), 200)
         }
 
@@ -3959,7 +4337,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             match body {
                 Ok(b) => match serde_json::from_str::<crate::siem::SiemConfig>(&b) {
                     Ok(new_cfg) => {
-                        if new_cfg.enabled && !new_cfg.endpoint.is_empty()
+                        if new_cfg.enabled
+                            && !new_cfg.endpoint.is_empty()
                             && !new_cfg.endpoint.starts_with("https://")
                             && !new_cfg.endpoint.starts_with("http://")
                         {
@@ -3975,7 +4354,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             } else {
                                 s.config = next_config;
                                 s.siem_connector.update_config(new_cfg);
-                                json_response(r#"{"status":"ok","message":"SIEM configuration updated"}"#, 200)
+                                json_response(
+                                    r#"{"status":"ok","message":"SIEM configuration updated"}"#,
+                                    200,
+                                )
                             }
                         }
                     }
@@ -4004,7 +4386,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             match body {
                 Ok(b) => match serde_json::from_str::<crate::siem::TaxiiConfig>(&b) {
                     Ok(new_cfg) => {
-                        if new_cfg.enabled && !new_cfg.url.is_empty()
+                        if new_cfg.enabled
+                            && !new_cfg.url.is_empty()
                             && !new_cfg.url.starts_with("https://")
                             && !new_cfg.url.starts_with("http://")
                         {
@@ -4018,7 +4401,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             } else {
                                 s.config = next_config;
                                 s.taxii_client.update_config(new_cfg);
-                                json_response(r#"{"status":"ok","message":"TAXII configuration updated"}"#, 200)
+                                json_response(
+                                    r#"{"status":"ok","message":"TAXII configuration updated"}"#,
+                                    200,
+                                )
                             }
                         }
                     }
@@ -4032,7 +4418,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             match s.taxii_client.pull_indicators() {
                 Ok(records) => {
                     let count = records.len();
-                    match serde_json::to_string(&serde_json::json!({"pulled": count, "records": records})) {
+                    match serde_json::to_string(
+                        &serde_json::json!({"pulled": count, "records": records}),
+                    ) {
                         Ok(j) => json_response(&j, 200),
                         Err(e) => error_json(&format!("serialization error: {e}"), 500),
                     }
@@ -4048,7 +4436,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let agents = s.agent_registry.list();
             let mut counts = HashMap::new();
             for agent in agents.iter().copied() {
-                let (status, _) = computed_agent_status(agent, s.agent_registry.heartbeat_interval());
+                let (status, _) =
+                    computed_agent_status(agent, s.agent_registry.heartbeat_interval());
                 *counts.entry(status).or_insert(0usize) += 1;
             }
             let total_events = s.event_store.total_events();
@@ -4159,7 +4548,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 .hunts()
                 .iter()
                 .map(|hunt| {
-                    let latest_run = s.enterprise.hunt_runs(&hunt.id).into_iter().max_by(|a, b| a.run_at.cmp(&b.run_at));
+                    let latest_run = s
+                        .enterprise
+                        .hunt_runs(&hunt.id)
+                        .into_iter()
+                        .max_by(|a, b| a.run_at.cmp(&b.run_at));
                     serde_json::json!({
                         "id": hunt.id,
                         "name": hunt.name,
@@ -4176,73 +4569,100 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     })
                 })
                 .collect();
-            json_response(&serde_json::json!({"hunts": items, "count": items.len()}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"hunts": items, "count": items.len()}).to_string(),
+                200,
+            )
         }
-        (Method::Post, "/api/hunts") => {
-            match read_json_value(&mut request, 16 * 1024) {
-                Ok(v) => {
-                    let query = v.get("query").cloned().unwrap_or_else(|| serde_json::json!({
+        (Method::Post, "/api/hunts") => match read_json_value(&mut request, 16 * 1024) {
+            Ok(v) => {
+                let query = v.get("query").cloned().unwrap_or_else(|| {
+                    serde_json::json!({
                         "text": v.get("text"),
                         "hostname": v.get("hostname"),
                         "level": v.get("level"),
                         "agent_id": v.get("agent_id"),
                         "limit": v.get("limit").cloned().unwrap_or(serde_json::json!(250))
-                    }));
-                    match serde_json::from_value::<crate::analyst::SearchQuery>(query) {
-                        Ok(query) => {
-                            let mut s = state.lock().unwrap();
-                            let hunt = s.enterprise.create_or_update_hunt(
-                                v["id"].as_str(),
-                                v["name"].as_str().unwrap_or("Untitled Hunt").to_string(),
-                                v["owner"].as_str().unwrap_or(auth_identity.actor()).to_string(),
-                                v["severity"].as_str().unwrap_or("medium").to_string(),
-                                v["threshold"].as_u64().unwrap_or(1) as usize,
-                                v["suppression_window_secs"].as_u64().unwrap_or(0),
-                                v["schedule_interval_secs"].as_u64(),
-                                query,
-                            );
-                            let _ = s.enterprise.record_change(
-                                "hunt",
-                                &hunt.id,
-                                &format!("Saved hunt {}", hunt.name),
-                                auth_identity.actor(),
-                                Some(hunt.id.clone()),
-                                Some(&v.to_string()),
-                            );
-                            json_response(&serde_json::json!({"status": "saved", "hunt": hunt}).to_string(), 201)
-                        }
-                        Err(e) => error_json(&format!("invalid hunt query: {e}"), 400),
+                    })
+                });
+                match serde_json::from_value::<crate::analyst::SearchQuery>(query) {
+                    Ok(query) => {
+                        let mut s = state.lock().unwrap();
+                        let hunt = s.enterprise.create_or_update_hunt(
+                            v["id"].as_str(),
+                            v["name"].as_str().unwrap_or("Untitled Hunt").to_string(),
+                            v["owner"]
+                                .as_str()
+                                .unwrap_or(auth_identity.actor())
+                                .to_string(),
+                            v["severity"].as_str().unwrap_or("medium").to_string(),
+                            v["threshold"].as_u64().unwrap_or(1) as usize,
+                            v["suppression_window_secs"].as_u64().unwrap_or(0),
+                            v["schedule_interval_secs"].as_u64(),
+                            query,
+                        );
+                        let _ = s.enterprise.record_change(
+                            "hunt",
+                            &hunt.id,
+                            &format!("Saved hunt {}", hunt.name),
+                            auth_identity.actor(),
+                            Some(hunt.id.clone()),
+                            Some(&v.to_string()),
+                        );
+                        json_response(
+                            &serde_json::json!({"status": "saved", "hunt": hunt}).to_string(),
+                            201,
+                        )
                     }
+                    Err(e) => error_json(&format!("invalid hunt query: {e}"), 400),
                 }
-                Err(e) => error_json(&e, 400),
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Get, "/api/content/rules") => {
             let s = state.lock().unwrap();
             let items = build_content_rules_view(&s.enterprise);
-            json_response(&serde_json::json!({"rules": items, "count": items.len()}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"rules": items, "count": items.len()}).to_string(),
+                200,
+            )
         }
         (Method::Post, "/api/content/rules") => {
             match read_json_value(&mut request, 16 * 1024) {
                 Ok(v) => {
                     let is_builtin = v["builtin"].as_bool().unwrap_or(false)
-                        || v["kind"].as_str().map(|kind| kind.eq_ignore_ascii_case("sigma")).unwrap_or(false);
+                        || v["kind"]
+                            .as_str()
+                            .map(|kind| kind.eq_ignore_ascii_case("sigma"))
+                            .unwrap_or(false);
                     let attack = serde_json::from_value::<Vec<crate::telemetry::MitreAttack>>(
-                        v.get("attack").cloned().unwrap_or_else(|| serde_json::json!([]))
-                    ).unwrap_or_default();
+                        v.get("attack")
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!([])),
+                    )
+                    .unwrap_or_default();
                     let pack_ids = v
                         .get("pack_ids")
                         .and_then(|value| value.as_array())
-                        .map(|values| values.iter().filter_map(|value| value.as_str().map(|s| s.to_string())).collect::<Vec<_>>())
+                        .map(|values| {
+                            values
+                                .iter()
+                                .filter_map(|value| value.as_str().map(|s| s.to_string()))
+                                .collect::<Vec<_>>()
+                        })
                         .unwrap_or_default();
                     let mut s = state.lock().unwrap();
                     if is_builtin {
                         match s.enterprise.update_builtin_metadata(
                             v["id"].as_str().unwrap_or(""),
-                            v.get("owner").and_then(|value| value.as_str()).map(|s| s.to_string()),
+                            v.get("owner")
+                                .and_then(|value| value.as_str())
+                                .map(|s| s.to_string()),
                             v.get("enabled").and_then(|value| value.as_bool()),
                             (!pack_ids.is_empty()).then_some(pack_ids),
-                            v.get("false_positive_review").and_then(|value| value.as_str()).map(|s| s.to_string()),
+                            v.get("false_positive_review")
+                                .and_then(|value| value.as_str())
+                                .map(|s| s.to_string()),
                         ) {
                             Ok(rule) => {
                                 sync_enterprise_sigma_engine(&mut s);
@@ -4254,7 +4674,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                     Some(rule.id.clone()),
                                     Some(&v.to_string()),
                                 );
-                                json_response(&serde_json::json!({"status": "updated", "rule": rule}).to_string(), 200)
+                                json_response(
+                                    &serde_json::json!({"status": "updated", "rule": rule})
+                                        .to_string(),
+                                    200,
+                                )
                             }
                             Err(e) => error_json(&e, 404),
                         }
@@ -4301,35 +4725,43 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let s = state.lock().unwrap();
             json_response(&serde_json::json!({"packs": s.enterprise.packs(), "count": s.enterprise.packs().len()}).to_string(), 200)
         }
-        (Method::Post, "/api/content/packs") => {
-            match read_json_value(&mut request, 12 * 1024) {
-                Ok(v) => {
-                    let rule_ids = v
-                        .get("rule_ids")
-                        .and_then(|value| value.as_array())
-                        .map(|values| values.iter().filter_map(|value| value.as_str().map(|s| s.to_string())).collect::<Vec<_>>())
-                        .unwrap_or_default();
-                    let mut s = state.lock().unwrap();
-                    let pack = s.enterprise.create_or_update_pack(
-                        v["id"].as_str(),
-                        v["name"].as_str().unwrap_or("Untitled Pack").to_string(),
-                        v["description"].as_str().unwrap_or("").to_string(),
-                        v.get("enabled").and_then(|value| value.as_bool()).unwrap_or(true),
-                        rule_ids,
-                    );
-                    let _ = s.enterprise.record_change(
-                        "content_pack",
-                        &pack.id,
-                        &format!("Saved content pack {}", pack.name),
-                        auth_identity.actor(),
-                        Some(pack.id.clone()),
-                        Some(&v.to_string()),
-                    );
-                    json_response(&serde_json::json!({"status": "saved", "pack": pack}).to_string(), 201)
-                }
-                Err(e) => error_json(&e, 400),
+        (Method::Post, "/api/content/packs") => match read_json_value(&mut request, 12 * 1024) {
+            Ok(v) => {
+                let rule_ids = v
+                    .get("rule_ids")
+                    .and_then(|value| value.as_array())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|value| value.as_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let mut s = state.lock().unwrap();
+                let pack = s.enterprise.create_or_update_pack(
+                    v["id"].as_str(),
+                    v["name"].as_str().unwrap_or("Untitled Pack").to_string(),
+                    v["description"].as_str().unwrap_or("").to_string(),
+                    v.get("enabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(true),
+                    rule_ids,
+                );
+                let _ = s.enterprise.record_change(
+                    "content_pack",
+                    &pack.id,
+                    &format!("Saved content pack {}", pack.name),
+                    auth_identity.actor(),
+                    Some(pack.id.clone()),
+                    Some(&v.to_string()),
+                );
+                json_response(
+                    &serde_json::json!({"status": "saved", "pack": pack}).to_string(),
+                    201,
+                )
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Get, "/api/coverage/mitre") => {
             let s = state.lock().unwrap();
             let coverage = build_mitre_coverage(&s.enterprise, s.incident_store.list());
@@ -4337,43 +4769,67 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
         (Method::Get, "/api/suppressions") => {
             let s = state.lock().unwrap();
-            json_response(&serde_json::json!({
-                "suppressions": s.enterprise.suppressions(),
-                "active": s.enterprise.active_suppression_count(),
-                "count": s.enterprise.suppressions().len(),
-            }).to_string(), 200)
+            json_response(
+                &serde_json::json!({
+                    "suppressions": s.enterprise.suppressions(),
+                    "active": s.enterprise.active_suppression_count(),
+                    "count": s.enterprise.suppressions().len(),
+                })
+                .to_string(),
+                200,
+            )
         }
-        (Method::Post, "/api/suppressions") => {
-            match read_json_value(&mut request, 12 * 1024) {
-                Ok(v) => {
-                    let mut s = state.lock().unwrap();
-                    let suppression = s.enterprise.create_or_update_suppression(
-                        v["id"].as_str(),
-                        v["name"].as_str().unwrap_or("suppression").to_string(),
-                        v.get("rule_id").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("hunt_id").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("hostname").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("agent_id").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("severity").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("text").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("expires_at").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v["justification"].as_str().unwrap_or("operator suppression").to_string(),
-                        auth_identity.actor().to_string(),
-                        v.get("active").and_then(|value| value.as_bool()).unwrap_or(true),
-                    );
-                    let _ = s.enterprise.record_change(
-                        "suppression",
-                        &suppression.id,
-                        &format!("Updated suppression {}", suppression.name),
-                        auth_identity.actor(),
-                        Some(suppression.id.clone()),
-                        Some(&v.to_string()),
-                    );
-                    json_response(&serde_json::json!({"status": "saved", "suppression": suppression}).to_string(), 201)
-                }
-                Err(e) => error_json(&e, 400),
+        (Method::Post, "/api/suppressions") => match read_json_value(&mut request, 12 * 1024) {
+            Ok(v) => {
+                let mut s = state.lock().unwrap();
+                let suppression = s.enterprise.create_or_update_suppression(
+                    v["id"].as_str(),
+                    v["name"].as_str().unwrap_or("suppression").to_string(),
+                    v.get("rule_id")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("hunt_id")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("hostname")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("agent_id")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("severity")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("text")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("expires_at")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v["justification"]
+                        .as_str()
+                        .unwrap_or("operator suppression")
+                        .to_string(),
+                    auth_identity.actor().to_string(),
+                    v.get("active")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(true),
+                );
+                let _ = s.enterprise.record_change(
+                    "suppression",
+                    &suppression.id,
+                    &format!("Updated suppression {}", suppression.name),
+                    auth_identity.actor(),
+                    Some(suppression.id.clone()),
+                    Some(&v.to_string()),
+                );
+                json_response(
+                    &serde_json::json!({"status": "saved", "suppression": suppression}).to_string(),
+                    201,
+                )
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Get, "/api/enrichments/connectors") => {
             let s = state.lock().unwrap();
             json_response(&serde_json::json!({"connectors": s.enterprise.connectors(), "count": s.enterprise.connectors().len()}).to_string(), 200)
@@ -4384,17 +4840,30 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     let metadata = v
                         .get("metadata")
                         .cloned()
-                        .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
+                        .and_then(|value| {
+                            serde_json::from_value::<HashMap<String, String>>(value).ok()
+                        })
                         .unwrap_or_default();
                     let mut s = state.lock().unwrap();
                     let connector = s.enterprise.create_or_update_connector(
                         v["id"].as_str(),
                         v["kind"].as_str().unwrap_or("custom").to_string(),
-                        v["display_name"].as_str().unwrap_or("Connector").to_string(),
-                        v.get("endpoint").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("auth_mode").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("enabled").and_then(|value| value.as_bool()).unwrap_or(true),
-                        v.get("timeout_secs").and_then(|value| value.as_u64()).unwrap_or(10),
+                        v["display_name"]
+                            .as_str()
+                            .unwrap_or("Connector")
+                            .to_string(),
+                        v.get("endpoint")
+                            .and_then(|value| value.as_str())
+                            .map(|s| s.to_string()),
+                        v.get("auth_mode")
+                            .and_then(|value| value.as_str())
+                            .map(|s| s.to_string()),
+                        v.get("enabled")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(true),
+                        v.get("timeout_secs")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(10),
                         metadata,
                     );
                     let _ = s.enterprise.record_change(
@@ -4405,7 +4874,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         Some(connector.id.clone()),
                         Some(&v.to_string()),
                     );
-                    json_response(&serde_json::json!({"status": "saved", "connector": connector}).to_string(), 200)
+                    json_response(
+                        &serde_json::json!({"status": "saved", "connector": connector}).to_string(),
+                        200,
+                    )
                 }
                 Err(e) => error_json(&e, 400),
             }
@@ -4419,20 +4891,32 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         v["provider"].as_str().unwrap_or("jira").to_string(),
                         v["object_kind"].as_str().unwrap_or("incident").to_string(),
                         v["object_id"].as_str().unwrap_or("").to_string(),
-                        v.get("queue_or_project").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v["summary"].as_str().unwrap_or("Enterprise sync").to_string(),
+                        v.get("queue_or_project")
+                            .and_then(|value| value.as_str())
+                            .map(|s| s.to_string()),
+                        v["summary"]
+                            .as_str()
+                            .unwrap_or("Enterprise sync")
+                            .to_string(),
                         auth_identity.actor().to_string(),
                     );
-                    s.enterprise.record_ticket_sync_metrics(started.elapsed().as_millis() as u64);
+                    s.enterprise
+                        .record_ticket_sync_metrics(started.elapsed().as_millis() as u64);
                     let _ = s.enterprise.record_change(
                         "ticket_sync",
                         &sync.id,
-                        &format!("Synced {} {} to {}", sync.object_kind, sync.object_id, sync.provider),
+                        &format!(
+                            "Synced {} {} to {}",
+                            sync.object_kind, sync.object_id, sync.provider
+                        ),
                         auth_identity.actor(),
                         Some(sync.id.clone()),
                         Some(&v.to_string()),
                     );
-                    json_response(&serde_json::json!({"status": "synced", "sync": sync}).to_string(), 200)
+                    json_response(
+                        &serde_json::json!({"status": "synced", "sync": sync}).to_string(),
+                        200,
+                    )
                 }
                 Err(e) => error_json(&e, 400),
             }
@@ -4441,73 +4925,103 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let s = state.lock().unwrap();
             json_response(&serde_json::json!({"providers": s.enterprise.idp_providers(), "count": s.enterprise.idp_providers().len()}).to_string(), 200)
         }
-        (Method::Post, "/api/idp/providers") => {
-            match read_json_value(&mut request, 12 * 1024) {
-                Ok(v) => {
-                    let mappings = v
-                        .get("group_role_mappings")
-                        .cloned()
-                        .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
-                        .unwrap_or_default();
-                    let mut s = state.lock().unwrap();
-                    let provider = s.enterprise.create_or_update_idp_provider(
-                        v["id"].as_str(),
-                        v["kind"].as_str().unwrap_or("oidc").to_string(),
-                        v["display_name"].as_str().unwrap_or("Identity Provider").to_string(),
-                        v.get("issuer_url").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("sso_url").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("client_id").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("entity_id").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("enabled").and_then(|value| value.as_bool()).unwrap_or(true),
-                        mappings,
-                    );
-                    let _ = s.enterprise.record_change(
-                        "identity_provider",
-                        &provider.id,
-                        &format!("Configured {} provider {}", provider.kind, provider.display_name),
-                        auth_identity.actor(),
-                        Some(provider.id.clone()),
-                        Some(&v.to_string()),
-                    );
-                    json_response(&serde_json::json!({"status": "saved", "provider": provider}).to_string(), 200)
-                }
-                Err(e) => error_json(&e, 400),
+        (Method::Post, "/api/idp/providers") => match read_json_value(&mut request, 12 * 1024) {
+            Ok(v) => {
+                let mappings = v
+                    .get("group_role_mappings")
+                    .cloned()
+                    .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
+                    .unwrap_or_default();
+                let mut s = state.lock().unwrap();
+                let provider = s.enterprise.create_or_update_idp_provider(
+                    v["id"].as_str(),
+                    v["kind"].as_str().unwrap_or("oidc").to_string(),
+                    v["display_name"]
+                        .as_str()
+                        .unwrap_or("Identity Provider")
+                        .to_string(),
+                    v.get("issuer_url")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("sso_url")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("client_id")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("entity_id")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("enabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(true),
+                    mappings,
+                );
+                let _ = s.enterprise.record_change(
+                    "identity_provider",
+                    &provider.id,
+                    &format!(
+                        "Configured {} provider {}",
+                        provider.kind, provider.display_name
+                    ),
+                    auth_identity.actor(),
+                    Some(provider.id.clone()),
+                    Some(&v.to_string()),
+                );
+                json_response(
+                    &serde_json::json!({"status": "saved", "provider": provider}).to_string(),
+                    200,
+                )
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Get, "/api/scim/config") => {
             let s = state.lock().unwrap();
-            json_response(&serde_json::json!({"config": s.enterprise.scim()}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"config": s.enterprise.scim()}).to_string(),
+                200,
+            )
         }
-        (Method::Post, "/api/scim/config") => {
-            match read_json_value(&mut request, 12 * 1024) {
-                Ok(v) => {
-                    let mappings = v
-                        .get("group_role_mappings")
-                        .cloned()
-                        .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
-                        .unwrap_or_default();
-                    let mut s = state.lock().unwrap();
-                    let config = s.enterprise.update_scim(
-                        v.get("enabled").and_then(|value| value.as_bool()).unwrap_or(true),
-                        v.get("base_url").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v.get("bearer_token").and_then(|value| value.as_str()).map(|s| s.to_string()),
-                        v["provisioning_mode"].as_str().unwrap_or("automatic").to_string(),
-                        v["default_role"].as_str().unwrap_or("viewer").to_string(),
-                        mappings,
-                    );
-                    let _ = s.enterprise.record_change(
-                        "scim",
-                        "scim-config",
-                        "Updated SCIM provisioning configuration",
-                        auth_identity.actor(),
-                        Some("scim-config".to_string()),
-                        Some(&v.to_string()),
-                    );
-                    json_response(&serde_json::json!({"status": "saved", "config": config}).to_string(), 200)
-                }
-                Err(e) => error_json(&e, 400),
+        (Method::Post, "/api/scim/config") => match read_json_value(&mut request, 12 * 1024) {
+            Ok(v) => {
+                let mappings = v
+                    .get("group_role_mappings")
+                    .cloned()
+                    .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
+                    .unwrap_or_default();
+                let mut s = state.lock().unwrap();
+                let config = s.enterprise.update_scim(
+                    v.get("enabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(true),
+                    v.get("base_url")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("bearer_token")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v["provisioning_mode"]
+                        .as_str()
+                        .unwrap_or("automatic")
+                        .to_string(),
+                    v["default_role"].as_str().unwrap_or("viewer").to_string(),
+                    mappings,
+                );
+                let _ = s.enterprise.record_change(
+                    "scim",
+                    "scim-config",
+                    "Updated SCIM provisioning configuration",
+                    auth_identity.actor(),
+                    Some("scim-config".to_string()),
+                    Some(&v.to_string()),
+                );
+                json_response(
+                    &serde_json::json!({"status": "saved", "config": config}).to_string(),
+                    200,
+                )
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Get, "/api/audit/admin") => {
             let s = state.lock().unwrap();
             let payload = serde_json::json!({
@@ -4566,7 +5080,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 "change_control": s.enterprise.change_control(),
             });
             let digest = crate::audit::sha256_hex(payload.to_string().as_bytes());
-            json_response(&serde_json::json!({"bundle": payload, "digest": digest}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"bundle": payload, "digest": digest}).to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/system/health/dependencies") => {
             let mut s = state.lock().unwrap();
@@ -4575,7 +5092,13 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 .agent_registry
                 .list()
                 .iter()
-                .filter(|agent| matches!(agent.status, crate::enrollment::AgentStatus::Stale | crate::enrollment::AgentStatus::Offline))
+                .filter(|agent| {
+                    matches!(
+                        agent.status,
+                        crate::enrollment::AgentStatus::Stale
+                            | crate::enrollment::AgentStatus::Offline
+                    )
+                })
                 .count();
             let pending_deployments = s
                 .remote_deployments
@@ -4655,16 +5178,24 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         // ── Sigma Detection Engine ────────────────────────────────
         (Method::Get, "/api/sigma/rules") => {
             let s = state.lock().unwrap();
-            let rules: Vec<serde_json::Value> = s.sigma_engine.rules().iter().map(|r| {
-                serde_json::json!({
-                    "id": r.id,
-                    "title": r.title,
-                    "status": r.status,
-                    "level": format!("{:?}", r.level),
-                    "description": r.description,
+            let rules: Vec<serde_json::Value> = s
+                .sigma_engine
+                .rules()
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "id": r.id,
+                        "title": r.title,
+                        "status": r.status,
+                        "level": format!("{:?}", r.level),
+                        "description": r.description,
+                    })
                 })
-            }).collect();
-            json_response(&serde_json::json!({"rules": rules, "count": rules.len()}).to_string(), 200)
+                .collect();
+            json_response(
+                &serde_json::json!({"rules": rules, "count": rules.len()}).to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/sigma/stats") => {
             let s = state.lock().unwrap();
@@ -4690,35 +5221,52 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         }
         (Method::Get, "/api/ocsf/schema/version") => {
             let sv = SchemaVersion::current();
-            json_response(&serde_json::json!({
-                "ocsf_version": sv.ocsf_version,
-                "product_version": sv.product_version,
-                "supported_classes": sv.supported_classes,
-            }).to_string(), 200)
+            json_response(
+                &serde_json::json!({
+                    "ocsf_version": sv.ocsf_version,
+                    "product_version": sv.product_version,
+                    "supported_classes": sv.supported_classes,
+                })
+                .to_string(),
+                200,
+            )
         }
 
         // ── Dead-Letter Queue ─────────────────────────────────────
         (Method::Get, "/api/dlq") => {
             let s = state.lock().unwrap();
-            let items: Vec<serde_json::Value> = s.dead_letter_queue.list().iter().map(|e| {
-                serde_json::json!({
-                    "original_payload": e.original_payload,
-                    "errors": e.errors,
-                    "received_at": e.received_at,
-                    "source_agent": e.source_agent,
+            let items: Vec<serde_json::Value> = s
+                .dead_letter_queue
+                .list()
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "original_payload": e.original_payload,
+                        "errors": e.errors,
+                        "received_at": e.received_at,
+                        "source_agent": e.source_agent,
+                    })
                 })
-            }).collect();
-            json_response(&serde_json::json!({
-                "dead_letters": items,
-                "count": items.len(),
-            }).to_string(), 200)
+                .collect();
+            json_response(
+                &serde_json::json!({
+                    "dead_letters": items,
+                    "count": items.len(),
+                })
+                .to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/dlq/stats") => {
             let s = state.lock().unwrap();
-            json_response(&serde_json::json!({
-                "count": s.dead_letter_queue.len(),
-                "empty": s.dead_letter_queue.is_empty(),
-            }).to_string(), 200)
+            json_response(
+                &serde_json::json!({
+                    "count": s.dead_letter_queue.len(),
+                    "empty": s.dead_letter_queue.is_empty(),
+                })
+                .to_string(),
+                200,
+            )
         }
         (Method::Delete, "/api/dlq") => {
             let mut s = state.lock().unwrap();
@@ -4732,35 +5280,47 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let s = state.lock().unwrap();
             let pending = s.response_orchestrator.pending_requests();
             let items: Vec<serde_json::Value> = pending.iter().map(response_request_json).collect();
-            json_response(&serde_json::json!({"pending": items, "count": items.len()}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"pending": items, "count": items.len()}).to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/response/requests") => {
             let s = state.lock().unwrap();
             let mut requests = s.response_orchestrator.all_requests();
             requests.sort_by(|left, right| right.requested_at.cmp(&left.requested_at));
-            let items: Vec<serde_json::Value> = requests.iter().map(response_request_json).collect();
-            let ready = requests.iter()
+            let items: Vec<serde_json::Value> =
+                requests.iter().map(response_request_json).collect();
+            let ready = requests
+                .iter()
                 .filter(|r| r.status == ApprovalStatus::Approved && !r.dry_run)
                 .count();
-            json_response(&serde_json::json!({
-                "requests": items,
-                "count": items.len(),
-                "ready_to_execute": ready,
-            }).to_string(), 200)
+            json_response(
+                &serde_json::json!({
+                    "requests": items,
+                    "count": items.len(),
+                    "ready_to_execute": ready,
+                })
+                .to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/response/audit") => {
             let s = state.lock().unwrap();
             let ledger = s.response_orchestrator.audit_ledger();
-            let entries: Vec<serde_json::Value> = ledger.iter().map(|e| {
-                serde_json::json!({
-                    "request_id": e.request_id,
-                    "action": format!("{:?}", e.action),
-                    "target": e.target_hostname,
-                    "outcome": format!("{:?}", e.status),
-                    "timestamp": e.timestamp,
-                    "approvers": e.approvals,
+            let entries: Vec<serde_json::Value> = ledger
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "request_id": e.request_id,
+                        "action": format!("{:?}", e.action),
+                        "target": e.target_hostname,
+                        "outcome": format!("{:?}", e.status),
+                        "timestamp": e.timestamp,
+                        "approvers": e.approvals,
+                    })
                 })
-            }).collect();
+                .collect();
             json_response(&serde_json::json!({"audit_log": entries}).to_string(), 200)
         }
         (Method::Get, "/api/response/stats") => {
@@ -4768,9 +5328,16 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let pending = s.response_orchestrator.pending_requests();
             let all = s.response_orchestrator.all_requests();
             let audit = s.response_orchestrator.audit_ledger();
-            let auto_count = audit.iter().filter(|e| e.status == ApprovalStatus::Executed).count();
-            let denied_count = audit.iter().filter(|e| e.status == ApprovalStatus::Denied).count();
-            let ready_count = all.iter()
+            let auto_count = audit
+                .iter()
+                .filter(|e| e.status == ApprovalStatus::Executed)
+                .count();
+            let denied_count = audit
+                .iter()
+                .filter(|e| e.status == ApprovalStatus::Denied)
+                .count();
+            let ready_count = all
+                .iter()
                 .filter(|r| r.status == ApprovalStatus::Approved && !r.dry_run)
                 .count();
             let protected = s.response_orchestrator.protected_asset_count();
@@ -4792,15 +5359,18 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Get, "/api/feature-flags") => {
             let s = state.lock().unwrap();
             let flags = s.feature_flags.all_flags();
-            let items: Vec<serde_json::Value> = flags.iter().map(|f| {
-                serde_json::json!({
-                    "name": f.name,
-                    "description": f.description,
-                    "enabled": f.enabled,
-                    "rollout_pct": f.rollout_pct,
-                    "kill_switch": f.kill_switch,
+            let items: Vec<serde_json::Value> = flags
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "name": f.name,
+                        "description": f.description,
+                        "enabled": f.enabled,
+                        "rollout_pct": f.rollout_pct,
+                        "kill_switch": f.kill_switch,
+                    })
                 })
-            }).collect();
+                .collect();
             json_response(&serde_json::json!({"flags": items}).to_string(), 200)
         }
 
@@ -4808,33 +5378,42 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Get, "/api/process-tree") => {
             let s = state.lock().unwrap();
             let alive = s.process_tree.alive_processes();
-            let nodes: Vec<serde_json::Value> = alive.iter().map(|p| {
-                serde_json::json!({
-                    "pid": p.pid,
-                    "ppid": p.ppid,
-                    "name": p.name,
-                    "cmd_line": p.cmd_line,
-                    "user": p.user,
-                    "exe_path": p.exe_path,
-                    "hostname": p.hostname,
-                    "start_time": p.start_time,
-                    "alive": p.alive,
+            let nodes: Vec<serde_json::Value> = alive
+                .iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "pid": p.pid,
+                        "ppid": p.ppid,
+                        "name": p.name,
+                        "cmd_line": p.cmd_line,
+                        "user": p.user,
+                        "exe_path": p.exe_path,
+                        "hostname": p.hostname,
+                        "start_time": p.start_time,
+                        "alive": p.alive,
+                    })
                 })
-            }).collect();
-            json_response(&serde_json::json!({"processes": nodes, "count": nodes.len()}).to_string(), 200)
+                .collect();
+            json_response(
+                &serde_json::json!({"processes": nodes, "count": nodes.len()}).to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/process-tree/deep-chains") => {
             let s = state.lock().unwrap();
             let chains = s.process_tree.deep_chains(4);
-            let items: Vec<serde_json::Value> = chains.iter().map(|chain| {
-                let leaf = &chain[0];
-                serde_json::json!({
-                    "pid": leaf.pid,
-                    "name": leaf.name,
-                    "cmd_line": leaf.cmd_line,
-                    "depth": chain.len(),
+            let items: Vec<serde_json::Value> = chains
+                .iter()
+                .map(|chain| {
+                    let leaf = &chain[0];
+                    serde_json::json!({
+                        "pid": leaf.pid,
+                        "name": leaf.name,
+                        "cmd_line": leaf.cmd_line,
+                        "depth": chain.len(),
+                    })
                 })
-            }).collect();
+                .collect();
             json_response(&serde_json::json!({"deep_chains": items}).to_string(), 200)
         }
 
@@ -4858,13 +5437,16 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Get, "/api/rbac/users") => {
             let s = state.lock().unwrap();
             let users = s.rbac.list_users();
-            let items: Vec<serde_json::Value> = users.iter().map(|u| {
-                serde_json::json!({
-                    "username": u.username,
-                    "role": format!("{:?}", u.role),
-                    "enabled": u.enabled,
+            let items: Vec<serde_json::Value> = users
+                .iter()
+                .map(|u| {
+                    serde_json::json!({
+                        "username": u.username,
+                        "role": format!("{:?}", u.role),
+                        "enabled": u.enabled,
+                    })
                 })
-            }).collect();
+                .collect();
             json_response(&serde_json::json!({"users": items}).to_string(), 200)
         }
 
@@ -4883,7 +5465,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                 "service" | "ServiceAccount" => Role::ServiceAccount,
                                 _ => Role::Viewer,
                             };
-                            let token = format!("tok-{}-{}", username, chrono::Utc::now().timestamp());
+                            let token =
+                                format!("tok-{}-{}", username, chrono::Utc::now().timestamp());
                             let user = User {
                                 username: username.clone(),
                                 role,
@@ -4910,7 +5493,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             } else {
                 let s = state.lock().unwrap();
                 if s.rbac.remove_user(username) {
-                    json_response(&serde_json::json!({"status": "removed", "username": username}).to_string(), 200)
+                    json_response(
+                        &serde_json::json!({"status": "removed", "username": username}).to_string(),
+                        200,
+                    )
                 } else {
                     error_json("user not found", 404)
                 }
@@ -4924,18 +5510,26 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             let priority = url_param(&url, "priority");
             let assignee = url_param(&url, "assignee");
             let cases = s.case_store.list_filtered(
-                status.as_deref(), priority.as_deref(), assignee.as_deref(),
+                status.as_deref(),
+                priority.as_deref(),
+                assignee.as_deref(),
             );
-            let items: Vec<serde_json::Value> = cases.iter().map(|c| {
-                serde_json::json!({
-                    "id": c.id, "title": c.title, "status": format!("{:?}", c.status),
-                    "priority": format!("{:?}", c.priority), "assignee": c.assignee,
-                    "created_at": c.created_at, "updated_at": c.updated_at,
-                    "incident_count": c.incident_ids.len(), "event_count": c.event_ids.len(),
-                    "tags": c.tags,
+            let items: Vec<serde_json::Value> = cases
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "id": c.id, "title": c.title, "status": format!("{:?}", c.status),
+                        "priority": format!("{:?}", c.priority), "assignee": c.assignee,
+                        "created_at": c.created_at, "updated_at": c.updated_at,
+                        "incident_count": c.incident_ids.len(), "event_count": c.event_ids.len(),
+                        "tags": c.tags,
+                    })
                 })
-            }).collect();
-            json_response(&serde_json::json!({"cases": items, "total": items.len()}).to_string(), 200)
+                .collect();
+            json_response(
+                &serde_json::json!({"cases": items, "total": items.len()}).to_string(),
+                200,
+            )
         }
         (Method::Post, "/api/cases") => {
             let body = read_body_limited(&mut request, 8192);
@@ -4951,18 +5545,30 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             "info" => CasePriority::Info,
                             _ => CasePriority::Medium,
                         };
-                        let inc_ids: Vec<u64> = v["incident_ids"].as_array()
+                        let inc_ids: Vec<u64> = v["incident_ids"]
+                            .as_array()
                             .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
                             .unwrap_or_default();
-                        let evt_ids: Vec<u64> = v["event_ids"].as_array()
+                        let evt_ids: Vec<u64> = v["event_ids"]
+                            .as_array()
                             .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
                             .unwrap_or_default();
-                        let tags: Vec<String> = v["tags"].as_array()
-                            .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                        let tags: Vec<String> = v["tags"]
+                            .as_array()
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|x| x.as_str().map(String::from))
+                                    .collect()
+                            })
                             .unwrap_or_default();
                         let mut s = state.lock().unwrap();
-                        let case = s.case_store.create(title, desc, prio, inc_ids, evt_ids, tags);
-                        json_response(&serde_json::json!({"id": case.id, "status": "created"}).to_string(), 201)
+                        let case = s
+                            .case_store
+                            .create(title, desc, prio, inc_ids, evt_ids, tags);
+                        json_response(
+                            &serde_json::json!({"id": case.id, "status": "created"}).to_string(),
+                            201,
+                        )
                     }
                     Err(_) => error_json("invalid JSON", 400),
                 },
@@ -4990,14 +5596,18 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 .iter()
                 .filter(|case| matches!(case.status, CaseStatus::Escalated))
                 .count();
-            json_response(&serde_json::json!({
-                "total": total,
-                "open": open,
-                "resolved": resolved,
-                "triaging": triaging,
-                "investigating": investigating,
-                "escalated": escalated,
-            }).to_string(), 200)
+            json_response(
+                &serde_json::json!({
+                    "total": total,
+                    "open": open,
+                    "resolved": resolved,
+                    "triaging": triaging,
+                    "investigating": investigating,
+                    "escalated": escalated,
+                })
+                .to_string(),
+                200,
+            )
         }
 
         // ── Analyst Console: Alert Queue ───────────────────────────
@@ -5008,7 +5618,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 .iter()
                 .map(|item| queue_alert_summary(item, &s.event_store))
                 .collect();
-            json_response(&serde_json::json!({"queue": items, "count": items.len()}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"queue": items, "count": items.len()}).to_string(),
+                200,
+            )
         }
         (Method::Get, "/api/queue/stats") => {
             let s = state.lock().unwrap();
@@ -5025,7 +5638,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             .unwrap_or(0);
                         let mut s = state.lock().unwrap();
                         if s.alert_queue.acknowledge(event_id) {
-                            json_response(&serde_json::json!({"acknowledged": event_id}).to_string(), 200)
+                            json_response(
+                                &serde_json::json!({"acknowledged": event_id}).to_string(),
+                                200,
+                            )
                         } else {
                             error_json("event not found in queue", 404)
                         }
@@ -5038,19 +5654,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Post, "/api/queue/assign") => {
             let body = read_body_limited(&mut request, 1024);
             match body {
-                Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
-                    Ok(v) => {
-                        let event_id = v["event_id"].as_u64().unwrap_or(0);
-                        let assignee = v["assignee"].as_str().unwrap_or("").to_string();
-                        let mut s = state.lock().unwrap();
-                        if s.alert_queue.assign(event_id, assignee.clone()) {
-                            json_response(&serde_json::json!({"assigned": event_id, "assignee": assignee}).to_string(), 200)
-                        } else {
-                            error_json("event not found in queue", 404)
+                Ok(b) => {
+                    match serde_json::from_str::<serde_json::Value>(&b) {
+                        Ok(v) => {
+                            let event_id = v["event_id"].as_u64().unwrap_or(0);
+                            let assignee = v["assignee"].as_str().unwrap_or("").to_string();
+                            let mut s = state.lock().unwrap();
+                            if s.alert_queue.assign(event_id, assignee.clone()) {
+                                json_response(&serde_json::json!({"assigned": event_id, "assignee": assignee}).to_string(), 200)
+                            } else {
+                                error_json("event not found in queue", 404)
+                            }
                         }
+                        Err(_) => error_json("invalid JSON", 400),
                     }
-                    Err(_) => error_json("invalid JSON", 400),
-                },
+                }
                 Err(e) => error_json(&e, 400),
             }
         }
@@ -5064,15 +5682,22 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         let s = state.lock().unwrap();
                         let events = s.event_store.all_events();
                         let results = crate::analyst::search_events(events, &q);
-                        let items: Vec<serde_json::Value> = results.iter().map(|e| {
-                            serde_json::json!({
-                                "id": e.id, "agent_id": e.agent_id,
-                                "hostname": e.alert.hostname, "score": e.alert.score,
-                                "level": e.alert.level, "timestamp": e.alert.timestamp,
-                                "reasons": e.alert.reasons, "action": e.alert.action,
+                        let items: Vec<serde_json::Value> = results
+                            .iter()
+                            .map(|e| {
+                                serde_json::json!({
+                                    "id": e.id, "agent_id": e.agent_id,
+                                    "hostname": e.alert.hostname, "score": e.alert.score,
+                                    "level": e.alert.level, "timestamp": e.alert.timestamp,
+                                    "reasons": e.alert.reasons, "action": e.alert.action,
+                                })
                             })
-                        }).collect();
-                        json_response(&serde_json::json!({"results": items, "count": items.len()}).to_string(), 200)
+                            .collect();
+                        json_response(
+                            &serde_json::json!({"results": items, "count": items.len()})
+                                .to_string(),
+                            200,
+                        )
                     }
                     Err(_) => error_json("invalid search query", 400),
                 },
@@ -5089,7 +5714,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let s = state.lock().unwrap();
                 let events = s.event_store.all_events();
                 let tl = crate::analyst::build_host_timeline(events, &hostname);
-                json_response(&serde_json::json!({"timeline": tl, "host": hostname, "count": tl.len()}).to_string(), 200)
+                json_response(
+                    &serde_json::json!({"timeline": tl, "host": hostname, "count": tl.len()})
+                        .to_string(),
+                    200,
+                )
             }
         }
         (Method::Get, _) if url.starts_with("/api/timeline/agent") => {
@@ -5100,7 +5729,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let s = state.lock().unwrap();
                 let events = s.event_store.all_events();
                 let tl = crate::analyst::build_agent_timeline(events, &agent_id);
-                json_response(&serde_json::json!({"timeline": tl, "agent_id": agent_id, "count": tl.len()}).to_string(), 200)
+                json_response(
+                    &serde_json::json!({"timeline": tl, "agent_id": agent_id, "count": tl.len()})
+                        .to_string(),
+                    200,
+                )
             }
         }
 
@@ -5108,21 +5741,25 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Post, "/api/investigation/graph") => {
             let body = read_body_limited(&mut request, 4096);
             match body {
-                Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
-                    Ok(v) => {
-                        let event_ids: Vec<u64> = v["event_ids"].as_array()
-                            .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
-                            .unwrap_or_default();
-                        let s = state.lock().unwrap();
-                        let events = s.event_store.all_events();
-                        let graph = crate::analyst::build_investigation_graph(events, &event_ids);
-                        json_response(&serde_json::json!({
+                Ok(b) => {
+                    match serde_json::from_str::<serde_json::Value>(&b) {
+                        Ok(v) => {
+                            let event_ids: Vec<u64> = v["event_ids"]
+                                .as_array()
+                                .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
+                                .unwrap_or_default();
+                            let s = state.lock().unwrap();
+                            let events = s.event_store.all_events();
+                            let graph =
+                                crate::analyst::build_investigation_graph(events, &event_ids);
+                            json_response(&serde_json::json!({
                             "nodes": graph.nodes, "edges": graph.edges,
                             "node_count": graph.nodes.len(), "edge_count": graph.edges.len(),
                         }).to_string(), 200)
+                        }
+                        Err(_) => error_json("invalid JSON", 400),
                     }
-                    Err(_) => error_json("invalid JSON", 400),
-                },
+                }
                 Err(e) => error_json(&e, 400),
             }
         }
@@ -5166,12 +5803,30 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             return;
                         }
 
-                        let reason = v["reason"].as_str().unwrap_or("Submitted from admin console").trim().to_string();
-                        let severity = v["severity"].as_str().unwrap_or("medium").trim().to_string();
-                        let requested_by = v["requested_by"].as_str().unwrap_or("admin-console").trim().to_string();
+                        let reason = v["reason"]
+                            .as_str()
+                            .unwrap_or("Submitted from admin console")
+                            .trim()
+                            .to_string();
+                        let severity = v["severity"]
+                            .as_str()
+                            .unwrap_or("medium")
+                            .trim()
+                            .to_string();
+                        let requested_by = v["requested_by"]
+                            .as_str()
+                            .unwrap_or("admin-console")
+                            .trim()
+                            .to_string();
                         let dry_run = v["dry_run"].as_bool().unwrap_or(false);
-                        let asset_tags = v["asset_tags"].as_array()
-                            .map(|items| items.iter().filter_map(|tag| tag.as_str().map(|s| s.to_string())).collect())
+                        let asset_tags = v["asset_tags"]
+                            .as_array()
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .filter_map(|tag| tag.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
                             .unwrap_or_default();
                         let target = ResponseTarget {
                             hostname: hostname.clone(),
@@ -5200,15 +5855,25 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             Ok(request_id) => {
                                 let stored = s.response_orchestrator.get_request(&request_id);
                                 match stored {
-                                    Some(request_entry) => json_response(&serde_json::json!({
-                                        "status": "submitted",
-                                        "request": response_request_json(&request_entry),
-                                    }).to_string(), 200),
-                                    None => error_json("request stored but could not be reloaded", 500),
+                                    Some(request_entry) => json_response(
+                                        &serde_json::json!({
+                                            "status": "submitted",
+                                            "request": response_request_json(&request_entry),
+                                        })
+                                        .to_string(),
+                                        200,
+                                    ),
+                                    None => {
+                                        error_json("request stored but could not be reloaded", 500)
+                                    }
                                 }
                             }
                             Err(e) => {
-                                let status = if e.contains("Break-glass required") { 409 } else { 400 };
+                                let status = if e.contains("Break-glass required") {
+                                    409
+                                } else {
+                                    400
+                                };
                                 error_json(&e, status)
                             }
                         }
@@ -5262,14 +5927,20 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                 approver: approver.clone(),
                                 decision: decision.clone(),
                                 timestamp: chrono::Utc::now().to_rfc3339(),
-                                comment: if reason.trim().is_empty() { None } else { Some(reason.clone()) },
+                                comment: if reason.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(reason.clone())
+                                },
                             },
                         );
 
                         match status {
                             Ok(status) => {
                                 let remediation_decision = match decision {
-                                    ResponseApprovalDecision::Approve => RemediationDecision::Approved,
+                                    ResponseApprovalDecision::Approve => {
+                                        RemediationDecision::Approved
+                                    }
                                     ResponseApprovalDecision::Deny => RemediationDecision::Denied,
                                 };
                                 s.approval_log.record(
@@ -5278,16 +5949,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                     approver,
                                     reason,
                                 );
-                                let approvals = s.response_orchestrator
+                                let approvals = s
+                                    .response_orchestrator
                                     .get_request(&request_id)
                                     .map(|request_entry| request_entry.approvals.len())
                                     .unwrap_or(0);
-                                json_response(&serde_json::json!({
-                                    "request_id": request_id,
-                                    "decision": format!("{:?}", decision),
-                                    "status": format!("{:?}", status),
-                                    "approvals": approvals,
-                                }).to_string(), 200)
+                                json_response(
+                                    &serde_json::json!({
+                                        "request_id": request_id,
+                                        "decision": format!("{:?}", decision),
+                                        "status": format!("{:?}", status),
+                                        "approvals": approvals,
+                                    })
+                                    .to_string(),
+                                    200,
+                                )
                             }
                             Err(e) => {
                                 let code = if e.contains("not found") { 404 } else { 409 };
@@ -5303,12 +5979,15 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
         (Method::Get, "/api/response/approvals") => {
             let s = state.lock().unwrap();
             let entries = s.approval_log.recent(50);
-            let items: Vec<serde_json::Value> = entries.iter().map(|e| {
-                serde_json::json!({
-                    "request_id": e.request_id, "decision": format!("{:?}", e.decision),
-                    "approver": e.approver, "reason": e.reason, "decided_at": e.decided_at,
+            let items: Vec<serde_json::Value> = entries
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "request_id": e.request_id, "decision": format!("{:?}", e.decision),
+                        "approver": e.approver, "reason": e.reason, "decided_at": e.decided_at,
+                    })
                 })
-            }).collect();
+                .collect();
             json_response(&serde_json::json!({"approvals": items}).to_string(), 200)
         }
 
@@ -5347,16 +6026,25 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 }
             };
             let s = state.lock().unwrap();
-            let executed = s.response_orchestrator.execute_approved_matching(request_id.as_deref());
-            json_response(&serde_json::json!({
-                "executed_count": executed.len(),
-                "actions": executed,
-            }).to_string(), 200)
+            let executed = s
+                .response_orchestrator
+                .execute_approved_matching(request_id.as_deref());
+            json_response(
+                &serde_json::json!({
+                    "executed_count": executed.len(),
+                    "actions": executed,
+                })
+                .to_string(),
+                200,
+            )
         }
 
         _ => {
             // Dynamic routes with path parameters
-            if method == Method::Get && (url == "/api/agents/update" || url.starts_with("/api/agents/update?")) {
+            let url_path = url_path(&url);
+            if method == Method::Get
+                && (url == "/api/agents/update" || url.starts_with("/api/agents/update?"))
+            {
                 // GET /api/agents/update?current_version=xxx&platform=yyy
                 handle_agent_update_check(&mut request, state)
             } else if method == Method::Get && url.starts_with("/api/events/export?") {
@@ -5372,14 +6060,83 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     Ok(json) => json_response(&json, 200),
                     Err(e) => error_json(&format!("serialization error: {e}"), 500),
                 }
-            } else if method == Method::Post && url.ends_with("/heartbeat") && url.starts_with("/api/agents/") {
+            } else if method == Method::Get && url_path == "/api/reports/executive-summary" {
+                let s = state.lock().unwrap();
+                let summary = s.report_store.executive_summary(&s.incident_store);
+                match serde_json::to_string(&summary) {
+                    Ok(json) => json_response(&json, 200),
+                    Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                }
+            } else if method == Method::Get && url_path == "/api/alerts/analysis" {
+                let s = state.lock().unwrap();
+                if let Some(ref analysis) = s.last_alert_analysis {
+                    match serde_json::to_string(analysis) {
+                        Ok(json) => json_response(&json, 200),
+                        Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                    }
+                } else {
+                    let analysis = crate::alert_analysis::analyze_alerts(&s.alerts, 5);
+                    match serde_json::to_string(&analysis) {
+                        Ok(json) => json_response(&json, 200),
+                        Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                    }
+                }
+            } else if method == Method::Get && url_path == "/api/alerts/grouped" {
+                let s = state.lock().unwrap();
+                let groups = crate::alert_analysis::group_alerts(&s.alerts);
+                match serde_json::to_string(&groups) {
+                    Ok(json) => json_response(&json, 200),
+                    Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                }
+            } else if method == Method::Get && url_path == "/api/cases/stats" {
+                let s = state.lock().unwrap();
+                let cases = s.case_store.list_filtered(None, None, None);
+                let total = cases.len();
+                let resolved = cases
+                    .iter()
+                    .filter(|case| matches!(case.status, CaseStatus::Resolved | CaseStatus::Closed))
+                    .count();
+                let open = total.saturating_sub(resolved);
+                let triaging = cases
+                    .iter()
+                    .filter(|case| matches!(case.status, CaseStatus::Triaging))
+                    .count();
+                let investigating = cases
+                    .iter()
+                    .filter(|case| matches!(case.status, CaseStatus::Investigating))
+                    .count();
+                let escalated = cases
+                    .iter()
+                    .filter(|case| matches!(case.status, CaseStatus::Escalated))
+                    .count();
+                json_response(
+                    &serde_json::json!({
+                        "total": total,
+                        "open": open,
+                        "resolved": resolved,
+                        "triaging": triaging,
+                        "investigating": investigating,
+                        "escalated": escalated,
+                    })
+                    .to_string(),
+                    200,
+                )
+            } else if method == Method::Post
+                && url.ends_with("/heartbeat")
+                && url.starts_with("/api/agents/")
+            {
                 // POST /api/agents/{id}/heartbeat
-                let agent_id = url.strip_prefix("/api/agents/")
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/heartbeat"))
                     .unwrap_or("");
                 handle_agent_heartbeat(&mut request, state, agent_id)
-            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/activity") {
-                let agent_id = url.strip_prefix("/api/agents/")
+            } else if method == Method::Get
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/activity")
+            {
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/activity"))
                     .unwrap_or("");
                 let s = state.lock().unwrap();
@@ -5390,33 +6147,50 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     },
                     Err(e) => error_json(&e, 404),
                 }
-            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/details") {
-                let agent_id = url.strip_prefix("/api/agents/")
+            } else if method == Method::Get
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/details")
+            {
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/details"))
                     .unwrap_or("");
                 handle_agent_details(state, agent_id)
-            } else if method == Method::Post && url.starts_with("/api/events/") && url.ends_with("/triage") {
+            } else if method == Method::Post
+                && url.starts_with("/api/events/")
+                && url.ends_with("/triage")
+            {
                 let event_id = url
                     .strip_prefix("/api/events/")
                     .and_then(|rest| rest.strip_suffix("/triage"))
                     .unwrap_or("")
                     .trim_end_matches('/');
                 handle_event_triage(&mut request, state, event_id)
-            } else if method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/scope") {
+            } else if method == Method::Post
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/scope")
+            {
                 let agent_id = url
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/scope"))
                     .unwrap_or("");
                 handle_agent_set_scope(&mut request, state, agent_id)
-            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/scope") {
+            } else if method == Method::Get
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/scope")
+            {
                 let agent_id = url
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/scope"))
                     .unwrap_or("");
                 handle_agent_get_scope(state, agent_id)
-            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/status") {
+            } else if method == Method::Get
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/status")
+            {
                 // GET /api/agents/{id}/status
-                let agent_id = url.strip_prefix("/api/agents/")
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/status"))
                     .unwrap_or("");
                 let s = state.lock().unwrap();
@@ -5433,20 +6207,32 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let mut s = state.lock().unwrap();
                 match s.agent_registry.deregister(agent_id) {
                     Ok(()) => {
-                        let body = serde_json::json!({"status": "deregistered", "agent_id": agent_id});
+                        let body =
+                            serde_json::json!({"status": "deregistered", "agent_id": agent_id});
                         json_response(&body.to_string(), 200)
                     }
                     Err(e) => error_json(&e, 404),
                 }
             // ── Agent Logs ────────────────────────────────────────
-            } else if method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/logs") {
-                let agent_id = url.strip_prefix("/api/agents/")
+            } else if method == Method::Post
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/logs")
+            {
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/logs"))
                     .unwrap_or("");
                 let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
                     Ok(b) => b,
                     Err(e) => {
-                        respond_api(request, state, &method, &url, auth_used, error_json(&e, 400));
+                        respond_api(
+                            request,
+                            state,
+                            &method,
+                            &url,
+                            auth_used,
+                            error_json(&e, 400),
+                        );
                         return;
                     }
                 };
@@ -5473,9 +6259,16 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     agent_log_buf.push(log);
                 }
-                json_response(&serde_json::json!({"status":"ingested","count":count}).to_string(), 200)
-            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/logs") {
-                let agent_id = url.strip_prefix("/api/agents/")
+                json_response(
+                    &serde_json::json!({"status":"ingested","count":count}).to_string(),
+                    200,
+                )
+            } else if method == Method::Get
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/logs")
+            {
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/logs"))
                     .unwrap_or("");
                 let s = state.lock().unwrap();
@@ -5485,18 +6278,30 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     Err(e) => error_json(&format!("serialization error: {e}"), 500),
                 }
             // ── Agent Inventory ───────────────────────────────────
-            } else if method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/inventory") {
-                let agent_id = url.strip_prefix("/api/agents/")
+            } else if method == Method::Post
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/inventory")
+            {
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
                 let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
                     Ok(b) => b,
                     Err(e) => {
-                        respond_api(request, state, &method, &url, auth_used, error_json(&e, 400));
+                        respond_api(
+                            request,
+                            state,
+                            &method,
+                            &url,
+                            auth_used,
+                            error_json(&e, 400),
+                        );
                         return;
                     }
                 };
-                let inventory: crate::inventory::SystemInventory = match serde_json::from_str(&body) {
+                let inventory: crate::inventory::SystemInventory = match serde_json::from_str(&body)
+                {
                     Ok(i) => i,
                     Err(e) => {
                         respond_api(
@@ -5512,9 +6317,17 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 };
                 let mut s = state.lock().unwrap();
                 s.agent_inventories.insert(agent_id.to_string(), inventory);
-                json_response(&serde_json::json!({"status":"inventory_stored","agent_id":agent_id}).to_string(), 200)
-            } else if method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/inventory") {
-                let agent_id = url.strip_prefix("/api/agents/")
+                json_response(
+                    &serde_json::json!({"status":"inventory_stored","agent_id":agent_id})
+                        .to_string(),
+                    200,
+                )
+            } else if method == Method::Get
+                && url.starts_with("/api/agents/")
+                && url.ends_with("/inventory")
+            {
+                let agent_id = url
+                    .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
                 let s = state.lock().unwrap();
@@ -5529,15 +6342,16 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             } else if method == Method::Get && url.starts_with("/api/incidents?") {
                 let s = state.lock().unwrap();
                 let query = parse_query_string(&url);
-                let status = query.get("status").map(|s| s.as_str());
-                let severity = query.get("severity").map(|s| s.as_str());
-                let incidents = s.incident_store.list_filtered(status, severity);
-                match serde_json::to_string(&incidents) {
+                match incidents_json(&s.incident_store, &query) {
                     Ok(json) => json_response(&json, 200),
-                    Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                    Err(e) => error_json(&e, 500),
                 }
-            } else if method == Method::Get && url.starts_with("/api/incidents/") && url.ends_with("/report") {
-                let id_str = url.strip_prefix("/api/incidents/")
+            } else if method == Method::Get
+                && url_path.starts_with("/api/incidents/")
+                && url_path.ends_with("/report")
+            {
+                let id_str = url_path
+                    .strip_prefix("/api/incidents/")
                     .and_then(|rest| rest.strip_suffix("/report"))
                     .unwrap_or("");
                 match id_str.parse::<u64>() {
@@ -5545,8 +6359,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         let s = state.lock().unwrap();
                         match s.incident_store.get(id) {
                             Some(inc) => {
-                                let report = crate::report::IncidentReport::generate(inc, &s.event_store);
-                                let related_events = incident_related_events(inc, s.event_store.all_events());
+                                let report =
+                                    crate::report::IncidentReport::generate(inc, &s.event_store);
+                                let related_events =
+                                    incident_related_events(inc, s.event_store.all_events());
                                 let all_cases = s.case_store.list().to_vec();
                                 let storyline = build_incident_storyline(
                                     inc,
@@ -5564,23 +6380,35 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                 match serde_json::to_value(&report) {
                                     Ok(serde_json::Value::Object(mut payload)) => {
                                         payload.insert("storyline".to_string(), storyline.clone());
-                                        payload.insert("linked_cases".to_string(), serde_json::json!(linked_cases));
+                                        payload.insert(
+                                            "linked_cases".to_string(),
+                                            serde_json::json!(linked_cases),
+                                        );
                                         payload.insert(
                                             "ticket_syncs".to_string(),
-                                            serde_json::json!(
-                                                s.enterprise
-                                                    .ticket_syncs()
-                                                    .iter()
-                                                    .filter(|sync| sync.object_kind == "incident" && sync.object_id == inc.id.to_string())
-                                                    .collect::<Vec<_>>()
-                                            ),
+                                            serde_json::json!(s
+                                                .enterprise
+                                                .ticket_syncs()
+                                                .iter()
+                                                .filter(|sync| sync.object_kind == "incident"
+                                                    && sync.object_id == inc.id.to_string())
+                                                .collect::<Vec<_>>()),
                                         );
                                         payload.insert(
                                             "evidence_package".to_string(),
-                                            storyline.get("evidence_package").cloned().unwrap_or_else(|| serde_json::json!({})),
+                                            storyline
+                                                .get("evidence_package")
+                                                .cloned()
+                                                .unwrap_or_else(|| serde_json::json!({})),
                                         );
-                                        payload.insert("generated_at".to_string(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
-                                        json_response(&serde_json::Value::Object(payload).to_string(), 200)
+                                        payload.insert(
+                                            "generated_at".to_string(),
+                                            serde_json::json!(chrono::Utc::now().to_rfc3339()),
+                                        );
+                                        json_response(
+                                            &serde_json::Value::Object(payload).to_string(),
+                                            200,
+                                        )
                                     }
                                     Ok(other) => json_response(&other.to_string(), 200),
                                     Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -5591,8 +6419,12 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(_) => error_json("invalid incident id", 400),
                 }
-            } else if method == Method::Post && url.starts_with("/api/incidents/") && url.ends_with("/update") {
-                let id_str = url.strip_prefix("/api/incidents/")
+            } else if method == Method::Post
+                && url_path.starts_with("/api/incidents/")
+                && url_path.ends_with("/update")
+            {
+                let id_str = url_path
+                    .strip_prefix("/api/incidents/")
                     .and_then(|rest| rest.strip_suffix("/update"))
                     .unwrap_or("");
                 match id_str.parse::<u64>() {
@@ -5651,18 +6483,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         };
                         let mut s = state.lock().unwrap();
                         match s.incident_store.update(id, upd.assignee, note, status) {
-                            Ok(()) => json_response(&serde_json::json!({"status":"updated"}).to_string(), 200),
+                            Ok(()) => json_response(
+                                &serde_json::json!({"status":"updated"}).to_string(),
+                                200,
+                            ),
                             Err(e) => error_json(&e, 404),
                         }
                     }
                     Err(_) => error_json("invalid incident id", 400),
                 }
             } else if method == Method::Get
-                && url.starts_with("/api/incidents/")
-                && !url.ends_with("/report")
-                && !url.ends_with("/storyline")
+                && url_path.starts_with("/api/incidents/")
+                && !url_path.ends_with("/report")
+                && !url_path.ends_with("/storyline")
             {
-                let id_str = url.strip_prefix("/api/incidents/").unwrap_or("");
+                let id_str = url_path.strip_prefix("/api/incidents/").unwrap_or("");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let s = state.lock().unwrap();
@@ -5677,8 +6512,12 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     Err(_) => error_json("invalid incident id", 400),
                 }
             // ── Reports (dynamic) ─────────────────────────────────
-            } else if method == Method::Get && url.starts_with("/api/reports/") && url.ends_with("/html") {
-                let id_str = url.strip_prefix("/api/reports/")
+            } else if method == Method::Get
+                && url_path.starts_with("/api/reports/")
+                && url_path.ends_with("/html")
+            {
+                let id_str = url_path
+                    .strip_prefix("/api/reports/")
                     .and_then(|rest| rest.strip_suffix("/html"))
                     .unwrap_or("");
                 match id_str.parse::<u64>() {
@@ -5692,9 +6531,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                 Response::new(
                                     tiny_http::StatusCode(200),
                                     vec![
-                                        Header::from_bytes(b"Content-Type", b"text/html; charset=utf-8").unwrap(),
-                                        Header::from_bytes(b"Access-Control-Allow-Origin", cors_origin().as_bytes()).unwrap(),
-                                        Header::from_bytes(b"Content-Disposition", b"attachment; filename=\"report.html\"").unwrap(),
+                                        Header::from_bytes(
+                                            b"Content-Type",
+                                            b"text/html; charset=utf-8",
+                                        )
+                                        .unwrap(),
+                                        Header::from_bytes(
+                                            b"Access-Control-Allow-Origin",
+                                            cors_origin().as_bytes(),
+                                        )
+                                        .unwrap(),
+                                        Header::from_bytes(
+                                            b"Content-Disposition",
+                                            b"attachment; filename=\"report.html\"",
+                                        )
+                                        .unwrap(),
                                     ],
                                     std::io::Cursor::new(data),
                                     Some(len),
@@ -5706,8 +6557,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(_) => error_json("invalid report id", 400),
                 }
-            } else if method == Method::Delete && url.starts_with("/api/reports/") {
-                let id_str = url.strip_prefix("/api/reports/").unwrap_or("");
+            } else if method == Method::Delete && url_path.starts_with("/api/reports/") {
+                let id_str = url_path.strip_prefix("/api/reports/").unwrap_or("");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let mut s = state.lock().unwrap();
@@ -5719,8 +6570,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(_) => error_json("invalid report id", 400),
                 }
-            } else if method == Method::Get && url.starts_with("/api/reports/") {
-                let id_str = url.strip_prefix("/api/reports/").unwrap_or("");
+            } else if method == Method::Get && url_path.starts_with("/api/reports/") {
+                let id_str = url_path.strip_prefix("/api/reports/").unwrap_or("");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let s = state.lock().unwrap();
@@ -5734,9 +6585,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(_) => error_json("invalid report id", 400),
                 }
-            } else if method == Method::Get && url.starts_with("/api/updates/download/") {
+            } else if method == Method::Get && url_path.starts_with("/api/updates/download/") {
                 // GET /api/updates/download/{file_name}
-                let file_name = url.strip_prefix("/api/updates/download/").unwrap_or("");
+                let file_name = url_path
+                    .strip_prefix("/api/updates/download/")
+                    .unwrap_or("");
                 let s = state.lock().unwrap();
                 match s.update_manager.get_release_binary(file_name) {
                     Ok(data) => {
@@ -5744,8 +6597,13 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         Response::new(
                             tiny_http::StatusCode(200),
                             vec![
-                                Header::from_bytes(b"Content-Type", b"application/octet-stream").unwrap(),
-                                Header::from_bytes(b"Access-Control-Allow-Origin", cors_origin().as_bytes()).unwrap(),
+                                Header::from_bytes(b"Content-Type", b"application/octet-stream")
+                                    .unwrap(),
+                                Header::from_bytes(
+                                    b"Access-Control-Allow-Origin",
+                                    cors_origin().as_bytes(),
+                                )
+                                .unwrap(),
                             ],
                             std::io::Cursor::new(data),
                             Some(len),
@@ -5772,15 +6630,36 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     Ok(json) => json_response(&json, 200),
                     Err(e) => error_json(&format!("serialization error: {e}"), 500),
                 }
-            } else if method == Method::Get && url.starts_with("/api/alerts/") && url != "/api/alerts/count" {
+            } else if method == Method::Get && url.starts_with("/api/alerts?") {
+                let query = parse_query_string(&url);
+                let limit = query
+                    .get("limit")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(100);
+                let offset = query
+                    .get("offset")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(0);
+                let s = state.lock().unwrap();
+                match recent_alerts_json(&s.alerts, limit, offset) {
+                    Ok(json) => json_response(&json, 200),
+                    Err(e) => error_json(&e, 500),
+                }
+            } else if method == Method::Get
+                && url_path.starts_with("/api/alerts/")
+                && url_path != "/api/alerts/count"
+                && url_path != "/api/alerts/analysis"
+                && url_path != "/api/alerts/grouped"
+            {
                 // GET /api/alerts/{index} — detailed alert view
-                let idx_str = url.strip_prefix("/api/alerts/").unwrap_or("");
+                let idx_str = url_path.strip_prefix("/api/alerts/").unwrap_or("");
                 match idx_str.parse::<usize>() {
                     Ok(idx) => {
                         let s = state.lock().unwrap();
                         if idx < s.alerts.len() {
                             let alert = &s.alerts[idx];
                             let detail = serde_json::json!({
+                                "id": idx,
                                 "index": idx,
                                 "timestamp": alert.timestamp,
                                 "hostname": alert.hostname,
@@ -5826,14 +6705,24 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     Err(_) => error_json("invalid alert index", 400),
                 }
             // ── Enterprise: Dynamic routes ───────────────────────────
-            } else if method == Method::Get && url.starts_with("/api/hunts/") && url.ends_with("/history") {
+            } else if method == Method::Get
+                && url.starts_with("/api/hunts/")
+                && url.ends_with("/history")
+            {
                 let hunt_id = url
                     .trim_start_matches("/api/hunts/")
                     .trim_end_matches("/history");
                 let s = state.lock().unwrap();
                 let runs = s.enterprise.hunt_runs(hunt_id);
-                json_response(&serde_json::json!({"hunt_id": hunt_id, "history": runs, "count": runs.len()}).to_string(), 200)
-            } else if method == Method::Post && url.starts_with("/api/hunts/") && url.ends_with("/run") {
+                json_response(
+                    &serde_json::json!({"hunt_id": hunt_id, "history": runs, "count": runs.len()})
+                        .to_string(),
+                    200,
+                )
+            } else if method == Method::Post
+                && url.starts_with("/api/hunts/")
+                && url.ends_with("/run")
+            {
                 let hunt_id = url
                     .trim_start_matches("/api/hunts/")
                     .trim_end_matches("/run")
@@ -5843,7 +6732,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let events = s.event_store.all_events().to_vec();
                 match s.enterprise.run_hunt(hunt_id, &events) {
                     Ok(run) => {
-                        s.enterprise.record_hunt_metrics(started.elapsed().as_millis() as u64);
+                        s.enterprise
+                            .record_hunt_metrics(started.elapsed().as_millis() as u64);
                         let _ = s.enterprise.record_change(
                             "hunt_run",
                             hunt_id,
@@ -5852,11 +6742,17 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             Some(run.id.clone()),
                             None,
                         );
-                        json_response(&serde_json::json!({"status": "completed", "run": run}).to_string(), 200)
+                        json_response(
+                            &serde_json::json!({"status": "completed", "run": run}).to_string(),
+                            200,
+                        )
                     }
                     Err(e) => error_json(&e, 404),
                 }
-            } else if method == Method::Post && url.starts_with("/api/content/rules/") && url.ends_with("/test") {
+            } else if method == Method::Post
+                && url.starts_with("/api/content/rules/")
+                && url.ends_with("/test")
+            {
                 let rule_id = url
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/test")
@@ -5866,12 +6762,19 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let events = s.event_store.all_events().to_vec();
                 match s.enterprise.test_rule(rule_id, &events) {
                     Ok(result) => {
-                        s.enterprise.record_search_metrics(started.elapsed().as_millis() as u64);
-                        json_response(&serde_json::json!({"status": "tested", "result": result}).to_string(), 200)
+                        s.enterprise
+                            .record_search_metrics(started.elapsed().as_millis() as u64);
+                        json_response(
+                            &serde_json::json!({"status": "tested", "result": result}).to_string(),
+                            200,
+                        )
                     }
                     Err(e) => error_json(&e, 404),
                 }
-            } else if method == Method::Post && url.starts_with("/api/content/rules/") && url.ends_with("/promote") {
+            } else if method == Method::Post
+                && url.starts_with("/api/content/rules/")
+                && url.ends_with("/promote")
+            {
                 let rule_id = url
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/promote")
@@ -5887,7 +6790,12 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         };
                         let reason = v["reason"].as_str().unwrap_or("promotion");
                         let mut s = state.lock().unwrap();
-                        match s.enterprise.promote_rule(rule_id, target, auth_identity.actor(), reason) {
+                        match s.enterprise.promote_rule(
+                            rule_id,
+                            target,
+                            auth_identity.actor(),
+                            reason,
+                        ) {
                             Ok(rule) => {
                                 sync_enterprise_sigma_engine(&mut s);
                                 let _ = s.enterprise.record_change(
@@ -5898,14 +6806,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                     Some(rule.id.clone()),
                                     Some(&v.to_string()),
                                 );
-                                json_response(&serde_json::json!({"status": "promoted", "rule": rule}).to_string(), 200)
+                                json_response(
+                                    &serde_json::json!({"status": "promoted", "rule": rule})
+                                        .to_string(),
+                                    200,
+                                )
                             }
                             Err(e) => error_json(&e, 404),
                         }
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Post && url.starts_with("/api/content/rules/") && url.ends_with("/rollback") {
+            } else if method == Method::Post
+                && url.starts_with("/api/content/rules/")
+                && url.ends_with("/rollback")
+            {
                 let rule_id = url
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/rollback")
@@ -5922,12 +6837,21 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                             Some(rule.id.clone()),
                             None,
                         );
-                        json_response(&serde_json::json!({"status": "rolled_back", "rule": rule}).to_string(), 200)
+                        json_response(
+                            &serde_json::json!({"status": "rolled_back", "rule": rule}).to_string(),
+                            200,
+                        )
                     }
                     Err(e) => error_json(&e, 404),
                 }
-            } else if method == Method::Get && url.starts_with("/api/entities/") && url.ends_with("/timeline") {
-                let path = url.trim_start_matches("/api/entities/").trim_end_matches("/timeline").trim_end_matches('/');
+            } else if method == Method::Get
+                && url.starts_with("/api/entities/")
+                && url.ends_with("/timeline")
+            {
+                let path = url
+                    .trim_start_matches("/api/entities/")
+                    .trim_end_matches("/timeline")
+                    .trim_end_matches('/');
                 let mut parts = path.splitn(2, '/');
                 let kind = parts.next().unwrap_or("");
                 let id = parts.next().unwrap_or("");
@@ -5943,7 +6867,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 );
                 json_response(&serde_json::json!({"kind": kind, "id": id, "timeline": timeline, "count": timeline.len()}).to_string(), 200)
             } else if method == Method::Get && url.starts_with("/api/entities/") {
-                let path = url.trim_start_matches("/api/entities/").trim_end_matches('/');
+                let path = url
+                    .trim_start_matches("/api/entities/")
+                    .trim_end_matches('/');
                 let mut parts = path.splitn(2, '/');
                 let kind = parts.next().unwrap_or("");
                 let id = parts.next().unwrap_or("");
@@ -5961,8 +6887,11 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     s.enterprise.ticket_syncs(),
                 );
                 json_response(&profile.to_string(), 200)
-            } else if method == Method::Get && url.starts_with("/api/incidents/") && url.ends_with("/storyline") {
-                let id_str = url
+            } else if method == Method::Get
+                && url_path.starts_with("/api/incidents/")
+                && url_path.ends_with("/storyline")
+            {
+                let id_str = url_path
                     .trim_start_matches("/api/incidents/")
                     .trim_end_matches("/storyline");
                 match id_str.parse::<u64>() {
@@ -5970,7 +6899,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         let s = state.lock().unwrap();
                         match s.incident_store.get(id) {
                             Some(incident) => {
-                                let related_events = incident_related_events(incident, s.event_store.all_events());
+                                let related_events =
+                                    incident_related_events(incident, s.event_store.all_events());
                                 let cases = s.case_store.list().to_vec();
                                 let storyline = build_incident_storyline(
                                     incident,
@@ -5988,8 +6918,8 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     Err(_) => error_json("invalid incident id", 400),
                 }
             // ── Analyst Console: Dynamic case routes ─────────────────
-            } else if method == Method::Get && url.starts_with("/api/cases/") {
-                let id_str = url.trim_start_matches("/api/cases/");
+            } else if method == Method::Get && url_path.starts_with("/api/cases/") {
+                let id_str = url_path.trim_start_matches("/api/cases/");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let s = state.lock().unwrap();
@@ -6015,12 +6945,19 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(_) => error_json("invalid case id", 400),
                 }
-            } else if method == Method::Post && url.starts_with("/api/cases/") && url.ends_with("/comment") {
-                let id_str = url.trim_start_matches("/api/cases/").trim_end_matches("/comment");
+            } else if method == Method::Post
+                && url_path.starts_with("/api/cases/")
+                && url_path.ends_with("/comment")
+            {
+                let id_str = url_path
+                    .trim_start_matches("/api/cases/")
+                    .trim_end_matches("/comment");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let body = read_body_limited(&mut request, 4096);
-                        match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                        match body.and_then(|b| {
+                            serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                        }) {
                             Ok(v) => {
                                 let author = v["author"].as_str().unwrap_or("analyst").to_string();
                                 let text = v["text"].as_str().unwrap_or("").to_string();
@@ -6036,12 +6973,19 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(_) => error_json("invalid case id", 400),
                 }
-            } else if method == Method::Post && url.starts_with("/api/cases/") && url.ends_with("/update") {
-                let id_str = url.trim_start_matches("/api/cases/").trim_end_matches("/update");
+            } else if method == Method::Post
+                && url_path.starts_with("/api/cases/")
+                && url_path.ends_with("/update")
+            {
+                let id_str = url_path
+                    .trim_start_matches("/api/cases/")
+                    .trim_end_matches("/update");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let body = read_body_limited(&mut request, 4096);
-                        match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                        match body.and_then(|b| {
+                            serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                        }) {
                             Ok(v) => {
                                 let mut s = state.lock().unwrap();
                                 if let Some(status_str) = v["status"].as_str() {
@@ -6061,19 +7005,30 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                 if let Some(incident_id) = v["link_incident"].as_u64() {
                                     s.case_store.link_incident(id, incident_id);
                                 }
-                                json_response(&serde_json::json!({"case_id": id, "action": "updated"}).to_string(), 200)
+                                json_response(
+                                    &serde_json::json!({"case_id": id, "action": "updated"})
+                                        .to_string(),
+                                    200,
+                                )
                             }
                             Err(e) => error_json(&e, 400),
                         }
                     }
                     Err(_) => error_json("invalid case id", 400),
                 }
-            } else if method == Method::Post && url.starts_with("/api/cases/") && url.ends_with("/evidence") {
-                let id_str = url.trim_start_matches("/api/cases/").trim_end_matches("/evidence");
+            } else if method == Method::Post
+                && url_path.starts_with("/api/cases/")
+                && url_path.ends_with("/evidence")
+            {
+                let id_str = url_path
+                    .trim_start_matches("/api/cases/")
+                    .trim_end_matches("/evidence");
                 match id_str.parse::<u64>() {
                     Ok(id) => {
                         let body = read_body_limited(&mut request, 4096);
-                        match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                        match body.and_then(|b| {
+                            serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                        }) {
                             Ok(v) => {
                                 let kind = v["kind"].as_str().unwrap_or("other").to_string();
                                 let ref_id = v["reference_id"].as_str().unwrap_or("").to_string();
@@ -6095,13 +7050,20 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // UEBA
             } else if method == Method::Post && url == "/api/ueba/observe" {
                 let body = read_body_limited(&mut request, 8192);
-                match body.and_then(|b| serde_json::from_str::<crate::ueba::BehaviorObservation>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::ueba::BehaviorObservation>(&b)
+                        .map_err(|e| e.to_string())
+                }) {
                     Ok(obs) => {
                         let mut s = state.lock().unwrap();
                         let anomalies = s.ueba_engine.observe(&obs);
-                        json_response(&serde_json::to_string(&serde_json::json!({
-                            "anomalies": anomalies,
-                        })).unwrap(), 200)
+                        json_response(
+                            &serde_json::to_string(&serde_json::json!({
+                                "anomalies": anomalies,
+                            }))
+                            .unwrap(),
+                            200,
+                        )
                     }
                     Err(e) => error_json(&e, 400),
                 }
@@ -6112,7 +7074,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             } else if method == Method::Get && url.starts_with("/api/ueba/entity/") {
                 let entity_id = url.trim_start_matches("/api/ueba/entity/");
                 let s = state.lock().unwrap();
-                match s.ueba_engine.entity_risk(&crate::ueba::EntityKind::User, entity_id) {
+                match s
+                    .ueba_engine
+                    .entity_risk(&crate::ueba::EntityKind::User, entity_id)
+                {
                     Some(risk) => json_response(&serde_json::to_string(&risk).unwrap(), 200),
                     None => error_json("entity not found", 404),
                 }
@@ -6120,7 +7085,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Beacon / DGA
             } else if method == Method::Post && url == "/api/beacon/connection" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<crate::beacon::ConnectionRecord>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::beacon::ConnectionRecord>(&b)
+                        .map_err(|e| e.to_string())
+                }) {
                     Ok(conn) => {
                         let mut s = state.lock().unwrap();
                         s.beacon_detector.record_connection(conn);
@@ -6130,7 +7098,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 }
             } else if method == Method::Post && url == "/api/beacon/dns" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<crate::beacon::DnsRecord>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::beacon::DnsRecord>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(dns) => {
                         let mut s = state.lock().unwrap();
                         s.beacon_detector.record_dns(dns);
@@ -6146,7 +7116,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Kill Chain
             } else if method == Method::Post && url == "/api/killchain/reconstruct" {
                 let body = read_body_limited(&mut request, 16384);
-                match body.and_then(|b| serde_json::from_str::<Vec<crate::kill_chain::KillChainEvent>>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<Vec<crate::kill_chain::KillChainEvent>>(&b)
+                        .map_err(|e| e.to_string())
+                }) {
                     Ok(events) => {
                         let s = state.lock().unwrap();
                         let chain = s.kill_chain_analyzer.reconstruct("api-request", &events);
@@ -6158,7 +7131,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Lateral Movement
             } else if method == Method::Post && url == "/api/lateral/connection" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<crate::lateral::RemoteConnection>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::lateral::RemoteConnection>(&b)
+                        .map_err(|e| e.to_string())
+                }) {
                     Ok(conn) => {
                         let mut s = state.lock().unwrap();
                         s.lateral_detector.record(conn);
@@ -6174,7 +7150,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Kernel Events
             } else if method == Method::Post && url == "/api/kernel/event" {
                 let body = read_body_limited(&mut request, 8192);
-                match body.and_then(|b| serde_json::from_str::<crate::kernel_events::KernelEvent>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::kernel_events::KernelEvent>(&b)
+                        .map_err(|e| e.to_string())
+                }) {
                     Ok(event) => {
                         let s = state.lock().unwrap();
                         s.kernel_event_stream.push(event);
@@ -6194,7 +7173,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 json_response(&serde_json::to_string(&pbs).unwrap(), 200)
             } else if method == Method::Post && url == "/api/playbooks" {
                 let body = read_body_limited(&mut request, 16384);
-                match body.and_then(|b| serde_json::from_str::<crate::playbook::Playbook>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::playbook::Playbook>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(pb) => {
                         let mut s = state.lock().unwrap();
                         s.playbook_engine.register(pb);
@@ -6204,14 +7185,19 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 }
             } else if method == Method::Post && url == "/api/playbooks/execute" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let pb_id = v["playbook_id"].as_str().unwrap_or("");
                         let alert_id = v["alert_id"].as_str();
                         let now = chrono::Utc::now().timestamp_millis() as u64;
                         let mut s = state.lock().unwrap();
                         match s.playbook_engine.start_execution(pb_id, alert_id, now) {
-                            Some(eid) => json_response(&serde_json::json!({"execution_id": eid}).to_string(), 200),
+                            Some(eid) => json_response(
+                                &serde_json::json!({"execution_id": eid}).to_string(),
+                                200,
+                            ),
                             None => error_json("playbook not found or disabled", 404),
                         }
                     }
@@ -6225,7 +7211,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Live Response
             } else if method == Method::Post && url == "/api/live-response/session" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let agent_id = v["agent_id"].as_str().unwrap_or("unknown");
                         let hostname = v["hostname"].as_str().unwrap_or("unknown");
@@ -6237,24 +7225,36 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                         };
                         let now = chrono::Utc::now().timestamp_millis() as u64;
                         let mut s = state.lock().unwrap();
-                        let sid = s.live_response_engine.open_session(agent_id, hostname, platform, op, now);
+                        let sid = s
+                            .live_response_engine
+                            .open_session(agent_id, hostname, platform, op, now);
                         json_response(&serde_json::json!({"session_id": sid}).to_string(), 200)
                     }
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post && url == "/api/live-response/command" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let sid = v["session_id"].as_str().unwrap_or("");
                         let cmd = v["command"].as_str().unwrap_or("");
-                        let args: Vec<String> = v["args"].as_array()
-                            .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        let args: Vec<String> = v["args"]
+                            .as_array()
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
                             .unwrap_or_default();
                         let now = chrono::Utc::now().timestamp_millis() as u64;
                         let mut s = state.lock().unwrap();
                         match s.live_response_engine.submit_command(sid, cmd, args, now) {
-                            Ok(cid) => json_response(&serde_json::json!({"command_id": cid}).to_string(), 200),
+                            Ok(cid) => json_response(
+                                &serde_json::json!({"command_id": cid}).to_string(),
+                                200,
+                            ),
                             Err(e) => error_json(&e, 403),
                         }
                     }
@@ -6266,7 +7266,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 json_response(&serde_json::to_string(&sessions).unwrap(), 200)
             } else if method == Method::Get && url == "/api/live-response/audit" {
                 let s = state.lock().unwrap();
-                let log: Vec<serde_json::Value> = s.live_response_engine.audit_log()
+                let log: Vec<serde_json::Value> = s
+                    .live_response_engine
+                    .audit_log()
                     .iter()
                     .map(|(sid, cr)| serde_json::json!({"session_id": sid, "record": cr}))
                     .collect();
@@ -6275,7 +7277,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Remediation
             } else if method == Method::Post && url == "/api/remediation/plan" {
                 let body = read_body_limited(&mut request, 8192);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let platform = match v["platform"].as_str().unwrap_or("linux") {
                             "macos" => crate::remediation::RemediationPlatform::MacOs,
@@ -6292,13 +7296,26 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                                 pid: v["pid"].as_u64().unwrap_or(0) as u32,
                                 name: v["name"].as_str().unwrap_or("").to_string(),
                             },
-                            "disable_account" => crate::remediation::RemediationAction::DisableAccount {
-                                username: v["username"].as_str().unwrap_or("").to_string(),
-                            },
-                            "quarantine_file" => crate::remediation::RemediationAction::QuarantineFile {
-                                path: v["path"].as_str().unwrap_or("").to_string(),
-                            },
-                            _ => return respond_api(request, state, &method, &url, auth_used, error_json("unknown remediation action", 400)),
+                            "disable_account" => {
+                                crate::remediation::RemediationAction::DisableAccount {
+                                    username: v["username"].as_str().unwrap_or("").to_string(),
+                                }
+                            }
+                            "quarantine_file" => {
+                                crate::remediation::RemediationAction::QuarantineFile {
+                                    path: v["path"].as_str().unwrap_or("").to_string(),
+                                }
+                            }
+                            _ => {
+                                return respond_api(
+                                    request,
+                                    state,
+                                    &method,
+                                    &url,
+                                    auth_used,
+                                    error_json("unknown remediation action", 400),
+                                );
+                            }
                         };
                         let s = state.lock().unwrap();
                         let plan = s.remediation_engine.plan(&action, &platform);
@@ -6322,7 +7339,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 json_response(&serde_json::to_string(&policies).unwrap(), 200)
             } else if method == Method::Post && url == "/api/escalation/policies" {
                 let body = read_body_limited(&mut request, 16384);
-                match body.and_then(|b| serde_json::from_str::<crate::escalation::EscalationPolicy>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<crate::escalation::EscalationPolicy>(&b)
+                        .map_err(|e| e.to_string())
+                }) {
                     Ok(policy) => {
                         let mut s = state.lock().unwrap();
                         s.escalation_engine.add_policy(policy);
@@ -6332,14 +7352,22 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 }
             } else if method == Method::Post && url == "/api/escalation/start" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let policy_id = v["policy_id"].as_str().unwrap_or("");
                         let alert_id = v["alert_id"].as_str().unwrap_or("");
                         let now = chrono::Utc::now().timestamp_millis() as u64;
                         let mut s = state.lock().unwrap();
-                        match s.escalation_engine.start_escalation(policy_id, alert_id, now) {
-                            Some(eid) => json_response(&serde_json::json!({"escalation_id": eid}).to_string(), 200),
+                        match s
+                            .escalation_engine
+                            .start_escalation(policy_id, alert_id, now)
+                        {
+                            Some(eid) => json_response(
+                                &serde_json::json!({"escalation_id": eid}).to_string(),
+                                200,
+                            ),
                             None => error_json("policy not found or disabled", 404),
                         }
                     }
@@ -6347,7 +7375,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 }
             } else if method == Method::Post && url == "/api/escalation/acknowledge" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let eid = v["escalation_id"].as_str().unwrap_or("");
                         let by = v["acknowledged_by"].as_str().unwrap_or("api");
@@ -6369,7 +7399,10 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let now = chrono::Utc::now().timestamp_millis() as u64;
                 let mut s = state.lock().unwrap();
                 let escalated = s.escalation_engine.check_sla(now);
-                json_response(&serde_json::json!({"escalated": escalated}).to_string(), 200)
+                json_response(
+                    &serde_json::json!({"escalated": escalated}).to_string(),
+                    200,
+                )
 
             // Evidence Collection Plans
             } else if method == Method::Get && url == "/api/evidence/plan/linux" {
@@ -6385,7 +7418,9 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
             // Containment Commands
             } else if method == Method::Post && url == "/api/containment/commands" {
                 let body = read_body_limited(&mut request, 4096);
-                match body.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())) {
+                match body.and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
                     Ok(v) => {
                         let level = match v["level"].as_str().unwrap_or("observe") {
                             "constrain" => crate::enforcement::EnforcementLevel::Constrain,
@@ -6402,7 +7437,6 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                     }
                     Err(e) => error_json(&e, 400),
                 }
-
             } else {
                 error_json("not found", 404)
             }
@@ -6598,9 +7632,10 @@ fn handle_enforcement_quarantine(
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
     let mut s = state.lock().unwrap();
-    let results = s
-        .enforcement
-        .enforce(&crate::enforcement::EnforcementLevel::Quarantine, &req.target);
+    let results = s.enforcement.enforce(
+        &crate::enforcement::EnforcementLevel::Quarantine,
+        &req.target,
+    );
     let info = serde_json::json!({
         "target": req.target,
         "actions": results.len(),
@@ -6763,13 +7798,16 @@ fn handle_policy_vm_execute(
     };
     let s = state.lock().unwrap();
     // Build a simple program that loads env values and computes a risk composite
-    let program = crate::wasm_engine::PolicyProgram::new("api-eval", vec![
-        crate::wasm_engine::Opcode::LoadVar("score".into()),
-        crate::wasm_engine::Opcode::LoadVar("battery".into()),
-        crate::wasm_engine::Opcode::Mul,
-        crate::wasm_engine::Opcode::StoreResult("risk_composite".into()),
-        crate::wasm_engine::Opcode::Halt,
-    ]);
+    let program = crate::wasm_engine::PolicyProgram::new(
+        "api-eval",
+        vec![
+            crate::wasm_engine::Opcode::LoadVar("score".into()),
+            crate::wasm_engine::Opcode::LoadVar("battery".into()),
+            crate::wasm_engine::Opcode::Mul,
+            crate::wasm_engine::Opcode::StoreResult("risk_composite".into()),
+            crate::wasm_engine::Opcode::Halt,
+        ],
+    );
     let result = s.policy_vm.execute(&program, &req.env);
     let info = serde_json::json!({
         "success": result.success,
@@ -6848,28 +7886,47 @@ fn handle_policy_compose(
     };
     let engine = crate::policy::PolicyEngine;
     let signal_a = crate::detector::AnomalySignal {
-        score: req.score_a, confidence: 0.9, suspicious_axes: 0,
-        reasons: vec!["composed-a".into()], contributions: Vec::new(),
+        score: req.score_a,
+        confidence: 0.9,
+        suspicious_axes: 0,
+        reasons: vec!["composed-a".into()],
+        contributions: Vec::new(),
     };
     let sample_a = TelemetrySample {
-        timestamp_ms: 0, cpu_load_pct: 0.0, memory_load_pct: 0.0,
-        temperature_c: 0.0, network_kbps: 0.0, auth_failures: 0,
-        battery_pct: req.battery_a, integrity_drift: 0.0,
-        process_count: 0, disk_pressure_pct: 0.0,
+        timestamp_ms: 0,
+        cpu_load_pct: 0.0,
+        memory_load_pct: 0.0,
+        temperature_c: 0.0,
+        network_kbps: 0.0,
+        auth_failures: 0,
+        battery_pct: req.battery_a,
+        integrity_drift: 0.0,
+        process_count: 0,
+        disk_pressure_pct: 0.0,
     };
     let decision_a = engine.evaluate(&signal_a, &sample_a);
     let signal_b = crate::detector::AnomalySignal {
-        score: req.score_b, confidence: 0.9, suspicious_axes: 0,
-        reasons: vec!["composed-b".into()], contributions: Vec::new(),
+        score: req.score_b,
+        confidence: 0.9,
+        suspicious_axes: 0,
+        reasons: vec!["composed-b".into()],
+        contributions: Vec::new(),
     };
     let sample_b = TelemetrySample {
-        timestamp_ms: 0, cpu_load_pct: 0.0, memory_load_pct: 0.0,
-        temperature_c: 0.0, network_kbps: 0.0, auth_failures: 0,
-        battery_pct: req.battery_b, integrity_drift: 0.0,
-        process_count: 0, disk_pressure_pct: 0.0,
+        timestamp_ms: 0,
+        cpu_load_pct: 0.0,
+        memory_load_pct: 0.0,
+        temperature_c: 0.0,
+        network_kbps: 0.0,
+        auth_failures: 0,
+        battery_pct: req.battery_b,
+        integrity_drift: 0.0,
+        process_count: 0,
+        disk_pressure_pct: 0.0,
     };
     let decision_b = engine.evaluate(&signal_b, &sample_b);
-    let (result, conflict) = crate::policy::compose_decisions(Some(decision_a), Some(decision_b), op);
+    let (result, conflict) =
+        crate::policy::compose_decisions(Some(decision_a), Some(decision_b), op);
     let info = serde_json::json!({
         "result": result.as_ref().map(|d| serde_json::json!({
             "level": format!("{:?}", d.level),
@@ -6977,7 +8034,10 @@ fn handle_agent_create_token(
     }
     let req: TokenReq = match serde_json::from_str(&body) {
         Ok(r) => r,
-        Err(_) => TokenReq { max_uses: 10, ttl_secs: None },
+        Err(_) => TokenReq {
+            max_uses: 10,
+            ttl_secs: None,
+        },
     };
     let mut s = state.lock().unwrap();
     let token = if let Some(ttl) = req.ttl_secs {
@@ -7012,7 +8072,10 @@ fn handle_agent_heartbeat(
         health: None,
     });
     let mut s = state.lock().unwrap();
-    match s.agent_registry.heartbeat(agent_id, &req.version, req.health.clone()) {
+    match s
+        .agent_registry
+        .heartbeat(agent_id, &req.version, req.health.clone())
+    {
         Ok(()) => {
             let mut target_version = None;
             let now = chrono::Utc::now().to_rfc3339();
@@ -7022,7 +8085,10 @@ fn handle_agent_heartbeat(
                     if let Some(update_state) = &health.update_state {
                         deployment.status = update_state.clone();
                         deployment.status_reason = health.last_update_error.clone();
-                        if matches!(update_state.as_str(), "checking" | "downloading" | "downloaded" | "applying") {
+                        if matches!(
+                            update_state.as_str(),
+                            "checking" | "downloading" | "downloaded" | "applying"
+                        ) {
                             if deployment.acknowledged_at.is_none() {
                                 deployment.acknowledged_at = Some(now.clone());
                             }
@@ -7048,8 +8114,11 @@ fn handle_agent_heartbeat(
                 for dep in s.remote_deployments.values() {
                     if dep.status == "applied" {
                         if let Some(ref completed) = dep.completed_at {
-                            if let Ok(completed_time) = chrono::DateTime::parse_from_rfc3339(completed) {
-                                let elapsed = chrono::Utc::now().signed_duration_since(completed_time);
+                            if let Ok(completed_time) =
+                                chrono::DateTime::parse_from_rfc3339(completed)
+                            {
+                                let elapsed =
+                                    chrono::Utc::now().signed_duration_since(completed_time);
                                 let soak = match dep.rollout_group.as_str() {
                                     "canary" => rollout_cfg.canary_soak_secs as i64,
                                     "ring-1" => rollout_cfg.ring1_soak_secs as i64,
@@ -7061,7 +8130,11 @@ fn handle_agent_heartbeat(
                                         "ring-1" => "ring-2",
                                         _ => continue,
                                     };
-                                    progress_candidates.push((dep.version.clone(), dep.platform.clone(), next_ring.to_string()));
+                                    progress_candidates.push((
+                                        dep.version.clone(),
+                                        dep.platform.clone(),
+                                        next_ring.to_string(),
+                                    ));
                                 }
                             }
                         }
@@ -7073,10 +8146,17 @@ fn handle_agent_heartbeat(
                     for dep in s.remote_deployments.values() {
                         if dep.status == "failed" || dep.status == "error" {
                             // Count failures for this version
-                            let fail_count = s.remote_deployments.values()
-                                .filter(|d| d.version == dep.version && (d.status == "failed" || d.status == "error"))
+                            let fail_count = s
+                                .remote_deployments
+                                .values()
+                                .filter(|d| {
+                                    d.version == dep.version
+                                        && (d.status == "failed" || d.status == "error")
+                                })
                                 .count() as u32;
-                            if fail_count >= rollout_cfg.max_failures && dep.status_reason.as_deref() != Some("auto_rollback_scheduled") {
+                            if fail_count >= rollout_cfg.max_failures
+                                && dep.status_reason.as_deref() != Some("auto_rollback_scheduled")
+                            {
                                 rollback_agents.push((dep.agent_id.clone(), dep.version.clone()));
                             }
                         }
@@ -7091,13 +8171,20 @@ fn handle_agent_heartbeat(
                 // Auto-progress: deploy same version to next ring agents that don't already have a deployment
                 for (version, platform, next_ring) in progress_candidates {
                     // Find agents enrolled with matching platform that are in the next ring's eligible set
-                    let enrolled: Vec<String> = s.agent_registry.list()
+                    let enrolled: Vec<String> = s
+                        .agent_registry
+                        .list()
                         .iter()
-                        .filter(|a| a.platform == platform && a.status == crate::enrollment::AgentStatus::Online)
+                        .filter(|a| {
+                            a.platform == platform
+                                && a.status == crate::enrollment::AgentStatus::Online
+                        })
                         .map(|a| a.id.clone())
                         .collect();
                     for eid in enrolled {
-                        let already_deployed = s.remote_deployments.get(&eid)
+                        let already_deployed = s
+                            .remote_deployments
+                            .get(&eid)
                             .map(|d| d.version == version)
                             .unwrap_or(false);
                         if !already_deployed {
@@ -7106,7 +8193,9 @@ fn handle_agent_heartbeat(
                                 version: version.clone(),
                                 platform: platform.clone(),
                                 mandatory: false,
-                                release_notes: format!("Auto-progressed from previous ring to {next_ring}"),
+                                release_notes: format!(
+                                    "Auto-progressed from previous ring to {next_ring}"
+                                ),
                                 status: "assigned".to_string(),
                                 status_reason: Some(format!("auto_progress_{next_ring}")),
                                 rollout_group: next_ring.clone(),
@@ -7124,7 +8213,9 @@ fn handle_agent_heartbeat(
             save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
             let heartbeat_interval = s.agent_registry.heartbeat_interval();
             // Include agent-specific monitoring scope in heartbeat response
-            let agent_scope = s.agent_registry.get_monitor_scope(agent_id)
+            let agent_scope = s
+                .agent_registry
+                .get_monitor_scope(agent_id)
                 .cloned()
                 .unwrap_or_else(|| s.config.monitor.scope.clone());
             let payload = serde_json::json!({
@@ -7163,7 +8254,10 @@ fn handle_agent_update_check(
     let params = parse_query_string(request.url());
     let agent_id = params.get("agent_id").cloned();
     let mut current_version = params.get("current_version").cloned().unwrap_or_default();
-    let mut platform = params.get("platform").cloned().unwrap_or_else(|| "universal".to_string());
+    let mut platform = params
+        .get("platform")
+        .cloned()
+        .unwrap_or_else(|| "universal".to_string());
     if current_version.is_empty() {
         current_version = env!("CARGO_PKG_VERSION").to_string();
     }
@@ -7176,7 +8270,8 @@ fn handle_agent_update_check(
         }
         if let Some(deployment) = s.remote_deployments.get(agent_id) {
             if deployment_requires_action(deployment, &current_version) {
-                if let Some(release) = s.update_manager.get_release(&deployment.version, &platform) {
+                if let Some(release) = s.update_manager.get_release(&deployment.version, &platform)
+                {
                     let resp = crate::auto_update::UpdateCheckResponse {
                         update_available: true,
                         version: Some(release.version.clone()),
@@ -7230,14 +8325,19 @@ fn handle_update_deploy(
         Some(agent) => agent,
         None => return error_json("agent not found", 404),
     };
-    if !req.allow_downgrade && compare_versions(&req.version, &agent.version) == std::cmp::Ordering::Less {
+    if !req.allow_downgrade
+        && compare_versions(&req.version, &agent.version) == std::cmp::Ordering::Less
+    {
         return error_json("downgrade blocked without allow_downgrade=true", 409);
     }
     if let Some(existing) = s.remote_deployments.get(&req.agent_id) {
         if !req.allow_downgrade
             && compare_versions(&req.version, &existing.version) == std::cmp::Ordering::Less
         {
-            return error_json("deployment would roll back an already assigned version", 409);
+            return error_json(
+                "deployment would roll back an already assigned version",
+                409,
+            );
         }
     }
     let platform = req.platform.unwrap_or_else(|| agent.platform.clone());
@@ -7262,7 +8362,8 @@ fn handle_update_deploy(
         completed_at: None,
         last_heartbeat_at: None,
     };
-    s.remote_deployments.insert(req.agent_id.clone(), deployment.clone());
+    s.remote_deployments
+        .insert(req.agent_id.clone(), deployment.clone());
     save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
 
     let payload = serde_json::json!({
@@ -7293,7 +8394,10 @@ fn handle_event_triage(
 
     let mut s = state.lock().unwrap();
     match s.event_store.update_triage(event_id, update) {
-        Ok(event) => json_response(&serde_json::json!({ "status": "updated", "event": event }).to_string(), 200),
+        Ok(event) => json_response(
+            &serde_json::json!({ "status": "updated", "event": event }).to_string(),
+            200,
+        ),
         Err(e) if e == "event not found" => error_json(&e, 404),
         Err(e) => error_json(&e, 400),
     }
@@ -7315,7 +8419,10 @@ fn handle_event_ingest(
     let native_rule_matches: usize = batch
         .events
         .iter_mut()
-        .map(|alert| s.enterprise.apply_active_native_rules(alert, &batch.agent_id))
+        .map(|alert| {
+            s.enterprise
+                .apply_active_native_rules(alert, &batch.agent_id)
+        })
         .sum();
     let result = s.event_store.ingest(&batch);
     let newly_ingested = s.event_store.recent_events(batch.events.len());
@@ -7362,7 +8469,10 @@ fn handle_event_ingest(
     let mut resp = match serde_json::to_value(&result) {
         Ok(serde_json::Value::Object(mut map)) => {
             if sigma_matches > 0 {
-                map.insert("sigma_matches".to_string(), serde_json::json!(sigma_matches));
+                map.insert(
+                    "sigma_matches".to_string(),
+                    serde_json::json!(sigma_matches),
+                );
             }
             json_response(&serde_json::Value::Object(map).to_string(), 200)
         }
@@ -7398,7 +8508,9 @@ fn handle_bulk_triage(
         return error_json("too many event_ids (max 500)", 400);
     }
     let mut s = state.lock().unwrap();
-    let result = s.event_store.bulk_update_triage(&req.event_ids, &req.update);
+    let result = s
+        .event_store
+        .bulk_update_triage(&req.event_ids, &req.update);
     let payload = serde_json::json!({
         "updated": result.updated,
         "failed": result.failed.iter().map(|(id, msg)| serde_json::json!({"event_id": id, "error": msg})).collect::<Vec<_>>(),
@@ -7454,7 +8566,8 @@ fn handle_update_rollback(
         completed_at: None,
         last_heartbeat_at: None,
     };
-    s.remote_deployments.insert(req.agent_id.clone(), deployment.clone());
+    s.remote_deployments
+        .insert(req.agent_id.clone(), deployment.clone());
     save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
     let payload = serde_json::json!({
         "status": "rollback_assigned",
@@ -7490,7 +8603,10 @@ fn handle_update_cancel(
             deployment.status_reason = Some("cancelled by admin".to_string());
             deployment.completed_at = Some(chrono::Utc::now().to_rfc3339());
             save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
-            json_response(&serde_json::json!({"status": "cancelled", "agent_id": req.agent_id}).to_string(), 200)
+            json_response(
+                &serde_json::json!({"status": "cancelled", "agent_id": req.agent_id}).to_string(),
+                200,
+            )
         }
         None => error_json("no deployment found for agent", 404),
     }
@@ -7508,12 +8624,20 @@ fn handle_agent_set_scope(
     // Accept either a full MonitorScopeSettings or {"clear": true} to remove override
     // Try parsing as clear command first
     let clear_check: Result<serde_json::Value, _> = serde_json::from_str(&body);
-    let is_clear = clear_check.as_ref().ok().and_then(|v| v.get("clear")).and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_clear = clear_check
+        .as_ref()
+        .ok()
+        .and_then(|v| v.get("clear"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let mut s = state.lock().unwrap();
     if is_clear {
         match s.agent_registry.set_monitor_scope(agent_id, None) {
-            Ok(()) => json_response(&serde_json::json!({"status": "scope_cleared", "agent_id": agent_id}).to_string(), 200),
+            Ok(()) => json_response(
+                &serde_json::json!({"status": "scope_cleared", "agent_id": agent_id}).to_string(),
+                200,
+            ),
             Err(e) => error_json(&e, 404),
         }
     } else {
@@ -7521,7 +8645,10 @@ fn handle_agent_set_scope(
             Ok(s) => s,
             Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
         };
-        match s.agent_registry.set_monitor_scope(agent_id, Some(scope.clone())) {
+        match s
+            .agent_registry
+            .set_monitor_scope(agent_id, Some(scope.clone()))
+        {
             Ok(()) => {
                 let payload = serde_json::json!({"status": "scope_set", "agent_id": agent_id, "scope": scope});
                 json_response(&payload.to_string(), 200)
@@ -7538,7 +8665,9 @@ fn handle_agent_get_scope(
     let s = state.lock().unwrap();
     match s.agent_registry.get(agent_id) {
         Some(agent) => {
-            let effective_scope = agent.monitor_scope.as_ref()
+            let effective_scope = agent
+                .monitor_scope
+                .as_ref()
                 .unwrap_or(&s.config.monitor.scope);
             let payload = serde_json::json!({
                 "agent_id": agent_id,
@@ -7631,8 +8760,12 @@ fn response_action_label(action: &ResponseAction) -> String {
     match action {
         ResponseAction::Alert => "Alert".to_string(),
         ResponseAction::Isolate => "Isolate host".to_string(),
-        ResponseAction::Throttle { rate_limit_kbps } => format!("Throttle to {rate_limit_kbps} kbps"),
-        ResponseAction::KillProcess { pid, process_name } => format!("Kill process {process_name} (PID {pid})"),
+        ResponseAction::Throttle { rate_limit_kbps } => {
+            format!("Throttle to {rate_limit_kbps} kbps")
+        }
+        ResponseAction::KillProcess { pid, process_name } => {
+            format!("Kill process {process_name} (PID {pid})")
+        }
         ResponseAction::QuarantineFile { path } => format!("Quarantine file {path}"),
         ResponseAction::BlockIp { ip } => format!("Block IP {ip}"),
         ResponseAction::DisableAccount { username } => format!("Disable account {username}"),
@@ -7642,7 +8775,9 @@ fn response_action_label(action: &ResponseAction) -> String {
 }
 
 fn response_request_json(request: &ResponseRequest) -> serde_json::Value {
-    let approved_count = request.approvals.iter()
+    let approved_count = request
+        .approvals
+        .iter()
         .filter(|record| record.decision == ResponseApprovalDecision::Approve)
         .count();
     serde_json::json!({
@@ -7687,7 +8822,9 @@ fn response_action_from_json(value: &serde_json::Value) -> Result<ResponseAction
             rate_limit_kbps: value["rate_limit_kbps"].as_u64().unwrap_or(256) as u32,
         }),
         "kill_process" => {
-            let pid = value["pid"].as_u64().ok_or("pid is required for kill_process")? as u32;
+            let pid = value["pid"]
+                .as_u64()
+                .ok_or("pid is required for kill_process")? as u32;
             let process_name = value["process_name"]
                 .as_str()
                 .map(|s| s.trim())
@@ -7697,35 +8834,55 @@ fn response_action_from_json(value: &serde_json::Value) -> Result<ResponseAction
             Ok(ResponseAction::KillProcess { pid, process_name })
         }
         "quarantine_file" => {
-            let path = value["path"].as_str().ok_or("path is required for quarantine_file")?.trim().to_string();
+            let path = value["path"]
+                .as_str()
+                .ok_or("path is required for quarantine_file")?
+                .trim()
+                .to_string();
             if path.is_empty() {
                 return Err("path is required for quarantine_file".into());
             }
             Ok(ResponseAction::QuarantineFile { path })
         }
         "block_ip" => {
-            let ip = value["ip"].as_str().ok_or("ip is required for block_ip")?.trim().to_string();
+            let ip = value["ip"]
+                .as_str()
+                .ok_or("ip is required for block_ip")?
+                .trim()
+                .to_string();
             if ip.is_empty() {
                 return Err("ip is required for block_ip".into());
             }
             Ok(ResponseAction::BlockIp { ip })
         }
         "disable_account" => {
-            let username = value["username"].as_str().ok_or("username is required for disable_account")?.trim().to_string();
+            let username = value["username"]
+                .as_str()
+                .ok_or("username is required for disable_account")?
+                .trim()
+                .to_string();
             if username.is_empty() {
                 return Err("username is required for disable_account".into());
             }
             Ok(ResponseAction::DisableAccount { username })
         }
         "rollback_config" => {
-            let config_name = value["config_name"].as_str().ok_or("config_name is required for rollback_config")?.trim().to_string();
+            let config_name = value["config_name"]
+                .as_str()
+                .ok_or("config_name is required for rollback_config")?
+                .trim()
+                .to_string();
             if config_name.is_empty() {
                 return Err("config_name is required for rollback_config".into());
             }
             Ok(ResponseAction::RollbackConfig { config_name })
         }
         "custom" => {
-            let name = value["name"].as_str().ok_or("name is required for custom action")?.trim().to_string();
+            let name = value["name"]
+                .as_str()
+                .ok_or("name is required for custom action")?
+                .trim()
+                .to_string();
             if name.is_empty() {
                 return Err("name is required for custom action".into());
             }
@@ -7750,8 +8907,11 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         if b == b'=' || b == b'\n' || b == b'\r' || b == b' ' {
             continue;
         }
-        let val = TABLE.iter().position(|&c| c == b)
-            .ok_or_else(|| format!("invalid base64 character: {}", b as char))? as u32;
+        let val = TABLE
+            .iter()
+            .position(|&c| c == b)
+            .ok_or_else(|| format!("invalid base64 character: {}", b as char))?
+            as u32;
         buf = (buf << 6) | val;
         bits += 6;
         if bits >= 8 {
@@ -7783,7 +8943,10 @@ fn serve_static(request: Request, site_dir: &Path) {
     // Canonicalize to prevent symlink-based path traversal
     let canon_site = match site_dir.canonicalize() {
         Ok(p) => p,
-        Err(_) => { let _ = request.respond(error_json("server error", 500)); return; }
+        Err(_) => {
+            let _ = request.respond(error_json("server error", 500));
+            return;
+        }
     };
     if let Ok(canon_file) = file_path.canonicalize() {
         if !canon_file.starts_with(&canon_site) {
@@ -7814,7 +8977,8 @@ fn serve_static(request: Request, site_dir: &Path) {
                     tiny_http::StatusCode(200),
                     vec![
                         Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap(),
-                        Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
+                        Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes())
+                            .unwrap(),
                         Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
                         Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
                         Header::from_bytes(b"Cache-Control", b"no-store").unwrap(),
@@ -7841,7 +9005,7 @@ mod tests {
     use crate::collector::AlertRecord;
     use crate::enrollment::EnrollRequest;
     use crate::event_forward::EventBatch;
-    use crate::response::{ApprovalRecord, ApprovalDecision as ResponseApprovalDecision};
+    use crate::response::{ApprovalDecision as ResponseApprovalDecision, ApprovalRecord};
     use crate::telemetry::TelemetrySample;
     use std::collections::HashMap as StdHashMap;
     use std::path::PathBuf;
@@ -7884,7 +9048,12 @@ mod tests {
         }
     }
 
-    fn enroll_test_agent(registry: &mut AgentRegistry, hostname: &str, platform: &str, version: &str) -> String {
+    fn enroll_test_agent(
+        registry: &mut AgentRegistry,
+        hostname: &str,
+        platform: &str,
+        version: &str,
+    ) -> String {
         let token = registry.create_token(1);
         registry
             .enroll(&EnrollRequest {
@@ -8095,7 +9264,12 @@ mod tests {
         let agent_id = enroll_test_agent(&mut registry, "manager-host", "linux", "2.0.0");
         events.ingest(&EventBatch {
             agent_id: agent_id.clone(),
-            events: vec![sample_alert("manager-host", "Critical", 7.8, "lateral movement")],
+            events: vec![sample_alert(
+                "manager-host",
+                "Critical",
+                7.8,
+                "lateral movement",
+            )],
         });
         let event = events.all_events()[0].clone();
         queue.enqueue(

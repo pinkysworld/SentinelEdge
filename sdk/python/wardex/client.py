@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
-from urllib.parse import urljoin
 
 import requests
 
@@ -17,6 +15,15 @@ from wardex.exceptions import (
 )
 
 MAX_BATCH_SIZE = 10_000
+INCIDENT_SEVERITY_ALIASES = {
+    "nominal": "Nominal",
+    "low": "Low",
+    "elevated": "Elevated",
+    "medium": "Medium",
+    "severe": "Severe",
+    "high": "High",
+    "critical": "Critical",
+}
 
 
 class WardexClient:
@@ -115,23 +122,44 @@ class WardexClient:
     def _delete(self, path: str) -> Any:
         return self._request("DELETE", path)
 
+    @staticmethod
+    def _unsupported(name: str, guidance: str) -> WardexError:
+        return WardexError(f"{name} is not supported by the current Wardex server API. {guidance}")
+
     # ── auth ──────────────────────────────────────────────────────────────
 
     def login(self, username: str, password: str) -> dict[str, Any]:
-        data = self._post("/api/auth/login", {"username": username, "password": password})
-        if isinstance(data, dict) and "token" in data:
-            self._token = data["token"]
-            self._session.headers["Authorization"] = f"Bearer {self._token}"
-        return data
+        raise self._unsupported(
+            "login()",
+            "Construct the client with an API token or call rotate_token() on an already authenticated session.",
+        )
 
     def logout(self) -> Any:
-        result = self._post("/api/auth/logout")
         self._token = None
         self._session.headers.pop("Authorization", None)
-        return result
+        return {"status": "logged_out", "local_only": True}
 
     def whoami(self) -> dict[str, Any]:
-        return self._get("/api/auth/whoami")
+        return {
+            "authenticated": True,
+            "auth": self.auth_check(),
+            "session": self.session_info(),
+        }
+
+    def auth_check(self) -> dict[str, Any]:
+        return self._get("/api/auth/check")
+
+    def rotate_token(self) -> dict[str, Any]:
+        data = self._post("/api/auth/rotate")
+        if isinstance(data, dict):
+            rotated = data.get("new_token")
+            if rotated:
+                self._token = rotated
+                self._session.headers["Authorization"] = f"Bearer {rotated}"
+        return data
+
+    def session_info(self) -> dict[str, Any]:
+        return self._get("/api/session/info")
 
     # ── status ────────────────────────────────────────────────────────────
 
@@ -150,10 +178,16 @@ class WardexClient:
         return self._get(f"/api/alerts/{alert_id}")
 
     def ack_alert(self, alert_id: str) -> dict[str, Any]:
-        return self._post(f"/api/alerts/{alert_id}/ack")
+        raise self._unsupported(
+            "ack_alert()",
+            "Use the queue acknowledgement or event triage APIs; the current server does not expose a dedicated /api/alerts/{id}/ack route.",
+        )
 
     def resolve_alert(self, alert_id: str) -> dict[str, Any]:
-        return self._post(f"/api/alerts/{alert_id}/resolve")
+        raise self._unsupported(
+            "resolve_alert()",
+            "Use incident/case workflows or event triage; the current server does not expose a dedicated /api/alerts/{id}/resolve route.",
+        )
 
     # ── incidents ─────────────────────────────────────────────────────────
 
@@ -166,78 +200,164 @@ class WardexClient:
     def create_incident(self, title: str, severity: str, description: str = "") -> dict[str, Any]:
         if not title or not title.strip():
             raise ValueError("title must not be empty")
-        if severity not in ("low", "medium", "high", "critical"):
-            raise ValueError(f"severity must be one of low/medium/high/critical, got '{severity}'")
-        return self._post("/api/incidents", {
-            "title": title,
-            "severity": severity,
-            "description": description,
-        })
+        severity_key = severity.strip().lower()
+        if severity_key not in INCIDENT_SEVERITY_ALIASES:
+            allowed = "/".join(INCIDENT_SEVERITY_ALIASES.keys())
+            raise ValueError(f"severity must be one of {allowed}, got '{severity}'")
+        return self._post(
+            "/api/incidents",
+            {
+                "title": title.strip(),
+                "severity": INCIDENT_SEVERITY_ALIASES[severity_key],
+                "summary": description,
+            },
+        )
 
     def escalate(self, incident_id: str) -> dict[str, Any]:
-        return self._post(f"/api/incidents/{incident_id}/escalate")
+        raise self._unsupported(
+            "escalate()",
+            "Use create_incident(), update_incident(), or the escalation APIs directly if your deployment exposes them.",
+        )
+
+    def update_incident(
+        self,
+        incident_id: str,
+        *,
+        status: str | None = None,
+        assignee: str | None = None,
+        note: str | None = None,
+        author: str | None = None,
+    ) -> dict[str, Any]:
+        body = {
+            "status": status,
+            "assignee": assignee,
+            "note": note,
+            "author": author,
+        }
+        return self._post(f"/api/incidents/{incident_id}/update", {k: v for k, v in body.items() if v is not None})
 
     # ── fleet ─────────────────────────────────────────────────────────────
 
     def list_agents(self) -> list[dict[str, Any]]:
-        return self._get("/api/fleet/agents")
+        return self._get("/api/agents")
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
-        return self._get(f"/api/fleet/agents/{agent_id}")
+        return self._get(f"/api/agents/{agent_id}/details")
 
-    def isolate_agent(self, agent_id: str) -> dict[str, Any]:
-        return self._post(f"/api/fleet/agents/{agent_id}/isolate")
+    def get_agent_activity(self, agent_id: str) -> dict[str, Any]:
+        return self._get(f"/api/agents/{agent_id}/activity")
+
+    def isolate_agent(
+        self,
+        agent_id: str,
+        *,
+        reason: str = "Requested from Wardex Python SDK",
+        severity: str = "high",
+        requested_by: str = "python-sdk",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        agent = self.get_agent(agent_id)
+        agent_meta = agent.get("agent", agent) if isinstance(agent, dict) else {}
+        hostname = agent_meta.get("hostname")
+        if not hostname:
+            raise WardexError("Agent detail payload did not include a hostname for isolation")
+        return self._post(
+            "/api/response/request",
+            {
+                "action": "isolate",
+                "hostname": hostname,
+                "agent_uid": agent_id,
+                "reason": reason,
+                "severity": severity,
+                "requested_by": requested_by,
+                "dry_run": dry_run,
+            },
+        )
 
     def unisolate_agent(self, agent_id: str) -> dict[str, Any]:
-        return self._post(f"/api/fleet/agents/{agent_id}/unisolate")
+        raise self._unsupported(
+            "unisolate_agent()",
+            "The current server exposes isolate as an approval-gated response action but does not expose a direct unisolate endpoint.",
+        )
 
     # ── detection ─────────────────────────────────────────────────────────
 
     def run_detection(self) -> dict[str, Any]:
-        return self._post("/api/detection/run")
+        return self._get("/api/detection/summary")
 
     def get_baseline(self) -> dict[str, Any]:
-        return self._get("/api/detection/baseline")
+        return self._get("/api/report")
 
     # ── telemetry ─────────────────────────────────────────────────────────
 
-    def ingest_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        return self._post("/api/telemetry/ingest", event)
+    def ingest_event(self, event: dict[str, Any], *, agent_id: str = "python-sdk") -> dict[str, Any]:
+        return self._post("/api/events", {"agent_id": agent_id, "events": [event]})
 
-    def ingest_batch(self, events: list[dict[str, Any]]) -> dict[str, Any]:
+    def ingest_batch(self, events: list[dict[str, Any]], *, agent_id: str = "python-sdk") -> dict[str, Any]:
         if len(events) > MAX_BATCH_SIZE:
             raise ValueError(f"Batch size {len(events)} exceeds maximum of {MAX_BATCH_SIZE}")
-        return self._post("/api/telemetry/ingest/batch", events)
+        return self._post("/api/events", {"agent_id": agent_id, "events": events})
 
     # ── policy ────────────────────────────────────────────────────────────
 
     def list_policies(self) -> list[dict[str, Any]]:
-        return self._get("/api/policies")
+        return self._get("/api/policy/history")
 
     def get_policy(self, policy_id: str) -> dict[str, Any]:
-        return self._get(f"/api/policies/{policy_id}")
+        if policy_id in {"current", "latest"}:
+            return self._get("/api/policy/current")
+        history = self.list_policies()
+        for policy in history:
+            version = str(policy.get("version", ""))
+            if version == str(policy_id):
+                return policy
+        raise NotFoundError(f"Policy not found: {policy_id}", 404, "")
 
     def update_policy(self, policy_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        return self._put(f"/api/policies/{policy_id}", body)
+        return self._post("/api/policy/publish", body)
 
     # ── threat intel ──────────────────────────────────────────────────────
 
     def list_iocs(self) -> list[dict[str, Any]]:
-        return self._get("/api/threat-intel/iocs")
+        raise self._unsupported("list_iocs()", "Use get_threat_intel_status() or your own indicator store until list/query endpoints are exposed.")
 
     def add_ioc(self, ioc: dict[str, Any]) -> dict[str, Any]:
-        return self._post("/api/threat-intel/iocs", ioc)
+        return self._post("/api/threat-intel/ioc", ioc)
 
     def query_ioc(self, value: str) -> dict[str, Any]:
-        return self._get("/api/threat-intel/query", value=value)
+        raise self._unsupported("query_ioc()", "The current server exposes indicator submission and status, but not a dedicated IoC query endpoint.")
+
+    def get_threat_intel_status(self) -> dict[str, Any]:
+        return self._get("/api/threat-intel/status")
 
     # ── response ──────────────────────────────────────────────────────────
 
     def list_actions(self) -> list[dict[str, Any]]:
-        return self._get("/api/response/actions")
+        return self._get("/api/response/requests")
 
     def execute_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        return self._post("/api/response/execute", action)
+        raise self._unsupported(
+            "execute_action()",
+            "Submit approval-gated actions with request_response_action(), then approve and execute them explicitly.",
+        )
+
+    def request_response_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/api/response/request", action)
+
+    def approve_response_action(self, request_id: str, *, approve: bool = True, approver: str = "python-sdk", reason: str = "") -> dict[str, Any]:
+        return self._post(
+            "/api/response/approve",
+            {
+                "request_id": request_id,
+                "decision": "approve" if approve else "deny",
+                "approver": approver,
+                "reason": reason,
+            },
+        )
+
+    def execute_approved_actions(self, request_id: str | None = None) -> dict[str, Any]:
+        body = {"request_id": request_id} if request_id else None
+        return self._post("/api/response/execute", body)
 
     # ── reports ───────────────────────────────────────────────────────────
 
@@ -245,15 +365,20 @@ class WardexClient:
         return self._get("/api/reports")
 
     def generate_report(self, report_type: str = "full") -> dict[str, Any]:
-        return self._post("/api/reports/generate", {"type": report_type})
+        normalized = report_type.strip().lower()
+        if normalized in {"full", "latest", "analysis"}:
+            return self._get("/api/report")
+        if normalized in {"executive", "executive-summary", "summary"}:
+            return self._get("/api/reports/executive-summary")
+        raise ValueError("report_type must be one of full/latest/analysis/executive-summary")
 
     # ── config ────────────────────────────────────────────────────────────
 
     def get_config(self) -> dict[str, Any]:
-        return self._get("/api/config")
+        return self._get("/api/config/current")
 
     def update_config(self, config: dict[str, Any]) -> dict[str, Any]:
-        return self._put("/api/config", config)
+        return self._post("/api/config/save", config)
 
     # ── metrics ───────────────────────────────────────────────────────────
 

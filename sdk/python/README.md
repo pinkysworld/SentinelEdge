@@ -17,32 +17,41 @@ from wardex import WardexClient
 
 client = WardexClient("https://wardex.example.com", token="your-api-token")
 
-# Status
-print(client.status())
+# Auth / session
+print(client.auth_check())
 
-# Alerts
-alerts = client.list_alerts(limit=20)
-for a in alerts:
-    print(a["id"], a["level"])
+# Fleet
+agents = client.list_agents()
+print(agents[0]["id"] if agents else "no agents")
 
-# Ingest telemetry
-client.ingest_event({"device_id": "sensor-1", "cpu": 42.0, "mem": 1024})
+# Ingest an agent event batch
+client.ingest_event(
+    {"hostname": "sensor-1", "level": "Elevated", "score": 2.1, "reasons": ["SDK sample"]},
+    agent_id="sensor-1",
+)
 ```
 
 ## API coverage
 
 | Area | Methods |
 |---|---|
-| Authentication | `login()`, `logout()`, `whoami()` |
-| Status | `status()`, `health()` |
-| Alerts | `list_alerts()`, `get_alert()`, `ack_alert()`, `resolve_alert()` |
-| Incidents | `list_incidents()`, `get_incident()`, `create_incident()`, `escalate()` |
-| Fleet | `list_agents()`, `get_agent()`, `isolate_agent()`, `unisolate_agent()` |
+| Authentication | `auth_check()`, `rotate_token()`, `session_info()`, `logout()`, `whoami()` |
+| Status | `status()`, `health()`, `openapi_spec()` |
+| Alerts | `list_alerts()`, `get_alert()` |
+| Incidents | `list_incidents()`, `get_incident()`, `create_incident()`, `update_incident()` |
+| Fleet | `list_agents()`, `get_agent()`, `get_agent_activity()`, `isolate_agent()` |
 | Detection | `run_detection()`, `get_baseline()` |
 | Telemetry | `ingest_event()`, `ingest_batch()` |
 | Policy | `list_policies()`, `get_policy()`, `update_policy()` |
-| Threat Intel | `list_iocs()`, `add_ioc()`, `query_ioc()` |
-| Response | `list_actions()`, `execute_action()` |
+| Threat Intel | `add_ioc()`, `get_threat_intel_status()` |
+| Response | `list_actions()`, `request_response_action()`, `approve_response_action()`, `execute_approved_actions()` |
 | Reports | `generate_report()`, `list_reports()` |
 | Config | `get_config()`, `update_config()` |
 | Metrics | `metrics()` |
+
+Notes:
+
+- The server uses bearer tokens rather than username/password login, so `login()` now fails fast with guidance instead of calling a non-existent route.
+- `ack_alert()` and `resolve_alert()` also fail fast with guidance because the current server exposes queue acknowledgement and event triage workflows instead of dedicated alert mutation routes.
+- `ingest_event()` and `ingest_batch()` send the current event-batch envelope expected by `/api/events`.
+- `generate_report()` maps to the currently exposed report endpoints: `full/latest/analysis` use `/api/report`, and `executive-summary` uses `/api/reports/executive-summary`.
