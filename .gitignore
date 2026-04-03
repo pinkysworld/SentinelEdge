@@ -3,6 +3,8 @@ var/
 .DS_Store
 *.code-workspace
 admin-console/
+xdr_ai_handoff_pack/
+xdr_ai_handoff_pack.zip
 release/
 output/
 test-results/
