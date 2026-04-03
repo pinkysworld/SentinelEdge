@@ -1820,11 +1820,13 @@ fn build_manager_overview(
     let queue_breached = queue_items
         .iter()
         .filter(|item| {
-            item.sla_deadline
-                .as_deref()
-                .and_then(|deadline| chrono::DateTime::parse_from_rfc3339(deadline).ok())
-                .map(|deadline| chrono::Utc::now() > deadline.with_timezone(&chrono::Utc))
-                .unwrap_or(false)
+            !item.acknowledged
+                && item
+                    .sla_deadline
+                    .as_deref()
+                    .and_then(|deadline| chrono::DateTime::parse_from_rfc3339(deadline).ok())
+                    .map(|deadline| chrono::Utc::now() > deadline.with_timezone(&chrono::Utc))
+                    .unwrap_or(false)
         })
         .count();
     let critical_pending = queue_items
@@ -5412,7 +5414,7 @@ fn handle_api(
                     Header::from_bytes(b"Access-Control-Allow-Origin", cors_origin().as_bytes())
                         .unwrap(),
                     Header::from_bytes(b"Vary", b"Origin").unwrap(),
-                    Header::from_bytes(b"Access-Control-Allow-Methods", b"GET, POST, OPTIONS")
+                    Header::from_bytes(b"Access-Control-Allow-Methods", b"GET, POST, DELETE, OPTIONS")
                         .unwrap(),
                     Header::from_bytes(
                         b"Access-Control-Allow-Headers",
@@ -6762,6 +6764,21 @@ fn handle_api(
                                             b"attachment; filename=\"report.html\"",
                                         )
                                         .unwrap(),
+                                        Header::from_bytes(
+                                            b"X-Content-Type-Options",
+                                            b"nosniff",
+                                        )
+                                        .unwrap(),
+                                        Header::from_bytes(
+                                            b"X-Frame-Options",
+                                            b"DENY",
+                                        )
+                                        .unwrap(),
+                                        Header::from_bytes(
+                                            b"Cache-Control",
+                                            b"no-store",
+                                        )
+                                        .unwrap(),
                                     ],
                                     std::io::Cursor::new(data),
                                     Some(len),
@@ -6961,12 +6978,17 @@ fn handle_api(
                     .trim_end_matches('/');
                 match read_json_value(&mut request, 8192) {
                     Ok(v) => {
-                        let target = match v["target_status"].as_str().unwrap_or("active") {
-                            "draft" => ContentLifecycle::Draft,
-                            "test" => ContentLifecycle::Test,
-                            "canary" => ContentLifecycle::Canary,
-                            "deprecated" => ContentLifecycle::Deprecated,
-                            _ => ContentLifecycle::Active,
+                        let status_str = v["target_status"].as_str().unwrap_or("active");
+                        let target = match status_str {
+                            "draft" => Some(ContentLifecycle::Draft),
+                            "test" => Some(ContentLifecycle::Test),
+                            "canary" => Some(ContentLifecycle::Canary),
+                            "active" => Some(ContentLifecycle::Active),
+                            "deprecated" => Some(ContentLifecycle::Deprecated),
+                            _ => None,
+                        };
+                        let Some(target) = target else {
+                            return respond_api(request, state, &method, &url, needs_auth, error_json(&format!("invalid target_status: {status_str}"), 400));
                         };
                         let reason = v["reason"].as_str().unwrap_or("promotion");
                         let mut s = state.lock().unwrap();
@@ -7161,17 +7183,25 @@ fn handle_api(
                                 let mut s = state.lock().unwrap();
                                 if let Some(status_str) = v["status"].as_str() {
                                     let status = match status_str {
-                                        "triaging" => CaseStatus::Triaging,
-                                        "investigating" => CaseStatus::Investigating,
-                                        "escalated" => CaseStatus::Escalated,
-                                        "resolved" => CaseStatus::Resolved,
-                                        "closed" => CaseStatus::Closed,
-                                        _ => CaseStatus::New,
+                                        "triaging" => Some(CaseStatus::Triaging),
+                                        "investigating" => Some(CaseStatus::Investigating),
+                                        "escalated" => Some(CaseStatus::Escalated),
+                                        "resolved" => Some(CaseStatus::Resolved),
+                                        "closed" => Some(CaseStatus::Closed),
+                                        "new" => Some(CaseStatus::New),
+                                        _ => None,
                                     };
-                                    s.case_store.update_status(id, status);
+                                    let Some(status) = status else {
+                                        return respond_api(request, state, &method, &url, needs_auth, error_json(&format!("invalid status: {status_str}"), 400));
+                                    };
+                                    if !s.case_store.update_status(id, status) {
+                                        return respond_api(request, state, &method, &url, needs_auth, error_json("case not found", 404));
+                                    }
                                 }
                                 if let Some(assignee) = v["assignee"].as_str() {
-                                    s.case_store.assign(id, assignee.to_string());
+                                    if !s.case_store.assign(id, assignee.to_string()) {
+                                        return respond_api(request, state, &method, &url, needs_auth, error_json("case not found", 404));
+                                    }
                                 }
                                 if let Some(incident_id) = v["link_incident"].as_u64() {
                                     s.case_store.link_incident(id, incident_id);

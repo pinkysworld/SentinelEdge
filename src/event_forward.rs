@@ -397,13 +397,13 @@ impl EventStore {
                     self.events[idx].correlated = true;
                     // Escalate score for cross-agent correlation
                     let score = &mut self.events[idx].alert.score;
-                    *score = (*score + 0.15).min(1.0);
+                    *score = (*score + 1.5).min(10.0);
                     // Re-evaluate severity level based on boosted score
-                    let new_level = if *score >= 0.85 {
+                    let new_level = if *score >= 8.0 {
                         "Critical"
-                    } else if *score >= 0.6 {
+                    } else if *score >= 6.0 {
                         "Severe"
-                    } else if *score >= 0.3 {
+                    } else if *score >= 4.0 {
                         "Elevated"
                     } else {
                         "Nominal"
@@ -645,9 +645,9 @@ fn severity_label(rank: u8) -> &'static str {
 fn risk_label(max_rank: u8, average_score: f32, correlated_count: usize) -> &'static str {
     if max_rank >= 3 || correlated_count >= 2 {
         "Critical"
-    } else if max_rank >= 2 || average_score >= 0.8 {
+    } else if max_rank >= 2 || average_score >= 6.0 {
         "Severe"
-    } else if max_rank >= 1 || average_score >= 0.4 {
+    } else if max_rank >= 1 || average_score >= 4.0 {
         "Elevated"
     } else {
         "Nominal"
