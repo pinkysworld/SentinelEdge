@@ -7,6 +7,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Maximum allowed query string size (100 KiB).
+const MAX_QUERY_SIZE: usize = 100 * 1024;
+/// Maximum nesting depth for selection sets.
+const MAX_DEPTH: usize = 50;
+
 // ── Schema Definition ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +116,9 @@ pub struct Selection {
 // ── Parser ───────────────────────────────────────────────────────────────────
 
 pub fn parse_query(query: &str) -> Result<ParsedQuery, String> {
+    if query.len() > MAX_QUERY_SIZE {
+        return Err(format!("Query exceeds maximum size of {} bytes", MAX_QUERY_SIZE));
+    }
     let trimmed = query.trim();
     let (operation, rest) = if trimmed.starts_with("mutation") {
         ("mutation".to_string(), trimmed.strip_prefix("mutation").unwrap_or(trimmed))
@@ -137,12 +145,15 @@ pub fn parse_query(query: &str) -> Result<ParsedQuery, String> {
         return Err("Expected '{'".into());
     };
 
-    let selections = parse_selection_set(body)?;
+    let selections = parse_selection_set(body, 0)?;
 
     Ok(ParsedQuery { operation, name, selections })
 }
 
-fn parse_selection_set(input: &str) -> Result<Vec<Selection>, String> {
+fn parse_selection_set(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
+    if depth >= MAX_DEPTH {
+        return Err(format!("Selection nesting exceeds maximum depth of {}", MAX_DEPTH));
+    }
     let trimmed = input.trim();
     if !trimmed.starts_with('{') {
         return Err("Expected '{'".into());
@@ -153,7 +164,7 @@ fn parse_selection_set(input: &str) -> Result<Vec<Selection>, String> {
         None => return Err("Unmatched '{'".into()),
     };
 
-    parse_fields(inner)
+    parse_fields(inner, depth)
 }
 
 fn find_matching_brace(s: &str) -> Option<usize> {
@@ -173,7 +184,7 @@ fn find_matching_brace(s: &str) -> Option<usize> {
     None
 }
 
-fn parse_fields(input: &str) -> Result<Vec<Selection>, String> {
+fn parse_fields(input: &str, _depth: usize) -> Result<Vec<Selection>, String> {
     let mut fields = Vec::new();
     let mut chars = input.chars().peekable();
     let mut buf = String::new();
@@ -197,9 +208,11 @@ fn parse_fields(input: &str) -> Result<Vec<Selection>, String> {
         }
 
         if buf.is_empty() {
-            // Skip unexpected characters
-            chars.next();
-            continue;
+            // Report unexpected character instead of silently skipping
+            if let Some(&c) = chars.peek() {
+                return Err(format!("Unexpected character '{}' in selection set", c));
+            }
+            break;
         }
 
         skip_whitespace(&mut chars);
@@ -256,7 +269,7 @@ fn parse_fields(input: &str) -> Result<Vec<Selection>, String> {
                     if depth == 0 { break; }
                 }
             }
-            parse_selection_set(&brace_str).unwrap_or_default()
+            parse_selection_set(&brace_str, depth + 1).unwrap_or_default()
         } else {
             vec![]
         };
@@ -280,25 +293,48 @@ fn skip_whitespace(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
 
 fn parse_args(input: &str) -> HashMap<String, serde_json::Value> {
     let mut args = HashMap::new();
-    for part in input.split(',') {
-        let part = part.trim();
-        if let Some((key, val)) = part.split_once(':') {
-            let key = key.trim().to_string();
-            let val = val.trim();
-            let value = if val.starts_with('"') && val.ends_with('"') {
-                serde_json::Value::String(val[1..val.len()-1].to_string())
-            } else if let Ok(n) = val.parse::<i64>() {
+    let mut remaining = input.trim();
+
+    while !remaining.is_empty() {
+        // Find the key (everything up to ':')
+        let Some(colon_pos) = remaining.find(':') else { break };
+        let key = remaining[..colon_pos].trim().to_string();
+        remaining = remaining[colon_pos + 1..].trim();
+
+        // Parse the value, respecting quotes
+        let (val, rest) = if remaining.starts_with('"') {
+            // Find closing quote (handle escaped quotes)
+            let mut end = 1;
+            while end < remaining.len() {
+                if remaining.as_bytes()[end] == b'"' && remaining.as_bytes().get(end.wrapping_sub(1)) != Some(&b'\\') {
+                    break;
+                }
+                end += 1;
+            }
+            let s = &remaining[1..end];
+            let after = remaining.get(end + 1..).unwrap_or("").trim_start_matches(',').trim();
+            (serde_json::Value::String(s.to_string()), after)
+        } else {
+            // Non-quoted: take until comma or end
+            let comma = remaining.find(',').unwrap_or(remaining.len());
+            let raw = remaining[..comma].trim();
+            let after = remaining.get(comma + 1..).unwrap_or("").trim();
+            let value = if let Ok(n) = raw.parse::<i64>() {
                 serde_json::Value::Number(n.into())
-            } else if val == "true" {
+            } else if raw == "true" {
                 serde_json::Value::Bool(true)
-            } else if val == "false" {
+            } else if raw == "false" {
                 serde_json::Value::Bool(false)
             } else {
-                serde_json::Value::String(val.to_string())
+                serde_json::Value::String(raw.to_string())
             };
-            args.insert(key, value);
-        }
+            (value, after)
+        };
+
+        args.insert(key, val);
+        remaining = rest;
     }
+
     args
 }
 

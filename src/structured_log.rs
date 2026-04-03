@@ -290,12 +290,14 @@ impl Logger {
 #[derive(Clone)]
 pub struct SharedLogger {
     inner: Arc<Mutex<Logger>>,
+    min_level: LogLevel,
 }
 
 impl SharedLogger {
     pub fn new(min_level: LogLevel) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Logger::new(min_level))),
+            min_level,
         }
     }
 
@@ -312,8 +314,17 @@ impl SharedLogger {
     }
 
     pub fn log(&self, entry: LogEntry) {
-        if let Ok(logger) = self.inner.lock() {
-            logger.log(entry);
+        // Early level check avoids acquiring the mutex for filtered entries
+        if entry.level < self.min_level {
+            return;
+        }
+        match self.inner.lock() {
+            Ok(logger) => logger.log(entry),
+            Err(poisoned) => {
+                // Log to stderr on poisoned mutex rather than silently dropping
+                eprintln!("[structured_log] mutex poisoned, log entry dropped: {}", entry.message);
+                let _ = poisoned;
+            }
         }
     }
 

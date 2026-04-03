@@ -4,20 +4,20 @@
 // /ws/events.  Uses RFC 6455 handshake over the existing tiny_http server.
 // No external websocket crate — we implement the framing protocol directly.
 
-use sha2::Digest;
 use std::collections::VecDeque;
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // ── WebSocket Constants ──────────────────────────────────────────────────────
 
-const WS_MAGIC: &str = "258EAFA5-E914-47DA-95CA-5AB9F08FE72D";
+const WS_MAGIC: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const OPCODE_TEXT: u8 = 0x01;
 const OPCODE_CLOSE: u8 = 0x08;
 const OPCODE_PING: u8 = 0x09;
 const OPCODE_PONG: u8 = 0x0A;
+
+/// Maximum allowed WebSocket frame payload (16 MiB).
+const MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
 
 // ── Event types ──────────────────────────────────────────────────────────────
 
@@ -119,6 +119,10 @@ impl WsFrame {
             offset = 10;
         }
 
+        if payload_len > MAX_FRAME_PAYLOAD {
+            return None; // reject oversized frames
+        }
+
         let mask_key = if masked {
             if data.len() < offset + 4 {
                 return None;
@@ -149,13 +153,71 @@ impl WsFrame {
 // ── Handshake ────────────────────────────────────────────────────────────────
 
 pub fn compute_accept_key(client_key: &str) -> String {
-    let mut hasher = sha2::Sha256::new();
-    // WebSocket RFC 6455 uses SHA-1, but since we only have sha2 crate,
-    // we'll use a simplified accept approach that works with our own client
-    hasher.update(client_key.as_bytes());
-    hasher.update(WS_MAGIC.as_bytes());
-    let hash = hasher.finalize();
-    base64_encode(&hash[..20]) // take first 20 bytes like SHA-1 would
+    // RFC 6455 §4.2.2 requires SHA-1.  We implement a minimal SHA-1 here
+    // so we stay compatible with every standard WebSocket client without
+    // adding a new crate dependency.
+    let mut input = Vec::with_capacity(client_key.len() + WS_MAGIC.len());
+    input.extend_from_slice(client_key.as_bytes());
+    input.extend_from_slice(WS_MAGIC.as_bytes());
+    let hash = sha1_digest(&input);
+    base64_encode(&hash)
+}
+
+/// Minimal SHA-1 (RFC 3174) — used only for the WebSocket accept key.
+fn sha1_digest(msg: &[u8]) -> [u8; 20] {
+    let mut h0: u32 = 0x67452301;
+    let mut h1: u32 = 0xEFCDAB89;
+    let mut h2: u32 = 0x98BADCFE;
+    let mut h3: u32 = 0x10325476;
+    let mut h4: u32 = 0xC3D2E1F0;
+
+    // Pre-processing: pad message
+    let ml = msg.len() as u64 * 8;
+    let mut data = msg.to_vec();
+    data.push(0x80);
+    while data.len() % 64 != 56 {
+        data.push(0x00);
+    }
+    data.extend_from_slice(&ml.to_be_bytes());
+
+    for chunk in data.chunks_exact(64) {
+        let mut w = [0u32; 80];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes([chunk[i*4], chunk[i*4+1], chunk[i*4+2], chunk[i*4+3]]);
+        }
+        for i in 16..80 {
+            w[i] = (w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16]).rotate_left(1);
+        }
+
+        let (mut a, mut b, mut c, mut d, mut e) = (h0, h1, h2, h3, h4);
+        for i in 0..80 {
+            let (f, k) = match i {
+                0..=19  => ((b & c) | ((!b) & d), 0x5A827999u32),
+                20..=39 => (b ^ c ^ d, 0x6ED9EBA1u32),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDCu32),
+                _       => (b ^ c ^ d, 0xCA62C1D6u32),
+            };
+            let temp = a.rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(w[i]);
+            e = d; d = c; c = b.rotate_left(30); b = a; a = temp;
+        }
+        h0 = h0.wrapping_add(a);
+        h1 = h1.wrapping_add(b);
+        h2 = h2.wrapping_add(c);
+        h3 = h3.wrapping_add(d);
+        h4 = h4.wrapping_add(e);
+    }
+
+    let mut out = [0u8; 20];
+    out[0..4].copy_from_slice(&h0.to_be_bytes());
+    out[4..8].copy_from_slice(&h1.to_be_bytes());
+    out[8..12].copy_from_slice(&h2.to_be_bytes());
+    out[12..16].copy_from_slice(&h3.to_be_bytes());
+    out[16..20].copy_from_slice(&h4.to_be_bytes());
+    out
 }
 
 fn base64_encode(input: &[u8]) -> String {
@@ -372,6 +434,9 @@ impl WsConnection {
         }
     }
 
+    pub fn record_sent(&mut self) { self.frames_sent += 1; }
+    pub fn record_received(&mut self) { self.frames_received += 1; }
+
     pub fn uptime_secs(&self) -> f64 {
         self.connected_at.elapsed().as_secs_f64()
     }
@@ -440,10 +505,10 @@ mod tests {
     }
 
     #[test]
-    fn compute_accept_key_non_empty() {
+    fn compute_accept_key_rfc6455_vector() {
+        // RFC 6455 §4.2.2 test vector
         let key = compute_accept_key("dGhlIHNhbXBsZSBub25jZQ==");
-        assert!(!key.is_empty());
-        assert!(key.len() > 10);
+        assert_eq!(key, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     }
 
     #[test]
@@ -537,10 +602,23 @@ mod tests {
 
     #[test]
     fn ws_connection_tracking() {
-        let conn = WsConnection::new(42);
+        let mut conn = WsConnection::new(42);
         assert_eq!(conn.subscriber_id, 42);
         assert_eq!(conn.frames_sent, 0);
+        conn.record_sent();
+        conn.record_received();
+        assert_eq!(conn.frames_sent, 1);
+        assert_eq!(conn.frames_received, 1);
         assert!(conn.uptime_secs() < 1.0);
+    }
+
+    #[test]
+    fn frame_decode_rejects_oversized() {
+        // Craft a frame header claiming a payload > MAX_FRAME_PAYLOAD
+        let mut data = vec![0x81u8, 127]; // text, 8-byte length
+        let huge: u64 = (MAX_FRAME_PAYLOAD as u64) + 1;
+        data.extend_from_slice(&huge.to_be_bytes());
+        assert!(WsFrame::decode(&data).is_none());
     }
 
     #[test]

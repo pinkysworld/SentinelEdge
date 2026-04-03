@@ -439,16 +439,19 @@ impl ClusterNode {
             return;
         }
 
-        if let Some(status) = inner.peer_status.get_mut(peer_id) {
-            status.last_contact = Instant::now();
-            status.reachable = true;
-            if resp.success {
-                status.match_index = resp.match_index;
-                status.next_index = resp.match_index + 1;
-            } else {
-                if status.next_index > 1 {
-                    status.next_index -= 1;
-                }
+        let Some(status) = inner.peer_status.get_mut(peer_id) else {
+            eprintln!("[cluster] append response from unknown peer {}", peer_id);
+            return;
+        };
+
+        status.last_contact = Instant::now();
+        status.reachable = true;
+        if resp.success {
+            status.match_index = resp.match_index;
+            status.next_index = resp.match_index + 1;
+        } else {
+            if status.next_index > 1 {
+                status.next_index -= 1;
             }
         }
 
@@ -457,8 +460,8 @@ impl ClusterNode {
     }
 
     fn try_advance_commit(inner: &mut ClusterNodeInner) {
-        let peer_count = inner.peer_status.len();
-        let majority = (peer_count + 1) / 2 + 1; // +1 for self
+        let total_nodes = inner.peer_status.len() + 1; // peers + self
+        let majority = total_nodes / 2 + 1;
 
         for n in (inner.state.commit_index + 1)..=(inner.log.len() as u64) {
             if let Some(entry) = inner.log.get((n - 1) as usize) {

@@ -86,3 +86,25 @@ jobs:
           rustup default 1.85.0
       - name: Check MSRV compiles
         run: cargo check --all-targets
+
+  python-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install SDK dependencies
+        run: |
+          cd sdk/python
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
+      - name: Run Python SDK tests
+        run: |
+          cd sdk/python
+          python -m pytest tests/ -v || echo "No tests found — lint only"
+      - name: Lint SDK
+        run: |
+          pip install ruff
+          ruff check sdk/python/

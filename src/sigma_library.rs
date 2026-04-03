@@ -78,8 +78,8 @@ impl SigmaLibrary {
     /// Parse multi-document YAML text (--- separated).
     pub fn load_yaml(&mut self, yaml_text: &str) -> Result<usize, String> {
         let mut count = 0;
-        // Split on document separator
-        let docs: Vec<&str> = yaml_text.split("\n---").collect();
+        // Split on YAML document separator (line consisting of ---)
+        let docs: Vec<&str> = yaml_text.split("\n---\n").collect();
         for doc in docs {
             let trimmed = doc.trim();
             if trimmed.is_empty() {
@@ -299,7 +299,7 @@ impl SigmaLibrary {
     }
 
     fn event_matches_rule(&self, event: &serde_json::Value, rule: &SigmaRule) -> bool {
-        // Match selection fields from detection
+        // Match selection fields from detection (AND semantics)
         if let Some(selection) = rule.detection.get("selection") {
             if let serde_json::Value::Object(sel_map) = selection {
                 for (key, expected) in sel_map {
@@ -309,23 +309,27 @@ impl SigmaLibrary {
                         _ => return false,
                     }
                 }
-                return true;
+                return !sel_map.is_empty();
             }
         }
 
-        // Check simple key-value detection matches
-        for (key, expected) in &rule.detection {
-            if key == "condition" || key == "timeframe" {
-                continue;
-            }
-            if let Some(val) = event.get(key) {
-                if val == expected {
-                    return true;
-                }
+        // Check simple key-value detection matches — ALL must match (AND)
+        let detection_fields: Vec<_> = rule.detection.iter()
+            .filter(|(key, _)| key.as_str() != "condition" && key.as_str() != "timeframe")
+            .collect();
+
+        if detection_fields.is_empty() {
+            return false;
+        }
+
+        for (key, expected) in &detection_fields {
+            match event.get(key.as_str()) {
+                Some(val) if val == *expected => continue,
+                _ => return false,
             }
         }
 
-        false
+        true
     }
 }
 

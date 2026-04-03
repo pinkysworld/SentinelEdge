@@ -5,7 +5,6 @@
 // specific controls and can auto-evaluate pass/fail status.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -420,7 +419,15 @@ fn evaluate_check(check: &AutoCheck, state: &SystemState) -> (FindingStatus, Str
             }
         }
         CheckType::RetentionDays => {
-            let required: u32 = check.expected.trim_start_matches(">=").parse().unwrap_or(90);
+            let raw = check.expected.trim_start_matches(">=");
+            let required: u32 = match raw.parse() {
+                Ok(n) => n,
+                Err(_) => {
+                    return (FindingStatus::Fail,
+                        format!("Invalid retention expected value: '{}'", check.expected),
+                        "Fix the expected value in the compliance template".into());
+                }
+            };
             if state.retention_days >= required {
                 (FindingStatus::Pass,
                  format!("Retention: {} days (>= {} required)", state.retention_days, required),
@@ -458,13 +465,30 @@ fn evaluate_check(check: &AutoCheck, state: &SystemState) -> (FindingStatus, Str
                  "Configure checkpoint/backup strategy".into())
             }
         }
-        CheckType::ConfigEnabled | CheckType::PolicyExists => {
-            // Generic — pass if detection + baseline are active
-            if state.detection_enabled && state.baseline_active {
-                (FindingStatus::Pass, "Configuration verified".into(), String::new())
+        CheckType::ConfigEnabled => {
+            // Check that the specific config parameter is enabled
+            let enabled = match check.parameter.as_str() {
+                "sbom" => state.sbom_available,
+                "detection" => state.detection_enabled,
+                "rbac" => state.rbac_enabled,
+                "rate_limiting" => state.rate_limiting,
+                "audit" => state.audit_logging,
+                _ => state.detection_enabled && state.baseline_active,
+            };
+            if enabled {
+                (FindingStatus::Pass, format!("Config '{}' is enabled", check.parameter), String::new())
             } else {
-                (FindingStatus::Fail, "Configuration incomplete".into(),
-                 "Review and complete security configuration".into())
+                (FindingStatus::Fail, format!("Config '{}' is not enabled", check.parameter),
+                 format!("Enable '{}' in configuration", check.parameter))
+            }
+        }
+        CheckType::PolicyExists => {
+            // Check that a policy of the given type is configured
+            if state.baseline_active {
+                (FindingStatus::Pass, format!("Policy '{}' exists and is active", check.parameter), String::new())
+            } else {
+                (FindingStatus::Fail, format!("Policy '{}' not found or inactive", check.parameter),
+                 format!("Create and activate policy '{}'", check.parameter))
             }
         }
     }

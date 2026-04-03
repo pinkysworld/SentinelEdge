@@ -264,9 +264,17 @@ impl OpenApiBuilder {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn json_response(desc: &str) -> BTreeMap<String, Response> {
+    json_response_status("200", desc)
+}
+
+fn json_response_201(desc: &str) -> BTreeMap<String, Response> {
+    json_response_status("201", desc)
+}
+
+fn json_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
     m.insert(
-        "200".into(),
+        status.into(),
         Response {
             description: desc.into(),
             content: Some({
@@ -315,6 +323,14 @@ fn json_body(desc: &str) -> Option<RequestBody> {
     })
 }
 
+fn bearer_auth() -> Vec<BTreeMap<String, Vec<String>>> {
+    vec![{
+        let mut m = BTreeMap::new();
+        m.insert("bearerAuth".into(), vec![]);
+        m
+    }]
+}
+
 fn op(id: &str, summary: &str, tags: &[&str]) -> Operation {
     let mut resp = json_response(summary);
     resp.extend(error_responses());
@@ -326,20 +342,38 @@ fn op(id: &str, summary: &str, tags: &[&str]) -> Operation {
         parameters: vec![],
         request_body: None,
         responses: resp,
-        security: vec![],
+        security: bearer_auth(),
     }
 }
 
 fn op_post(id: &str, summary: &str, tags: &[&str], body_desc: &str) -> Operation {
-    let mut o = op(id, summary, tags);
-    o.request_body = json_body(body_desc);
-    o
+    let mut resp = json_response_201(summary);
+    resp.extend(error_responses());
+    Operation {
+        summary: summary.into(),
+        description: None,
+        operation_id: id.into(),
+        tags: tags.iter().map(|t| t.to_string()).collect(),
+        parameters: vec![],
+        request_body: json_body(body_desc),
+        responses: resp,
+        security: bearer_auth(),
+    }
 }
 
 fn op_public(id: &str, summary: &str, tags: &[&str]) -> Operation {
-    let mut o = op(id, summary, tags);
-    o.security = vec![BTreeMap::new()]; // empty = no auth required
-    o
+    let mut resp = json_response(summary);
+    resp.extend(error_responses());
+    Operation {
+        summary: summary.into(),
+        description: None,
+        operation_id: id.into(),
+        tags: tags.iter().map(|t| t.to_string()).collect(),
+        parameters: vec![],
+        request_body: None,
+        responses: resp,
+        security: vec![BTreeMap::new()], // explicit empty = no auth required
+    }
 }
 
 // ── Wardex spec factory ──────────────────────────────────────────────────────

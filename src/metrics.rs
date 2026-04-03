@@ -116,7 +116,7 @@ fn format_labels(labels: &BTreeMap<String, String>) -> String {
     }
     let pairs: Vec<String> = labels
         .iter()
-        .map(|(k, v)| format!("{}=\"{}\"", k, v.replace('\\', "\\\\").replace('"', "\\\"")))
+        .map(|(k, v)| format!("{}=\"{}\"", k, v.replace('\\', "\\\\").replace('\n', "\\n").replace('"', "\\\"")))
         .collect();
     format!("{{{}}}", pairs.join(","))
 }

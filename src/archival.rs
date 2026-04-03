@@ -5,11 +5,9 @@
 // export uses a compact JSONL+gzip format; an optional CSV exporter is
 // provided for compliance workflows.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -103,6 +101,9 @@ impl ArchivalEngine {
         }
     }
 
+    /// Maximum records per single archive call to bound memory usage.
+    const MAX_RECORDS_PER_ARCHIVE: usize = 100_000;
+
     pub fn archive_records(
         &self,
         record_type: RecordType,
@@ -110,6 +111,13 @@ impl ArchivalEngine {
     ) -> Result<ArchiveManifest, String> {
         if records.is_empty() {
             return Err("No records to archive".into());
+        }
+        if records.len() > Self::MAX_RECORDS_PER_ARCHIVE {
+            return Err(format!(
+                "Too many records ({}) — max {} per call",
+                records.len(),
+                Self::MAX_RECORDS_PER_ARCHIVE
+            ));
         }
 
         let dir = Path::new(&self.config.archive_dir);
@@ -290,10 +298,12 @@ fn compress_gzip(data: &[u8]) -> Result<Vec<u8>, String> {
     out.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // mtime
     out.extend_from_slice(&[0x00, 0xFF]); // xfl + OS
 
-    // Store blocks (uncompressed DEFLATE block)
+    // Store blocks (uncompressed DEFLATE blocks)
+    let mut offset = 0;
     for chunk in data.chunks(65535) {
+        offset += chunk.len();
         let len = chunk.len() as u16;
-        let is_last = chunk.len() < 65535 || (data.len() % 65535 == 0);
+        let is_last = offset >= data.len();
         out.push(if is_last { 0x01 } else { 0x00 }); // BFINAL
         out.push((len & 0xFF) as u8);
         out.push((len >> 8) as u8);
@@ -350,6 +360,7 @@ fn value_to_csv(v: &serde_json::Value) -> String {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
 
     fn temp_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("wardex-archive-test-{}", rand::random::<u32>()));
