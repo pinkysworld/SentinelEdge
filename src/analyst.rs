@@ -311,8 +311,12 @@ impl AlertQueue {
         let assigned = self.items.iter().filter(|i| i.assignee.is_some()).count();
         let breached = self.items.iter().filter(|i| {
             if let Some(ref deadline) = i.sla_deadline {
-                let now = chrono::Utc::now().to_rfc3339();
-                !i.acknowledged && now > *deadline
+                let now = chrono::Utc::now();
+                if let Ok(dl) = chrono::DateTime::parse_from_rfc3339(deadline) {
+                    !i.acknowledged && now > dl
+                } else {
+                    false
+                }
             } else {
                 false
             }

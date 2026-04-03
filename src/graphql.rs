@@ -306,11 +306,8 @@ fn parse_args(input: &str) -> HashMap<String, serde_json::Value> {
             // Find closing quote (handle escaped quotes and escaped backslashes)
             let mut end = 1;
             while end < remaining.len() {
-                if remaining.as_bytes()[end] == b'\\' {
+                if remaining.as_bytes()[end] == b'\\' && end + 1 < remaining.len() {
                     end += 2; // skip escaped character (\\, \", etc.)
-                    if end >= remaining.len() {
-                        break;
-                    }
                     continue;
                 }
                 if remaining.as_bytes()[end] == b'"' {

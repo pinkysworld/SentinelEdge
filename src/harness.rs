@@ -58,6 +58,7 @@ pub struct CoverageMap {
     pub score_buckets: [u64; 20],
     /// Number of distinct consecutive-score bucket transitions observed.
     pub transition_count: usize,
+    last_bucket: Option<usize>,
 }
 
 impl CoverageMap {
@@ -65,12 +66,19 @@ impl CoverageMap {
         Self {
             score_buckets: [0; 20],
             transition_count: 0,
+            last_bucket: None,
         }
     }
 
     fn record_score(&mut self, score: f32) {
         let bucket = ((score.clamp(0.0, 0.999) * 20.0) as usize).min(19);
         self.score_buckets[bucket] += 1;
+        if let Some(prev) = self.last_bucket {
+            if prev != bucket {
+                self.transition_count += 1;
+            }
+        }
+        self.last_bucket = Some(bucket);
     }
 
     /// Fraction of score buckets that have been exercised.

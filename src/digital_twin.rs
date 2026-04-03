@@ -227,6 +227,16 @@ impl DigitalTwinEngine {
                             message: format!("Memory at {mb:.0} MB"),
                             severity: 8.0,
                         });
+                        if dev.state == DeviceState::Normal {
+                            transitions.push(StateTransition {
+                                tick,
+                                device_id: target.clone(),
+                                from: DeviceState::Normal,
+                                to: DeviceState::Degraded,
+                                reason: "Memory exhaustion".into(),
+                            });
+                            dev.state = DeviceState::Degraded;
+                        }
                     }
                 }
                 return (Some(target.clone()), alerts, transitions);

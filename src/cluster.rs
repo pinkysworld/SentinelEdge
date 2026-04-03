@@ -253,6 +253,8 @@ impl ClusterNode {
         inner.state.term += 1;
         inner.state.role = NodeRole::Candidate;
         inner.state.voted_for = Some(inner.config.node_id.clone());
+        inner.election_deadline = Instant::now()
+            + Duration::from_millis(inner.config.election_timeout_ms);
 
         let (last_index, last_term) = if let Some(last) = inner.log.last() {
             (last.index, last.term)
@@ -279,6 +281,8 @@ impl ClusterNode {
             inner.state.term = req.term;
             inner.state.role = NodeRole::Follower;
             inner.state.voted_for = None;
+            inner.election_deadline = Instant::now()
+                + Duration::from_millis(inner.config.election_timeout_ms);
         }
 
         let can_vote = inner.state.voted_for.is_none()
@@ -443,6 +447,8 @@ impl ClusterNode {
         if resp.term > inner.state.term {
             inner.state.term = resp.term;
             inner.state.role = NodeRole::Follower;
+            inner.election_deadline = Instant::now()
+                + Duration::from_millis(inner.config.election_timeout_ms);
             return;
         }
 

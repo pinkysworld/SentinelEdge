@@ -244,6 +244,11 @@ impl BeaconDetector {
                 / sorted_intervals.len() as f64;
             let jitter = (mad / median as f64) as f32;
 
+            // Skip connections with jitter exceeding configured tolerance
+            if jitter > self.config.jitter_tolerance {
+                continue;
+            }
+
             // Beacon score: low jitter + regular intervals = high score
             let regularity = (1.0 - jitter.min(1.0)).max(0.0);
             let count_factor = (conns.len() as f32 / 20.0).min(1.0);
@@ -271,7 +276,7 @@ impl BeaconDetector {
             }
         }
 
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
         candidates
     }
 
@@ -320,7 +325,7 @@ impl BeaconDetector {
             }
         }
 
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
         candidates
     }
 
@@ -384,7 +389,7 @@ impl BeaconDetector {
             }
         }
 
-        indicators.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        indicators.sort_by(|a, b| b.score.total_cmp(&a.score));
         indicators
     }
 
@@ -405,7 +410,7 @@ fn shannon_entropy(s: &str) -> f32 {
         return 0.0;
     }
     let mut freq: HashMap<char, f32> = HashMap::new();
-    let len = s.len() as f32;
+    let len = s.chars().count() as f32;
     for c in s.chars() {
         *freq.entry(c.to_ascii_lowercase()).or_insert(0.0) += 1.0;
     }

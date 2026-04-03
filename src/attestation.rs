@@ -145,7 +145,15 @@ impl TrustStore {
     }
 
     pub fn has_key(&self, pubkey: &str) -> bool {
-        self.trusted_keys.iter().any(|k| k.pubkey == pubkey)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        self.trusted_keys.iter().any(|k| {
+            k.pubkey == pubkey
+                && (k.valid_from == 0 || now >= k.valid_from)
+                && (k.valid_until == 0 || now <= k.valid_until)
+        })
     }
 }
 

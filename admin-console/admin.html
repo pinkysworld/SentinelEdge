@@ -615,6 +615,58 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
 /* ── Better empty states ── */
 .workspace-empty{border-radius:10px;padding:1.5rem;text-align:center;font-size:.82rem;
   background:linear-gradient(135deg,var(--bg-alt),var(--surface));border:1px dashed var(--border);}
+
+/* ── Table row striping ── */
+.data-table tbody tr:nth-child(even){background:color-mix(in srgb,var(--surface) 92%,var(--bg-alt) 8%);}
+body.light .data-table tbody tr:nth-child(even){background:#f8fafc;}
+
+/* ── Quick-search command palette ── */
+.cmd-palette-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;
+  align-items:flex-start;justify-content:center;padding-top:15vh;opacity:0;pointer-events:none;transition:opacity .2s ease;}
+.cmd-palette-overlay.active{opacity:1;pointer-events:auto;}
+.cmd-palette{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  width:min(520px,92vw);box-shadow:0 16px 48px rgba(0,0,0,.45);overflow:hidden;
+  transform:translateY(-10px);transition:transform .2s ease;}
+.cmd-palette-overlay.active .cmd-palette{transform:translateY(0);}
+.cmd-palette input{width:100%;padding:.9rem 1.1rem;font-size:.95rem;border:none;background:transparent;
+  color:var(--ink);font-family:var(--sans);outline:none;border-bottom:1px solid var(--border);}
+.cmd-palette input::placeholder{color:var(--ink-3);}
+.cmd-results{max-height:320px;overflow-y:auto;padding:.4rem;}
+.cmd-result{display:flex;align-items:center;gap:.7rem;padding:.55rem .75rem;border-radius:8px;
+  cursor:pointer;font-size:.88rem;color:var(--ink-2);transition:background .1s;}
+.cmd-result:hover,.cmd-result.selected{background:var(--accent-light);color:var(--accent);}
+.cmd-result .cmd-icon{width:20px;text-align:center;font-size:.95rem;flex-shrink:0;}
+.cmd-result .cmd-label{font-weight:500;}
+.cmd-result .cmd-hint{margin-left:auto;font-size:.72rem;color:var(--ink-3);font-family:var(--mono);}
+.cmd-empty{padding:1rem;text-align:center;font-size:.85rem;color:var(--ink-3);}
+
+/* ── Topbar breadcrumb ── */
+.topbar-breadcrumb{font-size:.82rem;color:var(--ink-2);display:flex;align-items:center;gap:.35rem;}
+.topbar-breadcrumb .bc-sep{color:var(--ink-3);font-size:.7rem;}
+.topbar-breadcrumb .bc-current{color:var(--ink);font-weight:600;}
+
+/* ── Notification badge pulse ── */
+@keyframes badgePulse{0%,100%{transform:scale(1);}50%{transform:scale(1.15);}}
+.nav-badge:not(:empty){animation:badgePulse 2s ease infinite;}
+
+/* ── Keyboard shortcut hint ── */
+.kbd{display:inline-block;padding:1px 5px;font-size:.68rem;font-family:var(--mono);
+  background:var(--bg-alt);border:1px solid var(--border);border-radius:4px;color:var(--ink-3);
+  line-height:1.4;vertical-align:middle;font-weight:500;}
+
+/* ── Mobile sidebar backdrop ── */
+@media(max-width:1024px){
+  .sidebar-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;
+    opacity:0;pointer-events:none;transition:opacity .25s;}
+  .sidebar-backdrop.active{opacity:1;pointer-events:auto;}
+}
+
+/* ── Settings input in kv-grid ── */
+.kv-grid .settings-input{font-family:var(--mono);font-size:.78rem;padding:.3rem .5rem;
+  border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--ink);
+  transition:border-color .15s;}
+.kv-grid .settings-input:focus{border-color:var(--accent);outline:none;}
+body.light .kv-grid .settings-input{background:#fff;border-color:#d1d5db;}
 </style>
 </head>
 
@@ -659,6 +711,10 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
       <span class="conn-dot" id="conn-dot"></span>
       <span id="conn-label">Disconnected</span>
     </div>
+    <div class="topbar-breadcrumb" id="topbar-breadcrumb">
+      <span class="bc-sep">&#47;</span>
+      <span class="bc-current" id="bc-section">Dashboard</span>
+    </div>
     <div class="auto-refresh-toggle">
       <input type="checkbox" id="auto-refresh">
       <label for="auto-refresh" id="auto-refresh-label">Auto-refresh (5s)</label>
@@ -666,6 +722,7 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
     </div>
   </div>
   <div class="topbar-right">
+    <button class="btn btn-sm" id="btn-cmd-palette" title="Quick navigation (Ctrl+K)" style="font-size:.78rem;display:flex;align-items:center;gap:.4rem;">&#128269; <span class="kbd">⌘K</span></button>
     <button class="btn btn-sm" id="share-link" title="Copy shareable deep-link to clipboard" style="font-size:.78rem;">&#128279; Share Link</button>
     <button class="theme-toggle" id="btn-theme-toggle" title="Toggle light/dark theme">&#9790;</button>
     <div class="demo-toggle" id="demo-toggle-wrap">
@@ -2265,13 +2322,15 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
           <div style="padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt);">
             <h3 style="margin-bottom:.5rem;">Retention Policy</h3>
             <dl class="kv-grid">
-              <dt>Max Audit Records</dt><dd id="ret-audit-max">—</dd>
-              <dt>Max Alert Records</dt><dd id="ret-alert-max">—</dd>
-              <dt>Max Event Records</dt><dd id="ret-event-max">—</dd>
+              <dt>Max Audit Records</dt><dd><input type="number" id="ret-audit-max" min="0" step="100" value="10000" class="settings-input" style="width:7rem;"></dd>
+              <dt>Max Alert Records</dt><dd><input type="number" id="ret-alert-max" min="0" step="100" value="5000" class="settings-input" style="width:7rem;"></dd>
+              <dt>Max Event Records</dt><dd><input type="number" id="ret-event-max" min="0" step="100" value="50000" class="settings-input" style="width:7rem;"></dd>
+              <dt>Max Audit Age (sec)</dt><dd><input type="number" id="ret-audit-age" min="0" step="3600" value="0" class="settings-input" style="width:7rem;" placeholder="0 = unlimited"></dd>
               <dt>Current Alerts</dt><dd id="ret-alert-cur">—</dd>
               <dt>Current Events</dt><dd id="ret-event-cur">—</dd>
             </dl>
             <div class="btn-row mt-1">
+              <button class="btn btn-sm primary" id="btn-save-retention">Save Limits</button>
               <button class="btn btn-sm" id="btn-refresh-retention">Refresh</button>
               <button class="btn btn-sm danger" id="btn-apply-retention">Apply Retention</button>
             </div>
@@ -6492,6 +6551,7 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
   if ($('#btn-refresh-session')) $('#btn-refresh-session').addEventListener('click', refreshSessionInfo);
   if ($('#btn-verify-audit')) $('#btn-verify-audit').addEventListener('click', verifyAuditChain);
   if ($('#btn-refresh-retention')) $('#btn-refresh-retention').addEventListener('click', refreshRetention);
+  if ($('#btn-save-retention')) $('#btn-save-retention').addEventListener('click', saveRetention);
   if ($('#btn-apply-retention')) $('#btn-apply-retention').addEventListener('click', applyRetention);
 
   // Sigma / Cases / Alert Queue / RBAC / Feature Flags
@@ -7354,13 +7414,45 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
       const d = await res.json();
       const policy = d.policy || {};
       const current = d.current || {};
-      $('#ret-audit-max').textContent = policy.audit_max_records ?? '—';
-      $('#ret-alert-max').textContent = policy.alert_max_records ?? '—';
-      $('#ret-event-max').textContent = policy.event_max_records ?? '—';
+      $('#ret-audit-max').value = policy.audit_max_records ?? 10000;
+      $('#ret-alert-max').value = policy.alert_max_records ?? 5000;
+      $('#ret-event-max').value = policy.event_max_records ?? 50000;
+      $('#ret-audit-age').value = policy.audit_max_age_secs ?? 0;
       $('#ret-alert-cur').textContent = current.alert_count ?? current.alerts ?? '—';
       $('#ret-event-cur').textContent = current.event_count ?? current.events ?? '—';
       $('#retention-result').textContent = '';
     } catch(e) { toast('Retention refresh failed: ' + e.message, 'error'); }
+  }
+
+  async function saveRetention() {
+    const auditMax = parseInt($('#ret-audit-max').value) || 0;
+    const alertMax = parseInt($('#ret-alert-max').value) || 0;
+    const eventMax = parseInt($('#ret-event-max').value) || 0;
+    const auditAge = parseInt($('#ret-audit-age').value) || 0;
+    if (auditMax < 0 || alertMax < 0 || eventMax < 0 || auditAge < 0) {
+      flash('Retention limits must be non-negative', 'error');
+      return;
+    }
+    const patch = {
+      retention: {
+        audit_max_records: auditMax,
+        alert_max_records: alertMax,
+        event_max_records: eventMax,
+        audit_max_age_secs: auditAge,
+      }
+    };
+    try {
+      const res = await fetch(API + '/api/config/save', {
+        method: 'POST',
+        headers: authHeaders('application/json'),
+        body: JSON.stringify(patch),
+      });
+      if (res.status === 401) { flash('Unauthorized', 'error'); return; }
+      if (!res.ok) { const err = await res.json().catch(() => ({})); flash('Save failed: ' + (err.error || res.statusText), 'error'); return; }
+      toast('Retention limits saved', 'success');
+      log('Retention limits saved to disk');
+      refreshRetention();
+    } catch(e) { flash('Retention save failed: ' + e.message, 'error'); }
   }
 
   async function applyRetention() {
@@ -7429,5 +7521,136 @@ body.light .metric-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);}
     </div>
   </div>
 </div>
+
+<!-- ═══ Command Palette ═══ -->
+<div class="cmd-palette-overlay" id="cmd-palette-overlay">
+  <div class="cmd-palette" role="dialog" aria-label="Quick navigation">
+    <input type="text" id="cmd-input" placeholder="Type to navigate… (sections, actions)" autocomplete="off" spellcheck="false">
+    <div class="cmd-results" id="cmd-results"></div>
+  </div>
+</div>
+
+<!-- ═══ Mobile Sidebar Backdrop ═══ -->
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+<script>
+(function(){
+  // ── Command Palette ──
+  const cmdOverlay = document.getElementById('cmd-palette-overlay');
+  const cmdInput = document.getElementById('cmd-input');
+  const cmdResults = document.getElementById('cmd-results');
+  const navItems = document.querySelectorAll('.nav-item[data-section]');
+  const commands = [];
+  navItems.forEach(item => {
+    commands.push({
+      label: item.textContent.trim().replace(/\d+$/, '').trim(),
+      icon: item.querySelector('.nav-icon')?.textContent || '•',
+      section: item.dataset.section,
+      el: item
+    });
+  });
+  // Add quick actions
+  commands.push({ label: 'Toggle Theme', icon: '🌙', action: () => document.getElementById('btn-theme-toggle')?.click() });
+  commands.push({ label: 'Toggle Auto-Refresh', icon: '🔄', action: () => document.getElementById('auto-refresh')?.click() });
+
+  function openPalette() {
+    cmdOverlay.classList.add('active');
+    cmdInput.value = '';
+    renderCmdResults('');
+    setTimeout(() => cmdInput.focus(), 50);
+  }
+  function closePalette() {
+    cmdOverlay.classList.remove('active');
+    cmdInput.value = '';
+  }
+
+  let cmdSelectedIdx = 0;
+  function renderCmdResults(query) {
+    const q = query.toLowerCase().trim();
+    const filtered = q ? commands.filter(c => c.label.toLowerCase().includes(q)) : commands;
+    cmdSelectedIdx = 0;
+    if (!filtered.length) {
+      cmdResults.innerHTML = '<div class="cmd-empty">No matching sections or actions</div>';
+      return;
+    }
+    cmdResults.innerHTML = filtered.map((c, i) =>
+      '<div class="cmd-result' + (i === 0 ? ' selected' : '') + '" data-idx="' + i + '">' +
+      '<span class="cmd-icon">' + c.icon + '</span>' +
+      '<span class="cmd-label">' + c.label + '</span>' +
+      (c.section ? '<span class="cmd-hint">' + c.section + '</span>' : '') +
+      '</div>').join('');
+    cmdResults.querySelectorAll('.cmd-result').forEach((el, idx) => {
+      el.addEventListener('click', () => execCmd(filtered[idx]));
+    });
+  }
+  function execCmd(cmd) {
+    closePalette();
+    if (cmd.action) { cmd.action(); return; }
+    if (cmd.el) cmd.el.click();
+  }
+  cmdInput.addEventListener('input', () => renderCmdResults(cmdInput.value));
+  cmdInput.addEventListener('keydown', e => {
+    const items = cmdResults.querySelectorAll('.cmd-result');
+    if (e.key === 'ArrowDown') { e.preventDefault(); cmdSelectedIdx = Math.min(cmdSelectedIdx + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); cmdSelectedIdx = Math.max(cmdSelectedIdx - 1, 0); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = cmdInput.value.toLowerCase().trim();
+      const filtered = q ? commands.filter(c => c.label.toLowerCase().includes(q)) : commands;
+      if (filtered[cmdSelectedIdx]) execCmd(filtered[cmdSelectedIdx]);
+      return;
+    } else if (e.key === 'Escape') { closePalette(); return; }
+    items.forEach((el, i) => el.classList.toggle('selected', i === cmdSelectedIdx));
+    items[cmdSelectedIdx]?.scrollIntoView({ block: 'nearest' });
+  });
+  cmdOverlay.addEventListener('click', e => { if (e.target === cmdOverlay) closePalette(); });
+
+  // Keyboard shortcut: Ctrl+K or Cmd+K
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      cmdOverlay.classList.contains('active') ? closePalette() : openPalette();
+    }
+    if (e.key === 'Escape' && cmdOverlay.classList.contains('active')) closePalette();
+  });
+  const btnPalette = document.getElementById('btn-cmd-palette');
+  if (btnPalette) btnPalette.addEventListener('click', openPalette);
+
+  // ── Breadcrumb update on nav ──
+  const bcSection = document.getElementById('bc-section');
+  if (bcSection) {
+    const observer = new MutationObserver(() => {
+      const active = document.querySelector('.nav-item.active');
+      if (active) bcSection.textContent = active.textContent.trim().replace(/\d+$/, '').trim();
+    });
+    navItems.forEach(item => observer.observe(item, { attributes: true, attributeFilter: ['class'] }));
+  }
+
+  // ── Mobile sidebar backdrop ──
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const sidebar = document.querySelector('.sidebar');
+  const sidebarToggle = document.querySelector('.sidebar-toggle');
+  if (backdrop && sidebar) {
+    backdrop.addEventListener('click', () => {
+      sidebar.style.transform = 'translateX(-100%)';
+      backdrop.classList.remove('active');
+    });
+    if (sidebarToggle) {
+      const origClick = sidebarToggle.onclick;
+      sidebarToggle.addEventListener('click', () => {
+        const isOpen = getComputedStyle(sidebar).transform === 'none' ||
+          sidebar.style.transform === 'translateX(0px)' || sidebar.style.transform === 'translateX(0)';
+        if (!isOpen) {
+          sidebar.style.transform = 'translateX(0)';
+          backdrop.classList.add('active');
+        } else {
+          sidebar.style.transform = 'translateX(-100%)';
+          backdrop.classList.remove('active');
+        }
+      });
+    }
+  }
+})();
+</script>
 </body>
 </html>
