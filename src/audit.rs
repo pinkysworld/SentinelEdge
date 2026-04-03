@@ -197,12 +197,11 @@ impl AuditLog {
         }
         let trim = self.records.len() - max_records;
         self.records.drain(..trim);
-        // Reset the chain continuity for remaining records
-        if let Some(first) = self.records.first() {
-            self.previous_hash = self.records.last()
-                .map(|r| r.current_hash.clone())
-                .unwrap_or_else(|| first.previous_hash.clone());
-        }
+        // Update previous_hash to the last remaining record's hash so the
+        // next appended record chains correctly from the current tail.
+        self.previous_hash = self.records.last()
+            .map(|r| r.current_hash.clone())
+            .unwrap_or_else(|| "0".repeat(64));
         trim
     }
 }

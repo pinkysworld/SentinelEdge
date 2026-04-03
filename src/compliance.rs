@@ -313,8 +313,8 @@ impl ComplianceManager {
             .iter()
             .filter(|c| c.status == ControlStatus::NotApplicable)
             .count();
-        let score = if total > 0 {
-            (implemented as f64 + partial as f64 * 0.5) / total as f64 * 100.0
+        let score = if total - na > 0 {
+            (implemented as f64 + partial as f64 * 0.5) / (total - na) as f64 * 100.0
         } else {
             0.0
         };
@@ -488,13 +488,18 @@ impl CausalGraph {
             return 0.5; // no causal info → uncertain
         }
         // FP probability = average of (1 - root_confidence)
-        let fp_sum: f64 = roots
+        let root_nodes: Vec<_> = roots
             .iter()
             .filter_map(|r| self.nodes.get(r))
+            .collect();
+        if root_nodes.is_empty() {
+            return 0.5;
+        }
+        let fp_sum: f64 = root_nodes
+            .iter()
             .map(|n| 1.0 - n.confidence)
             .sum();
-        let root_count = roots.len().max(1);
-        fp_sum / root_count as f64
+        fp_sum / root_nodes.len() as f64
     }
 
     pub fn node_count(&self) -> usize {

@@ -223,18 +223,29 @@ impl EncryptedSpool {
         let header: SpoolPersistHeader = serde_json::from_str(header_line)
             .map_err(|e| format!("Invalid header: {}", e))?;
 
-        self.next_seq = header.next_seq;
-        self.total_enqueued = header.total_enqueued;
-        self.total_delivered = header.total_delivered;
-        self.total_dropped = header.total_dropped;
-
+        // Parse all entries FIRST before updating state
+        let mut temp_queue = std::collections::VecDeque::new();
         let mut count = 0;
         for line in lines {
             if line.is_empty() { continue; }
             let encrypted = hex::decode(line).map_err(|e| format!("Invalid hex: {}", e))?;
-            self.queue.push_back(encrypted);
+            temp_queue.push_back(encrypted);
             count += 1;
         }
+        if count != header.entry_count as usize {
+            return Err(format!(
+                "Entry count mismatch: expected {}, got {}",
+                header.entry_count, count
+            ));
+        }
+
+        // NOW update state after all entries are validated
+        self.next_seq = header.next_seq;
+        self.total_enqueued = header.total_enqueued;
+        self.total_delivered = header.total_delivered;
+        self.total_dropped = header.total_dropped;
+        self.queue = temp_queue;
+
         Ok(count)
     }
 

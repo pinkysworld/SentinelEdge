@@ -791,9 +791,10 @@ impl EnforcementEngine {
 
         // Generate attestation quote
         let nonce: Vec<u8> = {
-            use rand::Rng;
-            let mut rng = rand::thread_rng();
-            (0..16).map(|_| rng.r#gen()).collect()
+            use rand::RngCore;
+            let mut buf = [0u8; 16];
+            rand::rngs::OsRng.fill_bytes(&mut buf);
+            buf.to_vec()
         };
         self.tpm.quote(&[0, 1, 7], &nonce)
     }
@@ -815,6 +816,10 @@ impl EnforcementEngine {
         target: &str,
         platform: &str,
     ) -> Vec<ContainmentCommand> {
+        // Validate target to prevent shell injection
+        if !target.chars().all(|c| c.is_alphanumeric() || "-_.:".contains(c)) {
+            return vec![];
+        }
         match level {
             EnforcementLevel::Observe => vec![],
             EnforcementLevel::Constrain => match platform {
@@ -1059,11 +1064,24 @@ impl EnforcementExecutor {
 
     /// Quarantine a file by moving it to a secure vault directory.
     pub fn quarantine_file(&mut self, path: &str, vault_dir: &str) -> ExecutionResult {
-        let safe_path = path.replace("..","").replace('\0', "");
-        let safe_vault = vault_dir.replace("..","").replace('\0', "");
+        // Reject paths containing shell metacharacters or traversal attempts
+        if path.contains("..")
+            || vault_dir.contains("..")
+            || [path, vault_dir].iter().any(|s| s.contains('\0') || s.contains('`') || s.contains('$') || s.contains(';') || s.contains('|') || s.contains('&'))
+        {
+            return ExecutionResult {
+                command_name: "quarantine_file".into(),
+                executed: false,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: "rejected: path contains disallowed characters".into(),
+                duration_ms: 0,
+                dry_run: self.dry_run,
+            };
+        }
         let cmd = ContainmentCommand::new(
             "quarantine_file",
-            &format!("mkdir -p {safe_vault} && mv {safe_path} {safe_vault}/"),
+            &format!("mkdir -p '{}' && mv '{}' '{}/'", vault_dir, path, vault_dir),
             true,
         );
         self.execute(&cmd)

@@ -62,9 +62,9 @@ pub struct EnrollmentToken {
 
 impl EnrollmentToken {
     pub fn new(max_uses: u32) -> Self {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let bytes: Vec<u8> = (0..16).map(|_| rng.r#gen()).collect();
+        use rand::RngCore;
+        let mut bytes = [0u8; 16];
+        rand::rngs::OsRng.fill_bytes(&mut bytes);
         Self {
             token: hex::encode(bytes),
             created_at: chrono::Utc::now().to_rfc3339(),

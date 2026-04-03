@@ -299,6 +299,10 @@ impl EscalationEngine {
                 .position(|l| l.level == esc.current_level)
                 .unwrap_or(0);
 
+            if levels.is_empty() {
+                continue;
+            }
+
             let current = &levels[current_idx];
             let elapsed_secs = (now_ms.saturating_sub(esc.last_escalated_at)) / 1000;
 

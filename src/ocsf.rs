@@ -584,12 +584,13 @@ impl DeadLetterQueue {
 /// Tracks event UIDs to prevent duplicate processing.
 pub struct IdempotencyTracker {
     seen: HashMap<String, String>, // uid -> timestamp
+    order: Vec<String>,            // insertion order for FIFO eviction
     max_size: usize,
 }
 
 impl IdempotencyTracker {
     pub fn new(max_size: usize) -> Self {
-        Self { seen: HashMap::new(), max_size }
+        Self { seen: HashMap::new(), order: Vec::new(), max_size }
     }
 
     /// Returns true if this event was already processed.
@@ -603,11 +604,13 @@ impl IdempotencyTracker {
             return false;
         }
         if self.seen.len() >= self.max_size {
-            // Evict oldest entry
-            if let Some(oldest_key) = self.seen.keys().next().cloned() {
+            // Evict oldest entry (FIFO)
+            if let Some(oldest_key) = self.order.first().cloned() {
                 self.seen.remove(&oldest_key);
+                self.order.remove(0);
             }
         }
+        self.order.push(uid.clone());
         self.seen.insert(uid, timestamp);
         true
     }

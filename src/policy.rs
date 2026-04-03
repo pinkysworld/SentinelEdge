@@ -95,6 +95,7 @@ impl PolicyEngine {
                 }
                 ResponseAction::RollbackAndEscalate if sample.integrity_drift < 0.45 => {
                     action = ResponseAction::Quarantine;
+                    level = ThreatLevel::Severe;
                     isolation_pct = 85;
                     notes.push(
                         "battery under 20%, deferring rollback but keeping aggressive isolation"

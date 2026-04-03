@@ -184,7 +184,7 @@ fn find_matching_brace(s: &str) -> Option<usize> {
     None
 }
 
-fn parse_fields(input: &str, _depth: usize) -> Result<Vec<Selection>, String> {
+fn parse_fields(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
     let mut fields = Vec::new();
     let mut chars = input.chars().peekable();
     let mut buf = String::new();
@@ -241,12 +241,12 @@ fn parse_fields(input: &str, _depth: usize) -> Result<Vec<Selection>, String> {
         let args = if chars.peek() == Some(&'(') {
             chars.next(); // consume '('
             let mut arg_str = String::new();
-            let mut depth = 1;
+            let mut paren_depth = 1;
             while let Some(c) = chars.next() {
-                if c == '(' { depth += 1; }
+                if c == '(' { paren_depth += 1; }
                 if c == ')' {
-                    depth -= 1;
-                    if depth == 0 { break; }
+                    paren_depth -= 1;
+                    if paren_depth == 0 { break; }
                 }
                 arg_str.push(c);
             }
@@ -260,13 +260,13 @@ fn parse_fields(input: &str, _depth: usize) -> Result<Vec<Selection>, String> {
         // Parse sub-fields
         let sub_fields = if chars.peek() == Some(&'{') {
             let mut brace_str = String::new();
-            let mut depth = 0;
+            let mut brace_depth = 0;
             while let Some(c) = chars.next() {
                 brace_str.push(c);
-                if c == '{' { depth += 1; }
+                if c == '{' { brace_depth += 1; }
                 if c == '}' {
-                    depth -= 1;
-                    if depth == 0 { break; }
+                    brace_depth -= 1;
+                    if brace_depth == 0 { break; }
                 }
             }
             parse_selection_set(&brace_str, depth + 1).unwrap_or_default()
@@ -303,10 +303,14 @@ fn parse_args(input: &str) -> HashMap<String, serde_json::Value> {
 
         // Parse the value, respecting quotes
         let (val, rest) = if remaining.starts_with('"') {
-            // Find closing quote (handle escaped quotes)
+            // Find closing quote (handle escaped quotes and escaped backslashes)
             let mut end = 1;
             while end < remaining.len() {
-                if remaining.as_bytes()[end] == b'"' && remaining.as_bytes().get(end.wrapping_sub(1)) != Some(&b'\\') {
+                if remaining.as_bytes()[end] == b'\\' {
+                    end += 2; // skip escaped character (\\, \", etc.)
+                    continue;
+                }
+                if remaining.as_bytes()[end] == b'"' {
                     break;
                 }
                 end += 1;

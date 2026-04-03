@@ -307,8 +307,9 @@ fn compress_gzip(data: &[u8]) -> Result<Vec<u8>, String> {
         out.push(if is_last { 0x01 } else { 0x00 }); // BFINAL
         out.push((len & 0xFF) as u8);
         out.push((len >> 8) as u8);
-        out.push((!len & 0xFF) as u8);
-        out.push((!len >> 8) as u8);
+        let nlen = !len;
+        out.push((nlen & 0xFF) as u8);
+        out.push((nlen >> 8) as u8);
         out.extend_from_slice(chunk);
     }
 

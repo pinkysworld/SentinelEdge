@@ -42,7 +42,11 @@ impl EnergyBudget {
         let delta_mwh = (self.harvest_rate_mw - self.drain_rate_mw) / 3600.0;
         self.current_mwh = (self.current_mwh + delta_mwh).clamp(0.0, self.capacity_mwh);
 
-        let pct = self.current_mwh / self.capacity_mwh;
+        let pct = if self.capacity_mwh > 0.0 {
+            self.current_mwh / self.capacity_mwh
+        } else {
+            0.0
+        };
         self.state = if pct > 0.75 {
             PowerState::Full
         } else if pct > 0.40 {
@@ -58,7 +62,11 @@ impl EnergyBudget {
     }
 
     pub fn remaining_pct(&self) -> f64 {
-        self.current_mwh / self.capacity_mwh * 100.0
+        if self.capacity_mwh > 0.0 {
+            self.current_mwh / self.capacity_mwh * 100.0
+        } else {
+            0.0
+        }
     }
 
     /// Estimate remaining runtime in seconds at current drain rate.
@@ -210,7 +218,7 @@ pub fn quantize_model(
     weights: &[f64],
     bit_width: u8,
 ) -> QuantizedModel {
-    assert!(bit_width <= 8, "max 8-bit quantization supported");
+    assert!(bit_width >= 2 && bit_width <= 8, "bit_width must be 2..=8");
 
     let abs_max = weights
         .iter()

@@ -236,9 +236,11 @@ impl ReportStore {
         let total_alerts: usize = self.reports.iter().map(|r| r.report.summary.alert_count).sum();
         let total_critical: usize = self.reports.iter().map(|r| r.report.summary.critical_count).sum();
         let max_score = self.reports.iter().map(|r| r.report.summary.max_score).fold(0.0f32, f32::max);
-        let avg_score: Option<f32> = if !self.reports.is_empty() {
-            let sum: f32 = self.reports.iter().map(|r| r.report.summary.average_score).sum();
-            Some(sum / self.reports.len() as f32)
+        let avg_score: Option<f32> = if total_events > 0 {
+            let weighted_sum: f32 = self.reports.iter()
+                .map(|r| r.report.summary.average_score * r.report.summary.total_samples as f32)
+                .sum();
+            Some(weighted_sum / total_events as f32)
         } else {
             None
         };

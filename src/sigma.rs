@@ -824,8 +824,8 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["schtasks.exe".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["/create".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["schtasks.exe".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["/create".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -848,7 +848,7 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "parent_name".into(), modifier: MatchModifier::Equals, values: vec!["WmiPrvSE.exe".into()] },
+                        FieldMatcher { field: "parent.name".into(), modifier: MatchModifier::Equals, values: vec!["WmiPrvSE.exe".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -871,10 +871,10 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("sel1".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["/dev/tcp/".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["/dev/tcp/".into()] },
                     ]),
                     ("sel2".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["mkfifo".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["mkfifo".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -897,8 +897,8 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["ssh".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["-o StrictHostKeyChecking=no".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["ssh".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["-o StrictHostKeyChecking=no".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -921,12 +921,12 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["lsass".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["lsass".into()] },
                     ]),
                 ]),
                 filters: HashMap::from([
                     ("filter".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["svchost.exe".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["svchost.exe".into()] },
                     ]),
                 ]),
                 condition: "selection and not filter".into(),
@@ -948,8 +948,8 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["sc.exe".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["binPath".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["sc.exe".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["binPath".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -972,8 +972,8 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["crontab".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["-e".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["crontab".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["-e".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -996,7 +996,7 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "file_path".into(), modifier: MatchModifier::Contains, values: vec!["LaunchAgents".into()] },
+                        FieldMatcher { field: "file.path".into(), modifier: MatchModifier::Contains, values: vec!["LaunchAgents".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -1042,11 +1042,11 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("sel1".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["Invoke-Kerberoast".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["Invoke-Kerberoast".into()] },
                     ]),
                     ("sel2".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["Rubeus".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["kerberoast".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["Rubeus".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["kerberoast".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -1069,8 +1069,8 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["rundll32.exe".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Re, values: vec![r"\\(Temp|tmp|AppData|Downloads)\\".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["rundll32.exe".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Re, values: vec![r"\\(Temp|tmp|AppData|Downloads)\\".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -1093,12 +1093,12 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("sel1".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["vssadmin".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["delete shadows".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["vssadmin".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["delete shadows".into()] },
                     ]),
                     ("sel2".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["wmic".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["shadowcopy delete".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["wmic".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["shadowcopy delete".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -1121,8 +1121,8 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("selection".into(), vec![
-                        FieldMatcher { field: "process_name".into(), modifier: MatchModifier::Equals, values: vec!["chmod".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Re, values: vec![r"[24]755|u\+s|g\+s".into()] },
+                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["chmod".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Re, values: vec![r"[24]755|u\+s|g\+s".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -1145,10 +1145,10 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("sel1".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["VirtualAllocEx".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["VirtualAllocEx".into()] },
                     ]),
                     ("sel2".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["WriteProcessMemory".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["WriteProcessMemory".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),
@@ -1171,11 +1171,11 @@ pub fn builtin_rules() -> Vec<SigmaRule> {
             detection: Detection {
                 selections: HashMap::from([
                     ("sel1".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["wevtutil".into()] },
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["cl ".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["wevtutil".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["cl ".into()] },
                     ]),
                     ("sel2".into(), vec![
-                        FieldMatcher { field: "cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["Clear-EventLog".into()] },
+                        FieldMatcher { field: "process.cmd_line".into(), modifier: MatchModifier::Contains, values: vec!["Clear-EventLog".into()] },
                     ]),
                 ]),
                 filters: HashMap::new(),

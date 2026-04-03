@@ -272,9 +272,23 @@ impl IncidentStore {
             }
             let event_ids: Vec<u64> = group.iter().map(|e| e.id).collect();
             let already_covered = self.incidents.iter().any(|inc| {
-                event_ids.iter().any(|eid| inc.event_ids.contains(eid))
+                matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating)
+                    && event_ids.iter().any(|eid| inc.event_ids.contains(eid))
             });
             if already_covered {
+                // Merge new event_ids into existing incident (same as technique clustering)
+                for inc in self.incidents.iter_mut() {
+                    if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating) {
+                        if event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
+                            for eid in &event_ids {
+                                if !inc.event_ids.contains(eid) {
+                                    inc.event_ids.push(*eid);
+                                }
+                            }
+                            inc.updated_at = chrono::Utc::now().to_rfc3339();
+                        }
+                    }
+                }
                 continue;
             }
             let mitre: Vec<MitreAttack> = group.iter()

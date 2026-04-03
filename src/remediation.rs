@@ -102,15 +102,27 @@ pub fn platform_commands(
                 )]
             }
         },
-        RemediationAction::QuarantineFile { path } => {
-            vec![RemediationCommand::new(
-                "mv",
-                vec![
-                    path.clone(),
-                    format!("/var/quarantine/{}", sanitize_filename(path)),
-                ],
-                true,
-            )]
+        RemediationAction::QuarantineFile { path } => match platform {
+            RemediationPlatform::Linux | RemediationPlatform::MacOs => {
+                vec![RemediationCommand::new(
+                    "mv",
+                    vec![
+                        path.clone(),
+                        format!("/var/quarantine/{}", sanitize_filename(path)),
+                    ],
+                    true,
+                )]
+            }
+            RemediationPlatform::Windows => {
+                vec![RemediationCommand::new(
+                    "move",
+                    vec![
+                        path.clone(),
+                        format!("C:\\Quarantine\\{}", sanitize_filename(path)),
+                    ],
+                    true,
+                )]
+            }
         }
         RemediationAction::BlockIp { addr } => match platform {
             RemediationPlatform::Linux => {

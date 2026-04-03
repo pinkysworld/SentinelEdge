@@ -297,11 +297,13 @@ impl DeceptionEngine {
         };
         self.decoys[decoy_idx].interactions.push(interaction);
 
-        // Track attacker
-        self.attacker_map
+        // Track attacker (deduplicate decoy indices)
+        let entry = self.attacker_map
             .entry(source_info.to_string())
-            .or_default()
-            .push(decoy_idx);
+            .or_default();
+        if !entry.contains(&decoy_idx) {
+            entry.push(decoy_idx);
+        }
 
         Some(threat_score)
     }

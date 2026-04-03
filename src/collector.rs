@@ -592,7 +592,7 @@ fn compute_network_kbps(state: &mut CollectorState, total_bytes: u64) -> f32 {
         let elapsed = now.duration_since(prev_time).as_secs_f32();
         if elapsed > 0.0 && state.prev_net_bytes > 0 {
             let delta = total_bytes.saturating_sub(state.prev_net_bytes) as f32;
-            (delta / 1024.0) / elapsed * 8.0 // kbps
+            (delta / 125.0) / elapsed // kbps (1 kbit = 1000 bits = 125 bytes)
         } else {
             0.0
         }
@@ -910,17 +910,27 @@ fn hash_file(path: &Path) -> Option<(PathBuf, String)> {
 }
 
 fn collect_dir_hashes(dir: &Path, out: &mut HashMap<PathBuf, String>) {
+    collect_dir_hashes_bounded(dir, out, 0);
+}
+
+fn collect_dir_hashes_bounded(dir: &Path, out: &mut HashMap<PathBuf, String>, depth: usize) {
+    const MAX_DEPTH: usize = 32;
+    if depth >= MAX_DEPTH {
+        return;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
+        // Use symlink_metadata to avoid following symlinks into cycles
+        let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+        if meta.is_file() {
             if let Some((p, hash)) = hash_file(&path) {
                 out.insert(p, hash);
             }
-        } else if path.is_dir() {
-            collect_dir_hashes(&path, out);
+        } else if meta.is_dir() {
+            collect_dir_hashes_bounded(&path, out, depth + 1);
         }
     }
 }

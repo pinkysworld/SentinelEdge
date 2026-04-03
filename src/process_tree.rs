@@ -40,8 +40,20 @@ impl ProcessTree {
     pub fn upsert(&mut self, node: ProcessNode) {
         let pid = node.pid;
         let ppid = node.ppid;
+        // If the process already exists, remove it from old parent's children list
+        if let Some(old_node) = self.nodes.get(&pid) {
+            let old_ppid = old_node.ppid;
+            if old_ppid != ppid {
+                if let Some(siblings) = self.children.get_mut(&old_ppid) {
+                    siblings.retain(|&p| p != pid);
+                }
+            }
+        }
         self.nodes.insert(pid, node);
-        self.children.entry(ppid).or_default().push(pid);
+        let children = self.children.entry(ppid).or_default();
+        if !children.contains(&pid) {
+            children.push(pid);
+        }
     }
 
     /// Mark a process as terminated.

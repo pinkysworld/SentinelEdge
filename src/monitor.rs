@@ -191,14 +191,14 @@ impl Monitor {
             if !matches_stream(&prop.stream, event) {
                 // But still count down bounded-liveness trackers.
                 if let PropertyStatus::Tracking { remaining } = &mut state.status {
-                    if *remaining == 0 {
+                    if *remaining > 0 {
+                        *remaining -= 1;
+                    } else {
                         state.status = PropertyStatus::Violated;
                         self.violations.push(Violation {
                             property_name: prop.name.clone(),
                             event_index: self.event_count,
                         });
-                    } else {
-                        *remaining -= 1;
                     }
                 }
                 continue;

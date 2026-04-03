@@ -149,13 +149,14 @@ impl FederatedCoordinator {
             return None;
         }
 
-        self.current_round += 1;
         let dim = self.global_weights.len();
         let total_samples: usize = self.pending_updates.iter().map(|u| u.sample_count).sum();
 
         if total_samples == 0 || dim == 0 {
             return None;
         }
+
+        self.current_round += 1;
 
         // Weighted average by sample count
         let mut new_weights = vec![0.0f64; dim];
@@ -346,8 +347,11 @@ pub fn redact_forensic_bundle(
                     // Redact IPv4 patterns
                     let ip_pattern = regex_lite_replace_ips(&s);
                     s = ip_pattern;
-                    // Redact paths
-                    s = s.replace(|c: char| c == '/' && s.contains("/home"), "*");
+                    // Redact paths like /home/user/...
+                    while let Some(idx) = s.find("/home/") {
+                        let end = s[idx..].find(|c: char| c.is_whitespace()).map(|e| idx + e).unwrap_or(s.len());
+                        s.replace_range(idx..end, "[REDACTED_PATH]");
+                    }
                     s
                 }
                 RedactionLevel::Minimal => {

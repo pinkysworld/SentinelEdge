@@ -213,14 +213,21 @@ impl KillChainAnalyzer {
         for event in events {
             let mut assigned = false;
 
-            // Primary: use MITRE technique IDs
-            for tid in &event.mitre_technique_ids {
+            // Primary: use first MITRE technique ID to assign to a single phase
+            if let Some(tid) = event.mitre_technique_ids.first() {
                 let phase = technique_to_phase(tid);
                 stage_map.entry(phase).or_default().push(event.clone());
                 technique_map
                     .entry(phase)
                     .or_default()
                     .push(tid.clone());
+                // Also record remaining techniques without duplicating the event
+                for extra_tid in event.mitre_technique_ids.iter().skip(1) {
+                    technique_map
+                        .entry(technique_to_phase(extra_tid))
+                        .or_default()
+                        .push(extra_tid.clone());
+                }
                 assigned = true;
             }
 

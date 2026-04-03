@@ -473,7 +473,9 @@ impl UebaEngine {
                 risk_score: p.risk_score,
                 observation_count: p.observation_count,
                 last_seen_ms: p.last_seen_ms,
-                anomaly_count: 0,
+                anomaly_count: self.anomalies.iter().filter(|a| {
+                    a.entity_kind == p.entity_kind && a.entity_id == p.entity_id
+                }).count(),
                 peer_group: p.peer_group.clone(),
             })
             .collect()

@@ -311,7 +311,9 @@ impl AgentClient {
         }
 
         let mut buf = Vec::new();
+        const MAX_UPDATE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
         resp.into_reader()
+            .take(MAX_UPDATE_SIZE)
             .read_to_end(&mut buf)
             .map_err(|e| format!("failed to read update binary: {e}"))?;
 

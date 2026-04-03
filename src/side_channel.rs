@@ -47,7 +47,7 @@ impl TimingAnalyzer {
         self.samples.push_back(sample_ns);
 
         let variance = if self.count > 1 {
-            self.m2 / (self.count - 1) as f64
+            self.m2 / (self.samples.len().max(2) - 1) as f64
         } else {
             0.0
         };
@@ -85,7 +85,7 @@ impl TimingAnalyzer {
 
     pub fn stddev(&self) -> f64 {
         if self.count > 1 {
-            (self.m2 / (self.count - 1) as f64).sqrt()
+            (self.m2 / (self.samples.len().max(2) - 1) as f64).sqrt()
         } else {
             0.0
         }

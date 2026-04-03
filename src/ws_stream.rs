@@ -323,8 +323,7 @@ impl EventBus {
 
     pub fn subscribe(&self, channels: Vec<String>) -> u64 {
         if let Ok(mut bus) = self.inner.lock() {
-            bus.sequence += 1;
-            let id = bus.sequence;
+            let id = bus.subscribers.len() as u64 + 1;
             bus.subscribers.push(Subscriber {
                 id,
                 channels,

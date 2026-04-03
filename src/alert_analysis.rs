@@ -158,11 +158,12 @@ pub fn deduplicate_alerts(
     let mut incidents: Vec<DedupIncident> = Vec::new();
     let mut incident_counter = 0_usize;
 
-    for (fp, members) in &buckets {
+    for (fp, members) in &mut buckets {
+        members.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
         // Within each fingerprint bucket, split by time-window gaps.
         let mut window: Vec<(usize, &AlertRecord)> = Vec::new();
 
-        for &(idx, alert) in members {
+        for &(idx, alert) in members.iter() {
             if let Some(last) = window.last() {
                 let gap = timestamp_gap(&last.1.timestamp, &alert.timestamp);
                 if gap > config.window_secs as f64 || window.len() >= config.max_merge {
@@ -221,9 +222,14 @@ fn timestamp_gap(a: &str, b: &str) -> f64 {
     let parse = |s: &str| {
         chrono::DateTime::parse_from_rfc3339(s)
             .map(|dt| dt.timestamp() as f64)
-            .unwrap_or(0.0)
+            .unwrap_or(f64::NAN)
     };
-    (parse(b) - parse(a)).abs()
+    let ta = parse(a);
+    let tb = parse(b);
+    if ta.is_nan() || tb.is_nan() {
+        return f64::MAX;
+    }
+    (tb - ta).abs()
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -231,7 +237,7 @@ fn timestamp_gap(a: &str, b: &str) -> f64 {
 /// Run analysis over a slice of alerts within a given window (minutes).
 /// If `window_minutes` is 0, analyse all supplied alerts.
 pub fn analyze_alerts(alerts: &[AlertRecord], window_minutes: u64) -> AlertAnalysis {
-    let filtered = if window_minutes == 0 || alerts.is_empty() {
+    let mut filtered = if window_minutes == 0 || alerts.is_empty() {
         alerts.to_vec()
     } else {
         let cutoff = chrono::Utc::now() - chrono::Duration::minutes(window_minutes as i64);
@@ -242,6 +248,9 @@ pub fn analyze_alerts(alerts: &[AlertRecord], window_minutes: u64) -> AlertAnaly
             .cloned()
             .collect::<Vec<_>>()
     };
+
+    // Sort by timestamp to ensure correct gap-based clustering
+    filtered.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     if filtered.is_empty() {
         return AlertAnalysis {
@@ -661,7 +670,7 @@ fn parse_timestamps(alerts: &[AlertRecord]) -> Vec<f64> {
         .map(|a| {
             chrono::DateTime::parse_from_rfc3339(&a.timestamp)
                 .map(|dt| dt.timestamp() as f64)
-                .unwrap_or(0.0)
+                .unwrap_or(f64::NAN)
         })
         .collect()
 }

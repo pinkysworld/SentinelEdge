@@ -139,8 +139,8 @@ impl LatencyStats {
         let sum: f64 = durations.iter().sum();
         let mean_us = sum / count as f64;
         let median_us = durations[count / 2];
-        let p95_us = durations[(count as f64 * 0.95) as usize];
-        let p99_us = durations[(count as f64 * 0.99).min((count - 1) as f64) as usize];
+        let p95_us = durations[((count - 1) as f64 * 0.95) as usize];
+        let p99_us = durations[((count - 1) as f64 * 0.99) as usize];
         let min_us = durations[0];
         let max_us = durations[count - 1];
         Self {

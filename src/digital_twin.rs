@@ -263,7 +263,7 @@ impl DigitalTwinEngine {
             }
             SimEvent::ProcessSpawn { target, count } => {
                 if let Some(dev) = self.devices.get_mut(target) {
-                    dev.processes += count;
+                    dev.processes = dev.processes.saturating_add(*count);
                     if dev.processes > self.alert_thresholds.process_burst {
                         alerts.push(SimAlert {
                             tick,
@@ -278,7 +278,7 @@ impl DigitalTwinEngine {
             }
             SimEvent::ConnectionBurst { target, count } => {
                 if let Some(dev) = self.devices.get_mut(target) {
-                    dev.open_connections += count;
+                    dev.open_connections = dev.open_connections.saturating_add(*count);
                     if dev.open_connections > self.alert_thresholds.connection_burst {
                         alerts.push(SimAlert {
                             tick,

@@ -75,6 +75,7 @@ impl LamportPrivateKey {
 
     /// Sign a message (the key should only be used once).
     pub fn sign(&mut self, message: &[u8]) -> LamportSignature {
+        assert!(!self.used, "Lamport key must not be reused — one-time signature only");
         self.used = true;
         let msg_hash = sha256_hex(message);
         let hash_bytes = hex::decode(&msg_hash).unwrap_or_else(|_| vec![0u8; 32]);

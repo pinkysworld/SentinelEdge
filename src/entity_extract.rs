@@ -105,9 +105,13 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
     }
 
     // Hex hashes: SHA-256 (64 hex chars) and MD5 (32 hex chars)
+    let mut hash_search_from = 0;
     for word in text.split(|c: char| !c.is_ascii_hexdigit()) {
+        if word.is_empty() { continue; }
+        let start_pos = text[hash_search_from..].find(word)
+            .map(|p| p + hash_search_from).unwrap_or(hash_search_from);
+        hash_search_from = start_pos + word.len();
         if word.len() == 64 && word.chars().all(|c| c.is_ascii_hexdigit()) {
-            let start_pos = text.find(word).unwrap_or(0);
             results.push(ExtractedEntity {
                 entity_type: EntityType::HashSha256,
                 value: word.to_lowercase(),
@@ -115,7 +119,6 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                 end: start_pos + 64,
             });
         } else if word.len() == 32 && word.chars().all(|c| c.is_ascii_hexdigit()) {
-            let start_pos = text.find(word).unwrap_or(0);
             results.push(ExtractedEntity {
                 entity_type: EntityType::HashMd5,
                 value: word.to_lowercase(),
@@ -167,10 +170,16 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
     }
 
     // Domain names (simple heuristic: word.tld patterns)
+    let mut domain_search_from = 0;
     for word in text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '"' || c == '\'') {
+        if word.is_empty() { continue; }
+        let word_start = text[domain_search_from..].find(word)
+            .map(|p| p + domain_search_from).unwrap_or(domain_search_from);
+        domain_search_from = word_start + word.len();
         let w = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-');
         if looks_like_domain(w) {
-            let start_pos = text.find(w).unwrap_or(0);
+            let trim_offset = word.find(w).unwrap_or(0);
+            let start_pos = word_start + trim_offset;
             results.push(ExtractedEntity {
                 entity_type: EntityType::Domain,
                 value: w.to_string(),

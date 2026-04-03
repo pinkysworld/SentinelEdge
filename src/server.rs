@@ -65,6 +65,7 @@ use crate::response::{
 };
 use crate::sigma::SigmaEngine;
 use crate::spool::EncryptedSpool;
+use sha2::Digest;
 
 // ── Rate Limiter ────────────────────────────────────────────
 
@@ -615,7 +616,7 @@ pub fn run_server(
         response_orchestrator: ResponseOrchestrator::new(),
         feature_flags: FeatureFlagRegistry::new(),
         process_tree: ProcessTree::new("localhost"),
-        spool: EncryptedSpool::new(b"server-spool-key-placeholder!!", 10_000),
+        spool: EncryptedSpool::new(&sha2::Sha256::digest(format!("spool-key-{token}").as_bytes()), 10_000),
         rbac: RbacStore::new(),
         case_store: CaseStore::new("var/cases.json"),
         alert_queue: AlertQueue::new(),
@@ -888,7 +889,7 @@ pub fn spawn_test_server() -> (u16, String) {
         response_orchestrator: ResponseOrchestrator::new(),
         feature_flags: FeatureFlagRegistry::new(),
         process_tree: ProcessTree::new("localhost"),
-        spool: EncryptedSpool::new(b"server-spool-key-placeholder!!", 10_000),
+        spool: EncryptedSpool::new(&sha2::Sha256::digest(format!("spool-key-{token}").as_bytes()), 10_000),
         rbac: RbacStore::new(),
         case_store: CaseStore::new(&state_root.join("cases.json").to_string_lossy()),
         alert_queue: AlertQueue::new(),

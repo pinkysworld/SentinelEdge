@@ -140,9 +140,9 @@ impl RbacStore {
 
     /// Authenticate by token, returning the user if valid.
     pub fn authenticate(&self, token: &str) -> Option<User> {
+        let users = self.users.lock().unwrap();
         let tokens = self.tokens.lock().unwrap();
         let username = tokens.get(token)?;
-        let users = self.users.lock().unwrap();
         let user = users.get(username)?;
         if user.enabled { Some(user.clone()) } else { None }
     }

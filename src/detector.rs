@@ -232,7 +232,7 @@ impl AnomalyDetector {
                 let mut suspicious_axes = 0usize;
                 let mut contributions: Vec<(&'static str, f32)> = Vec::new();
                 let history_factor = (self.observed_samples as f32
-                    / self.config.warmup_samples as f32)
+                    / self.config.warmup_samples.max(1) as f32)
                     .clamp(0.35, 1.0);
 
                 let mut score = 0.0;
@@ -430,7 +430,7 @@ fn weighted_positive_delta(
         return 0.0;
     }
 
-    let normalized = delta / scale;
+    let normalized = if scale > 0.0 { delta / scale } else { 0.0 };
     if normalized >= 0.5 {
         reasons.push(format!("{label} (+{delta:.2})"));
         *suspicious_axes += 1;
@@ -611,10 +611,11 @@ impl VelocityDetector {
                 .sum::<f32>() / velocities.len() as f32;
             let v_std = v_var.sqrt().max(0.001);
 
-            // Check if latest velocity is an outlier
-            if vel_abs > v_mean.abs() + self.velocity_sigma * v_std && vel_abs > 0.5 {
+            // Check if latest velocity is an outlier (proper z-score)
+            let z = (last_vel - v_mean).abs() / v_std;
+            if z > self.velocity_sigma && vel_abs > 0.5 {
                 anomalous.push(Self::AXIS_NAMES[dim].to_string());
-                boost += (vel_abs - v_mean.abs()) / (v_std * 10.0);
+                boost += (z - self.velocity_sigma) / 10.0;
             }
         }
 

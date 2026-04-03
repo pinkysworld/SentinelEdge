@@ -376,6 +376,13 @@ impl ClusterNode {
 
         // Append new entries
         for entry in &req.entries {
+            if entry.index == 0 {
+                return AppendResponse {
+                    term: inner.state.term,
+                    success: false,
+                    match_index: inner.log.len() as u64,
+                };
+            }
             let idx = (entry.index - 1) as usize;
             if idx < inner.log.len() {
                 if inner.log[idx].term != entry.term {

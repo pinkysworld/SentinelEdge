@@ -315,9 +315,14 @@ impl ResponseOrchestrator {
         let mut requests = self.requests.lock().unwrap();
         for req in requests.iter_mut() {
             if req.status == ApprovalStatus::Pending {
-                // Parse epoch from ISO timestamp (simplified: use provided epoch)
-                if let Ok(req_epoch) = req.requested_at.parse::<u64>() {
-                    if now_epoch.saturating_sub(req_epoch) > self.approval_sla_secs {
+                // Try RFC3339 first, then fall back to plain epoch
+                let req_epoch = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&req.requested_at) {
+                    Some(dt.timestamp() as u64)
+                } else {
+                    req.requested_at.parse::<u64>().ok()
+                };
+                if let Some(epoch) = req_epoch {
+                    if now_epoch.saturating_sub(epoch) >= self.approval_sla_secs {
                         req.status = ApprovalStatus::Expired;
                     }
                 }

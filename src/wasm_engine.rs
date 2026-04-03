@@ -141,97 +141,114 @@ impl PolicyVm {
                     pc += 1;
                 }
                 Opcode::Add => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(a + b);
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Add".into()) };
+                    };
+                    stack.push(a + b);
                     pc += 1;
                 }
                 Opcode::Sub => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(a - b);
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Sub".into()) };
+                    };
+                    stack.push(a - b);
                     pc += 1;
                 }
                 Opcode::Mul => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(a * b);
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Mul".into()) };
+                    };
+                    stack.push(a * b);
                     pc += 1;
                 }
                 Opcode::Div => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        if b.abs() < f64::EPSILON {
-                            return VmResult {
-                                success: false,
-                                outputs,
-                                steps_executed: steps,
-                                error: Some("division by zero".into()),
-                            };
-                        }
-                        stack.push(a / b);
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Div".into()) };
+                    };
+                    if b.abs() < f64::EPSILON {
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("division by zero".into()),
+                        };
                     }
+                    stack.push(a / b);
                     pc += 1;
                 }
                 Opcode::CmpGt => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if a > b { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpGt".into()) };
+                    };
+                    stack.push(if a > b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpLt => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if a < b { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpLt".into()) };
+                    };
+                    stack.push(if a < b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpGe => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if a >= b { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpGe".into()) };
+                    };
+                    stack.push(if a >= b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpLe => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if a <= b { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpLe".into()) };
+                    };
+                    stack.push(if a <= b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpEq => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if (a - b).abs() < f64::EPSILON { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpEq".into()) };
+                    };
+                    stack.push(if (a - b).abs() < f64::EPSILON { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::And => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if a > 0.5 && b > 0.5 { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in And".into()) };
+                    };
+                    stack.push(if a > 0.5 && b > 0.5 { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::Or => {
-                    if let (Some(b), Some(a)) = (stack.pop(), stack.pop()) {
-                        stack.push(if a > 0.5 || b > 0.5 { 1.0 } else { 0.0 });
-                    }
+                    let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Or".into()) };
+                    };
+                    stack.push(if a > 0.5 || b > 0.5 { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::Not => {
-                    if let Some(a) = stack.pop() {
-                        stack.push(if a > 0.5 { 0.0 } else { 1.0 });
-                    }
+                    let Some(a) = stack.pop() else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Not".into()) };
+                    };
+                    stack.push(if a > 0.5 { 0.0 } else { 1.0 });
                     pc += 1;
                 }
                 Opcode::JumpIf(target) => {
-                    if let Some(cond) = stack.pop() {
-                        if cond > 0.5 {
-                            pc = *target;
-                        } else {
-                            pc += 1;
+                    let Some(cond) = stack.pop() else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in JumpIf".into()) };
+                    };
+                    if cond > 0.5 {
+                        if *target >= program.instructions.len() {
+                            return VmResult { success: false, outputs, steps_executed: steps, error: Some("JumpIf target out of bounds".into()) };
                         }
+                        pc = *target;
                     } else {
                         pc += 1;
                     }
                 }
                 Opcode::Jump(target) => {
+                    if *target >= program.instructions.len() {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("Jump target out of bounds".into()) };
+                    }
                     pc = *target;
                 }
                 Opcode::StoreResult(name) => {
@@ -242,13 +259,16 @@ impl PolicyVm {
                 }
                 Opcode::Halt => break,
                 Opcode::Dup => {
-                    if let Some(&top) = stack.last() {
-                        stack.push(top);
-                    }
+                    let Some(&top) = stack.last() else {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Dup".into()) };
+                    };
+                    stack.push(top);
                     pc += 1;
                 }
                 Opcode::Pop => {
-                    stack.pop();
+                    if stack.pop().is_none() {
+                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Pop".into()) };
+                    }
                     pc += 1;
                 }
             }

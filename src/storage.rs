@@ -697,10 +697,20 @@ impl StorageBackend {
         let final_path = self.base_dir.join(filename);
         let tmp_path = self.base_dir.join(format!("{filename}.tmp"));
 
-        fs::write(&tmp_path, &json).map_err(|e| StorageError {
-            code: StorageErrorCode::DiskFull,
-            message: format!("failed to write {}: {e}", tmp_path.display()),
-        })?;
+        {
+            let mut file = fs::File::create(&tmp_path).map_err(|e| StorageError {
+                code: StorageErrorCode::DiskFull,
+                message: format!("failed to create {}: {e}", tmp_path.display()),
+            })?;
+            std::io::Write::write_all(&mut file, json.as_bytes()).map_err(|e| StorageError {
+                code: StorageErrorCode::DiskFull,
+                message: format!("failed to write {}: {e}", tmp_path.display()),
+            })?;
+            file.sync_all().map_err(|e| StorageError {
+                code: StorageErrorCode::DiskFull,
+                message: format!("failed to sync {}: {e}", tmp_path.display()),
+            })?;
+        }
 
         fs::rename(&tmp_path, &final_path).map_err(|e| StorageError {
             code: StorageErrorCode::QueryFailed,

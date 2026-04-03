@@ -260,7 +260,7 @@ impl AtomicUpdater {
         // 1. Download / write staged.
         self.state = UpdateState::Downloading;
         fs::write(&staged_path, binary)
-            .map_err(|e| self.fail(&started, new_version, format!("staging write: {e}")))?;
+            .map_err(|e| self.fail(&started, new_version, format!("staging write: {e}"), false))?;
 
         // 2. Verify SHA-256.
         self.state = UpdateState::Verifying;
@@ -271,6 +271,7 @@ impl AtomicUpdater {
                 &started,
                 new_version,
                 format!("SHA mismatch: expected {expected_sha}, got {actual_sha}"),
+                false,
             ));
         }
 
@@ -278,7 +279,7 @@ impl AtomicUpdater {
         self.state = UpdateState::BackingUp;
         if Path::new(current_binary_path).exists() {
             fs::copy(current_binary_path, &backup_path).map_err(|e| {
-                self.fail(&started, new_version, format!("backup: {e}"))
+                self.fail(&started, new_version, format!("backup: {e}"), false)
             })?;
         }
 
@@ -289,7 +290,7 @@ impl AtomicUpdater {
             if Path::new(&backup_path).exists() {
                 let _ = fs::rename(&backup_path, current_binary_path);
             }
-            return Err(self.fail(&started, new_version, format!("swap: {e}")));
+            return Err(self.fail(&started, new_version, format!("swap: {e}"), true));
         }
 
         // 5. Validate (simple: check file size and readability).
@@ -304,6 +305,7 @@ impl AtomicUpdater {
                     &started,
                     new_version,
                     format!("validation: size mismatch ({} vs {})", m.len(), binary.len()),
+                    true,
                 ));
             }
             Err(e) => {
@@ -312,6 +314,7 @@ impl AtomicUpdater {
                     &started,
                     new_version,
                     format!("validation: {e}"),
+                    true,
                 ));
             }
         }
@@ -352,7 +355,7 @@ impl AtomicUpdater {
         }
     }
 
-    fn fail(&mut self, started_at: &str, to_version: &str, reason: String) -> String {
+    fn fail(&mut self, started_at: &str, to_version: &str, reason: String, rolled_back: bool) -> String {
         self.state = UpdateState::Failed {
             reason: reason.clone(),
         };
@@ -364,7 +367,7 @@ impl AtomicUpdater {
             },
             started_at: started_at.to_string(),
             completed_at: chrono::Utc::now().to_rfc3339(),
-            rollback: false,
+            rollback: rolled_back,
         });
         reason
     }
