@@ -2747,6 +2747,7 @@ fn handle_api(
     server: &Server,
 ) {
     let url = request.url().to_string();
+    let route_path = url_path(&url);
     let method = request.method().clone();
 
     // ── Request body size limit (10 MB) ──
@@ -2768,21 +2769,23 @@ fn handle_api(
 
     // Check auth for mutating endpoints before consuming the request body
     // XDR agent endpoints that do NOT require admin auth (agents use enrollment tokens)
-    let is_agent_endpoint = url.starts_with("/api/agents/enroll")
-        || url.starts_with("/api/agents/update")
-        || (url.contains("/heartbeat") && url.starts_with("/api/agents/"))
-        || (method == Method::Post && url == "/api/events")
-        || url.starts_with("/api/policy/current")
-        || url.starts_with("/api/updates/download/")
-        || (method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/logs"))
+    let is_agent_endpoint = route_path.starts_with("/api/agents/enroll")
+        || route_path.starts_with("/api/agents/update")
+        || (route_path.contains("/heartbeat") && route_path.starts_with("/api/agents/"))
+        || (method == Method::Post && route_path == "/api/events")
+        || route_path.starts_with("/api/policy/current")
+        || route_path.starts_with("/api/updates/download/")
         || (method == Method::Post
-            && url.starts_with("/api/agents/")
-            && url.ends_with("/inventory"))
-        || (method == Method::Get && url == "/api/openapi.json");
+            && route_path.starts_with("/api/agents/")
+            && route_path.ends_with("/logs"))
+        || (method == Method::Post
+            && route_path.starts_with("/api/agents/")
+            && route_path.ends_with("/inventory"))
+        || (method == Method::Get && route_path == "/api/openapi.json");
 
     let needs_auth = !is_agent_endpoint
         && matches!(
-            (&method, url.as_str()),
+            (&method, route_path),
             (Method::Get, "/api/auth/check")
                 | (Method::Post, "/api/auth/rotate")
                 | (Method::Get, "/api/session/info")
@@ -2794,6 +2797,7 @@ fn handle_api(
                 | (Method::Post, "/api/control/restore-checkpoint")
                 | (Method::Post, "/api/fleet/register")
                 | (Method::Post, "/api/enforcement/quarantine")
+                | (Method::Get, "/api/threat-intel/status")
                 | (Method::Post, "/api/threat-intel/ioc")
                 | (Method::Post, "/api/digital-twin/simulate")
                 | (Method::Post, "/api/energy/consume")
@@ -2824,122 +2828,184 @@ fn handle_api(
                 | (Method::Post, "/api/alerts/analysis")
         )
         || (!is_agent_endpoint
-            && ((method == Method::Get && url == "/api/fleet/dashboard")
-        || (method == Method::Get && url == "/api/workbench/overview")
-        || (method == Method::Get && url == "/api/manager/overview")
-        || (method == Method::Get && url == "/api/hunts")
-        || (method == Method::Post && url == "/api/hunts")
-        || (method == Method::Get && url.starts_with("/api/hunts/"))
-        || (method == Method::Post && url.starts_with("/api/hunts/"))
-        || (method == Method::Get && url == "/api/content/rules")
-        || (method == Method::Post && url == "/api/content/rules")
-        || (method == Method::Post && url.starts_with("/api/content/rules/"))
-        || (method == Method::Get && url == "/api/content/packs")
-        || (method == Method::Post && url == "/api/content/packs")
-        || (method == Method::Get && url == "/api/coverage/mitre")
-        || (method == Method::Get && url == "/api/suppressions")
-        || (method == Method::Post && url == "/api/suppressions")
-        || (method == Method::Get && url.starts_with("/api/entities/"))
-        || (method == Method::Get && url.starts_with("/api/incidents/") && url.ends_with("/storyline"))
-        || (method == Method::Get && url == "/api/enrichments/connectors")
-        || (method == Method::Post && url == "/api/enrichments/connectors")
-        || (method == Method::Post && url == "/api/tickets/sync")
-        || (method == Method::Get && url == "/api/idp/providers")
-        || (method == Method::Post && url == "/api/idp/providers")
-        || (method == Method::Get && url == "/api/scim/config")
-        || (method == Method::Post && url == "/api/scim/config")
-        || (method == Method::Get && url == "/api/audit/admin")
-        || (method == Method::Get && url == "/api/support/diagnostics")
-        || (method == Method::Get && url == "/api/system/health/dependencies")
-        || (method == Method::Get && url == "/api/siem/status")
-        || (method == Method::Get && url == "/api/taxii/status")
-        || (method == Method::Get && url == "/api/agents")
-        || (method == Method::Get && url == "/api/events")
-        || (method == Method::Get && url.starts_with("/api/events?"))
-        || (method == Method::Get && url == "/api/events/export")
-        || (method == Method::Get && url.starts_with("/api/events/export?"))
-        || (method == Method::Get && url == "/api/events/summary")
-        || (method == Method::Get && url == "/api/policy/history")
-        || (method == Method::Get && url == "/api/telemetry/current")
-        || (method == Method::Get && url == "/api/telemetry/history")
-        || (method == Method::Get && url == "/api/host/info")
-        || (method == Method::Get && url == "/api/config/current")
-        || (method == Method::Get && url == "/api/checkpoints")
-        || (method == Method::Get && url == "/api/correlation")
-        || (method == Method::Get && url == "/api/alerts")
-        || (method == Method::Get && url.starts_with("/api/alerts?"))
-        || (method == Method::Get && url == "/api/alerts/count")
-        || (method == Method::Get && url == "/api/alerts/analysis")
-        || (method == Method::Get && url == "/api/alerts/grouped")
-        || (method == Method::Get && url.starts_with("/api/alerts/") && url != "/api/alerts/count" && url != "/api/alerts/analysis" && url != "/api/alerts/grouped")
-        || (method == Method::Get && url == "/api/swarm/intel")
-        || (method == Method::Get && url == "/api/swarm/intel/stats")
-        || (method == Method::Get && url == "/api/report")
-        || (method == Method::Get && url == "/api/threads/status")
-        || (method == Method::Get && url == "/api/detection/summary")
-        || (method == Method::Get && url == "/api/monitoring/options")
-        || (method == Method::Get && url == "/api/monitoring/paths")
-        || (method == Method::Get && url == "/api/endpoints")
-        || (method == Method::Get && url == "/api/status")
-        || (method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/details"))
-        || (method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/activity"))
-        || (method == Method::Post && url.starts_with("/api/events/") && url.ends_with("/triage"))
-        || (method == Method::Post && url.starts_with("/api/agents/") && url.ends_with("/scope"))
-        || (method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/scope"))
-        || (method == Method::Get && url == "/api/audit/log")
-        || (method == Method::Get && url == "/api/incidents") || (method == Method::Get && url.starts_with("/api/incidents?"))
-        || (method == Method::Get && url.starts_with("/api/incidents/"))
-        || (method == Method::Post && url == "/api/incidents")
-        || (method == Method::Post && url.starts_with("/api/incidents/") && url.ends_with("/update"))
-        || (method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/logs"))
-        || (method == Method::Get && url.starts_with("/api/agents/") && url.ends_with("/inventory"))
-        || (method == Method::Get && url == "/api/fleet/inventory")
-        || (method == Method::Post && url == "/api/detection/weights")
-        || (method == Method::Get && url == "/api/detection/weights")
-        || (method == Method::Get && url == "/api/reports") || (method == Method::Get && url.starts_with("/api/reports?"))
-        || (method == Method::Get && url.starts_with("/api/reports/"))
-        || (method == Method::Delete && url.starts_with("/api/reports/"))
-        || (method == Method::Get && url == "/api/reports/executive-summary")
-        || (method == Method::Delete && url.starts_with("/api/agents/"))
-        || (method == Method::Get && url == "/api/sigma/rules")
-        || (method == Method::Get && url == "/api/sigma/stats")
-        || (method == Method::Get && url == "/api/ocsf/schema")
-        || (method == Method::Get && url == "/api/response/pending")
-        || (method == Method::Get && url == "/api/response/requests")
-        || (method == Method::Get && url == "/api/response/audit")
-        || (method == Method::Get && url == "/api/response/stats")
-        || (method == Method::Get && url == "/api/feature-flags")
-        || (method == Method::Get && url == "/api/process-tree")
-        || (method == Method::Get && url == "/api/process-tree/deep-chains")
-        || (method == Method::Get && url == "/api/spool/stats")
-        || (method == Method::Get && url == "/api/rbac/users")
+            && ((method == Method::Get && route_path == "/api/fleet/dashboard")
+        || (method == Method::Get && route_path == "/api/workbench/overview")
+        || (method == Method::Get && route_path == "/api/manager/overview")
+        || (method == Method::Get && route_path == "/api/hunts")
+        || (method == Method::Post && route_path == "/api/hunts")
+        || (method == Method::Get && route_path.starts_with("/api/hunts/"))
+        || (method == Method::Post && route_path.starts_with("/api/hunts/"))
+        || (method == Method::Get && route_path == "/api/content/rules")
+        || (method == Method::Post && route_path == "/api/content/rules")
+        || (method == Method::Post && route_path.starts_with("/api/content/rules/"))
+        || (method == Method::Get && route_path == "/api/content/packs")
+        || (method == Method::Post && route_path == "/api/content/packs")
+        || (method == Method::Get && route_path == "/api/coverage/mitre")
+        || (method == Method::Get && route_path == "/api/suppressions")
+        || (method == Method::Post && route_path == "/api/suppressions")
+        || (method == Method::Get && route_path.starts_with("/api/entities/"))
+        || (method == Method::Get && route_path.starts_with("/api/incidents/") && route_path.ends_with("/storyline"))
+        || (method == Method::Get && route_path == "/api/enrichments/connectors")
+        || (method == Method::Post && route_path == "/api/enrichments/connectors")
+        || (method == Method::Post && route_path == "/api/tickets/sync")
+        || (method == Method::Get && route_path == "/api/idp/providers")
+        || (method == Method::Post && route_path == "/api/idp/providers")
+        || (method == Method::Get && route_path == "/api/scim/config")
+        || (method == Method::Post && route_path == "/api/scim/config")
+        || (method == Method::Get && route_path == "/api/audit/admin")
+        || (method == Method::Get && route_path == "/api/support/diagnostics")
+        || (method == Method::Get && route_path == "/api/system/health/dependencies")
+        || (method == Method::Get && route_path == "/api/siem/status")
+        || (method == Method::Get && route_path == "/api/siem/config")
+        || (method == Method::Post && route_path == "/api/siem/config")
+        || (method == Method::Get && route_path == "/api/taxii/status")
+        || (method == Method::Get && route_path == "/api/taxii/config")
+        || (method == Method::Post && route_path == "/api/taxii/config")
+        || (method == Method::Post && route_path == "/api/taxii/pull")
+        || (method == Method::Get && route_path == "/api/agents")
+        || (method == Method::Get && route_path == "/api/events")
+        || (method == Method::Get && route_path == "/api/events/export")
+        || (method == Method::Get && route_path == "/api/events/summary")
+        || (method == Method::Get && route_path == "/api/policy/history")
+        || (method == Method::Get && route_path == "/api/telemetry/current")
+        || (method == Method::Get && route_path == "/api/telemetry/history")
+        || (method == Method::Get && route_path == "/api/host/info")
+        || (method == Method::Get && route_path == "/api/config/current")
+        || (method == Method::Get && route_path == "/api/checkpoints")
+        || (method == Method::Get && route_path == "/api/correlation")
+        || (method == Method::Get && route_path == "/api/alerts")
+        || (method == Method::Get && route_path == "/api/alerts/count")
+        || (method == Method::Get && route_path == "/api/alerts/analysis")
+        || (method == Method::Get && route_path == "/api/alerts/grouped")
+        || (method == Method::Get && route_path.starts_with("/api/alerts/") && route_path != "/api/alerts/count" && route_path != "/api/alerts/analysis" && route_path != "/api/alerts/grouped")
+        || (method == Method::Get && route_path == "/api/swarm/intel")
+        || (method == Method::Get && route_path == "/api/swarm/intel/stats")
+        || (method == Method::Get && route_path == "/api/report")
+        || (method == Method::Get && route_path == "/api/threads/status")
+        || (method == Method::Get && route_path == "/api/detection/summary")
+        || (method == Method::Get && route_path == "/api/monitoring/options")
+        || (method == Method::Get && route_path == "/api/monitoring/paths")
+        || (method == Method::Get && route_path == "/api/endpoints")
+        || (method == Method::Get && route_path == "/api/status")
+        || (method == Method::Get && route_path == "/api/export/tla")
+        || (method == Method::Get && route_path == "/api/export/alloy")
+        || (method == Method::Get && route_path == "/api/export/witnesses")
+        || (method == Method::Get && route_path == "/api/research-tracks")
+        || (method == Method::Get && route_path == "/api/attestation/status")
+        || (method == Method::Get && route_path == "/api/fleet/status")
+        || (method == Method::Get && route_path == "/api/enforcement/status")
+        || (method == Method::Get && route_path == "/api/digital-twin/status")
+        || (method == Method::Get && route_path == "/api/compliance/status")
+        || (method == Method::Get && route_path == "/api/energy/status")
+        || (method == Method::Get && route_path == "/api/tenants/count")
+        || (method == Method::Get && route_path == "/api/platform")
+        || (method == Method::Get && route_path == "/api/side-channel/status")
+        || (method == Method::Get && route_path == "/api/quantum/key-status")
+        || (method == Method::Get && route_path == "/api/privacy/budget")
+        || (method == Method::Get && route_path == "/api/fingerprint/status")
+        || (method == Method::Get && route_path == "/api/monitor/status")
+        || (method == Method::Get && route_path == "/api/monitor/violations")
+        || (method == Method::Get && route_path == "/api/deception/status")
+        || (method == Method::Get && route_path == "/api/drift/status")
+        || (method == Method::Get && route_path == "/api/causal/graph")
+        || (method == Method::Get && route_path == "/api/patches")
+        || (method == Method::Get && route_path == "/api/swarm/posture")
+        || (method == Method::Get && route_path == "/api/tls/status")
+        || (method == Method::Get && route_path == "/api/mesh/health")
+        || (method == Method::Get && route_path == "/api/rollout/config")
+        || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/details"))
+        || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/activity"))
+        || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/status"))
+        || (method == Method::Post && route_path.starts_with("/api/events/") && route_path.ends_with("/triage"))
+        || (method == Method::Post && route_path.starts_with("/api/agents/") && route_path.ends_with("/scope"))
+        || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/scope"))
+        || (method == Method::Get && route_path == "/api/audit/log")
+        || (method == Method::Get && route_path == "/api/incidents")
+        || (method == Method::Get && route_path.starts_with("/api/incidents/"))
+        || (method == Method::Post && route_path == "/api/incidents")
+        || (method == Method::Post && route_path.starts_with("/api/incidents/") && route_path.ends_with("/update"))
+        || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/logs"))
+        || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/inventory"))
+        || (method == Method::Get && route_path == "/api/fleet/inventory")
+        || (method == Method::Post && route_path == "/api/detection/weights")
+        || (method == Method::Get && route_path == "/api/detection/weights")
+        || (method == Method::Get && route_path == "/api/reports")
+        || (method == Method::Get && route_path == "/api/reports/executive-summary")
+        || (method == Method::Get && route_path.starts_with("/api/reports/"))
+        || (method == Method::Delete && route_path.starts_with("/api/reports/"))
+        || (method == Method::Get && route_path == "/api/updates/releases")
+        || (method == Method::Delete && route_path.starts_with("/api/agents/"))
+        || (method == Method::Get && route_path == "/api/sigma/rules")
+        || (method == Method::Get && route_path == "/api/sigma/stats")
+        || (method == Method::Get && route_path == "/api/ocsf/schema")
+        || (method == Method::Get && route_path == "/api/response/pending")
+        || (method == Method::Get && route_path == "/api/response/requests")
+        || (method == Method::Get && route_path == "/api/response/audit")
+        || (method == Method::Get && route_path == "/api/response/stats")
+        || (method == Method::Get && route_path == "/api/feature-flags")
+        || (method == Method::Get && route_path == "/api/process-tree")
+        || (method == Method::Get && route_path == "/api/process-tree/deep-chains")
+        || (method == Method::Get && route_path == "/api/spool/stats")
+        || (method == Method::Get && route_path == "/api/rbac/users")
+        || (method == Method::Post && route_path == "/api/ueba/observe")
+        || (method == Method::Get && route_path == "/api/ueba/risky")
+        || (method == Method::Get && route_path.starts_with("/api/ueba/entity/"))
+        || (method == Method::Post && route_path == "/api/beacon/connection")
+        || (method == Method::Post && route_path == "/api/beacon/dns")
+        || (method == Method::Get && route_path == "/api/beacon/analyze")
+        || (method == Method::Post && route_path == "/api/killchain/reconstruct")
+        || (method == Method::Post && route_path == "/api/lateral/connection")
+        || (method == Method::Get && route_path == "/api/lateral/analyze")
+        || (method == Method::Post && route_path == "/api/kernel/event")
+        || (method == Method::Get && route_path == "/api/kernel/recent")
+        || (method == Method::Get && route_path == "/api/playbooks")
+        || (method == Method::Post && route_path == "/api/playbooks")
+        || (method == Method::Post && route_path == "/api/playbooks/execute")
+        || (method == Method::Get && route_path == "/api/playbooks/executions")
+        || (method == Method::Post && route_path == "/api/live-response/session")
+        || (method == Method::Post && route_path == "/api/live-response/command")
+        || (method == Method::Get && route_path == "/api/live-response/sessions")
+        || (method == Method::Get && route_path == "/api/live-response/audit")
+        || (method == Method::Post && route_path == "/api/remediation/plan")
+        || (method == Method::Get && route_path == "/api/remediation/results")
+        || (method == Method::Get && route_path == "/api/remediation/stats")
+        || (method == Method::Get && route_path == "/api/escalation/policies")
+        || (method == Method::Post && route_path == "/api/escalation/policies")
+        || (method == Method::Post && route_path == "/api/escalation/start")
+        || (method == Method::Post && route_path == "/api/escalation/acknowledge")
+        || (method == Method::Get && route_path == "/api/escalation/active")
+        || (method == Method::Post && route_path == "/api/escalation/check-sla")
+        || (method == Method::Get && route_path == "/api/evidence/plan/linux")
+        || (method == Method::Get && route_path == "/api/evidence/plan/macos")
+        || (method == Method::Get && route_path == "/api/evidence/plan/windows")
+        || (method == Method::Post && route_path == "/api/containment/commands")
         // Analyst console
-        || (method == Method::Get && url == "/api/cases") || (method == Method::Get && url.starts_with("/api/cases?"))
-        || (method == Method::Post && url == "/api/cases")
-        || (method == Method::Get && url == "/api/cases/stats")
-        || (method == Method::Get && url.starts_with("/api/cases/"))
-        || (method == Method::Post && url.starts_with("/api/cases/"))
-        || (method == Method::Get && url == "/api/queue/alerts")
-        || (method == Method::Get && url == "/api/queue/stats")
-        || (method == Method::Post && url == "/api/queue/acknowledge")
-        || (method == Method::Post && url == "/api/queue/assign")
-        || (method == Method::Post && url == "/api/events/search")
-        || (method == Method::Get && url.starts_with("/api/timeline/"))
-        || (method == Method::Post && url == "/api/investigation/graph")
-        || (method == Method::Post && url == "/api/response/request")
-        || (method == Method::Post && url == "/api/response/approve")
-        || (method == Method::Post && url == "/api/response/execute")
-        || (method == Method::Get && url == "/api/response/approvals")
+        || (method == Method::Get && route_path == "/api/cases")
+        || (method == Method::Post && route_path == "/api/cases")
+        || (method == Method::Get && route_path == "/api/cases/stats")
+        || (method == Method::Get && route_path.starts_with("/api/cases/"))
+        || (method == Method::Post && route_path.starts_with("/api/cases/"))
+        || (method == Method::Get && route_path == "/api/queue/alerts")
+        || (method == Method::Get && route_path == "/api/queue/stats")
+        || (method == Method::Post && route_path == "/api/queue/acknowledge")
+        || (method == Method::Post && route_path == "/api/queue/assign")
+        || (method == Method::Post && route_path == "/api/events/search")
+        || (method == Method::Get && route_path.starts_with("/api/timeline/"))
+        || (method == Method::Post && route_path == "/api/investigation/graph")
+        || (method == Method::Post && route_path == "/api/response/request")
+        || (method == Method::Post && route_path == "/api/response/approve")
+        || (method == Method::Post && route_path == "/api/response/execute")
+        || (method == Method::Get && route_path == "/api/response/approvals")
         // Dead-letter queue & schema
-        || (method == Method::Get && url == "/api/dlq")
-        || (method == Method::Get && url == "/api/dlq/stats")
-        || (method == Method::Delete && url == "/api/dlq")
-        || (method == Method::Get && url == "/api/ocsf/schema/version")
-        || (method == Method::Get && url == "/api/slo/status")
-        || (method == Method::Get && url == "/api/audit/verify")
-        || (method == Method::Get && url == "/api/retention/status")
-        || (method == Method::Post && url == "/api/retention/apply")
-        || (method == Method::Get && url == "/api/session/info")));
+        || (method == Method::Get && route_path == "/api/dlq")
+        || (method == Method::Get && route_path == "/api/dlq/stats")
+        || (method == Method::Delete && route_path == "/api/dlq")
+        || (method == Method::Get && route_path == "/api/ocsf/schema/version")
+        || (method == Method::Get && route_path == "/api/slo/status")
+        || (method == Method::Get && route_path == "/api/audit/verify")
+        || (method == Method::Get && route_path == "/api/retention/status")
+        || (method == Method::Post && route_path == "/api/retention/apply")
+        || (method == Method::Get && route_path == "/api/session/info")));
 
     let auth_identity = authenticate_request(&request, state);
     if needs_auth && !auth_identity.is_authenticated() {
@@ -2956,7 +3022,7 @@ fn handle_api(
 
     // RBAC enforcement for sensitive endpoints
     // Admin token holders bypass RBAC entirely
-    if needs_auth && !check_rbac(state, &url, &method, &auth_identity) {
+    if needs_auth && !check_rbac(state, route_path, &method, &auth_identity) {
         respond_api(
             request,
             state,
@@ -2969,7 +3035,7 @@ fn handle_api(
     }
     let auth_used = needs_auth || auth_identity.is_authenticated();
 
-    let response = match (method.clone(), url.as_str()) {
+    let response = match (method.clone(), route_path) {
         (Method::Get, "/api/auth/check") => {
             let s = state.lock().unwrap();
             let ttl = s.config.security.token_ttl_secs;
@@ -3700,8 +3766,17 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         (Method::Get, "/api/alerts") => {
+            let query = parse_query_string(&url);
+            let limit = query
+                .get("limit")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(100);
+            let offset = query
+                .get("offset")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0);
             let s = state.lock().unwrap();
-            match recent_alerts_json(&s.alerts, 100, 0) {
+            match recent_alerts_json(&s.alerts, limit, offset) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&e, 500),
             }
@@ -3956,16 +4031,29 @@ fn handle_api(
                 {"method": "GET", "path": "/api/telemetry/current", "auth": true, "description": "Latest local telemetry sample"},
                 {"method": "GET", "path": "/api/telemetry/history", "auth": true, "description": "Last 120 local telemetry samples"},
                 {"method": "GET", "path": "/api/checkpoints", "auth": true, "description": "Saved checkpoint metadata"},
+                {"method": "GET", "path": "/api/export/tla", "auth": true, "description": "Export the policy state machine as a TLA+ specification"},
+                {"method": "GET", "path": "/api/export/alloy", "auth": true, "description": "Export the policy state machine as an Alloy model"},
+                {"method": "GET", "path": "/api/export/witnesses", "auth": true, "description": "Export cryptographic proof witnesses recorded during analysis"},
+                {"method": "GET", "path": "/api/research-tracks", "auth": true, "description": "Grouped research and roadmap tracks for the product"},
+                {"method": "GET", "path": "/api/attestation/status", "auth": true, "description": "Attestation verification status and missing checks"},
+                {"method": "GET", "path": "/api/fleet/status", "auth": true, "description": "Fleet health summary for the swarm control plane"},
                 {"method": "GET", "path": "/api/correlation", "auth": true, "description": "Replay-buffer correlation analysis"},
                 {"method": "GET", "path": "/api/alerts", "auth": true, "description": "Last 100 alerts"},
                 {"method": "GET", "path": "/api/alerts/{id}", "auth": true, "description": "Detailed alert view for a specific alert ID"},
                 {"method": "GET", "path": "/api/alerts/count", "auth": true, "description": "Alert count by severity"},
                 {"method": "DELETE", "path": "/api/alerts", "auth": true, "description": "Clear all alerts"},
+                {"method": "POST", "path": "/api/alerts/sample", "auth": true, "description": "Inject a sample alert for testing and demo flows"},
                 {"method": "GET", "path": "/api/alerts/analysis", "auth": true, "description": "Latest alert pattern analysis"},
                 {"method": "POST", "path": "/api/alerts/analysis", "auth": true, "description": "Run on-demand alert analysis with custom window"},
                 {"method": "GET", "path": "/api/alerts/grouped", "auth": true, "description": "Alerts grouped by reason fingerprint"},
+                {"method": "GET", "path": "/api/platform", "auth": true, "description": "Detected platform capabilities and hardware security support"},
                 {"method": "GET", "path": "/api/threat-intel/status", "auth": true, "description": "Threat intelligence indicator inventory status"},
                 {"method": "POST", "path": "/api/threat-intel/ioc", "auth": true, "description": "Submit a new indicator of compromise"},
+                {"method": "GET", "path": "/api/playbooks", "auth": true, "description": "List registered automated response playbooks"},
+                {"method": "POST", "path": "/api/playbooks", "auth": true, "description": "Register or update an automated response playbook"},
+                {"method": "POST", "path": "/api/playbooks/execute", "auth": true, "description": "Start a playbook execution for a specific alert"},
+                {"method": "GET", "path": "/api/playbooks/executions", "auth": true, "description": "List recent playbook execution records"},
+                {"method": "GET", "path": "/api/beacon/analyze", "auth": true, "description": "Analyze beaconing and DGA indicators from recorded network activity"},
                 {"method": "GET", "path": "/api/swarm/intel", "auth": true, "description": "Shared intelligence cache entries"},
                 {"method": "GET", "path": "/api/swarm/intel/stats", "auth": true, "description": "Shared intelligence cache statistics"},
                 {"method": "GET", "path": "/api/status", "auth": true, "description": "Project status manifest"},
@@ -4024,6 +4112,7 @@ fn handle_api(
                 {"method": "POST", "path": "/api/incidents", "auth": true, "description": "Manually create an incident from selected events"},
                 {"method": "POST", "path": "/api/incidents/{id}/update", "auth": true, "description": "Update incident status/assignee/notes"},
                 {"method": "GET", "path": "/api/agents/{id}/activity", "auth": true, "description": "Deep activity snapshot for a single agent including freshness, deployment, logs, inventory, and risk transitions"},
+                {"method": "GET", "path": "/api/agents/{id}/status", "auth": true, "description": "Current enrollment and heartbeat status for a single agent"},
                 {"method": "GET", "path": "/api/agents/{id}/logs", "auth": true, "description": "Retrieve agent logs"},
                 {"method": "POST", "path": "/api/agents/{id}/logs", "auth": false, "description": "Agent log ingestion"},
                 {"method": "GET", "path": "/api/agents/{id}/inventory", "auth": true, "description": "Retrieve agent inventory"},
@@ -4043,6 +4132,12 @@ fn handle_api(
                 {"method": "GET", "path": "/api/audit/verify", "auth": true, "description": "Verify integrity of the cryptographic audit chain"},
                 {"method": "GET", "path": "/api/retention/status", "auth": true, "description": "Current retention policy settings and record counts"},
                 {"method": "POST", "path": "/api/retention/apply", "auth": true, "description": "Apply retention policies to trim old records"},
+                {"method": "GET", "path": "/api/queue/alerts", "auth": true, "description": "Current analyst alert queue with SLA metadata"},
+                {"method": "GET", "path": "/api/queue/stats", "auth": true, "description": "Alert queue backlog and SLA summary"},
+                {"method": "POST", "path": "/api/queue/acknowledge", "auth": true, "description": "Acknowledge a queued alert"},
+                {"method": "POST", "path": "/api/queue/assign", "auth": true, "description": "Assign a queued alert to an analyst"},
+                {"method": "GET", "path": "/api/timeline/host", "auth": true, "description": "Host investigation timeline filtered by hostname query parameter"},
+                {"method": "GET", "path": "/api/timeline/agent", "auth": true, "description": "Agent investigation timeline filtered by agent_id query parameter"},
             ]);
             json_response(&endpoints.to_string(), 200)
         }
@@ -5706,7 +5801,7 @@ fn handle_api(
         }
 
         // ── Analyst Console: Timeline ──────────────────────────────
-        (Method::Get, _) if url.starts_with("/api/timeline/host") => {
+        (Method::Get, "/api/timeline/host") => {
             let hostname = url_param(&url, "hostname").unwrap_or_default();
             if hostname.is_empty() {
                 error_json("hostname parameter required", 400)
@@ -5721,7 +5816,7 @@ fn handle_api(
                 )
             }
         }
-        (Method::Get, _) if url.starts_with("/api/timeline/agent") => {
+        (Method::Get, "/api/timeline/agent") => {
             let agent_id = url_param(&url, "agent_id").unwrap_or_default();
             if agent_id.is_empty() {
                 error_json("agent_id parameter required", 400)
@@ -6042,24 +6137,9 @@ fn handle_api(
         _ => {
             // Dynamic routes with path parameters
             let url_path = url_path(&url);
-            if method == Method::Get
-                && (url == "/api/agents/update" || url.starts_with("/api/agents/update?"))
-            {
+            if method == Method::Get && url_path == "/api/agents/update" {
                 // GET /api/agents/update?current_version=xxx&platform=yyy
                 handle_agent_update_check(&mut request, state)
-            } else if method == Method::Get && url.starts_with("/api/events/export?") {
-                let s = state.lock().unwrap();
-                let query = parse_event_query(&url);
-                let events = filtered_events(&s.event_store, &query);
-                csv_response(&events_to_csv(&events), 200)
-            } else if method == Method::Get && url.starts_with("/api/events?") {
-                let s = state.lock().unwrap();
-                let query = parse_event_query(&url);
-                let events = filtered_events(&s.event_store, &query);
-                match serde_json::to_string(&events) {
-                    Ok(json) => json_response(&json, 200),
-                    Err(e) => error_json(&format!("serialization error: {e}"), 500),
-                }
             } else if method == Method::Get && url_path == "/api/reports/executive-summary" {
                 let s = state.lock().unwrap();
                 let summary = s.report_store.executive_summary(&s.incident_store);
@@ -6122,20 +6202,20 @@ fn handle_api(
                     200,
                 )
             } else if method == Method::Post
-                && url.ends_with("/heartbeat")
-                && url.starts_with("/api/agents/")
+                && url_path.ends_with("/heartbeat")
+                && url_path.starts_with("/api/agents/")
             {
                 // POST /api/agents/{id}/heartbeat
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/heartbeat"))
                     .unwrap_or("");
                 handle_agent_heartbeat(&mut request, state, agent_id)
             } else if method == Method::Get
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/activity")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/activity")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/activity"))
                     .unwrap_or("");
@@ -6148,48 +6228,48 @@ fn handle_api(
                     Err(e) => error_json(&e, 404),
                 }
             } else if method == Method::Get
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/details")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/details")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/details"))
                     .unwrap_or("");
                 handle_agent_details(state, agent_id)
             } else if method == Method::Post
-                && url.starts_with("/api/events/")
-                && url.ends_with("/triage")
+                && url_path.starts_with("/api/events/")
+                && url_path.ends_with("/triage")
             {
-                let event_id = url
+                let event_id = url_path
                     .strip_prefix("/api/events/")
                     .and_then(|rest| rest.strip_suffix("/triage"))
                     .unwrap_or("")
                     .trim_end_matches('/');
                 handle_event_triage(&mut request, state, event_id)
             } else if method == Method::Post
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/scope")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/scope")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/scope"))
                     .unwrap_or("");
                 handle_agent_set_scope(&mut request, state, agent_id)
             } else if method == Method::Get
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/scope")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/scope")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/scope"))
                     .unwrap_or("");
                 handle_agent_get_scope(state, agent_id)
             } else if method == Method::Get
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/status")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/status")
             {
                 // GET /api/agents/{id}/status
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/status"))
                     .unwrap_or("");
@@ -6201,9 +6281,9 @@ fn handle_api(
                     },
                     None => error_json("agent not found", 404),
                 }
-            } else if method == Method::Delete && url.starts_with("/api/agents/") {
+            } else if method == Method::Delete && url_path.starts_with("/api/agents/") {
                 // DELETE /api/agents/{id}
-                let agent_id = url.strip_prefix("/api/agents/").unwrap_or("");
+                let agent_id = url_path.strip_prefix("/api/agents/").unwrap_or("");
                 let mut s = state.lock().unwrap();
                 match s.agent_registry.deregister(agent_id) {
                     Ok(()) => {
@@ -6215,10 +6295,10 @@ fn handle_api(
                 }
             // ── Agent Logs ────────────────────────────────────────
             } else if method == Method::Post
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/logs")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/logs")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/logs"))
                     .unwrap_or("");
@@ -6264,10 +6344,10 @@ fn handle_api(
                     200,
                 )
             } else if method == Method::Get
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/logs")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/logs")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/logs"))
                     .unwrap_or("");
@@ -6279,10 +6359,10 @@ fn handle_api(
                 }
             // ── Agent Inventory ───────────────────────────────────
             } else if method == Method::Post
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/inventory")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/inventory")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
@@ -6323,10 +6403,10 @@ fn handle_api(
                     200,
                 )
             } else if method == Method::Get
-                && url.starts_with("/api/agents/")
-                && url.ends_with("/inventory")
+                && url_path.starts_with("/api/agents/")
+                && url_path.ends_with("/inventory")
             {
-                let agent_id = url
+                let agent_id = url_path
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
@@ -6339,13 +6419,6 @@ fn handle_api(
                     None => error_json("no inventory for this agent", 404),
                 }
             // ── Incidents (dynamic) ───────────────────────────────
-            } else if method == Method::Get && url.starts_with("/api/incidents?") {
-                let s = state.lock().unwrap();
-                let query = parse_query_string(&url);
-                match incidents_json(&s.incident_store, &query) {
-                    Ok(json) => json_response(&json, 200),
-                    Err(e) => error_json(&e, 500),
-                }
             } else if method == Method::Get
                 && url_path.starts_with("/api/incidents/")
                 && url_path.ends_with("/report")
@@ -6612,39 +6685,6 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 404),
                 }
-            } else if method == Method::Get && url.starts_with("/api/events?") {
-                // GET /api/events?agent_id=xxx&limit=100
-                let query = url.strip_prefix("/api/events?").unwrap_or("");
-                let mut agent_id_filter: Option<String> = None;
-                let mut limit = 200usize;
-                for param in query.split('&') {
-                    if let Some(val) = param.strip_prefix("agent_id=") {
-                        agent_id_filter = Some(val.to_string());
-                    } else if let Some(val) = param.strip_prefix("limit=") {
-                        limit = val.parse().unwrap_or(200);
-                    }
-                }
-                let s = state.lock().unwrap();
-                let events = s.event_store.list(agent_id_filter.as_deref(), limit);
-                match serde_json::to_string(&events) {
-                    Ok(json) => json_response(&json, 200),
-                    Err(e) => error_json(&format!("serialization error: {e}"), 500),
-                }
-            } else if method == Method::Get && url.starts_with("/api/alerts?") {
-                let query = parse_query_string(&url);
-                let limit = query
-                    .get("limit")
-                    .and_then(|value| value.parse::<usize>().ok())
-                    .unwrap_or(100);
-                let offset = query
-                    .get("offset")
-                    .and_then(|value| value.parse::<usize>().ok())
-                    .unwrap_or(0);
-                let s = state.lock().unwrap();
-                match recent_alerts_json(&s.alerts, limit, offset) {
-                    Ok(json) => json_response(&json, 200),
-                    Err(e) => error_json(&e, 500),
-                }
             } else if method == Method::Get
                 && url_path.starts_with("/api/alerts/")
                 && url_path != "/api/alerts/count"
@@ -6706,10 +6746,10 @@ fn handle_api(
                 }
             // ── Enterprise: Dynamic routes ───────────────────────────
             } else if method == Method::Get
-                && url.starts_with("/api/hunts/")
-                && url.ends_with("/history")
+                && url_path.starts_with("/api/hunts/")
+                && url_path.ends_with("/history")
             {
-                let hunt_id = url
+                let hunt_id = url_path
                     .trim_start_matches("/api/hunts/")
                     .trim_end_matches("/history");
                 let s = state.lock().unwrap();
@@ -6720,10 +6760,10 @@ fn handle_api(
                     200,
                 )
             } else if method == Method::Post
-                && url.starts_with("/api/hunts/")
-                && url.ends_with("/run")
+                && url_path.starts_with("/api/hunts/")
+                && url_path.ends_with("/run")
             {
-                let hunt_id = url
+                let hunt_id = url_path
                     .trim_start_matches("/api/hunts/")
                     .trim_end_matches("/run")
                     .trim_end_matches('/');
@@ -6750,10 +6790,10 @@ fn handle_api(
                     Err(e) => error_json(&e, 404),
                 }
             } else if method == Method::Post
-                && url.starts_with("/api/content/rules/")
-                && url.ends_with("/test")
+                && url_path.starts_with("/api/content/rules/")
+                && url_path.ends_with("/test")
             {
-                let rule_id = url
+                let rule_id = url_path
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/test")
                     .trim_end_matches('/');
@@ -6772,10 +6812,10 @@ fn handle_api(
                     Err(e) => error_json(&e, 404),
                 }
             } else if method == Method::Post
-                && url.starts_with("/api/content/rules/")
-                && url.ends_with("/promote")
+                && url_path.starts_with("/api/content/rules/")
+                && url_path.ends_with("/promote")
             {
-                let rule_id = url
+                let rule_id = url_path
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/promote")
                     .trim_end_matches('/');
@@ -6818,10 +6858,10 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post
-                && url.starts_with("/api/content/rules/")
-                && url.ends_with("/rollback")
+                && url_path.starts_with("/api/content/rules/")
+                && url_path.ends_with("/rollback")
             {
-                let rule_id = url
+                let rule_id = url_path
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/rollback")
                     .trim_end_matches('/');
@@ -6845,10 +6885,10 @@ fn handle_api(
                     Err(e) => error_json(&e, 404),
                 }
             } else if method == Method::Get
-                && url.starts_with("/api/entities/")
-                && url.ends_with("/timeline")
+                && url_path.starts_with("/api/entities/")
+                && url_path.ends_with("/timeline")
             {
-                let path = url
+                let path = url_path
                     .trim_start_matches("/api/entities/")
                     .trim_end_matches("/timeline")
                     .trim_end_matches('/');
@@ -6866,8 +6906,8 @@ fn handle_api(
                     s.enterprise.ticket_syncs(),
                 );
                 json_response(&serde_json::json!({"kind": kind, "id": id, "timeline": timeline, "count": timeline.len()}).to_string(), 200)
-            } else if method == Method::Get && url.starts_with("/api/entities/") {
-                let path = url
+            } else if method == Method::Get && url_path.starts_with("/api/entities/") {
+                let path = url_path
                     .trim_start_matches("/api/entities/")
                     .trim_end_matches('/');
                 let mut parts = path.splitn(2, '/');
@@ -7048,7 +7088,7 @@ fn handle_api(
             // ── Phase 32: Advanced XDR endpoints ────────────────────────
 
             // UEBA
-            } else if method == Method::Post && url == "/api/ueba/observe" {
+            } else if method == Method::Post && url_path == "/api/ueba/observe" {
                 let body = read_body_limited(&mut request, 8192);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::ueba::BehaviorObservation>(&b)
@@ -7067,12 +7107,12 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/ueba/risky" {
+            } else if method == Method::Get && url_path == "/api/ueba/risky" {
                 let s = state.lock().unwrap();
                 let risky = s.ueba_engine.risky_entities(10.0);
                 json_response(&serde_json::to_string(&risky).unwrap(), 200)
-            } else if method == Method::Get && url.starts_with("/api/ueba/entity/") {
-                let entity_id = url.trim_start_matches("/api/ueba/entity/");
+            } else if method == Method::Get && url_path.starts_with("/api/ueba/entity/") {
+                let entity_id = url_path.trim_start_matches("/api/ueba/entity/");
                 let s = state.lock().unwrap();
                 match s
                     .ueba_engine
@@ -7083,7 +7123,7 @@ fn handle_api(
                 }
 
             // Beacon / DGA
-            } else if method == Method::Post && url == "/api/beacon/connection" {
+            } else if method == Method::Post && url_path == "/api/beacon/connection" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::beacon::ConnectionRecord>(&b)
@@ -7096,7 +7136,7 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Post && url == "/api/beacon/dns" {
+            } else if method == Method::Post && url_path == "/api/beacon/dns" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::beacon::DnsRecord>(&b).map_err(|e| e.to_string())
@@ -7108,13 +7148,13 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/beacon/analyze" {
+            } else if method == Method::Get && url_path == "/api/beacon/analyze" {
                 let s = state.lock().unwrap();
                 let summary = s.beacon_detector.analyze();
                 json_response(&serde_json::to_string(&summary).unwrap(), 200)
 
             // Kill Chain
-            } else if method == Method::Post && url == "/api/killchain/reconstruct" {
+            } else if method == Method::Post && url_path == "/api/killchain/reconstruct" {
                 let body = read_body_limited(&mut request, 16384);
                 match body.and_then(|b| {
                     serde_json::from_str::<Vec<crate::kill_chain::KillChainEvent>>(&b)
@@ -7129,7 +7169,7 @@ fn handle_api(
                 }
 
             // Lateral Movement
-            } else if method == Method::Post && url == "/api/lateral/connection" {
+            } else if method == Method::Post && url_path == "/api/lateral/connection" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::lateral::RemoteConnection>(&b)
@@ -7142,13 +7182,13 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/lateral/analyze" {
+            } else if method == Method::Get && url_path == "/api/lateral/analyze" {
                 let s = state.lock().unwrap();
                 let summary = s.lateral_detector.analyze();
                 json_response(&serde_json::to_string(&summary).unwrap(), 200)
 
             // Kernel Events
-            } else if method == Method::Post && url == "/api/kernel/event" {
+            } else if method == Method::Post && url_path == "/api/kernel/event" {
                 let body = read_body_limited(&mut request, 8192);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::kernel_events::KernelEvent>(&b)
@@ -7161,17 +7201,17 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/kernel/recent" {
+            } else if method == Method::Get && url_path == "/api/kernel/recent" {
                 let s = state.lock().unwrap();
                 let events = s.kernel_event_stream.recent(100, None);
                 json_response(&serde_json::to_string(&events).unwrap(), 200)
 
             // Playbooks
-            } else if method == Method::Get && url == "/api/playbooks" {
+            } else if method == Method::Get && url_path == "/api/playbooks" {
                 let s = state.lock().unwrap();
                 let pbs = s.playbook_engine.list_playbooks();
                 json_response(&serde_json::to_string(&pbs).unwrap(), 200)
-            } else if method == Method::Post && url == "/api/playbooks" {
+            } else if method == Method::Post && url_path == "/api/playbooks" {
                 let body = read_body_limited(&mut request, 16384);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::playbook::Playbook>(&b).map_err(|e| e.to_string())
@@ -7183,7 +7223,7 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Post && url == "/api/playbooks/execute" {
+            } else if method == Method::Post && url_path == "/api/playbooks/execute" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
@@ -7203,13 +7243,13 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/playbooks/executions" {
+            } else if method == Method::Get && url_path == "/api/playbooks/executions" {
                 let s = state.lock().unwrap();
                 let execs = s.playbook_engine.recent_executions(50);
                 json_response(&serde_json::to_string(&execs).unwrap(), 200)
 
             // Live Response
-            } else if method == Method::Post && url == "/api/live-response/session" {
+            } else if method == Method::Post && url_path == "/api/live-response/session" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
@@ -7232,7 +7272,7 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Post && url == "/api/live-response/command" {
+            } else if method == Method::Post && url_path == "/api/live-response/command" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
@@ -7260,11 +7300,11 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/live-response/sessions" {
+            } else if method == Method::Get && url_path == "/api/live-response/sessions" {
                 let s = state.lock().unwrap();
                 let sessions = s.live_response_engine.all_sessions();
                 json_response(&serde_json::to_string(&sessions).unwrap(), 200)
-            } else if method == Method::Get && url == "/api/live-response/audit" {
+            } else if method == Method::Get && url_path == "/api/live-response/audit" {
                 let s = state.lock().unwrap();
                 let log: Vec<serde_json::Value> = s
                     .live_response_engine
@@ -7275,7 +7315,7 @@ fn handle_api(
                 json_response(&serde_json::to_string(&log).unwrap(), 200)
 
             // Remediation
-            } else if method == Method::Post && url == "/api/remediation/plan" {
+            } else if method == Method::Post && url_path == "/api/remediation/plan" {
                 let body = read_body_limited(&mut request, 8192);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
@@ -7323,21 +7363,21 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/remediation/results" {
+            } else if method == Method::Get && url_path == "/api/remediation/results" {
                 let s = state.lock().unwrap();
                 let results = s.remediation_engine.recent_results(50);
                 json_response(&serde_json::to_string(&results).unwrap(), 200)
-            } else if method == Method::Get && url == "/api/remediation/stats" {
+            } else if method == Method::Get && url_path == "/api/remediation/stats" {
                 let s = state.lock().unwrap();
                 let stats = s.remediation_engine.stats();
                 json_response(&serde_json::to_string(&stats).unwrap(), 200)
 
             // Escalation
-            } else if method == Method::Get && url == "/api/escalation/policies" {
+            } else if method == Method::Get && url_path == "/api/escalation/policies" {
                 let s = state.lock().unwrap();
                 let policies = s.escalation_engine.list_policies();
                 json_response(&serde_json::to_string(&policies).unwrap(), 200)
-            } else if method == Method::Post && url == "/api/escalation/policies" {
+            } else if method == Method::Post && url_path == "/api/escalation/policies" {
                 let body = read_body_limited(&mut request, 16384);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::escalation::EscalationPolicy>(&b)
@@ -7350,7 +7390,7 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Post && url == "/api/escalation/start" {
+            } else if method == Method::Post && url_path == "/api/escalation/start" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
@@ -7373,7 +7413,7 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Post && url == "/api/escalation/acknowledge" {
+            } else if method == Method::Post && url_path == "/api/escalation/acknowledge" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
@@ -7391,11 +7431,11 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-            } else if method == Method::Get && url == "/api/escalation/active" {
+            } else if method == Method::Get && url_path == "/api/escalation/active" {
                 let s = state.lock().unwrap();
                 let active = s.escalation_engine.active_escalations();
                 json_response(&serde_json::to_string(&active).unwrap(), 200)
-            } else if method == Method::Post && url == "/api/escalation/check-sla" {
+            } else if method == Method::Post && url_path == "/api/escalation/check-sla" {
                 let now = chrono::Utc::now().timestamp_millis() as u64;
                 let mut s = state.lock().unwrap();
                 let escalated = s.escalation_engine.check_sla(now);
@@ -7405,18 +7445,18 @@ fn handle_api(
                 )
 
             // Evidence Collection Plans
-            } else if method == Method::Get && url == "/api/evidence/plan/linux" {
+            } else if method == Method::Get && url_path == "/api/evidence/plan/linux" {
                 let plan = crate::forensics::EvidenceCollectionPlan::linux();
                 json_response(&serde_json::to_string(&plan).unwrap(), 200)
-            } else if method == Method::Get && url == "/api/evidence/plan/macos" {
+            } else if method == Method::Get && url_path == "/api/evidence/plan/macos" {
                 let plan = crate::forensics::EvidenceCollectionPlan::macos();
                 json_response(&serde_json::to_string(&plan).unwrap(), 200)
-            } else if method == Method::Get && url == "/api/evidence/plan/windows" {
+            } else if method == Method::Get && url_path == "/api/evidence/plan/windows" {
                 let plan = crate::forensics::EvidenceCollectionPlan::windows();
                 json_response(&serde_json::to_string(&plan).unwrap(), 200)
 
             // Containment Commands
-            } else if method == Method::Post && url == "/api/containment/commands" {
+            } else if method == Method::Post && url_path == "/api/containment/commands" {
                 let body = read_body_limited(&mut request, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())

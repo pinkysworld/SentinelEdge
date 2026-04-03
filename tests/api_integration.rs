@@ -334,8 +334,9 @@ fn unknown_api_endpoint_returns_404() {
 
 #[test]
 fn export_tla_returns_valid_module() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/export/tla", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("export tla request");
     assert_eq!(resp.status(), 200);
@@ -351,8 +352,9 @@ fn export_tla_returns_valid_module() {
 
 #[test]
 fn export_alloy_returns_valid_module() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/export/alloy", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("export alloy request");
     assert_eq!(resp.status(), 200);
@@ -368,8 +370,9 @@ fn export_alloy_returns_valid_module() {
 
 #[test]
 fn export_witnesses_returns_empty_array_initially() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/export/witnesses", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("export witnesses request");
     assert_eq!(resp.status(), 200);
@@ -390,6 +393,7 @@ fn export_witnesses_populated_after_run_demo() {
 
     // Now fetch witnesses
     let resp = ureq::get(&format!("{}/api/export/witnesses", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("export witnesses after demo");
     assert_eq!(resp.status(), 200);
@@ -406,8 +410,9 @@ fn export_witnesses_populated_after_run_demo() {
 
 #[test]
 fn research_tracks_returns_grouped_tracks() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/research-tracks", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("research-tracks request");
     assert_eq!(resp.status(), 200);
@@ -432,8 +437,9 @@ fn research_tracks_returns_grouped_tracks() {
 
 #[test]
 fn attestation_status_returns_verification_result() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/attestation/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("attestation status request");
     assert_eq!(resp.status(), 200);
@@ -473,8 +479,9 @@ fn auth_check_with_valid_token_returns_ok() {
 
 #[test]
 fn fleet_status_returns_health_report() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/fleet/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("fleet status");
     assert_eq!(resp.status(), 200);
@@ -511,8 +518,9 @@ fn fleet_register_without_auth_returns_401() {
 
 #[test]
 fn enforcement_status_returns_enforcer_info() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/enforcement/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("enforcement status");
     assert_eq!(resp.status(), 200);
@@ -551,8 +559,9 @@ fn enforcement_quarantine_without_auth_returns_401() {
 
 #[test]
 fn threat_intel_status_returns_ioc_count() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/threat-intel/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("threat intel status");
     assert_eq!(resp.status(), 200);
@@ -590,8 +599,9 @@ fn threat_intel_ioc_without_auth_returns_401() {
 
 #[test]
 fn digital_twin_status_returns_twin_count() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/digital-twin/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("digital twin status");
     assert_eq!(resp.status(), 200);
@@ -629,8 +639,9 @@ fn digital_twin_simulate_without_auth_returns_401() {
 
 #[test]
 fn compliance_status_returns_report() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/compliance/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("compliance status");
     assert_eq!(resp.status(), 200);
@@ -641,8 +652,9 @@ fn compliance_status_returns_report() {
 
 #[test]
 fn energy_status_returns_budget_info() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/energy/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("energy status");
     assert_eq!(resp.status(), 200);
@@ -680,8 +692,9 @@ fn energy_consume_without_auth_returns_401() {
 
 #[test]
 fn tenants_count_returns_count() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/tenants/count", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("tenants count");
     assert_eq!(resp.status(), 200);
@@ -693,8 +706,9 @@ fn tenants_count_returns_count() {
 
 #[test]
 fn platform_returns_capabilities() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/platform", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("platform");
     assert_eq!(resp.status(), 200);
@@ -731,8 +745,9 @@ fn correlation_without_auth_returns_401() {
 
 #[test]
 fn side_channel_status_returns_report() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/side-channel/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("side channel status");
     assert_eq!(resp.status(), 200);
@@ -746,8 +761,9 @@ fn side_channel_status_returns_report() {
 
 #[test]
 fn quantum_key_status_returns_epochs() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/quantum/key-status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("quantum key status");
     assert_eq!(resp.status(), 200);
@@ -762,6 +778,7 @@ fn quantum_key_status_returns_epochs() {
 fn quantum_rotate_increments_epoch() {
     let (port, token) = spawn_test_server();
     let before = ureq::get(&format!("{}/api/quantum/key-status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .unwrap()
         .into_json::<serde_json::Value>()
@@ -792,8 +809,9 @@ fn quantum_rotate_without_auth_returns_401() {
 
 #[test]
 fn privacy_budget_returns_remaining() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/privacy/budget", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("privacy budget");
     assert_eq!(resp.status(), 200);
@@ -832,8 +850,9 @@ fn policy_vm_execute_without_auth_returns_401() {
 
 #[test]
 fn fingerprint_status_returns_info() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/fingerprint/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("fingerprint status");
     assert_eq!(resp.status(), 200);
@@ -871,8 +890,9 @@ fn harness_run_without_auth_returns_401() {
 
 #[test]
 fn monitor_status_returns_properties() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/monitor/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("monitor status");
     assert_eq!(resp.status(), 200);
@@ -885,8 +905,9 @@ fn monitor_status_returns_properties() {
 
 #[test]
 fn monitor_violations_returns_list() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/monitor/violations", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("monitor violations");
     assert_eq!(resp.status(), 200);
@@ -899,8 +920,9 @@ fn monitor_violations_returns_list() {
 
 #[test]
 fn deception_status_returns_report() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/deception/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("deception status");
     assert_eq!(resp.status(), 200);
@@ -988,8 +1010,9 @@ fn policy_compose_without_auth_returns_401() {
 
 #[test]
 fn drift_status_returns_sample_count() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/drift/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("drift status");
     assert_eq!(resp.status(), 200);
@@ -1025,8 +1048,9 @@ fn drift_reset_without_auth_returns_401() {
 
 #[test]
 fn causal_graph_returns_counts() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/causal/graph", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("causal graph");
     assert_eq!(resp.status(), 200);
@@ -1039,8 +1063,9 @@ fn causal_graph_returns_counts() {
 
 #[test]
 fn patches_returns_plan_info() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/patches", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("patches");
     assert_eq!(resp.status(), 200);
@@ -1080,8 +1105,9 @@ fn offload_decide_without_auth_returns_401() {
 
 #[test]
 fn swarm_posture_returns_posture() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/swarm/posture", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("swarm posture");
     assert_eq!(resp.status(), 200);
@@ -1119,8 +1145,9 @@ fn energy_harvest_without_auth_returns_401() {
 
 #[test]
 fn tls_status_returns_plain_mode() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let body: serde_json::Value = ureq::get(&format!("{}/api/tls/status", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .unwrap()
         .into_json()
@@ -1324,8 +1351,9 @@ fn config_reload_without_auth_returns_401() {
 
 #[test]
 fn mesh_health_returns_connected() {
-    let (port, _token) = spawn_test_server();
+    let (port, token) = spawn_test_server();
     let resp = ureq::get(&format!("{}/api/mesh/health", base(port)))
+        .set("Authorization", &auth_header(&token))
         .call()
         .unwrap();
     let body: serde_json::Value = resp.into_json().unwrap();
@@ -1514,6 +1542,15 @@ fn endpoints_returns_array() {
     assert!(arr
         .iter()
         .any(|entry| entry["path"] == "/api/threat-intel/status" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/playbooks" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/timeline/host" && entry["auth"] == true));
+    assert!(arr
+        .iter()
+        .any(|entry| entry["path"] == "/api/agents/{id}/status" && entry["auth"] == true));
 }
 
 #[test]
@@ -1560,6 +1597,41 @@ fn query_string_subroutes_still_hit_exact_handlers() {
     assert_eq!(stats_resp.status(), 200);
     let stats_body: serde_json::Value = stats_resp.into_json().unwrap();
     assert!(stats_body["total"].as_u64().is_some());
+}
+
+#[test]
+fn advanced_operational_routes_require_auth_and_accept_query_strings() {
+    let (port, token) = spawn_test_server();
+
+    for path in [
+        "/api/playbooks",
+        "/api/fleet/status",
+        "/api/platform",
+        "/api/beacon/analyze",
+        "/api/evidence/plan/linux",
+        "/api/updates/releases",
+    ] {
+        match ureq::get(&format!("{}{}", base(port), path)).call() {
+            Err(ureq::Error::Status(401, _)) => {}
+            other => panic!("expected 401 for {path}, got {other:?}"),
+        }
+    }
+
+    for path in [
+        "/api/playbooks?noop=1",
+        "/api/fleet/status?noop=1",
+        "/api/platform?noop=1",
+        "/api/beacon/analyze?noop=1",
+        "/api/evidence/plan/linux?noop=1",
+        "/api/ueba/risky?noop=1",
+        "/api/updates/releases?noop=1",
+    ] {
+        let resp = ureq::get(&format!("{}{}", base(port), path))
+            .set("Authorization", &auth_header(&token))
+            .call()
+            .unwrap_or_else(|err| panic!("authed request failed for {path}: {err}"));
+        assert_eq!(resp.status(), 200, "expected 200 for {path}");
+    }
 }
 
 #[test]
@@ -1685,6 +1757,7 @@ fn create_enrollment_token_and_enroll_agent() {
 
     // Get agent status
     let resp = ureq::get(&format!("{}/api/agents/{}/status", base(port), agent_id))
+        .set("Authorization", &auth_header(&token))
         .call()
         .expect("agent status");
     assert_eq!(resp.status(), 200);
@@ -2664,6 +2737,58 @@ fn timeline_endpoints_support_query_string_routing() {
     .unwrap();
     assert_eq!(agent_timeline["agent_id"].as_str().unwrap(), agent_id);
     assert_eq!(agent_timeline["count"].as_u64().unwrap(), 2);
+}
+
+#[test]
+fn timeline_prefix_aliases_do_not_match_exact_routes() {
+    let (port, token) = spawn_test_server();
+
+    for path in [
+        "/api/timeline/hostile?hostname=test-host",
+        "/api/timeline/agentic?agent_id=test-agent",
+    ] {
+        match ureq::get(&format!("{}{}", base(port), path))
+            .set("Authorization", &auth_header(&token))
+            .call()
+        {
+            Err(ureq::Error::Status(404, _)) => {}
+            other => panic!("expected 404 for {path}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn agent_status_requires_auth() {
+    let (port, token) = spawn_test_server();
+
+    let token_resp = ureq::post(&format!("{}/api/agents/token", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({
+            "hostname": "auth-check-agent",
+            "max_uses": 1
+        }))
+        .expect("create enrollment token");
+    let enrollment_token = token_resp.into_json::<serde_json::Value>().unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let enroll = ureq::post(&format!("{}/api/agents/enroll", base(port)))
+        .set("Content-Type", "application/json")
+        .send_string(&format!(
+            r#"{{"enrollment_token":"{}","hostname":"auth-check-agent","platform":"linux","version":"1.0.0"}}"#,
+            enrollment_token
+        ))
+        .expect("enroll agent for status auth test");
+    let agent_id = enroll.into_json::<serde_json::Value>().unwrap()["agent_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    match ureq::get(&format!("{}/api/agents/{}/status", base(port), agent_id)).call() {
+        Err(ureq::Error::Status(401, _)) => {}
+        other => panic!("expected 401 for agent status without auth, got {other:?}"),
+    }
 }
 
 #[test]
