@@ -6176,7 +6176,7 @@ fn handle_api(mut request: Request, state: &Arc<Mutex<AppState>>, _site_dir: &Pa
                 let body = read_body_limited(&mut request, 8192);
                 match body.and_then(|b| serde_json::from_str::<crate::kernel_events::KernelEvent>(&b).map_err(|e| e.to_string())) {
                     Ok(event) => {
-                        let mut s = state.lock().unwrap();
+                        let s = state.lock().unwrap();
                         s.kernel_event_stream.push(event);
                         json_response(r#"{"status":"recorded"}"#, 200)
                     }

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 const WS_MAGIC: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const OPCODE_TEXT: u8 = 0x01;
 const OPCODE_CLOSE: u8 = 0x08;
-const OPCODE_PING: u8 = 0x09;
+const _OPCODE_PING: u8 = 0x09;
 const OPCODE_PONG: u8 = 0x0A;
 
 /// Maximum allowed WebSocket frame payload (16 MiB).

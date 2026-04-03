@@ -332,7 +332,6 @@ impl AtomicUpdater {
 
     /// Explicitly rollback to the previous version.
     pub fn rollback_to_previous(&mut self, current_binary_path: &str) -> Result<(), String> {
-        let backup_path = format!("{}/backup-{}", self.staging_dir, self.current_version);
         // Look for any backup file.
         let entries = fs::read_dir(&self.staging_dir).map_err(|e| e.to_string())?;
         for entry in entries.flatten() {
