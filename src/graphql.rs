@@ -308,6 +308,9 @@ fn parse_args(input: &str) -> HashMap<String, serde_json::Value> {
             while end < remaining.len() {
                 if remaining.as_bytes()[end] == b'\\' {
                     end += 2; // skip escaped character (\\, \", etc.)
+                    if end >= remaining.len() {
+                        break;
+                    }
                     continue;
                 }
                 if remaining.as_bytes()[end] == b'"' {

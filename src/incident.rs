@@ -203,7 +203,7 @@ impl IncidentStore {
                     && event_ids.iter().any(|eid| inc.event_ids.contains(eid))
             });
             if already_covered {
-                // Merge new event_ids into existing incident
+                // Merge new event_ids into the first matching open incident only
                 for inc in self.incidents.iter_mut() {
                     if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating) {
                         if event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
@@ -213,6 +213,7 @@ impl IncidentStore {
                                 }
                             }
                             inc.updated_at = chrono::Utc::now().to_rfc3339();
+                            break;
                         }
                     }
                 }
@@ -276,7 +277,7 @@ impl IncidentStore {
                     && event_ids.iter().any(|eid| inc.event_ids.contains(eid))
             });
             if already_covered {
-                // Merge new event_ids into existing incident (same as technique clustering)
+                // Merge new event_ids into first matching open incident only
                 for inc in self.incidents.iter_mut() {
                     if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating) {
                         if event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
@@ -286,6 +287,7 @@ impl IncidentStore {
                                 }
                             }
                             inc.updated_at = chrono::Utc::now().to_rfc3339();
+                            break;
                         }
                     }
                 }

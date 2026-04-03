@@ -2993,6 +2993,8 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/process-tree/deep-chains")
         || (method == Method::Get && route_path == "/api/spool/stats")
         || (method == Method::Get && route_path == "/api/rbac/users")
+        || (method == Method::Post && route_path == "/api/rbac/users")
+        || (method == Method::Delete && route_path.starts_with("/api/rbac/users/"))
         || (method == Method::Post && route_path == "/api/ueba/observe")
         || (method == Method::Get && route_path == "/api/ueba/risky")
         || (method == Method::Get && route_path.starts_with("/api/ueba/entity/"))
