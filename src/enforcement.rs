@@ -452,7 +452,7 @@ impl SoftwareTpm {
 
     /// Read current PCR value.
     pub fn pcr_read(&self, index: u8) -> Option<String> {
-        self.pcrs.get(&index).map(|v| hex::encode(v))
+        self.pcrs.get(&index).map(hex::encode)
     }
 
     /// Generate an attestation quote over selected PCRs.
@@ -560,6 +560,12 @@ pub struct HealingAction {
     pub action_type: String,
     pub affected_nodes: Vec<String>,
     pub detail: String,
+}
+
+impl Default for NetworkTopology {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NetworkTopology {
@@ -888,10 +894,8 @@ impl EnforcementEngine {
                     ), true),
                 ],
                 "windows" => vec![
-                    ContainmentCommand::new("firewall_block_all", &format!(
-                        "netsh advfirewall firewall add rule name=WardexIsolate dir=out action=block remoteip=any && \
-                         netsh advfirewall firewall add rule name=WardexIsolateIn dir=in action=block remoteip=any"
-                    ), true),
+                    ContainmentCommand::new("firewall_block_all", "netsh advfirewall firewall add rule name=WardexIsolate dir=out action=block remoteip=any && \
+                         netsh advfirewall firewall add rule name=WardexIsolateIn dir=in action=block remoteip=any", true),
                     ContainmentCommand::new("wfp_block", &format!(
                         "Block all network via Windows Filtering Platform for {target}"
                     ), true),

@@ -43,11 +43,10 @@ impl ProcessTree {
         // If the process already exists, remove it from old parent's children list
         if let Some(old_node) = self.nodes.get(&pid) {
             let old_ppid = old_node.ppid;
-            if old_ppid != ppid {
-                if let Some(siblings) = self.children.get_mut(&old_ppid) {
+            if old_ppid != ppid
+                && let Some(siblings) = self.children.get_mut(&old_ppid) {
                     siblings.retain(|&p| p != pid);
                 }
-            }
         }
         self.nodes.insert(pid, node);
         let children = self.children.entry(ppid).or_default();
@@ -119,7 +118,7 @@ impl ProcessTree {
     pub fn find_by_cmdline(&self, pattern: &str) -> Vec<&ProcessNode> {
         let pl = pattern.to_lowercase();
         self.nodes.values()
-            .filter(|n| n.cmd_line.as_ref().map_or(false, |c| c.to_lowercase().contains(&pl)))
+            .filter(|n| n.cmd_line.as_ref().is_some_and(|c| c.to_lowercase().contains(&pl)))
             .collect()
     }
 
@@ -204,8 +203,8 @@ impl ProcessTree {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines().skip(1) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    if let (Ok(pid), Ok(ppid)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                if parts.len() >= 3
+                    && let (Ok(pid), Ok(ppid)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
                         let name = parts[2..].join(" ");
                         self.upsert(ProcessNode {
                             pid, ppid, name, cmd_line: None,
@@ -213,7 +212,6 @@ impl ProcessTree {
                             hostname: self.hostname.clone(), alive: true,
                         });
                     }
-                }
             }
         }
     }

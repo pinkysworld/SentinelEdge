@@ -48,11 +48,10 @@ impl PlaybookTrigger {
         if self.manual_only {
             return false;
         }
-        if let Some(min) = self.min_severity {
-            if severity < min {
+        if let Some(min) = self.min_severity
+            && severity < min {
                 return false;
             }
-        }
         let reason_ok = self.alert_reasons.is_empty()
             || self
                 .alert_reasons

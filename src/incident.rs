@@ -54,14 +54,12 @@ impl IncidentStore {
 
     fn load(&mut self) {
         let path = Path::new(&self.store_path);
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                if let Ok(incidents) = serde_json::from_str::<Vec<Incident>>(&content) {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(path)
+                && let Ok(incidents) = serde_json::from_str::<Vec<Incident>>(&content) {
                     self.next_id = incidents.iter().map(|i| i.id).max().unwrap_or(0) + 1;
                     self.incidents = incidents;
                 }
-            }
-        }
     }
 
     fn persist(&self) {
@@ -152,9 +150,8 @@ impl IncidentStore {
                 };
                 if status_str != s { return false; }
             }
-            if let Some(sev) = severity {
-                if i.severity != sev { return false; }
-            }
+            if let Some(sev) = severity
+                && i.severity != sev { return false; }
             true
         }).collect()
     }
@@ -205,8 +202,8 @@ impl IncidentStore {
             if already_covered {
                 // Merge new event_ids into the first matching open incident only
                 for inc in self.incidents.iter_mut() {
-                    if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating) {
-                        if event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
+                    if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating)
+                        && event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
                             for eid in &event_ids {
                                 if !inc.event_ids.contains(eid) {
                                     inc.event_ids.push(*eid);
@@ -215,7 +212,6 @@ impl IncidentStore {
                             inc.updated_at = chrono::Utc::now().to_rfc3339();
                             break;
                         }
-                    }
                 }
                 continue;
             }
@@ -279,8 +275,8 @@ impl IncidentStore {
             if already_covered {
                 // Merge new event_ids into first matching open incident only
                 for inc in self.incidents.iter_mut() {
-                    if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating) {
-                        if event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
+                    if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating)
+                        && event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
                             for eid in &event_ids {
                                 if !inc.event_ids.contains(eid) {
                                     inc.event_ids.push(*eid);
@@ -289,7 +285,6 @@ impl IncidentStore {
                             inc.updated_at = chrono::Utc::now().to_rfc3339();
                             break;
                         }
-                    }
                 }
                 continue;
             }

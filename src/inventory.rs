@@ -81,30 +81,24 @@ fn collect_hardware(platform: &str) -> HardwareInfo {
             if let Ok(out) = std::process::Command::new("sysctl")
                 .args(["-n", "machdep.cpu.brand_string"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     info.cpu_model = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 }
-            }
             if let Ok(out) = std::process::Command::new("sysctl")
                 .args(["-n", "hw.ncpu"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     info.cpu_cores = String::from_utf8_lossy(&out.stdout)
                         .trim().parse().unwrap_or(0);
                 }
-            }
             if let Ok(out) = std::process::Command::new("sysctl")
                 .args(["-n", "hw.memsize"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let bytes: u64 = String::from_utf8_lossy(&out.stdout)
                         .trim().parse().unwrap_or(0);
                     info.total_ram_mb = bytes / (1024 * 1024);
                 }
-            }
         }
         "linux" => {
             if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
@@ -115,38 +109,33 @@ fn collect_hardware(platform: &str) -> HardwareInfo {
                     .filter(|l| l.starts_with("processor"))
                     .count() as u32;
             }
-            if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
-                if let Some(line) = content.lines().find(|l| l.starts_with("MemTotal")) {
+            if let Ok(content) = std::fs::read_to_string("/proc/meminfo")
+                && let Some(line) = content.lines().find(|l| l.starts_with("MemTotal")) {
                     let kb: u64 = line.split_whitespace().nth(1)
                         .and_then(|v| v.parse().ok()).unwrap_or(0);
                     info.total_ram_mb = kb / 1024;
                 }
-            }
         }
         "windows" => {
             if let Ok(out) = std::process::Command::new("wmic")
                 .args(["cpu", "get", "Name", "/value"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     if let Some(line) = text.lines().find(|l| l.starts_with("Name=")) {
                         info.cpu_model = line.trim_start_matches("Name=").trim().to_string();
                     }
                 }
-            }
             if let Ok(out) = std::process::Command::new("wmic")
                 .args(["cpu", "get", "NumberOfLogicalProcessors", "/value"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     if let Some(line) = text.lines().find(|l| l.starts_with("NumberOfLogicalProcessors=")) {
                         info.cpu_cores = line.split('=').nth(1)
                             .and_then(|v| v.trim().parse().ok()).unwrap_or(0);
                     }
                 }
-            }
         }
         _ => {}
     }
@@ -161,8 +150,7 @@ fn collect_software(platform: &str) -> Vec<InstalledPackage> {
             if let Ok(out) = std::process::Command::new("dpkg")
                 .args(["-l"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().skip(5).take(500) {
                         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -175,13 +163,11 @@ fn collect_software(platform: &str) -> Vec<InstalledPackage> {
                         }
                     }
                 }
-            }
-            if packages.is_empty() {
-                if let Ok(out) = std::process::Command::new("rpm")
+            if packages.is_empty()
+                && let Ok(out) = std::process::Command::new("rpm")
                     .args(["-qa", "--queryformat", "%{NAME} %{VERSION}\\n"])
                     .output()
-                {
-                    if out.status.success() {
+                    && out.status.success() {
                         let text = String::from_utf8_lossy(&out.stdout);
                         for line in text.lines().take(500) {
                             let parts: Vec<&str> = line.splitn(2, ' ').collect();
@@ -194,15 +180,12 @@ fn collect_software(platform: &str) -> Vec<InstalledPackage> {
                             }
                         }
                     }
-                }
-            }
         }
         "macos" => {
             if let Ok(out) = std::process::Command::new("pkgutil")
                 .args(["--pkgs"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().take(500) {
                         let name = line.trim().to_string();
@@ -215,14 +198,12 @@ fn collect_software(platform: &str) -> Vec<InstalledPackage> {
                         }
                     }
                 }
-            }
         }
         "windows" => {
             if let Ok(out) = std::process::Command::new("wmic")
                 .args(["product", "get", "Name,Version", "/format:csv"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().skip(1).take(500) {
                         let parts: Vec<&str> = line.split(',').collect();
@@ -235,7 +216,6 @@ fn collect_software(platform: &str) -> Vec<InstalledPackage> {
                         }
                     }
                 }
-            }
         }
         _ => {}
     }
@@ -249,8 +229,7 @@ fn collect_services(platform: &str) -> Vec<ServiceInfo> {
             if let Ok(out) = std::process::Command::new("systemctl")
                 .args(["list-units", "--type=service", "--no-pager", "--plain"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().take(300) {
                         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -263,14 +242,12 @@ fn collect_services(platform: &str) -> Vec<ServiceInfo> {
                         }
                     }
                 }
-            }
         }
         "macos" => {
             if let Ok(out) = std::process::Command::new("launchctl")
                 .args(["list"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().skip(1).take(300) {
                         let parts: Vec<&str> = line.split('\t').collect();
@@ -284,14 +261,12 @@ fn collect_services(platform: &str) -> Vec<ServiceInfo> {
                         }
                     }
                 }
-            }
         }
         "windows" => {
             if let Ok(out) = std::process::Command::new("sc")
                 .args(["query", "state=", "all"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     let mut name = String::new();
                     let mut status;
@@ -311,7 +286,6 @@ fn collect_services(platform: &str) -> Vec<ServiceInfo> {
                         }
                     }
                 }
-            }
         }
         _ => {}
     }
@@ -325,14 +299,13 @@ fn collect_network_ports(platform: &str) -> Vec<NetworkPort> {
             if let Ok(out) = std::process::Command::new("ss")
                 .args(["-tlnp"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().skip(1).take(200) {
                         let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 5 {
-                            if let Some(port_str) = parts[3].rsplit(':').next() {
-                                if let Ok(port) = port_str.parse() {
+                        if parts.len() >= 5
+                            && let Some(port_str) = parts[3].rsplit(':').next()
+                                && let Ok(port) = port_str.parse() {
                                     ports.push(NetworkPort {
                                         protocol: "tcp".into(),
                                         port,
@@ -340,24 +313,20 @@ fn collect_network_ports(platform: &str) -> Vec<NetworkPort> {
                                         process: parts.get(6).map(|s| s.to_string()),
                                     });
                                 }
-                            }
-                        }
                     }
                 }
-            }
         }
         "macos" => {
             if let Ok(out) = std::process::Command::new("lsof")
                 .args(["-iTCP", "-sTCP:LISTEN", "-P", "-n"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().skip(1).take(200) {
                         let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 9 {
-                            if let Some(port_str) = parts[8].rsplit(':').next() {
-                                if let Ok(port) = port_str.parse() {
+                        if parts.len() >= 9
+                            && let Some(port_str) = parts[8].rsplit(':').next()
+                                && let Ok(port) = port_str.parse() {
                                     ports.push(NetworkPort {
                                         protocol: "tcp".into(),
                                         port,
@@ -365,24 +334,20 @@ fn collect_network_ports(platform: &str) -> Vec<NetworkPort> {
                                         process: Some(parts[0].to_string()),
                                     });
                                 }
-                            }
-                        }
                     }
                 }
-            }
         }
         "windows" => {
             if let Ok(out) = std::process::Command::new("netstat")
                 .args(["-ano"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines().take(200) {
                         let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 5 && parts[0] == "TCP" {
-                            if let Some(port_str) = parts[1].rsplit(':').next() {
-                                if let Ok(port) = port_str.parse() {
+                        if parts.len() >= 5 && parts[0] == "TCP"
+                            && let Some(port_str) = parts[1].rsplit(':').next()
+                                && let Ok(port) = port_str.parse() {
                                     ports.push(NetworkPort {
                                         protocol: "tcp".into(),
                                         port,
@@ -390,11 +355,8 @@ fn collect_network_ports(platform: &str) -> Vec<NetworkPort> {
                                         process: parts.get(4).map(|s| s.to_string()),
                                     });
                                 }
-                            }
-                        }
                     }
                 }
-            }
         }
         _ => {}
     }
@@ -427,8 +389,7 @@ fn collect_users(platform: &str) -> Vec<UserAccount> {
             if let Ok(out) = std::process::Command::new("dscl")
                 .args([".", "list", "/Users"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     for line in text.lines() {
                         let name = line.trim().to_string();
@@ -442,14 +403,12 @@ fn collect_users(platform: &str) -> Vec<UserAccount> {
                         }
                     }
                 }
-            }
         }
         "windows" => {
             if let Ok(out) = std::process::Command::new("net")
                 .args(["user"])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let text = String::from_utf8_lossy(&out.stdout);
                     // Skip header lines, parse user names
                     let mut in_list = false;
@@ -470,7 +429,6 @@ fn collect_users(platform: &str) -> Vec<UserAccount> {
                         }
                     }
                 }
-            }
         }
         _ => {}
     }

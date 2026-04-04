@@ -488,12 +488,8 @@ pub fn suggest_mitre(kind: &KernelEventKind) -> Vec<MitreTechnique> {
         }
         KernelEventKind::ModuleLoad { .. } => vec![T1055_PROCESS_INJECTION()],
         KernelEventKind::SecurityDenial { .. } => vec![T1562_IMPAIR_DEFENSES()],
-        KernelEventKind::ContainerEvent { event_type, .. } => {
-            if *event_type == ContainerEventType::OomKill {
-                vec![] // resource exhaustion, not necessarily attack
-            } else {
-                vec![]
-            }
+        KernelEventKind::ContainerEvent { .. } => {
+            vec![] // container events: not necessarily attack
         }
         KernelEventKind::TccAccess { allowed, .. } => {
             if !allowed {

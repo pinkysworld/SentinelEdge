@@ -142,8 +142,8 @@ impl MemoryForensics {
             }
 
             // User-flagged suspicious regions
-            if region.suspicious {
-                if let Some(reason) = &region.reason {
+            if region.suspicious
+                && let Some(reason) = &region.reason {
                     findings.push(MemoryFinding {
                         pid: region.pid,
                         process_name: region.process_name.clone(),
@@ -155,7 +155,6 @@ impl MemoryForensics {
                         ]),
                     });
                 }
-            }
         }
 
         self.findings.extend(findings.clone());

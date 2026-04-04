@@ -153,11 +153,10 @@ impl EncryptedSpool {
     pub fn peek_for_tenant(&self, tenant_id: &str) -> Option<SpoolEntry> {
         for encrypted in &self.queue {
             let decrypted = spool_cipher(encrypted, &self.key);
-            if let Ok(entry) = serde_json::from_slice::<SpoolEntry>(&decrypted) {
-                if entry.tenant_id.as_deref() == Some(tenant_id) {
+            if let Ok(entry) = serde_json::from_slice::<SpoolEntry>(&decrypted)
+                && entry.tenant_id.as_deref() == Some(tenant_id) {
                     return Some(entry);
                 }
-            }
         }
         None
     }

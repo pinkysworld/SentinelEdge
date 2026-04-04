@@ -478,14 +478,13 @@ impl StorageBackend {
                 alert.assigned_to, alert.case_id, alert.tenant_id, now
             ],
         ).map(|_| ()).map_err(|e| {
-            if let rusqlite::Error::SqliteFailure(ref err, _) = e {
-                if err.extended_code == 1555 || err.extended_code == 2067 {
+            if let rusqlite::Error::SqliteFailure(ref err, _) = e
+                && (err.extended_code == 1555 || err.extended_code == 2067) {
                     return StorageError {
                         code: StorageErrorCode::Conflict,
                         message: format!("alert {} already exists", alert.id),
                     };
                 }
-            }
             StorageError {
                 code: StorageErrorCode::QueryFailed,
                 message: format!("insert alert failed: {e}"),
@@ -619,10 +618,9 @@ impl StorageBackend {
     pub fn alert_counts(&self, tenant_id: Option<&str>) -> HashMap<String, usize> {
         let mut counts = HashMap::new();
         let tid_owned = tenant_id.map(|s| s.to_string());
-        let (sql, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if tid_owned.is_some() {
-            ("SELECT level, COUNT(*) FROM alerts WHERE tenant_id = ?1 GROUP BY level", vec![Box::new(tid_owned.clone().unwrap()) as Box<dyn rusqlite::types::ToSql>])
-        } else {
-            ("SELECT level, COUNT(*) FROM alerts GROUP BY level", vec![])
+        let (sql, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match &tid_owned {
+            Some(tid) => ("SELECT level, COUNT(*) FROM alerts WHERE tenant_id = ?1 GROUP BY level", vec![Box::new(tid.clone()) as Box<dyn rusqlite::types::ToSql>]),
+            None => ("SELECT level, COUNT(*) FROM alerts GROUP BY level", vec![]),
         };
         let params_ref: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
 
@@ -653,14 +651,13 @@ impl StorageBackend {
                 case.tenant_id, case.created_at, case.updated_at
             ],
         ).map(|_| ()).map_err(|e| {
-            if let rusqlite::Error::SqliteFailure(ref err, _) = e {
-                if err.extended_code == 1555 || err.extended_code == 2067 {
+            if let rusqlite::Error::SqliteFailure(ref err, _) = e
+                && (err.extended_code == 1555 || err.extended_code == 2067) {
                     return StorageError {
                         code: StorageErrorCode::Conflict,
                         message: format!("case {} already exists", case.id),
                     };
                 }
-            }
             StorageError {
                 code: StorageErrorCode::QueryFailed,
                 message: format!("insert case failed: {e}"),

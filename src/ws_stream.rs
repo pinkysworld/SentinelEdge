@@ -164,6 +164,7 @@ pub fn compute_accept_key(client_key: &str) -> String {
 }
 
 /// Minimal SHA-1 (RFC 3174) — used only for the WebSocket accept key.
+#[allow(clippy::needless_range_loop)]
 fn sha1_digest(msg: &[u8]) -> [u8; 20] {
     let mut h0: u32 = 0x67452301;
     let mut h1: u32 = 0xEFCDAB89;
@@ -182,8 +183,8 @@ fn sha1_digest(msg: &[u8]) -> [u8; 20] {
 
     for chunk in data.chunks_exact(64) {
         let mut w = [0u32; 80];
-        for i in 0..16 {
-            w[i] = u32::from_be_bytes([chunk[i*4], chunk[i*4+1], chunk[i*4+2], chunk[i*4+3]]);
+        for (i, bytes) in chunk.chunks_exact(4).enumerate().take(16) {
+            w[i] = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
         for i in 16..80 {
             w[i] = (w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16]).rotate_left(1);
@@ -342,11 +343,10 @@ impl EventBus {
     }
 
     pub fn drain(&self, subscriber_id: u64) -> Vec<WsEvent> {
-        if let Ok(mut bus) = self.inner.lock() {
-            if let Some(sub) = bus.subscribers.iter_mut().find(|s| s.id == subscriber_id) {
+        if let Ok(mut bus) = self.inner.lock()
+            && let Some(sub) = bus.subscribers.iter_mut().find(|s| s.id == subscriber_id) {
                 return sub.queue.drain(..).collect();
             }
-        }
         vec![]
     }
 

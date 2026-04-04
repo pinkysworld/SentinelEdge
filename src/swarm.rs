@@ -620,8 +620,8 @@ pub fn propose_repairs(mesh: &[MeshNode], report: &PartitionReport) -> Vec<Repai
     for partition in &report.partitions {
         if partition.size <= 2 {
             for member_id in &partition.members {
-                if let Some(node) = mesh.iter().find(|n| n.id == *member_id) {
-                    if node.role == MeshRole::Leaf && node.capacity > 50.0 {
+                if let Some(node) = mesh.iter().find(|n| n.id == *member_id)
+                    && node.role == MeshRole::Leaf && node.capacity > 50.0 {
                         repairs.push(RepairAction {
                             action_type: RepairType::PromoteRelay,
                             from_node: node.id.clone(),
@@ -632,7 +632,6 @@ pub fn propose_repairs(mesh: &[MeshNode], report: &PartitionReport) -> Vec<Repai
                             ),
                         });
                     }
-                }
             }
         }
     }
@@ -994,22 +993,19 @@ impl SwarmNode {
     pub fn apply_repair(&mut self, repair: &RepairAction) {
         if repair.action_type == RepairType::AddEdge {
             // Add the from→to neighbor link
-            if let Some(from_node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node) {
-                if !from_node.neighbors.contains(&repair.to_node) {
+            if let Some(from_node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node)
+                && !from_node.neighbors.contains(&repair.to_node) {
                     from_node.neighbors.push(repair.to_node.clone());
                 }
-            }
             // Add the to→from neighbor link (undirected)
-            if let Some(to_node) = self.mesh.iter_mut().find(|n| n.id == repair.to_node) {
-                if !to_node.neighbors.contains(&repair.from_node) {
+            if let Some(to_node) = self.mesh.iter_mut().find(|n| n.id == repair.to_node)
+                && !to_node.neighbors.contains(&repair.from_node) {
                     to_node.neighbors.push(repair.from_node.clone());
                 }
-            }
-        } else if repair.action_type == RepairType::PromoteRelay {
-            if let Some(node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node) {
+        } else if repair.action_type == RepairType::PromoteRelay
+            && let Some(node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node) {
                 node.role = MeshRole::Relay;
             }
-        }
     }
 
     /// Compute a BFS spanning tree from the coordinator.

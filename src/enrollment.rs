@@ -313,12 +313,11 @@ impl AgentRegistry {
 
     fn load(&mut self) {
         let path = Path::new(&self.store_path);
-        if let Ok(raw) = fs::read_to_string(path) {
-            if let Ok(data) = serde_json::from_str::<RegistryData>(&raw) {
+        if let Ok(raw) = fs::read_to_string(path)
+            && let Ok(data) = serde_json::from_str::<RegistryData>(&raw) {
                 self.agents = data.agents;
                 self.tokens = data.tokens;
             }
-        }
     }
 }
 

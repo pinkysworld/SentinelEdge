@@ -242,7 +242,7 @@ fn parse_fields(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
             chars.next(); // consume '('
             let mut arg_str = String::new();
             let mut paren_depth = 1;
-            while let Some(c) = chars.next() {
+            for c in chars.by_ref() {
                 if c == '(' { paren_depth += 1; }
                 if c == ')' {
                     paren_depth -= 1;
@@ -261,7 +261,7 @@ fn parse_fields(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
         let sub_fields = if chars.peek() == Some(&'{') {
             let mut brace_str = String::new();
             let mut brace_depth = 0;
-            while let Some(c) = chars.next() {
+            for c in chars.by_ref() {
                 brace_str.push(c);
                 if c == '{' { brace_depth += 1; }
                 if c == '}' {

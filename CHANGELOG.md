@@ -2,6 +2,22 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.37.0] — Production Hardening: Code Safety, Structured Logging, Release Optimisation
+
+### Fixed
+- **25 unwrap/panic sites eliminated** — `cluster.rs` (15 mutex locks), `feature_flags.rs` (8 mutex locks), `entity_extract.rs` (1 `parts.last().unwrap()`), `storage.rs` (1 `Option::clone().unwrap()`). All mutex locks now use `unwrap_or_else(|e| e.into_inner())` for poison recovery.
+- **Double-unwrap on storage initialisation** fixed in `server.rs` (2 sites, shipped in v0.36.3 hotfix).
+
+### Changed
+- **Structured logging** — all ~45 `eprintln!` calls in production code converted to `log::info!`/`log::warn!`/`log::error!` via the `log` crate. `env_logger` initialised at startup; set `RUST_LOG=info` (or `debug`/`trace`) to control verbosity.
+- **Release profile optimised** — `[profile.release]` added with `lto = true`, `codegen-units = 1`, `strip = true`. Binary size reduced to ~8.6 MB.
+- **Clippy-clean codebase** — `[lints.clippy] all = "warn"` enforced. 220 warnings resolved (auto-fixes + manual). `unsafe_code = "forbid"` at crate level.
+- **Version sync** — Cargo.toml, Helm Chart.yaml, README, STATUS, and ROADMAP all aligned to `0.37.0`.
+
+### Added
+- **9 new tests** — cluster concurrent-operations safety, cluster commit-index advancement, cluster election check, feature-flags kill-switch override, feature-flags concurrent stress, feature-flags unknown-flag safety, entity-extract edge cases (empty input, domain validation, no-IP verification). Total: 929 lib tests.
+- `env_logger = "0.11"` and `log = "0.4"` dependencies.
+
 ## [0.36.3] — TLS/mTLS Listener, Chaos Tests Expansion, Hardening 98%
 
 ### Added

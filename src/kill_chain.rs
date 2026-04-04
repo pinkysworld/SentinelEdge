@@ -200,6 +200,12 @@ fn reason_to_phase(reason: &str) -> Option<KillChainPhase> {
 /// Reconstructs a cyber kill chain from a set of correlated events.
 pub struct KillChainAnalyzer;
 
+impl Default for KillChainAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KillChainAnalyzer {
     pub fn new() -> Self {
         Self

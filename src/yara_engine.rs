@@ -174,8 +174,8 @@ impl YaraEngine {
         let start = std::time::Instant::now();
 
         // Size check for AllOfWithMaxSize.
-        if let RuleCondition::AllOfWithMaxSize(max) = &rule.condition {
-            if data.len() as u64 > *max {
+        if let RuleCondition::AllOfWithMaxSize(max) = &rule.condition
+            && data.len() as u64 > *max {
                 return ScanResult {
                     rule_name: rule.name.clone(),
                     matched: false,
@@ -184,7 +184,6 @@ impl YaraEngine {
                     scan_time_us: start.elapsed().as_micros() as u64,
                 };
             }
-        }
 
         let mut all_locations: HashMap<String, Vec<MatchLocation>> = HashMap::new();
 

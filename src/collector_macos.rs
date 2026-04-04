@@ -739,22 +739,19 @@ fn extract_plist_program(path: &str) -> String {
             continue;
         }
         if found_program_key {
-            if let Some(val) = trimmed.strip_prefix("<string>") {
-                if let Some(val) = val.strip_suffix("</string>") {
+            if let Some(val) = trimmed.strip_prefix("<string>")
+                && let Some(val) = val.strip_suffix("</string>") {
                     return val.to_string();
                 }
-            }
             // In the ProgramArguments array, the first <string> is the binary
             if trimmed == "<array>" {
                 continue;
             }
-            if trimmed.starts_with("<string>") {
-                if let Some(val) = trimmed.strip_prefix("<string>") {
-                    if let Some(val) = val.strip_suffix("</string>") {
+            if trimmed.starts_with("<string>")
+                && let Some(val) = trimmed.strip_prefix("<string>")
+                    && let Some(val) = val.strip_suffix("</string>") {
                         return val.to_string();
                     }
-                }
-            }
             // Stop looking if we hit another key or end of array
             if trimmed.starts_with("<key>") || trimmed == "</array>" || trimmed == "</dict>" {
                 found_program_key = false;

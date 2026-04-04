@@ -172,14 +172,12 @@ impl ReportStore {
 
     fn load(&mut self) {
         let path = Path::new(&self.store_path);
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(reports) = serde_json::from_str::<Vec<StoredReport>>(&content) {
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(path)
+                && let Ok(reports) = serde_json::from_str::<Vec<StoredReport>>(&content) {
                     self.next_id = reports.iter().map(|r| r.id).max().unwrap_or(0) + 1;
                     self.reports = reports;
                 }
-            }
-        }
     }
 
     fn persist(&self) {

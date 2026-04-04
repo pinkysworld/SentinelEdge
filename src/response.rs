@@ -373,11 +373,10 @@ impl ResponseOrchestrator {
         let mut executed = Vec::new();
         let mut executed_reqs = Vec::new();
         for req in requests.iter_mut() {
-            if let Some(target_id) = request_id {
-                if req.id != target_id {
+            if let Some(target_id) = request_id
+                && req.id != target_id {
                     continue;
                 }
-            }
             if req.status != ApprovalStatus::Approved || req.dry_run {
                 continue;
             }

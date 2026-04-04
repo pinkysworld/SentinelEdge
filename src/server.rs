@@ -98,7 +98,7 @@ impl RateLimiter {
 
         // Periodic cleanup: evict stale entries to prevent unbounded memory growth
         self.call_count += 1;
-        if self.buckets.len() > 1_000 && self.call_count % 500 == 0 {
+        if self.buckets.len() > 1_000 && self.call_count.is_multiple_of(500) {
             self.buckets
                 .retain(|_, (window_start, _)| now.saturating_sub(*window_start) < 120);
         }
@@ -1079,7 +1079,7 @@ fn serve_loop(server: &Server, state: &Arc<Mutex<AppState>>, site_dir: &Path) {
                     } else {
                         "unknown panic in request handler".to_string()
                     };
-                    eprintln!("[PANIC-RECOVERED] request handler panic: {msg}");
+                    log::error!("[PANIC-RECOVERED] request handler panic: {msg}");
                     let mut s = match state.lock() {
                         Ok(g) => g,
                         Err(e) => e.into_inner(),
@@ -1096,7 +1096,7 @@ fn serve_loop(server: &Server, state: &Arc<Mutex<AppState>>, site_dir: &Path) {
         };
         if s.shutdown.load(Ordering::Relaxed) {
             drop(s);
-            eprintln!("Server shutting down…");
+            log::info!("Server shutting down…");
             break;
         }
     }
@@ -1151,18 +1151,16 @@ fn flush_to_storage(state: &Arc<Mutex<AppState>>) {
     let mut audit_stored = 0usize;
     for entry in &audit_entries {
         let action = format!("{} {}", entry.method, entry.path);
-        match storage.with(|store| {
+        if storage.with(|store| {
             store.append_audit(
                 &entry.source_ip,
                 &action,
                 Some(&entry.path),
                 Some(&format!("status={} auth={}", entry.status_code, entry.auth_used)),
                 "default",
-            )?;
-            Ok(())
-        }) {
-            Ok(()) => audit_stored += 1,
-            Err(_) => {} // best-effort
+            )
+        }).is_ok() {
+            audit_stored += 1;
         }
     }
 
@@ -1191,7 +1189,7 @@ fn flush_to_storage(state: &Arc<Mutex<AppState>>) {
         }
     }
 
-    eprintln!(
+    log::info!(
         "Shutdown flush: {stored} alerts, {audit_stored} audit entries, {event_stored} events written to storage ({errors} errors)",
     );
 }
@@ -1248,7 +1246,7 @@ fn scan_pii(text: &str) -> Vec<String> {
                 sum += n;
                 double = !double;
             }
-            if sum % 10 == 0 {
+            if sum.is_multiple_of(10) {
                 categories.push("credit_card".into());
             }
         }
@@ -2537,18 +2535,16 @@ fn parse_event_query(url: &str) -> EventQuery {
 }
 
 fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQuery) -> bool {
-    if let Some(agent_id) = &query.agent_id {
-        if &event.agent_id != agent_id {
+    if let Some(agent_id) = &query.agent_id
+        && &event.agent_id != agent_id {
             return false;
         }
-    }
-    if let Some(severity) = &query.severity {
-        if !event.alert.level.eq_ignore_ascii_case(severity) {
+    if let Some(severity) = &query.severity
+        && !event.alert.level.eq_ignore_ascii_case(severity) {
             return false;
         }
-    }
-    if let Some(reason) = &query.reason {
-        if !event
+    if let Some(reason) = &query.reason
+        && !event
             .alert
             .reasons
             .iter()
@@ -2556,19 +2552,16 @@ fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQ
         {
             return false;
         }
-    }
-    if let Some(correlated) = query.correlated {
-        if event.correlated != correlated {
+    if let Some(correlated) = query.correlated
+        && event.correlated != correlated {
             return false;
         }
-    }
-    if let Some(triage_status) = &query.triage_status {
-        if !event.triage.status.eq_ignore_ascii_case(triage_status) {
+    if let Some(triage_status) = &query.triage_status
+        && !event.triage.status.eq_ignore_ascii_case(triage_status) {
             return false;
         }
-    }
-    if let Some(assignee) = &query.assignee {
-        if !event
+    if let Some(assignee) = &query.assignee
+        && !event
             .triage
             .assignee
             .as_deref()
@@ -2576,9 +2569,8 @@ fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQ
         {
             return false;
         }
-    }
-    if let Some(tag) = &query.tag {
-        if !event
+    if let Some(tag) = &query.tag
+        && !event
             .triage
             .tags
             .iter()
@@ -2586,7 +2578,6 @@ fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQ
         {
             return false;
         }
-    }
     true
 }
 
@@ -2819,7 +2810,7 @@ fn spawn_retention_purge_scheduler(state: &Arc<Mutex<AppState>>) {
             }
 
             if total_purged > 0 {
-                eprintln!("[RETENTION] purged {total_purged} expired records");
+                log::info!("[RETENTION] purged {total_purged} expired records");
             }
         }
     });
@@ -2830,9 +2821,9 @@ fn read_json_value(request: &mut Request, limit: usize) -> Result<serde_json::Va
     serde_json::from_str::<serde_json::Value>(&body).map_err(|e| format!("invalid JSON: {e}"))
 }
 
-fn incident_related_events<'a>(
+fn incident_related_events(
     incident: &crate::incident::Incident,
-    events: &'a [crate::event_forward::StoredEvent],
+    events: &[crate::event_forward::StoredEvent],
 ) -> Vec<crate::event_forward::StoredEvent> {
     events
         .iter()
@@ -3154,6 +3145,7 @@ fn monitoring_paths_payload(host: &HostInfo, config: &Config) -> serde_json::Val
     })
 }
 
+#[allow(clippy::nonminimal_bool)]
 fn handle_api(
     mut request: Request,
     state: &Arc<Mutex<AppState>>,
@@ -3166,8 +3158,8 @@ fn handle_api(
 
     // ── Request body size limit (10 MB) ──
     const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
-    if let Some(len) = request.body_length() {
-        if len > MAX_BODY_SIZE {
+    if let Some(len) = request.body_length()
+        && len > MAX_BODY_SIZE {
             respond_api(
                 request,
                 state,
@@ -3178,7 +3170,6 @@ fn handle_api(
             );
             return;
         }
-    }
     // Body limit enforced in read_body_limited()
 
     // Check auth for mutating endpoints before consuming the request body
@@ -3202,10 +3193,9 @@ fn handle_api(
     // enrolling rogue agents or submitting forged events.
     if is_agent_endpoint && !route_path.starts_with("/api/updates/download/")
         && route_path != "/api/openapi.json"
-    {
-        if let Ok(required_agent_token) = std::env::var("WARDEX_AGENT_TOKEN") {
+        && let Ok(required_agent_token) = std::env::var("WARDEX_AGENT_TOKEN") {
             let provided = bearer_token(&request);
-            let valid = provided.as_deref().map_or(false, |t| {
+            let valid = provided.as_deref().is_some_and(|t| {
                 let a = t.as_bytes();
                 let b = required_agent_token.as_bytes();
                 if a.len() != b.len() { return false; }
@@ -3225,7 +3215,6 @@ fn handle_api(
                 return;
             }
         }
-    }
 
     let needs_auth = !is_agent_endpoint
         && matches!(
@@ -4796,11 +4785,9 @@ fn handle_api(
             for entry in &supplemental {
                 if let (Some(method), Some(path)) =
                     (entry["method"].as_str(), entry["path"].as_str())
-                {
-                    if seen.insert((method.to_string(), path.to_string())) {
+                    && seen.insert((method.to_string(), path.to_string())) {
                         endpoints.push(entry.clone());
                     }
-                }
             }
             endpoints.sort_by(|a, b| {
                 let left = (
@@ -7080,11 +7067,10 @@ fn handle_api(
                 };
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 // Cap total tracked agents to prevent unbounded memory growth
-                if !s.agent_inventories.contains_key(agent_id) && s.agent_inventories.len() >= 10_000 {
-                    if let Some(evict_key) = s.agent_inventories.keys().next().cloned() {
+                if !s.agent_inventories.contains_key(agent_id) && s.agent_inventories.len() >= 10_000
+                    && let Some(evict_key) = s.agent_inventories.keys().next().cloned() {
                         s.agent_inventories.remove(&evict_key);
                     }
-                }
                 s.agent_inventories.insert(agent_id.to_string(), inventory);
                 json_response(
                     &serde_json::json!({"status":"inventory_stored","agent_id":agent_id})
@@ -7729,11 +7715,10 @@ fn handle_api(
                                         return respond_api(request, state, &method, &url, needs_auth, error_json("case not found", 404));
                                     }
                                 }
-                                if let Some(assignee) = v["assignee"].as_str() {
-                                    if !s.case_store.assign(id, assignee.to_string()) {
+                                if let Some(assignee) = v["assignee"].as_str()
+                                    && !s.case_store.assign(id, assignee.to_string()) {
                                         return respond_api(request, state, &method, &url, needs_auth, error_json("case not found", 404));
                                     }
-                                }
                                 if let Some(incident_id) = v["link_incident"].as_u64() {
                                     s.case_store.link_incident(id, incident_id);
                                 }
@@ -8457,7 +8442,7 @@ fn handle_analyze(
                     .snapshot()
                     .and_then(|snap| {
                         serde_json::to_vec(&snap)
-                            .map_err(|e| eprintln!("proof pre-snapshot serialization error: {e}"))
+                            .map_err(|e| log::error!("proof pre-snapshot serialization error: {e}"))
                             .ok()
                     })
                     .unwrap_or_default();
@@ -8467,7 +8452,7 @@ fn handle_analyze(
                     .snapshot()
                     .and_then(|snap| {
                         serde_json::to_vec(&snap)
-                            .map_err(|e| eprintln!("proof post-snapshot serialization error: {e}"))
+                            .map_err(|e| log::error!("proof post-snapshot serialization error: {e}"))
                             .ok()
                     })
                     .unwrap_or_default();
@@ -9026,23 +9011,21 @@ fn handle_agent_heartbeat(
             let now = chrono::Utc::now().to_rfc3339();
             if let Some(deployment) = s.remote_deployments.get_mut(agent_id) {
                 deployment.last_heartbeat_at = Some(now.clone());
-                if let Some(health) = &req.health {
-                    if let Some(update_state) = &health.update_state {
+                if let Some(health) = &req.health
+                    && let Some(update_state) = &health.update_state {
                         deployment.status = update_state.clone();
                         deployment.status_reason = health.last_update_error.clone();
                         if matches!(
                             update_state.as_str(),
                             "checking" | "downloading" | "downloaded" | "applying"
-                        ) {
-                            if deployment.acknowledged_at.is_none() {
+                        )
+                            && deployment.acknowledged_at.is_none() {
                                 deployment.acknowledged_at = Some(now.clone());
                             }
-                        }
                         if matches!(update_state.as_str(), "restart_pending" | "applied") {
                             deployment.completed_at = Some(now.clone());
                         }
                     }
-                }
                 if deployment.version == req.version {
                     deployment.status = "applied".to_string();
                     deployment.completed_at = Some(now);
@@ -9057,9 +9040,9 @@ fn handle_agent_heartbeat(
                 // Collect completed deployments that may trigger progression
                 let mut progress_candidates: Vec<(String, String, String)> = Vec::new(); // (version, platform, rollout_group)
                 for dep in s.remote_deployments.values() {
-                    if dep.status == "applied" {
-                        if let Some(ref completed) = dep.completed_at {
-                            if let Ok(completed_time) =
+                    if dep.status == "applied"
+                        && let Some(ref completed) = dep.completed_at
+                            && let Ok(completed_time) =
                                 chrono::DateTime::parse_from_rfc3339(completed)
                             {
                                 let elapsed =
@@ -9082,8 +9065,6 @@ fn handle_agent_heartbeat(
                                     ));
                                 }
                             }
-                        }
-                    }
                 }
                 // Check for failures -> auto-rollback
                 if rollout_cfg.auto_rollback {
@@ -9208,14 +9189,13 @@ fn handle_agent_update_check(
     }
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(agent_id) = agent_id.as_deref() {
-        if platform == "universal" {
-            if let Some(agent) = s.agent_registry.get(agent_id) {
+        if platform == "universal"
+            && let Some(agent) = s.agent_registry.get(agent_id) {
                 platform = agent.platform.clone();
             }
-        }
-        if let Some(deployment) = s.remote_deployments.get(agent_id) {
-            if deployment_requires_action(deployment, &current_version) {
-                if let Some(release) = s.update_manager.get_release(&deployment.version, &platform)
+        if let Some(deployment) = s.remote_deployments.get(agent_id)
+            && deployment_requires_action(deployment, &current_version)
+                && let Some(release) = s.update_manager.get_release(&deployment.version, &platform)
                 {
                     let resp = crate::auto_update::UpdateCheckResponse {
                         update_available: true,
@@ -9230,8 +9210,6 @@ fn handle_agent_update_check(
                         Err(e) => error_json(&format!("serialization error: {e}"), 500),
                     };
                 }
-            }
-        }
     }
     let resp = s.update_manager.check_update(&current_version, &platform);
     match serde_json::to_string(&resp) {
@@ -9275,8 +9253,8 @@ fn handle_update_deploy(
     {
         return error_json("downgrade blocked without allow_downgrade=true", 409);
     }
-    if let Some(existing) = s.remote_deployments.get(&req.agent_id) {
-        if !req.allow_downgrade
+    if let Some(existing) = s.remote_deployments.get(&req.agent_id)
+        && !req.allow_downgrade
             && compare_versions(&req.version, &existing.version) == std::cmp::Ordering::Less
         {
             return error_json(
@@ -9284,7 +9262,6 @@ fn handle_update_deploy(
                 409,
             );
         }
-    }
     let platform = req.platform.unwrap_or_else(|| agent.platform.clone());
     let release = match s.update_manager.get_release(&req.version, &platform) {
         Some(release) => release.clone(),
@@ -9491,11 +9468,10 @@ fn handle_update_rollback(
         None => return error_json("release not found for agent platform", 404),
     };
     // Cancel any existing deployment
-    if let Some(existing) = s.remote_deployments.get(&req.agent_id) {
-        if !is_terminal_deployment_status(&existing.status) {
+    if let Some(existing) = s.remote_deployments.get(&req.agent_id)
+        && !is_terminal_deployment_status(&existing.status) {
             // Mark the old deployment as cancelled before replacing
         }
-    }
     let deployment = AgentDeployment {
         agent_id: req.agent_id.clone(),
         version: release.version.clone(),
@@ -9930,12 +9906,11 @@ fn serve_static(request: Request, site_dir: &Path) {
             return;
         }
     };
-    if let Ok(canon_file) = file_path.canonicalize() {
-        if !canon_file.starts_with(&canon_site) {
+    if let Ok(canon_file) = file_path.canonicalize()
+        && !canon_file.starts_with(&canon_site) {
             let _ = request.respond(error_json("forbidden", 403));
             return;
         }
-    }
 
     if file_path.is_file() {
         let content_type = match file_path.extension().and_then(|e| e.to_str()) {

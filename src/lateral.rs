@@ -237,12 +237,11 @@ impl LateralMovementDetector {
 
                             // Credential reuse
                             for c in &cred_set {
-                                if let Some(hosts) = credential_hosts.get(c.as_str()) {
-                                    if hosts.len() >= self.config.credential_reuse_threshold {
+                                if let Some(hosts) = credential_hosts.get(c.as_str())
+                                    && hosts.len() >= self.config.credential_reuse_threshold {
                                         patterns.push(LateralPattern::CredentialReuse);
                                         break;
                                     }
-                                }
                             }
 
                             // Admin tool abuse

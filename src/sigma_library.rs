@@ -51,6 +51,12 @@ pub struct SigmaLibrary {
     rules: Vec<SigmaRule>,
 }
 
+impl Default for SigmaLibrary {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SigmaLibrary {
     pub fn new() -> Self {
         Self { rules: Vec::new() }
@@ -300,8 +306,8 @@ impl SigmaLibrary {
 
     fn event_matches_rule(&self, event: &serde_json::Value, rule: &SigmaRule) -> bool {
         // Match selection fields from detection (AND semantics)
-        if let Some(selection) = rule.detection.get("selection") {
-            if let serde_json::Value::Object(sel_map) = selection {
+        if let Some(selection) = rule.detection.get("selection")
+            && let serde_json::Value::Object(sel_map) = selection {
                 for (key, expected) in sel_map {
                     let actual = event.get(key);
                     match actual {
@@ -311,7 +317,6 @@ impl SigmaLibrary {
                 }
                 return !sel_map.is_empty();
             }
-        }
 
         // Check simple key-value detection matches — ALL must match (AND)
         let detection_fields: Vec<_> = rule.detection.iter()

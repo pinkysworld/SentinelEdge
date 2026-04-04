@@ -55,8 +55,8 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
     let mut i = 0;
     let bytes = text.as_bytes();
     while i < bytes.len() {
-        if bytes[i].is_ascii_digit() {
-            if let Some((ip, end)) = try_parse_ipv4(text, i) {
+        if bytes[i].is_ascii_digit()
+            && let Some((ip, end)) = try_parse_ipv4(text, i) {
                 results.push(ExtractedEntity {
                     entity_type: EntityType::IpAddress,
                     value: ip,
@@ -66,14 +66,13 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                 i = end;
                 continue;
             }
-        }
         i += 1;
     }
 
     // File paths (Unix and Windows)
     for (start, _) in text.match_indices('/') {
-        if start == 0 || !text.as_bytes()[start - 1].is_ascii_alphanumeric() {
-            if let Some(end) = find_path_end(text, start) {
+        if (start == 0 || !text.as_bytes()[start - 1].is_ascii_alphanumeric())
+            && let Some(end) = find_path_end(text, start) {
                 let path = &text[start..end];
                 if path.len() > 2 && path.contains('/') {
                     results.push(ExtractedEntity {
@@ -84,7 +83,6 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                     });
                 }
             }
-        }
     }
     // Windows paths like C:\...
     for (start, _) in text.match_indices('\\') {
@@ -139,8 +137,8 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
     // MITRE technique IDs (T1xxx, T1xxx.xxx)
     let mut idx = 0;
     while idx < text.len().saturating_sub(4) {
-        if text[idx..].starts_with('T') {
-            if let Some(end) = try_parse_mitre(text, idx) {
+        if text[idx..].starts_with('T')
+            && let Some(end) = try_parse_mitre(text, idx) {
                 results.push(ExtractedEntity {
                     entity_type: EntityType::MitreTechnique,
                     value: text[idx..end].to_string(),
@@ -150,7 +148,6 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                 idx = end;
                 continue;
             }
-        }
         idx += 1;
     }
 
@@ -162,9 +159,9 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                 .find(|c: char| !c.is_ascii_digit())
                 .map(|p| after + p)
                 .unwrap_or(text.len());
-            if num_end > after {
-                if let Ok(port) = text[after..num_end].parse::<u16>() {
-                    if port > 0 {
+            if num_end > after
+                && let Ok(port) = text[after..num_end].parse::<u16>()
+                    && port > 0 {
                         results.push(ExtractedEntity {
                             entity_type: EntityType::Port,
                             value: port.to_string(),
@@ -172,8 +169,6 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                             end: num_end,
                         });
                     }
-                }
-            }
         }
     }
 
@@ -303,7 +298,7 @@ fn looks_like_domain(s: &str) -> bool {
     if parts.len() < 2 {
         return false;
     }
-    let tld = parts.last().unwrap();
+    let Some(tld) = parts.last() else { return false };
     let known_tlds = [
         "com", "net", "org", "io", "co", "uk", "de", "fr", "ru", "cn", "jp",
         "info", "biz", "xyz", "top", "site", "online", "club", "app", "dev",
@@ -377,5 +372,37 @@ mod tests {
         let ents = extract_entities(&reasons);
         let ip_count = ents.iter().filter(|e| e.entity_type == EntityType::IpAddress && e.value == "10.0.0.1").count();
         assert_eq!(ip_count, 1);
+    }
+
+    #[test]
+    fn empty_reasons_yield_nothing() {
+        let ents = extract_entities(&[]);
+        assert!(ents.is_empty());
+    }
+
+    #[test]
+    fn domain_edge_cases() {
+        // Single label — not a domain
+        let reasons = vec!["host localhost".into()];
+        let ents = extract_entities(&reasons);
+        assert!(!ents.iter().any(|e| e.entity_type == EntityType::Domain && e.value == "localhost"));
+
+        // Two-char string with dot — too short
+        let reasons2 = vec!["x.y".into()];
+        let ents2 = extract_entities(&reasons2);
+        assert!(!ents2.iter().any(|e| e.entity_type == EntityType::Domain));
+
+        // Unknown TLD should not match
+        let reasons3 = vec!["host test.zzzzz queried".into()];
+        let ents3 = extract_entities(&reasons3);
+        assert!(!ents3.iter().any(|e| e.entity_type == EntityType::Domain && e.value == "test.zzzzz"));
+    }
+
+    #[test]
+    fn extracts_ipv6_absent() {
+        // Verify non-IP text does not produce false positive IP entities
+        let reasons = vec!["normal log entry with no addresses".into()];
+        let ents = extract_entities(&reasons);
+        assert!(!ents.iter().any(|e| e.entity_type == EntityType::IpAddress));
     }
 }

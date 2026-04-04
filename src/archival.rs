@@ -235,11 +235,10 @@ impl ArchivalEngine {
             csv.push_str(&rec.record_type.to_string());
             for k in &keys {
                 csv.push(',');
-                if let serde_json::Value::Object(map) = &rec.data {
-                    if let Some(v) = map.get(k) {
+                if let serde_json::Value::Object(map) = &rec.data
+                    && let Some(v) = map.get(k) {
                         csv.push_str(&csv_escape(&value_to_csv(v)));
                     }
-                }
             }
             csv.push('\n');
         }

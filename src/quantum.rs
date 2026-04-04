@@ -221,14 +221,12 @@ impl KeyRotationManager {
     pub fn expire_old_keys(&mut self) {
         let now = chrono::Utc::now();
         for epoch in &mut self.epochs {
-            if epoch.status == "retiring" {
-                if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&epoch.expires_at) {
-                    if now > expires {
+            if epoch.status == "retiring"
+                && let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&epoch.expires_at)
+                    && now > expires {
                         epoch.status = "expired".into();
                         self.active_keys.remove(&epoch.key_id);
                     }
-                }
-            }
         }
     }
 }
@@ -263,6 +261,12 @@ pub struct QwStepResult {
 pub struct QuantumWalkEngine {
     nodes: Vec<QwNode>,
     adjacency: Vec<Vec<f64>>, // adjacency/transition matrix
+}
+
+impl Default for QuantumWalkEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QuantumWalkEngine {
@@ -323,10 +327,10 @@ impl QuantumWalkEngine {
 
             // Grover diffusion: reflect amplitude through average
             let coin_factor = 2.0 / degree;
-            for j in 0..n {
+            for (j, amp) in new_amplitudes.iter_mut().enumerate().take(n) {
                 if self.adjacency[i][j] > 0.0 {
                     let transfer = self.nodes[i].amplitude * self.adjacency[i][j] * coin_factor;
-                    new_amplitudes[j] += transfer;
+                    *amp += transfer;
                 }
             }
             // Subtract the original amplitude (Grover reflection)

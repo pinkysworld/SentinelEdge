@@ -20,6 +20,8 @@ use wardex::state_machine::PolicyStateMachine;
 use wardex::telemetry::TelemetrySample;
 
 fn main() {
+    env_logger::init();
+
     // Global panic hook: log panics to stderr instead of crashing silently.
     // Prevents unhandled panics from poisoning shared mutexes without logging.
     std::panic::set_hook(Box::new(|info| {
@@ -440,13 +442,12 @@ fn resolve_site_dir(site_dir: &Path) -> Result<PathBuf, String> {
         candidates.push(current_dir.join(site_dir));
     }
 
-    if let Ok(exe_path) = env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
+    if let Ok(exe_path) = env::current_exe()
+        && let Some(exe_dir) = exe_path.parent() {
             candidates.push(exe_dir.join(site_dir));
             candidates.push(exe_dir.join("..").join(site_dir));
             candidates.push(exe_dir.join("..").join("..").join(site_dir));
         }
-    }
 
     for candidate in candidates {
         if candidate.is_dir() {

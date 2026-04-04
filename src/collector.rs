@@ -316,7 +316,6 @@ fn collect_cpu(_state: &mut CollectorState) -> f32 {
     let load1: f32 = load_str
         .trim()
         .trim_start_matches('{')
-        .trim()
         .split_whitespace()
         .next()
         .and_then(|v| v.parse().ok())
@@ -462,15 +461,12 @@ fn collect_temperature() -> f32 {
     {
         let text = String::from_utf8_lossy(&output.stdout);
         for line in text.lines() {
-            if line.contains("CPU die temperature") || line.contains("die temp") {
-                if let Some(temp) = line.split_whitespace()
+            if (line.contains("CPU die temperature") || line.contains("die temp"))
+                && let Some(temp) = line.split_whitespace()
                     .find_map(|w| w.trim_end_matches(" C").parse::<f32>().ok())
-                {
-                    if temp > 0.0 && temp < 150.0 {
+                    && temp > 0.0 && temp < 150.0 {
                         return temp;
                     }
-                }
-            }
         }
     }
     // Fallback: sysctl thermal level (0-127 scale, approximate to celsius)
@@ -1065,33 +1061,33 @@ pub fn run_monitor(
     let host = detect_platform();
 
     // Print startup banner
-    eprintln!("Wardex XDR Monitor");
-    eprintln!("  Platform: {} ({} {})", host.platform, host.os_version, host.arch);
-    eprintln!("  Hostname: {}", host.hostname);
-    eprintln!("  Interval: {}s", mon.interval_secs);
-    eprintln!("  Threshold: {:.1}", mon.alert_threshold);
-    eprintln!(
+    log::info!("Wardex XDR Monitor");
+    log::info!("  Platform: {} ({} {})", host.platform, host.os_version, host.arch);
+    log::info!("  Hostname: {}", host.hostname);
+    log::info!("  Interval: {}s", mon.interval_secs);
+    log::info!("  Threshold: {:.1}", mon.alert_threshold);
+    log::info!(
         "  Webhook: {}",
         mon.webhook_url.as_deref().unwrap_or("disabled")
     );
     if mon.dry_run {
-        eprintln!("  Mode: DRY RUN (detection only, no enforcement)");
+        log::info!("  Mode: DRY RUN (detection only, no enforcement)");
     }
     if !mon.watch_paths.is_empty() {
-        eprintln!("  Watch paths: {}", mon.watch_paths.join(", "));
+        log::info!("  Watch paths: {}", mon.watch_paths.join(", "));
     }
-    eprintln!();
+    log::info!("");
 
     // Initialize components
     let mut detector = AnomalyDetector::default();
-    let policy = PolicyEngine::default();
+    let policy = PolicyEngine;
     let mut collector_state = CollectorState::default();
     let fim = if !config.monitor.scope.file_integrity || mon.watch_paths.is_empty() {
         None
     } else {
         let f = FileIntegrityMonitor::new(&mon.watch_paths);
-        eprintln!("  File integrity: {} files baselined", f.file_count());
-        eprintln!();
+        log::info!("  File integrity: {} files baselined", f.file_count());
+        log::info!("");
         Some(f)
     };
     let persistence = {
@@ -1100,7 +1096,7 @@ pub fn run_monitor(
             None
         } else {
             let monitor = FileIntegrityMonitor::new(&paths);
-            eprintln!("  Persistence scope: {} files baselined", monitor.file_count());
+            log::info!("  Persistence scope: {} files baselined", monitor.file_count());
             Some(monitor)
         }
     };
@@ -1169,15 +1165,14 @@ pub fn run_monitor(
             }
 
             // Append to alert log
-            if let Ok(json) = serde_json::to_string(&alert) {
-                if let Ok(mut f) = fs::OpenOptions::new()
+            if let Ok(json) = serde_json::to_string(&alert)
+                && let Ok(mut f) = fs::OpenOptions::new()
                     .create(true)
                     .append(true)
                     .open(&mon.alert_log)
                 {
                     let _ = writeln!(f, "{json}");
                 }
-            }
 
             // Structured output
             if mon.syslog {
@@ -1192,7 +1187,7 @@ pub fn run_monitor(
                 send_webhook(url, &alert);
             }
 
-            eprintln!(
+            log::warn!(
                 "  ** ALERT: score={:.2} level={} action={} **",
                 alert.score, alert.level, alert.action,
             );
@@ -1203,9 +1198,9 @@ pub fn run_monitor(
 
     // Print summary
     let elapsed = start.elapsed();
-    eprintln!();
-    eprintln!("Monitor stopped after {:.0}s", elapsed.as_secs_f32());
-    eprintln!(
+    log::info!("");
+    log::info!("Monitor stopped after {:.0}s", elapsed.as_secs_f32());
+    log::info!(
         "  Samples: {} | Alerts: {} | Critical: {}",
         summary.samples, summary.alerts, summary.critical,
     );
@@ -1229,7 +1224,7 @@ fn send_webhook(url: &str, alert: &AlertRecord) {
     let body = match serde_json::to_string(alert) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("  webhook: failed to serialize alert: {e}");
+            log::error!("  webhook: failed to serialize alert: {e}");
             return;
         }
     };
@@ -1242,8 +1237,8 @@ fn send_webhook(url: &str, alert: &AlertRecord) {
         .set("Content-Type", "application/json")
         .send_string(&body)
     {
-        Ok(_) => eprintln!("  webhook: alert sent to {url}"),
-        Err(e) => eprintln!("  webhook: failed to send to {url}: {e}"),
+        Ok(_) => log::info!("  webhook: alert sent to {url}"),
+        Err(e) => log::error!("  webhook: failed to send to {url}: {e}"),
     }
 }
 

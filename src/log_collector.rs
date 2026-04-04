@@ -80,8 +80,8 @@ fn collect_macos_logs(logs: &mut Vec<LogRecord>, since_secs: u64) {
     let output = std::process::Command::new("log")
         .args(["show", "--last", &format!("{minutes}m"), "--style", "json"])
         .output();
-    if let Ok(out) = output {
-        if out.status.success() {
+    if let Ok(out) = output
+        && out.status.success() {
             let text = String::from_utf8_lossy(&out.stdout);
             if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&text) {
                 for entry in entries.iter().take(500) {
@@ -108,7 +108,6 @@ fn collect_macos_logs(logs: &mut Vec<LogRecord>, since_secs: u64) {
                 }
             }
         }
-    }
 }
 
 #[cfg(not(target_os = "macos"))]

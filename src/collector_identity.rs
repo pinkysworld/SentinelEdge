@@ -282,12 +282,11 @@ impl OktaCollector {
         };
 
         // Extract cursor from next link
-        if let Some(link) = next_link {
-            if let Some(after) = link.split("after=").nth(1) {
+        if let Some(link) = next_link
+            && let Some(after) = link.split("after=").nth(1) {
                 let cursor = after.split('&').next().unwrap_or(after);
                 self.after_cursor = Some(cursor.to_string());
             }
-        }
 
         let mut events = Vec::new();
         for entry in &entries {

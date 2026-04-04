@@ -175,11 +175,10 @@ impl SigmaEngine {
             // Suppression check
             if rule.suppress_for_secs > 0 {
                 let key = format!("{}:{}", rule.id, hostname);
-                if let Some(&last) = self.suppression.get(&key) {
-                    if now_epoch.saturating_sub(last) < rule.suppress_for_secs {
+                if let Some(&last) = self.suppression.get(&key)
+                    && now_epoch.saturating_sub(last) < rule.suppress_for_secs {
                         continue;
                     }
-                }
             }
 
             if let Some(matched_fields) = evaluate_rule(rule, &fields) {
@@ -331,12 +330,11 @@ fn evaluate_rule(rule: &SigmaRule, fields: &HashMap<String, String>) -> Option<V
         let mut any_matched = false;
         for part in &parts {
             if *part == "or" { continue; }
-            if let Some(matchers) = rule.detection.selections.get(*part) {
-                if let Some(matched) = evaluate_selection(matchers, fields) {
+            if let Some(matchers) = rule.detection.selections.get(*part)
+                && let Some(matched) = evaluate_selection(matchers, fields) {
                     all_matched.extend(matched);
                     any_matched = true;
                 }
-            }
         }
         if !any_matched { return None; }
     } else if parts.contains(&"and") {
@@ -352,11 +350,10 @@ fn evaluate_rule(rule: &SigmaRule, fields: &HashMap<String, String>) -> Option<V
                         if evaluate_selection(matchers, fields).is_some() {
                             return None; // Filter matched, suppress detection
                         }
-                    } else if let Some(matchers) = rule.detection.selections.get(parts[i]) {
-                        if evaluate_selection(matchers, fields).is_some() {
+                    } else if let Some(matchers) = rule.detection.selections.get(parts[i])
+                        && evaluate_selection(matchers, fields).is_some() {
                             return None;
                         }
-                    }
                 }
             } else {
                 // Selection name
@@ -389,33 +386,33 @@ fn evaluate_selection(matchers: &[FieldMatcher], fields: &HashMap<String, String
         let field_val = fields.get(&m.field);
         let ok = match m.modifier {
             MatchModifier::Exists => {
-                field_val.map_or(false, |v| !v.is_empty())
+                field_val.is_some_and(|v| !v.is_empty())
             }
             MatchModifier::Equals => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     m.values.iter().any(|pat| v.eq_ignore_ascii_case(pat))
                 })
             }
             MatchModifier::Contains => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     let vl = v.to_lowercase();
                     m.values.iter().any(|pat| vl.contains(&pat.to_lowercase()))
                 })
             }
             MatchModifier::StartsWith => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     let vl = v.to_lowercase();
                     m.values.iter().any(|pat| vl.starts_with(&pat.to_lowercase()))
                 })
             }
             MatchModifier::EndsWith => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     let vl = v.to_lowercase();
                     m.values.iter().any(|pat| vl.ends_with(&pat.to_lowercase()))
                 })
             }
             MatchModifier::Re => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     m.values.iter().any(|_pat| {
                         // Basic regex: do substring match for safety (no regex crate dep)
                         // For production, integrate the `regex` crate.
@@ -424,7 +421,7 @@ fn evaluate_selection(matchers: &[FieldMatcher], fields: &HashMap<String, String
                 })
             }
             MatchModifier::Gt => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     if let (Ok(fv), Some(Ok(tv))) = (v.parse::<f64>(), m.values.first().map(|s| s.parse::<f64>())) {
                         fv > tv
                     } else {
@@ -433,7 +430,7 @@ fn evaluate_selection(matchers: &[FieldMatcher], fields: &HashMap<String, String
                 })
             }
             MatchModifier::Lt => {
-                field_val.map_or(false, |v| {
+                field_val.is_some_and(|v| {
                     if let (Ok(fv), Some(Ok(tv))) = (v.parse::<f64>(), m.values.first().map(|s| s.parse::<f64>())) {
                         fv < tv
                     } else {

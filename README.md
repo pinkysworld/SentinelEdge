@@ -2,9 +2,9 @@
 
 Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted security operations. It combines cross-platform telemetry collection, detection engineering, analyst workflows, approval-gated response, agent lifecycle management, SIEM integrations, and tamper-evident evidence handling in a single deployable product.
 
-## What ships in `v0.36.3`
+## What ships in `v0.37.0`
 
-- Everything from v0.36.2 plus TLS/mTLS listener support, 5 new chaos/fault-injection tests, and production hardening at 98%
+- Everything from v0.36.3 plus production hardening: 25 unwrap/panic sites fixed, structured logging via `log`+`env_logger`, release profile with LTO, zero clippy warnings, Helm version sync
 - OpenAPI 3.0.3 machine-readable spec covering 160+ endpoints with full schema definitions
 - Prometheus metrics endpoint with 20+ wardex_* counters, gauges, and histograms
 - WebSocket event streaming with RFC 6455 framing and pub/sub channel filtering

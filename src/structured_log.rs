@@ -152,6 +152,12 @@ pub struct BufferSink {
     entries: Arc<Mutex<Vec<LogEntry>>>,
 }
 
+impl Default for BufferSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BufferSink {
     pub fn new() -> Self {
         Self {
@@ -165,6 +171,10 @@ impl BufferSink {
 
     pub fn len(&self) -> usize {
         self.entries.lock().map(|e| e.len()).unwrap_or(0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn clear(&self) {

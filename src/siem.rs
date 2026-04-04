@@ -121,11 +121,10 @@ impl SiemConnector {
     /// Queue an alert for batch pushing to SIEM.
     pub fn queue_alert(&mut self, alert: &AlertRecord) {
         self.pending.push(alert.clone());
-        if self.pending.len() >= self.config.batch_size {
-            if let Err(e) = self.flush() {
+        if self.pending.len() >= self.config.batch_size
+            && let Err(e) = self.flush() {
                 self.last_error = Some(e);
             }
-        }
     }
 
     /// Queue a log record for batch pushing to SIEM.
@@ -639,11 +638,10 @@ impl SiemConnector {
         struct SplunkResults {
             results: Option<Vec<SiemIntelRecord>>,
         }
-        if let Ok(wrapper) = serde_json::from_str::<SplunkResults>(body) {
-            if let Some(results) = wrapper.results {
+        if let Ok(wrapper) = serde_json::from_str::<SplunkResults>(body)
+            && let Some(results) = wrapper.results {
                 return Ok(results);
             }
-        }
 
         // Try Elasticsearch-style hits wrapper
         #[derive(Deserialize)]
@@ -658,11 +656,10 @@ impl SiemConnector {
         struct EsHit {
             _source: Option<SiemIntelRecord>,
         }
-        if let Ok(wrapper) = serde_json::from_str::<EsHits>(body) {
-            if let Some(hits) = wrapper.hits.and_then(|h| h.hits) {
+        if let Ok(wrapper) = serde_json::from_str::<EsHits>(body)
+            && let Some(hits) = wrapper.hits.and_then(|h| h.hits) {
                 return Ok(hits.into_iter().filter_map(|h| h._source).collect());
             }
-        }
 
         Ok(Vec::new())
     }
@@ -719,15 +716,15 @@ pub fn start_siem_poller(
             }
             match connector.pull_intel() {
                 Ok(records) if !records.is_empty() => {
-                    eprintln!("[siem] Pulled {} intel records", records.len());
+                    log::info!("[siem] Pulled {} intel records", records.len());
                     for record in &records {
-                        eprintln!(
+                        log::info!(
                             "[siem]   {} = {} ({})",
                             record.indicator_type, record.indicator_value, record.severity
                         );
                     }
                 }
-                Err(e) => eprintln!("[siem] Pull error: {e}"),
+                Err(e) => log::error!("[siem] Pull error: {e}"),
                 _ => {}
             }
         }

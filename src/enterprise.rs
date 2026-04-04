@@ -150,31 +150,26 @@ fn default_pack_ids_for_rule(rule: &SigmaRule) -> Vec<String> {
 }
 
 fn search_query_matches_event(event: &StoredEvent, query: &SearchQuery) -> bool {
-    if let Some(hostname) = &query.hostname {
-        if !contains_ci(&event.alert.hostname, hostname) {
+    if let Some(hostname) = &query.hostname
+        && !contains_ci(&event.alert.hostname, hostname) {
             return false;
         }
-    }
-    if let Some(level) = &query.level {
-        if !event.alert.level.eq_ignore_ascii_case(level) {
+    if let Some(level) = &query.level
+        && !event.alert.level.eq_ignore_ascii_case(level) {
             return false;
         }
-    }
-    if let Some(agent_id) = &query.agent_id {
-        if event.agent_id != *agent_id {
+    if let Some(agent_id) = &query.agent_id
+        && event.agent_id != *agent_id {
             return false;
         }
-    }
-    if let Some(from_ts) = &query.from_ts {
-        if event.alert.timestamp < *from_ts {
+    if let Some(from_ts) = &query.from_ts
+        && event.alert.timestamp < *from_ts {
             return false;
         }
-    }
-    if let Some(to_ts) = &query.to_ts {
-        if event.alert.timestamp > *to_ts {
+    if let Some(to_ts) = &query.to_ts
+        && event.alert.timestamp > *to_ts {
             return false;
         }
-    }
     if let Some(text) = &query.text {
         let in_reasons = event
             .alert
@@ -396,31 +391,26 @@ impl AlertSuppression {
         if !self.is_active() {
             return false;
         }
-        if let Some(expected) = &self.rule_id {
-            if Some(expected.as_str()) != rule_id {
+        if let Some(expected) = &self.rule_id
+            && Some(expected.as_str()) != rule_id {
                 return false;
             }
-        }
-        if let Some(expected) = &self.hunt_id {
-            if Some(expected.as_str()) != hunt_id {
+        if let Some(expected) = &self.hunt_id
+            && Some(expected.as_str()) != hunt_id {
                 return false;
             }
-        }
-        if let Some(hostname) = &self.hostname {
-            if !contains_ci(&event.alert.hostname, hostname) {
+        if let Some(hostname) = &self.hostname
+            && !contains_ci(&event.alert.hostname, hostname) {
                 return false;
             }
-        }
-        if let Some(agent_id) = &self.agent_id {
-            if event.agent_id != *agent_id {
+        if let Some(agent_id) = &self.agent_id
+            && event.agent_id != *agent_id {
                 return false;
             }
-        }
-        if let Some(severity) = &self.severity {
-            if !event.alert.level.eq_ignore_ascii_case(severity) {
+        if let Some(severity) = &self.severity
+            && !event.alert.level.eq_ignore_ascii_case(severity) {
                 return false;
             }
-        }
         if let Some(text) = &self.text {
             let reasons = event.alert.reasons.join(" ");
             if !contains_ci(&event.alert.hostname, text)
@@ -583,11 +573,10 @@ impl EnterpriseStore {
         if !path.exists() {
             return;
         }
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(snapshot) = serde_json::from_str::<EnterpriseSnapshot>(&content) {
+        if let Ok(content) = std::fs::read_to_string(path)
+            && let Ok(snapshot) = serde_json::from_str::<EnterpriseSnapshot>(&content) {
                 self.snapshot = snapshot;
             }
-        }
     }
 
     fn persist(&self) {
@@ -886,8 +875,8 @@ impl EnterpriseStore {
         schedule_interval_secs: Option<u64>,
         query: SearchQuery,
     ) -> SavedHunt {
-        if let Some(existing_id) = id {
-            if let Some(index) = self.snapshot.hunts.iter().position(|hunt| hunt.id == existing_id) {
+        if let Some(existing_id) = id
+            && let Some(index) = self.snapshot.hunts.iter().position(|hunt| hunt.id == existing_id) {
                 let updated = {
                     let hunt = &mut self.snapshot.hunts[index];
                     hunt.name = name;
@@ -903,7 +892,6 @@ impl EnterpriseStore {
                 self.persist();
                 return updated;
             }
-        }
         let created_at = now_rfc3339();
         let hunt = SavedHunt {
             id: self.next_id("hunt"),
@@ -1010,8 +998,8 @@ impl EnterpriseStore {
         attack: Vec<MitreAttack>,
         query: SearchQuery,
     ) -> NativeContentRule {
-        if let Some(existing_id) = id {
-            if let Some(index) = self
+        if let Some(existing_id) = id
+            && let Some(index) = self
                 .snapshot
                 .native_rules
                 .iter()
@@ -1034,7 +1022,6 @@ impl EnterpriseStore {
                 self.persist();
                 return updated;
             }
-        }
         let created_at = now_rfc3339();
         let rule = NativeContentRule {
             metadata: ManagedRuleMetadata {
@@ -1304,8 +1291,8 @@ impl EnterpriseStore {
         enabled: bool,
         rule_ids: Vec<String>,
     ) -> ContentPack {
-        if let Some(id) = id {
-            if let Some(index) = self.snapshot.packs.iter().position(|pack| pack.id == id) {
+        if let Some(id) = id
+            && let Some(index) = self.snapshot.packs.iter().position(|pack| pack.id == id) {
                 let pack_id = self.snapshot.packs[index].id.clone();
                 let updated = {
                     let pack = &mut self.snapshot.packs[index];
@@ -1329,7 +1316,6 @@ impl EnterpriseStore {
                 self.persist();
                 return updated;
             }
-        }
         let pack = ContentPack {
             id: id.unwrap_or(&self.next_id("pack")).to_string(),
             name,
@@ -1359,8 +1345,8 @@ impl EnterpriseStore {
         actor: String,
         active: bool,
     ) -> AlertSuppression {
-        if let Some(existing_id) = id {
-            if let Some(index) = self
+        if let Some(existing_id) = id
+            && let Some(index) = self
                 .snapshot
                 .suppressions
                 .iter()
@@ -1389,7 +1375,6 @@ impl EnterpriseStore {
                 self.persist();
                 return updated;
             }
-        }
         let suppression = AlertSuppression {
             id: self.next_id("supp"),
             name,
@@ -1427,8 +1412,8 @@ impl EnterpriseStore {
         timeout_secs: u64,
         metadata: HashMap<String, String>,
     ) -> EnrichmentConnector {
-        if let Some(id) = id {
-            if let Some(index) = self.snapshot.connectors.iter().position(|connector| connector.id == id) {
+        if let Some(id) = id
+            && let Some(index) = self.snapshot.connectors.iter().position(|connector| connector.id == id) {
                 let updated = {
                     let connector = &mut self.snapshot.connectors[index];
                     connector.kind = kind;
@@ -1445,7 +1430,6 @@ impl EnterpriseStore {
                 self.persist();
                 return updated;
             }
-        }
         let connector = EnrichmentConnector {
             id: self.next_id("conn"),
             kind,
@@ -1526,8 +1510,8 @@ impl EnterpriseStore {
         enabled: bool,
         group_role_mappings: HashMap<String, String>,
     ) -> IdentityProviderConfig {
-        if let Some(id) = id {
-            if let Some(index) = self.snapshot.idp_providers.iter().position(|provider| provider.id == id) {
+        if let Some(id) = id
+            && let Some(index) = self.snapshot.idp_providers.iter().position(|provider| provider.id == id) {
                 let updated = {
                     let provider = &mut self.snapshot.idp_providers[index];
                     provider.kind = kind;
@@ -1545,7 +1529,6 @@ impl EnterpriseStore {
                 self.persist();
                 return updated;
             }
-        }
         let provider = IdentityProviderConfig {
             id: self.next_id("idp"),
             kind,

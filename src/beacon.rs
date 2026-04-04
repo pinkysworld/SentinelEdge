@@ -308,8 +308,8 @@ impl BeaconDetector {
 
             // DGA score: high entropy + high consonant ratio + NXDOMAIN
             let entropy_factor =
-                ((entropy - 2.5) / 2.0).max(0.0).min(1.0);
-            let consonant_factor = ((consonant_ratio - 0.5) / 0.3).max(0.0).min(1.0);
+                ((entropy - 2.5) / 2.0).clamp(0.0, 1.0);
+            let consonant_factor = ((consonant_ratio - 0.5) / 0.3).clamp(0.0, 1.0);
             let nx_bonus = if nxdomain { 0.2 } else { 0.0 };
             let score = entropy_factor * 0.5 + consonant_factor * 0.3 + nx_bonus;
 
@@ -365,7 +365,7 @@ impl BeaconDetector {
             let nxdomain_ratio = nx_count as f32 / records.len() as f32;
 
             // Tunnelling score
-            let length_factor = ((avg_length - 30.0) / 40.0).max(0.0).min(1.0);
+            let length_factor = ((avg_length - 30.0) / 40.0).clamp(0.0, 1.0);
             let txt_factor = txt_ratio;
             let nx_factor = if nxdomain_ratio > self.config.nxdomain_ratio_threshold {
                 0.3

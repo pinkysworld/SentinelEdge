@@ -75,14 +75,12 @@ impl CaseStore {
 
     fn load(&mut self) {
         let path = Path::new(&self.store_path);
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                if let Ok(cases) = serde_json::from_str::<Vec<Case>>(&content) {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(path)
+                && let Ok(cases) = serde_json::from_str::<Vec<Case>>(&content) {
                     self.next_id = cases.iter().map(|c| c.id).max().unwrap_or(0) + 1;
                     self.cases = cases;
                 }
-            }
-        }
     }
 
     fn persist(&self) {
@@ -242,6 +240,12 @@ pub struct AlertQueue {
     items: Vec<QueuedAlert>,
 }
 
+impl Default for AlertQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AlertQueue {
     pub fn new() -> Self {
         AlertQueue { items: Vec::new() }
@@ -348,21 +352,16 @@ pub struct SearchQuery {
 pub fn search_events<'a>(events: &'a [crate::event_forward::StoredEvent], query: &SearchQuery) -> Vec<&'a crate::event_forward::StoredEvent> {
     let limit = query.limit.unwrap_or(100).min(1000);
     events.iter().filter(|e| {
-        if let Some(ref h) = query.hostname {
-            if !e.alert.hostname.contains(h.as_str()) { return false; }
-        }
-        if let Some(ref l) = query.level {
-            if !e.alert.level.eq_ignore_ascii_case(l) { return false; }
-        }
-        if let Some(ref a) = query.agent_id {
-            if e.agent_id != *a { return false; }
-        }
-        if let Some(ref from) = query.from_ts {
-            if e.alert.timestamp < *from { return false; }
-        }
-        if let Some(ref to) = query.to_ts {
-            if e.alert.timestamp > *to { return false; }
-        }
+        if let Some(ref h) = query.hostname
+            && !e.alert.hostname.contains(h.as_str()) { return false; }
+        if let Some(ref l) = query.level
+            && !e.alert.level.eq_ignore_ascii_case(l) { return false; }
+        if let Some(ref a) = query.agent_id
+            && e.agent_id != *a { return false; }
+        if let Some(ref from) = query.from_ts
+            && e.alert.timestamp < *from { return false; }
+        if let Some(ref to) = query.to_ts
+            && e.alert.timestamp > *to { return false; }
         if let Some(ref text) = query.text {
             let t = text.to_lowercase();
             let in_reasons = e.alert.reasons.iter().any(|r| r.to_lowercase().contains(&t));
@@ -542,6 +541,12 @@ pub struct RemediationApproval {
 
 pub struct ApprovalLog {
     entries: Vec<RemediationApproval>,
+}
+
+impl Default for ApprovalLog {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ApprovalLog {

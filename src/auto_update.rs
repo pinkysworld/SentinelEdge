@@ -155,11 +155,10 @@ impl UpdateManager {
 
     fn load(&mut self) {
         let index_path = format!("{}/releases.json", self.store_dir);
-        if let Ok(raw) = fs::read_to_string(Path::new(&index_path)) {
-            if let Ok(releases) = serde_json::from_str(&raw) {
+        if let Ok(raw) = fs::read_to_string(Path::new(&index_path))
+            && let Ok(releases) = serde_json::from_str(&raw) {
                 self.releases = releases;
             }
-        }
     }
 }
 

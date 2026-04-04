@@ -164,11 +164,10 @@ impl DigitalTwinEngine {
             for event in &step.events {
                 let (device_id, new_alerts, new_transitions) =
                     self.apply_event(step.tick, event);
-                if let Some(id) = device_id {
-                    if let Some(dev) = self.devices.get_mut(&id) {
+                if let Some(id) = device_id
+                    && let Some(dev) = self.devices.get_mut(&id) {
                         dev.uptime_secs = step.tick;
                     }
-                }
                 alerts.extend(new_alerts);
                 transitions.extend(new_transitions);
             }
@@ -214,7 +213,7 @@ impl DigitalTwinEngine {
                         }
                     }
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::MemoryExhaust { target, mb } => {
                 if let Some(dev) = self.devices.get_mut(target) {
@@ -239,13 +238,13 @@ impl DigitalTwinEngine {
                         }
                     }
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::NetworkFlood { target, kbps } => {
                 if let Some(dev) = self.devices.get_mut(target) {
                     dev.network_rx_kbps = *kbps;
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::MalwareInject { target, score } => {
                 if let Some(dev) = self.devices.get_mut(target) {
@@ -269,7 +268,7 @@ impl DigitalTwinEngine {
                         });
                     }
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::ProcessSpawn { target, count } => {
                 if let Some(dev) = self.devices.get_mut(target) {
@@ -284,7 +283,7 @@ impl DigitalTwinEngine {
                         });
                     }
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::ConnectionBurst { target, count } => {
                 if let Some(dev) = self.devices.get_mut(target) {
@@ -299,7 +298,7 @@ impl DigitalTwinEngine {
                         });
                     }
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::StateChange { target, new_state } => {
                 if let Some(dev) = self.devices.get_mut(target) {
@@ -313,13 +312,13 @@ impl DigitalTwinEngine {
                         reason: "manual state change".into(),
                     });
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
             SimEvent::CustomMetric { target, key, value } => {
                 if let Some(dev) = self.devices.get_mut(target) {
                     dev.custom.insert(key.clone(), *value);
                 }
-                return (Some(target.clone()), alerts, transitions);
+                (Some(target.clone()), alerts, transitions)
             }
         }
     }

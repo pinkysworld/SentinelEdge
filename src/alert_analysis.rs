@@ -676,9 +676,9 @@ fn parse_timestamps(alerts: &[AlertRecord]) -> Vec<f64> {
 }
 
 fn highest_level(levels: &[&str]) -> String {
-    if levels.iter().any(|l| *l == "Critical") {
+    if levels.contains(&"Critical") {
         "Critical".into()
-    } else if levels.iter().any(|l| *l == "Severe") {
+    } else if levels.contains(&"Severe") {
         "Severe".into()
     } else {
         "Elevated".into()

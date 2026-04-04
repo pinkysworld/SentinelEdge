@@ -228,8 +228,8 @@ impl UebaEngine {
         let alpha = self.config.alpha;
 
         // ── Login time anomaly ───────────────────────────────
-        if let Some(hour) = obs.hour_of_day {
-            if hour < 24 {
+        if let Some(hour) = obs.hour_of_day
+            && hour < 24 {
                 if is_warm {
                     let baseline_freq = profile.hour_histogram[hour as usize];
                     let total: f32 = profile.hour_histogram.iter().sum();
@@ -259,12 +259,11 @@ impl UebaEngine {
                     }
                 }
             }
-        }
 
         // ── Impossible travel ────────────────────────────────
         if let (Some(lat), Some(lon)) = (obs.geo_lat, obs.geo_lon) {
-            if let Some((prev_lat, prev_lon)) = profile.last_geo {
-                if profile.last_seen_ms > 0 {
+            if let Some((prev_lat, prev_lon)) = profile.last_geo
+                && profile.last_seen_ms > 0 {
                     let dist_km = haversine(prev_lat, prev_lon, lat, lon);
                     let hours =
                         (obs.timestamp_ms - profile.last_seen_ms) as f64 / 3_600_000.0;
@@ -291,7 +290,6 @@ impl UebaEngine {
                         }
                     }
                 }
-            }
             profile.last_geo = Some((lat, lon));
         }
 
@@ -309,11 +307,10 @@ impl UebaEngine {
                     mitre_technique: None,
                 });
             }
-            if !profile.known_resources.contains(resource) {
-                if profile.known_resources.len() < 500 {
+            if !profile.known_resources.contains(resource)
+                && profile.known_resources.len() < 500 {
                     profile.known_resources.push(resource.clone());
                 }
-            }
         }
 
         // ── Anomalous process ────────────────────────────────
@@ -330,11 +327,10 @@ impl UebaEngine {
                     mitre_technique: Some("T1059".into()),
                 });
             }
-            if !profile.known_processes.contains(process) {
-                if profile.known_processes.len() < 500 {
+            if !profile.known_processes.contains(process)
+                && profile.known_processes.len() < 500 {
                     profile.known_processes.push(process.clone());
                 }
-            }
         }
 
         // ── Data volume anomaly ──────────────────────────────
@@ -377,11 +373,10 @@ impl UebaEngine {
                     mitre_technique: None,
                 });
             }
-            if !profile.known_ports.contains(&port) {
-                if profile.known_ports.len() < 200 {
+            if !profile.known_ports.contains(&port)
+                && profile.known_ports.len() < 200 {
                     profile.known_ports.push(port);
                 }
-            }
         }
 
         // ── Update risk score ────────────────────────────────

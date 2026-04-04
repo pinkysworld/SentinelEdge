@@ -218,7 +218,7 @@ pub fn quantize_model(
     weights: &[f64],
     bit_width: u8,
 ) -> QuantizedModel {
-    assert!(bit_width >= 2 && bit_width <= 8, "bit_width must be 2..=8");
+    assert!((2..=8).contains(&bit_width), "bit_width must be 2..=8");
 
     let abs_max = weights
         .iter()

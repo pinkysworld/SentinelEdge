@@ -20,6 +20,12 @@ pub struct PolicyStore {
     max_history: usize,
 }
 
+impl Default for PolicyStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PolicyStore {
     pub fn new() -> Self {
         Self {

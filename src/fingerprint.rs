@@ -119,10 +119,10 @@ impl DeviceFingerprint {
     /// while still detecting abrupt shifts.
     pub fn update_ewma(&mut self, sample: &TelemetrySample, alpha: f32) {
         let features = to_features(sample);
-        for i in 0..DIM {
+        for (i, feat) in features.iter().enumerate().take(DIM) {
             let old_mean = self.means[i];
-            self.means[i] = (1.0 - alpha) * self.means[i] + alpha * features[i];
-            let diff = features[i] - old_mean;
+            self.means[i] = (1.0 - alpha) * self.means[i] + alpha * feat;
+            let diff = feat - old_mean;
             let new_var = (1.0 - alpha) * (self.stddevs[i] * self.stddevs[i]) + alpha * diff * diff;
             self.stddevs[i] = new_var.sqrt();
         }

@@ -174,7 +174,7 @@ fn kernel_version_at_least(version_str: &str, major: u32, minor: u32, patch: u32
     // /proc/version: "Linux version 5.15.0-91-generic ..."
     let token = version_str
         .split_whitespace()
-        .find(|t| t.chars().next().map_or(false, |c| c.is_ascii_digit()));
+        .find(|t| t.chars().next().is_some_and(|c| c.is_ascii_digit()));
     if let Some(ver) = token {
         let parts: Vec<u32> = ver
             .split(|c: char| !c.is_ascii_digit())
@@ -450,11 +450,9 @@ fn build_inode_to_pid_map() -> HashMap<u64, u32> {
                 if let Some(inode_str) = link_str
                     .strip_prefix("socket:[")
                     .and_then(|s| s.strip_suffix(']'))
-                {
-                    if let Ok(inode) = inode_str.parse::<u64>() {
+                    && let Ok(inode) = inode_str.parse::<u64>() {
                         map.insert(inode, pid);
                     }
-                }
             }
         }
     }
@@ -555,8 +553,7 @@ pub fn collect_dns_info() -> Vec<LinuxDnsEvent> {
     if let Ok(output) = std::process::Command::new("resolvectl")
         .arg("statistics")
         .output()
-    {
-        if output.status.success() {
+        && output.status.success() {
             let text = String::from_utf8_lossy(&output.stdout);
             events.push(LinuxDnsEvent {
                 timestamp: now.clone(),
@@ -566,7 +563,6 @@ pub fn collect_dns_info() -> Vec<LinuxDnsEvent> {
                 ocsf_class_id: OCSF_DNS_ACTIVITY,
             });
         }
-    }
 
     events
 }
@@ -884,7 +880,7 @@ impl LinuxSnapshot {
         let now = chrono::Utc::now().to_rfc3339();
         let caps = LinuxCapabilities::detect();
         let watch_dirs = ["/etc", "/tmp", "/var/log"];
-        let watch_refs: Vec<&str> = watch_dirs.iter().copied().collect();
+        let watch_refs: Vec<&str> = watch_dirs.to_vec();
 
         let mut privesc = detect_suid_binaries();
         privesc.extend(check_sudo_config());

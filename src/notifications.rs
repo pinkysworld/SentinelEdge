@@ -290,7 +290,7 @@ impl NotificationEngine {
                         last_err = Some(e);
                         if attempt + 1 < self.max_retries {
                             std::thread::sleep(std::time::Duration::from_millis(
-                                100 * 2u64.pow(attempt as u32),
+                                100 * 2u64.pow(attempt),
                             ));
                         }
                         continue;

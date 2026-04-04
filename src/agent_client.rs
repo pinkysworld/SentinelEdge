@@ -172,49 +172,47 @@ impl AgentClient {
     }
 
     fn self_log_update_hint(&self, response: &HeartbeatResponse) {
-        if response.update_assigned {
-            if let Some(version) = &response.target_version {
-                eprintln!("[update] Server assigned remote deployment for v{version}");
+        if response.update_assigned
+            && let Some(version) = &response.target_version {
+                log::info!("[update] Server assigned remote deployment for v{version}");
             }
-        }
     }
 
     fn process_update(&self, target_version: Option<&str>) {
         self.set_update_state("checking", target_version, None);
         match self.check_update() {
             Ok(Some(info)) => {
-                if let Some(expected) = target_version {
-                    if info.version != expected {
+                if let Some(expected) = target_version
+                    && info.version != expected {
                         self.set_update_state(
                             "mismatch",
                             Some(expected),
                             Some(format!("server returned {} instead of assigned target", info.version)),
                         );
-                        eprintln!("[update] Assigned target {expected}, but server returned {}", info.version);
+                        log::warn!("[update] Assigned target {expected}, but server returned {}", info.version);
                         return;
                     }
-                }
-                eprintln!("[update] New version available: v{}", info.version);
+                log::info!("[update] New version available: v{}", info.version);
                 if info.mandatory {
-                    eprintln!("[update] Mandatory update - downloading...");
+                    log::info!("[update] Mandatory update - downloading...");
                 }
                 self.set_update_state("downloading", Some(&info.version), None);
                 match self.download_update(&info) {
                     Ok(binary) => {
                         self.set_update_state("downloaded", Some(&info.version), None);
-                        eprintln!("[update] Downloaded {} bytes, checksum verified", binary.len());
+                        log::info!("[update] Downloaded {} bytes, checksum verified", binary.len());
                         self.set_update_state("applying", Some(&info.version), None);
                         if let Err(e) = apply_update(&binary, &info.version) {
                             self.set_update_state("failed", Some(&info.version), Some(e.clone()));
-                            eprintln!("[update] Failed to apply: {e}");
+                            log::error!("[update] Failed to apply: {e}");
                         } else {
                             self.set_update_state("restart_pending", Some(&info.version), None);
-                            eprintln!("[update] Update applied — restart required");
+                            log::info!("[update] Update applied — restart required");
                         }
                     }
                     Err(e) => {
                         self.set_update_state("failed", Some(&info.version), Some(e.clone()));
-                        eprintln!("[update] Download failed: {e}");
+                        log::error!("[update] Download failed: {e}");
                     }
                 }
             }
@@ -223,7 +221,7 @@ impl AgentClient {
             }
             Err(e) => {
                 self.set_update_state("failed", target_version, Some(e.clone()));
-                eprintln!("[update] Check failed: {e}");
+                log::error!("[update] Check failed: {e}");
             }
         }
     }
@@ -245,11 +243,10 @@ impl AgentClient {
     where
         F: FnOnce(&mut AgentRuntimeStatus),
     {
-        if let Some(runtime_status) = &self.runtime_status {
-            if let Ok(mut status) = runtime_status.lock() {
+        if let Some(runtime_status) = &self.runtime_status
+            && let Ok(mut status) = runtime_status.lock() {
                 mutate(&mut status);
             }
-        }
     }
 
     fn set_queue_depth(&self, queue_depth: usize) {
@@ -403,18 +400,18 @@ pub fn run_agent(
     // Detect host info
     let host_info = collector::detect_platform();
 
-    eprintln!("Wardex Agent v{}", env!("CARGO_PKG_VERSION"));
-    eprintln!("  Platform: {} ({})", host_info.platform, host_info.hostname);
-    eprintln!("  Server: {}", server_url);
+    log::info!("Wardex Agent v{}", env!("CARGO_PKG_VERSION"));
+    log::info!("  Platform: {} ({})", host_info.platform, host_info.hostname);
+    log::info!("  Server: {}", server_url);
 
     // Enroll
     let mut client = AgentClient::new(server_url);
     let runtime_status = Arc::new(Mutex::new(AgentRuntimeStatus::default()));
     client.attach_runtime_status(runtime_status.clone());
     let resp = client.enroll(enrollment_token, &host_info.hostname, &host_info.platform.to_string())?;
-    eprintln!("  Enrolled as: {}", resp.agent_id);
-    eprintln!("  Heartbeat interval: {}s", resp.heartbeat_interval_secs);
-    eprintln!();
+    log::info!("  Enrolled as: {}", resp.agent_id);
+    log::info!("  Heartbeat interval: {}s", resp.heartbeat_interval_secs);
+    log::info!("");
 
     // Background heartbeat thread
     let heartbeat_interval = resp.heartbeat_interval_secs;
@@ -440,7 +437,7 @@ pub fn run_agent(
                         hb_client.process_update(target_version.as_deref());
                     }
                 }
-                Err(e) => eprintln!("heartbeat error: {e}"),
+                Err(e) => log::error!("heartbeat error: {e}"),
             }
         }
     });
@@ -499,22 +496,20 @@ pub fn run_agent(
             match pol_client.fetch_policy() {
                 Ok(Some(p)) if p.version > current_version => {
                     current_version = p.version;
-                    eprintln!("[policy] Applying policy v{}", p.version);
-                    if let Some(t) = p.alert_threshold {
-                        if let Ok(mut th) = policy_threshold.lock() {
+                    log::info!("[policy] Applying policy v{}", p.version);
+                    if let Some(t) = p.alert_threshold
+                        && let Ok(mut th) = policy_threshold.lock() {
                             *th = t;
-                            eprintln!("[policy]   alert_threshold = {t}");
+                            log::info!("[policy]   alert_threshold = {t}");
                         }
-                    }
-                    if let Some(i) = p.interval_secs {
-                        if let Ok(mut iv) = policy_interval_secs.lock() {
+                    if let Some(i) = p.interval_secs
+                        && let Ok(mut iv) = policy_interval_secs.lock() {
                             *iv = i;
-                            eprintln!("[policy]   interval_secs = {i}");
+                            log::info!("[policy]   interval_secs = {i}");
                         }
-                    }
                 }
                 Ok(_) => {} // no change or no policy
-                Err(e) => eprintln!("[policy] fetch error: {e}"),
+                Err(e) => log::error!("[policy] fetch error: {e}"),
             }
         }
     });
@@ -523,7 +518,7 @@ pub fn run_agent(
     let interval = Duration::from_secs(config.monitor.interval_secs);
 
     let mut detector = crate::detector::AnomalyDetector::default();
-    let policy = crate::policy::PolicyEngine::default();
+    let policy = crate::policy::PolicyEngine;
     let mut collector_state = collector::CollectorState::default();
     let fim = if !config.monitor.watch_paths.is_empty() {
         Some(collector::FileIntegrityMonitor::new(&config.monitor.watch_paths))
@@ -549,9 +544,9 @@ pub fn run_agent(
     {
         let inv = crate::inventory::collect_inventory();
         if let Err(e) = client.report_inventory(&inv) {
-            eprintln!("[agent] Initial inventory report failed: {e}");
+            log::error!("[agent] Initial inventory report failed: {e}");
         } else {
-            eprintln!("[agent] Initial inventory reported");
+            log::info!("[agent] Initial inventory reported");
         }
     }
 
@@ -595,26 +590,25 @@ pub fn run_agent(
         }
 
         // Forward events every 10 samples or when we have 5+ alerts
-        if sample_count % 10 == 0 || pending_alerts.len() >= 5 {
-            if !pending_alerts.is_empty() {
+        if (sample_count.is_multiple_of(10) || pending_alerts.len() >= 5)
+            && !pending_alerts.is_empty() {
                 match client.forward_events(&pending_alerts) {
                     Ok(()) => {
-                        eprintln!("[agent] Forwarded {} alerts to server", pending_alerts.len());
+                        log::info!("[agent] Forwarded {} alerts to server", pending_alerts.len());
                         pending_alerts.clear();
                         client.set_queue_depth(0);
                     }
-                    Err(e) => eprintln!("[agent] Forward failed (will retry): {e}"),
+                    Err(e) => log::error!("[agent] Forward failed (will retry): {e}"),
                 }
             }
-        }
 
         // Collect and forward logs every heartbeat cycle
-        if sample_count % 10 == 0 {
+        if sample_count.is_multiple_of(10) {
             let logs = crate::log_collector::collect_recent_logs(50);
             if !logs.is_empty() {
                 match client.forward_logs(&logs) {
-                    Ok(()) => eprintln!("[agent] Forwarded {} log records", logs.len()),
-                    Err(e) => eprintln!("[agent] Log forward failed: {e}"),
+                    Ok(()) => log::info!("[agent] Forwarded {} log records", logs.len()),
+                    Err(e) => log::error!("[agent] Log forward failed: {e}"),
                 }
                 if let Some(ref mut siem) = siem_connector {
                     for log in &logs {
@@ -630,7 +624,7 @@ pub fn run_agent(
             last_inventory_at = elapsed;
             let inv = crate::inventory::collect_inventory();
             if let Err(e) = client.report_inventory(&inv) {
-                eprintln!("[agent] Inventory report failed: {e}");
+                log::error!("[agent] Inventory report failed: {e}");
             }
             if let Some(ref mut siem) = siem_connector {
                 siem.push_inventory(&inv, client.agent_id().unwrap_or("unknown"));
@@ -676,7 +670,7 @@ fn apply_update(binary: &[u8], version: &str) -> Result<(), String> {
         let _ = std::fs::set_permissions(&exe_path, std::fs::Permissions::from_mode(0o755));
     }
 
-    eprintln!("[update] Updated to v{version}. Backup at: {}", backup_path.display());
+    log::info!("[update] Updated to v{version}. Backup at: {}", backup_path.display());
     Ok(())
 }
 

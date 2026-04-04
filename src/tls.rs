@@ -30,16 +30,13 @@ pub struct TlsConfig {
 
 /// Supported TLS protocol versions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TlsVersion {
+    #[default]
     Tls12,
     Tls13,
 }
 
-impl Default for TlsVersion {
-    fn default() -> Self {
-        Self::Tls12
-    }
-}
 
 impl TlsVersion {
     pub fn as_str(self) -> &'static str {
@@ -96,11 +93,10 @@ impl TlsConfig {
                 "Certificate file not found: {}",
                 self.cert_path.display()
             ));
-        } else if let Ok(content) = std::fs::read_to_string(&self.cert_path) {
-            if !content.contains("BEGIN CERTIFICATE") {
+        } else if let Ok(content) = std::fs::read_to_string(&self.cert_path)
+            && !content.contains("BEGIN CERTIFICATE") {
                 errors.push("Certificate file does not appear to be PEM-encoded".into());
             }
-        }
 
         // Check key file
         if !self.key_path.exists() {
@@ -124,22 +120,20 @@ impl TlsConfig {
                 }
             }
 
-            if let Ok(content) = std::fs::read_to_string(&self.key_path) {
-                if !content.contains("PRIVATE KEY") {
+            if let Ok(content) = std::fs::read_to_string(&self.key_path)
+                && !content.contains("PRIVATE KEY") {
                     errors.push("Key file does not appear to contain a private key".into());
                 }
-            }
         }
 
         // Check client CA for mTLS
-        if let Some(ref ca_path) = self.client_ca_path {
-            if !ca_path.exists() {
+        if let Some(ref ca_path) = self.client_ca_path
+            && !ca_path.exists() {
                 errors.push(format!(
                     "Client CA certificate not found: {}",
                     ca_path.display()
                 ));
             }
-        }
 
         if self.require_client_cert && self.client_ca_path.is_none() {
             errors.push("mTLS requires a client CA certificate path".into());

@@ -19,13 +19,12 @@ pub fn runtime_root_dir() -> PathBuf {
         candidates.push(current_dir);
     }
 
-    if let Ok(exe_path) = env::current_exe() {
-        if let Some(parent) = exe_path.parent() {
+    if let Ok(exe_path) = env::current_exe()
+        && let Some(parent) = exe_path.parent() {
             for ancestor in parent.ancestors() {
                 candidates.push(ancestor.to_path_buf());
             }
         }
-    }
 
     candidates
         .into_iter()

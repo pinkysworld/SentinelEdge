@@ -34,6 +34,12 @@ pub struct MetricsRegistry {
     start_time: Instant,
 }
 
+impl Default for MetricsRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsRegistry {
     pub fn new() -> Self {
         Self {
@@ -173,6 +179,12 @@ impl Default for LiveCounters {
             storage_bytes: 0,
             queue_depth: 0,
         }
+    }
+}
+
+impl Default for SharedMetrics {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
