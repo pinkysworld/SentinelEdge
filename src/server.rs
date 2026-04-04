@@ -718,7 +718,9 @@ pub fn run_server(
         escalation_engine: crate::escalation::EscalationEngine::new(),
         kernel_event_stream: crate::kernel_events::KernelEventStream::new(10_000),
         last_alert_analysis: None,
-        storage: SharedStorage::open("var/storage").unwrap_or_else(|_| SharedStorage::open("/tmp/wardex_storage").unwrap()),
+        storage: SharedStorage::open("var/storage")
+            .or_else(|_| SharedStorage::open("/tmp/wardex_storage"))
+            .map_err(|e| format!("failed to initialise storage: {e}"))?,
         slow_attack: crate::detector::SlowAttackDetector::default(),
         ransomware: crate::ransomware::RansomwareDetector::default(),
     }));
@@ -1002,7 +1004,9 @@ pub fn spawn_test_server() -> (u16, String) {
         escalation_engine: crate::escalation::EscalationEngine::new(),
         kernel_event_stream: crate::kernel_events::KernelEventStream::new(10_000),
         last_alert_analysis: None,
-        storage: SharedStorage::open(state_root.join("storage").to_str().unwrap_or("var/storage")).unwrap_or_else(|_| SharedStorage::open("/tmp/wardex_storage").unwrap()),
+        storage: SharedStorage::open(state_root.join("storage").to_str().unwrap_or("var/storage"))
+            .or_else(|_| SharedStorage::open("/tmp/wardex_storage"))
+            .expect("failed to initialise test storage"),
         slow_attack: crate::detector::SlowAttackDetector::default(),
         ransomware: crate::ransomware::RansomwareDetector::default(),
     }));
