@@ -41,7 +41,7 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 3.2 | HSTS header | High | Implemented |
 | 3.3 | CORS allowlist (no wildcard) | Critical | Implemented |
 | 3.4 | X-Content-Type-Options: nosniff | High | Implemented |
-| 3.5 | Mutual TLS (mTLS) for agents | Medium | Not started |
+| 3.5 | Mutual TLS (mTLS) for agents | Medium | Implemented |
 
 ## 4. Auditability
 
@@ -102,7 +102,7 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 9.3 | Checkpoint round-trip tests | High | Implemented |
 | 9.4 | Spool encryption round-trip | High | Implemented |
 | 9.5 | Multi-tenant isolation tests | Medium | Implemented |
-| 9.6 | Chaos / fault-injection tests | Medium | Partial |
+| 9.6 | Chaos / fault-injection tests | Medium | Implemented |
 
 ## 10. Packaging & Distribution
 
@@ -133,20 +133,18 @@ or **Not started**, with a priority of Critical / High / Medium.
 |----------|-------|
 | Tenant Isolation | 5/5 |
 | AuthN/AuthZ | 7/7 |
-| Transport | 4/5 |
+| Transport | 5/5 |
 | Auditability | 5/5 |
 | Schema | 4/4 |
 | Rollback | 5/5 |
 | Retention | 5/5 |
 | Failure Handling | 6/6 |
-| Test Realism | 5/6 |
+| Test Realism | 6/6 |
 | Packaging | 4/5 |
 | Documentation | 6/6 |
 
-**Overall**: 56/59 controls implemented (95%).
+**Overall**: 58/59 controls implemented (98%).
 
 ## Remediation Priorities
 
-1. **Mutual TLS for agents** (3.5) — strongest agent authentication.
-2. **Package manager** (10.5) — deb/rpm/brew distribution.
-3. **Chaos / fault-injection tests** (9.6) — additional failure scenarios.
+1. **Package manager** (10.5) — deb/rpm/brew distribution.

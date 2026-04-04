@@ -581,13 +581,48 @@ pub fn run_server(
     initial_config: Config,
 ) -> Result<(), String> {
     let addr = format!("0.0.0.0:{port}");
-    let server = Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?;
+
+    // Determine TLS mode from environment variables
+    let tls_cert = std::env::var("WARDEX_TLS_CERT").ok();
+    let tls_key = std::env::var("WARDEX_TLS_KEY").ok();
+
+    #[cfg(feature = "tls")]
+    let server = if let (Some(cert_path), Some(key_path)) = (&tls_cert, &tls_key) {
+        let tls_config = crate::tls::TlsConfig::new(cert_path, key_path);
+        let validation = tls_config.validate();
+        if !validation.valid {
+            return Err(format!("TLS config invalid: {}", validation.errors.join("; ")));
+        }
+        for w in &validation.warnings {
+            eprintln!("  TLS warning: {w}");
+        }
+        let ssl_config = tiny_http::SslConfig {
+            certificate: std::fs::read(cert_path)
+                .map_err(|e| format!("failed to read TLS cert: {e}"))?,
+            private_key: std::fs::read(key_path)
+                .map_err(|e| format!("failed to read TLS key: {e}"))?,
+        };
+        Server::https(&addr, ssl_config)
+            .map_err(|e| format!("failed to start HTTPS server: {e}"))?
+    } else {
+        Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?
+    };
+
+    #[cfg(not(feature = "tls"))]
+    let server = {
+        if tls_cert.is_some() || tls_key.is_some() {
+            eprintln!("  WARNING: WARDEX_TLS_CERT/KEY set but binary compiled without 'tls' feature; using plain HTTP");
+        }
+        Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?
+    };
+
     let config_path = crate::config::runtime_config_path();
 
     // Use persistent token from environment if set, otherwise generate a random one
     let token = std::env::var("WARDEX_ADMIN_TOKEN").unwrap_or_else(|_| generate_token());
+    let scheme = if tls_cert.is_some() && tls_key.is_some() && cfg!(feature = "tls") { "https" } else { "http" };
     eprintln!("Wardex admin console");
-    eprintln!("  Listening on http://localhost:{port}");
+    eprintln!("  Listening on {scheme}://localhost:{port}");
     eprintln!("  Site directory: {}", site_dir.display());
     if std::env::var("WARDEX_ADMIN_TOKEN").is_ok() {
         eprintln!("  Auth token: (set via WARDEX_ADMIN_TOKEN)");
@@ -628,7 +663,14 @@ pub fn run_server(
         deception: DeceptionEngine::new(),
         patches: PatchManager::new(),
         causal: CausalGraph::new(),
-        listener_mode: ListenerMode::Plain { port },
+        listener_mode: if tls_cert.is_some() && tls_key.is_some() && cfg!(feature = "tls") {
+            ListenerMode::Tls { port, config: crate::tls::TlsConfig::new(
+                tls_cert.as_deref().unwrap_or_default(),
+                tls_key.as_deref().unwrap_or_default(),
+            )}
+        } else {
+            ListenerMode::Plain { port }
+        },
         config: Config::default(),
         config_path,
         alerts: VecDeque::new(),

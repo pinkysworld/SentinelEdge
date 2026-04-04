@@ -4529,3 +4529,143 @@ fn metrics_endpoint_returns_prometheus_text() {
     assert!(body.contains("wardex_requests_total"));
     assert!(body.contains("wardex_agents_total"));
 }
+
+// ── Additional Chaos / Fault Injection Tests ───────────────────
+
+#[test]
+fn chaos_oversized_header_rejected() {
+    let (port, token) = spawn_test_server();
+    // Send request with absurdly large header value
+    let huge_value = "X".repeat(64 * 1024);
+    let result = ureq::get(&format!("{}/api/health", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .set("X-Huge", &huge_value)
+        .call();
+    // Server should either reject or handle gracefully without crashing
+    match result {
+        Ok(_) | Err(_) => {}
+    }
+    // Verify server is still alive
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after oversized header");
+    assert_eq!(resp.status(), 200);
+}
+
+#[test]
+fn chaos_wrong_http_method_graceful() {
+    let (port, token) = spawn_test_server();
+    // Send wrong HTTP methods to endpoints to verify graceful handling
+    let wrong_method_tests: Vec<(&str, &str)> = vec![
+        ("DELETE", "/api/health"),
+        ("PUT", "/api/alerts/count"),
+        ("PATCH", "/api/status"),
+    ];
+    for (method, path) in &wrong_method_tests {
+        let url = format!("{}{}", base(port), path);
+        let result = match *method {
+            "DELETE" => ureq::delete(&url)
+                .set("Authorization", &auth_header(&token))
+                .call(),
+            "PUT" => ureq::put(&url)
+                .set("Authorization", &auth_header(&token))
+                .send_string("{}"),
+            "PATCH" => ureq::patch(&url)
+                .set("Authorization", &auth_header(&token))
+                .send_string("{}"),
+            _ => unreachable!(),
+        };
+        match result {
+            Ok(r) => assert!(
+                r.status() == 405 || r.status() == 200 || r.status() == 404,
+                "Unexpected status for {} {}: {}",
+                method,
+                path,
+                r.status()
+            ),
+            Err(_) => {} // error response is fine
+        }
+    }
+    // Server still alive
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after wrong methods");
+    assert_eq!(resp.status(), 200);
+}
+
+#[test]
+fn chaos_empty_and_invalid_auth_headers() {
+    let (port, _) = spawn_test_server();
+    // Try various invalid Authorization headers
+    let bad_auths = [
+        "",
+        "Bearer",
+        "Bearer ",
+        "Basic dXNlcjpwYXNz",
+        "Bearer null",
+        &format!("Bearer {}", "A".repeat(1000)),
+    ];
+    for bad in &bad_auths {
+        let result = ureq::get(&format!("{}/api/auth/check", base(port)))
+            .set("Authorization", bad)
+            .call();
+        match result {
+            Ok(r) => assert_eq!(r.status(), 401, "Expected 401 for auth: {:?}", bad),
+            Err(ureq::Error::Status(401, _)) => {}
+            Err(e) => panic!("Unexpected error for auth {:?}: {}", bad, e),
+        }
+    }
+    // Server still healthy
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after bad auth");
+    assert_eq!(resp.status(), 200);
+}
+
+#[test]
+fn chaos_rapid_sequential_endpoint_sweep() {
+    let (port, token) = spawn_test_server();
+    // Hit every major API endpoint in rapid succession
+    let endpoints = [
+        "/api/health",
+        "/api/status",
+        "/api/alerts/count",
+        "/api/session/info",
+        "/api/slo/status",
+        "/api/retention/status",
+        "/api/metrics",
+        "/api/openapi.json",
+        "/api/admin/db/version",
+        "/api/detectors/ransomware",
+    ];
+    for _ in 0..3 {
+        for ep in &endpoints {
+            let _ = ureq::get(&format!("{}{}", base(port), ep))
+                .set("Authorization", &auth_header(&token))
+                .call();
+        }
+    }
+    // Verify no state corruption
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after sweep");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"], "ok");
+}
+
+#[test]
+fn chaos_oversized_json_body() {
+    let (port, token) = spawn_test_server();
+    // Send large JSON body to POST endpoint
+    let large_body = format!("{{\"data\":\"{}\"}}", "B".repeat(512 * 1024));
+    let _ = ureq::post(&format!("{}/api/config/reload", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .set("Content-Type", "application/json")
+        .send_string(&large_body);
+    // Server must survive
+    let resp = ureq::get(&format!("{}/api/health", base(port)))
+        .call()
+        .expect("health after oversized body");
+    assert_eq!(resp.status(), 200);
+}

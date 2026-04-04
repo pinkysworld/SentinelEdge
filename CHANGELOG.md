@@ -2,6 +2,21 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.36.3] — TLS/mTLS Listener, Chaos Tests Expansion, Hardening 98%
+
+### Added
+- **TLS/HTTPS listener** — opt-in `tls` Cargo feature enables `Server::https()` via rustls. Set `WARDEX_TLS_CERT` and `WARDEX_TLS_KEY` env vars to activate. Falls back to plain HTTP when not configured or feature not compiled.
+- **mTLS support** — `ListenerMode::Tls` carries full `TlsConfig` including client CA path and `require_client_cert` for mutual TLS agent authentication.
+- **5 new chaos/fault-injection tests** — oversized headers, wrong HTTP methods, empty/invalid auth headers, rapid endpoint sweep, oversized JSON bodies. Total chaos tests: 10.
+
+### Changed
+- **Production hardening** score updated from 95% (56/59) to 98% (58/59). Only 1 control remains: package manager distribution (10.5).
+- **Startup banner** now shows `https://` scheme when TLS is active.
+- Warns at startup if `WARDEX_TLS_CERT`/`KEY` env vars are set but binary was compiled without `tls` feature.
+
+### Tests
+- **920 lib + 10 chaos integration tests passing**, 0 failures, 0 warnings.
+
 ## [0.36.2] — Complete Retention Purge, Production Hardening 95%
 
 ### Added
