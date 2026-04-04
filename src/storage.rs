@@ -1,8 +1,8 @@
 //! Persistent storage backend.
 //!
 //! Provides a database abstraction layer for durable persistence of alerts,
-//! cases, fleet state, audit records, and configuration. Replaces in-memory
-//! storage with a SQLite-backed store that survives process restarts.
+//! cases, fleet state, audit records, and configuration. Uses a SQLite-backed
+//! store that survives process restarts.
 //! Supports migrations, WAL mode for concurrent readers, and parameterized
 //! queries to prevent SQL injection.
 
@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+use rusqlite::{params, Connection};
 
 use crate::audit::sha256_hex;
 
@@ -296,19 +298,22 @@ impl Default for QueryFilter {
 
 // ── Storage Backend ───────────────────────────────────────────────────────────
 
-/// File-based persistent storage using JSON files with atomic writes.
-/// Provides the same API that would be used with SQLite, but uses the
-/// filesystem for zero-dependency persistence.
-#[derive(Debug)]
+/// SQLite-backed persistent storage with WAL mode for concurrent reads.
+/// Provides the same API as the previous JSON file-based implementation
+/// but with proper ACID guarantees and indexed queries.
 pub struct StorageBackend {
+    conn: Connection,
     base_dir: PathBuf,
-    /// In-memory cache for fast reads
-    alerts: Vec<StoredAlert>,
-    cases: Vec<StoredCase>,
-    audit_entries: Vec<StoredAuditEntry>,
-    agents: Vec<StoredAgentState>,
-    config: HashMap<String, String>,
     current_version: u32,
+}
+
+impl std::fmt::Debug for StorageBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StorageBackend")
+            .field("base_dir", &self.base_dir)
+            .field("current_version", &self.current_version)
+            .finish()
+    }
 }
 
 impl StorageBackend {
@@ -320,20 +325,41 @@ impl StorageBackend {
             message: format!("failed to create storage directory: {e}"),
         })?;
 
+        let db_path = path.join("wardex.db");
+        let conn = Connection::open(&db_path).map_err(|e| StorageError {
+            code: StorageErrorCode::ConnectionFailed,
+            message: format!("failed to open SQLite database: {e}"),
+        })?;
+
+        // Enable WAL mode for concurrent readers
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::ConnectionFailed,
+                message: format!("failed to set PRAGMA: {e}"),
+            })?;
+
         let mut backend = Self {
+            conn,
             base_dir: path,
-            alerts: Vec::new(),
-            cases: Vec::new(),
-            audit_entries: Vec::new(),
-            agents: Vec::new(),
-            config: HashMap::new(),
             current_version: 0,
         };
 
-        backend.load_all()?;
+        backend.load_current_version();
         backend.run_migrations()?;
 
         Ok(backend)
+    }
+
+    fn load_current_version(&mut self) {
+        // Attempt to load current schema version
+        let version: u32 = self.conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        self.current_version = version;
     }
 
     /// Run all pending migrations.
@@ -341,10 +367,21 @@ impl StorageBackend {
         let all = migrations();
         for m in &all {
             if m.version > self.current_version {
+                self.conn.execute_batch(&m.sql_up).map_err(|e| StorageError {
+                    code: StorageErrorCode::MigrationFailed,
+                    message: format!("migration v{} '{}' failed: {e}", m.version, m.name),
+                })?;
+                let now = chrono::Utc::now().to_rfc3339();
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, name, applied_at) VALUES (?1, ?2, ?3)",
+                    params![m.version, m.name, now],
+                ).map_err(|e| StorageError {
+                    code: StorageErrorCode::MigrationFailed,
+                    message: format!("failed to record migration v{}: {e}", m.version),
+                })?;
                 self.current_version = m.version;
             }
         }
-        self.save_meta()?;
         Ok(())
     }
 
@@ -352,98 +389,174 @@ impl StorageBackend {
 
     /// Insert a new alert.
     pub fn insert_alert(&mut self, alert: StoredAlert) -> Result<(), StorageError> {
-        // Check for duplicate ID
-        if self.alerts.iter().any(|a| a.id == alert.id) {
-            return Err(StorageError {
-                code: StorageErrorCode::Conflict,
-                message: format!("alert {} already exists", alert.id),
-            });
-        }
-        self.alerts.push(alert);
-        self.save_alerts()
+        let reasons_json = serde_json::to_string(&alert.reasons).unwrap_or_default();
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO alerts (id, timestamp, device_id, score, level, reasons, acknowledged, assigned_to, case_id, tenant_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                alert.id, alert.timestamp, alert.device_id, alert.score,
+                alert.level, reasons_json, alert.acknowledged as i32,
+                alert.assigned_to, alert.case_id, alert.tenant_id, now
+            ],
+        ).map(|_| ()).map_err(|e| {
+            if let rusqlite::Error::SqliteFailure(ref err, _) = e {
+                if err.extended_code == 1555 || err.extended_code == 2067 {
+                    return StorageError {
+                        code: StorageErrorCode::Conflict,
+                        message: format!("alert {} already exists", alert.id),
+                    };
+                }
+            }
+            StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("insert alert failed: {e}"),
+            }
+        })
     }
 
     /// Query alerts with optional filters.
-    pub fn query_alerts(&self, filter: &QueryFilter) -> Vec<&StoredAlert> {
-        let mut results: Vec<&StoredAlert> = self
-            .alerts
-            .iter()
-            .filter(|a| {
-                if let Some(ref tid) = filter.tenant_id {
-                    if a.tenant_id != *tid {
-                        return false;
-                    }
-                }
-                if let Some(ref level) = filter.level {
-                    if a.level != *level {
-                        return false;
-                    }
-                }
-                if let Some(ref did) = filter.device_id {
-                    if a.device_id != *did {
-                        return false;
-                    }
-                }
-                if let Some(ref since) = filter.since {
-                    if a.timestamp < *since {
-                        return false;
-                    }
-                }
-                if let Some(ref until) = filter.until {
-                    if a.timestamp > *until {
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect();
+    pub fn query_alerts(&self, filter: &QueryFilter) -> Vec<StoredAlert> {
+        let mut sql = String::from("SELECT id, timestamp, device_id, score, level, reasons, acknowledged, assigned_to, case_id, tenant_id FROM alerts WHERE 1=1");
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut idx = 1;
 
-        // Sort by timestamp descending (newest first)
-        results.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-        if let Some(offset) = filter.offset {
-            results = results.into_iter().skip(offset).collect();
+        if let Some(ref tid) = filter.tenant_id {
+            sql.push_str(&format!(" AND tenant_id = ?{idx}"));
+            param_values.push(Box::new(tid.clone()));
+            idx += 1;
         }
+        if let Some(ref level) = filter.level {
+            sql.push_str(&format!(" AND level = ?{idx}"));
+            param_values.push(Box::new(level.clone()));
+            idx += 1;
+        }
+        if let Some(ref did) = filter.device_id {
+            sql.push_str(&format!(" AND device_id = ?{idx}"));
+            param_values.push(Box::new(did.clone()));
+            idx += 1;
+        }
+        if let Some(ref since) = filter.since {
+            sql.push_str(&format!(" AND timestamp >= ?{idx}"));
+            param_values.push(Box::new(since.clone()));
+            idx += 1;
+        }
+        if let Some(ref until) = filter.until {
+            sql.push_str(&format!(" AND timestamp <= ?{idx}"));
+            param_values.push(Box::new(until.clone()));
+            idx += 1;
+        }
+
+        sql.push_str(" ORDER BY timestamp DESC");
+
         if let Some(limit) = filter.limit {
-            results.truncate(limit);
+            sql.push_str(&format!(" LIMIT {limit}"));
+        }
+        if let Some(offset) = filter.offset {
+            sql.push_str(&format!(" OFFSET {offset}"));
         }
 
-        results
+        let _ = idx; // suppress unused warning
+
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = match self.conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params_ref.as_slice(), |row| {
+            let reasons_str: String = row.get(5)?;
+            let reasons: Vec<String> = serde_json::from_str(&reasons_str).unwrap_or_default();
+            let ack: i32 = row.get(6)?;
+            Ok(StoredAlert {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                device_id: row.get(2)?,
+                score: row.get(3)?,
+                level: row.get(4)?,
+                reasons,
+                acknowledged: ack != 0,
+                assigned_to: row.get(7)?,
+                case_id: row.get(8)?,
+                tenant_id: row.get(9)?,
+            })
+        });
+
+        match rows {
+            Ok(mapped) => mapped.filter_map(|r| r.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Get a single alert by ID.
-    pub fn get_alert(&self, id: &str) -> Option<&StoredAlert> {
-        self.alerts.iter().find(|a| a.id == id)
+    pub fn get_alert(&self, id: &str) -> Option<StoredAlert> {
+        self.conn.query_row(
+            "SELECT id, timestamp, device_id, score, level, reasons, acknowledged, assigned_to, case_id, tenant_id FROM alerts WHERE id = ?1",
+            params![id],
+            |row| {
+                let reasons_str: String = row.get(5)?;
+                let reasons: Vec<String> = serde_json::from_str(&reasons_str).unwrap_or_default();
+                let ack: i32 = row.get(6)?;
+                Ok(StoredAlert {
+                    id: row.get(0)?,
+                    timestamp: row.get(1)?,
+                    device_id: row.get(2)?,
+                    score: row.get(3)?,
+                    level: row.get(4)?,
+                    reasons,
+                    acknowledged: ack != 0,
+                    assigned_to: row.get(7)?,
+                    case_id: row.get(8)?,
+                    tenant_id: row.get(9)?,
+                })
+            },
+        ).ok()
     }
 
     /// Update alert fields (acknowledge, assign, link to case).
     pub fn update_alert(&mut self, id: &str, acknowledged: Option<bool>, assigned_to: Option<String>, case_id: Option<String>) -> Result<(), StorageError> {
-        let alert = self.alerts.iter_mut().find(|a| a.id == id).ok_or(StorageError {
-            code: StorageErrorCode::NotFound,
-            message: format!("alert {id} not found"),
-        })?;
+        // Verify the alert exists
+        if self.get_alert(id).is_none() {
+            return Err(StorageError {
+                code: StorageErrorCode::NotFound,
+                message: format!("alert {id} not found"),
+            });
+        }
         if let Some(ack) = acknowledged {
-            alert.acknowledged = ack;
+            self.conn.execute("UPDATE alerts SET acknowledged = ?1 WHERE id = ?2", params![ack as i32, id])
+                .map_err(|e| StorageError { code: StorageErrorCode::QueryFailed, message: format!("update failed: {e}") })?;
         }
         if let Some(ref to) = assigned_to {
-            alert.assigned_to = Some(to.clone());
+            self.conn.execute("UPDATE alerts SET assigned_to = ?1 WHERE id = ?2", params![to, id])
+                .map_err(|e| StorageError { code: StorageErrorCode::QueryFailed, message: format!("update failed: {e}") })?;
         }
         if let Some(ref cid) = case_id {
-            alert.case_id = Some(cid.clone());
+            self.conn.execute("UPDATE alerts SET case_id = ?1 WHERE id = ?2", params![cid, id])
+                .map_err(|e| StorageError { code: StorageErrorCode::QueryFailed, message: format!("update failed: {e}") })?;
         }
-        self.save_alerts()
+        Ok(())
     }
 
     /// Count alerts by level for a tenant.
     pub fn alert_counts(&self, tenant_id: Option<&str>) -> HashMap<String, usize> {
         let mut counts = HashMap::new();
-        for a in &self.alerts {
-            if let Some(tid) = tenant_id {
-                if a.tenant_id != tid {
-                    continue;
+        let tid_owned = tenant_id.map(|s| s.to_string());
+        let (sql, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if tid_owned.is_some() {
+            ("SELECT level, COUNT(*) FROM alerts WHERE tenant_id = ?1 GROUP BY level", vec![Box::new(tid_owned.clone().unwrap()) as Box<dyn rusqlite::types::ToSql>])
+        } else {
+            ("SELECT level, COUNT(*) FROM alerts GROUP BY level", vec![])
+        };
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
+
+        if let Ok(mut stmt) = self.conn.prepare(sql) {
+            let _ = stmt.query_map(params_ref.as_slice(), |row| {
+                let level: String = row.get(0)?;
+                let count: usize = row.get(1)?;
+                Ok((level, count))
+            }).map(|rows| {
+                for r in rows.flatten() {
+                    counts.insert(r.0, r.1);
                 }
-            }
-            *counts.entry(a.level.clone()).or_insert(0) += 1;
+            });
         }
         counts
     }
@@ -452,63 +565,138 @@ impl StorageBackend {
 
     /// Insert a new case.
     pub fn insert_case(&mut self, case: StoredCase) -> Result<(), StorageError> {
-        if self.cases.iter().any(|c| c.id == case.id) {
-            return Err(StorageError {
-                code: StorageErrorCode::Conflict,
-                message: format!("case {} already exists", case.id),
-            });
-        }
-        self.cases.push(case);
-        self.save_cases()
+        let alert_ids_json = serde_json::to_string(&case.alert_ids).unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO cases (id, title, status, priority, assignee, alert_ids, notes, tenant_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                case.id, case.title, case.status, case.priority,
+                case.assignee, alert_ids_json, case.notes,
+                case.tenant_id, case.created_at, case.updated_at
+            ],
+        ).map(|_| ()).map_err(|e| {
+            if let rusqlite::Error::SqliteFailure(ref err, _) = e {
+                if err.extended_code == 1555 || err.extended_code == 2067 {
+                    return StorageError {
+                        code: StorageErrorCode::Conflict,
+                        message: format!("case {} already exists", case.id),
+                    };
+                }
+            }
+            StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("insert case failed: {e}"),
+            }
+        })
     }
 
     /// Get a case by ID.
-    pub fn get_case(&self, id: &str) -> Option<&StoredCase> {
-        self.cases.iter().find(|c| c.id == id)
+    pub fn get_case(&self, id: &str) -> Option<StoredCase> {
+        self.conn.query_row(
+            "SELECT id, title, status, priority, assignee, alert_ids, notes, tenant_id, created_at, updated_at FROM cases WHERE id = ?1",
+            params![id],
+            |row| {
+                let alert_ids_str: String = row.get(5)?;
+                let alert_ids: Vec<String> = serde_json::from_str(&alert_ids_str).unwrap_or_default();
+                Ok(StoredCase {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    status: row.get(2)?,
+                    priority: row.get(3)?,
+                    assignee: row.get(4)?,
+                    alert_ids,
+                    notes: row.get(6)?,
+                    tenant_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            },
+        ).ok()
     }
 
     /// List cases with optional status/tenant filter.
-    pub fn list_cases(&self, filter: &QueryFilter) -> Vec<&StoredCase> {
-        let mut results: Vec<&StoredCase> = self
-            .cases
-            .iter()
-            .filter(|c| {
-                if let Some(ref tid) = filter.tenant_id {
-                    if c.tenant_id != *tid {
-                        return false;
-                    }
-                }
-                if let Some(ref status) = filter.status {
-                    if c.status != *status {
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect();
-        results.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        if let Some(limit) = filter.limit {
-            results.truncate(limit);
+    pub fn list_cases(&self, filter: &QueryFilter) -> Vec<StoredCase> {
+        let mut sql = String::from("SELECT id, title, status, priority, assignee, alert_ids, notes, tenant_id, created_at, updated_at FROM cases WHERE 1=1");
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut idx = 1;
+
+        if let Some(ref tid) = filter.tenant_id {
+            sql.push_str(&format!(" AND tenant_id = ?{idx}"));
+            param_values.push(Box::new(tid.clone()));
+            idx += 1;
         }
-        results
+        if let Some(ref status) = filter.status {
+            sql.push_str(&format!(" AND status = ?{idx}"));
+            param_values.push(Box::new(status.clone()));
+            idx += 1;
+        }
+
+        sql.push_str(" ORDER BY updated_at DESC");
+
+        if let Some(limit) = filter.limit {
+            sql.push_str(&format!(" LIMIT {limit}"));
+        }
+
+        let _ = idx;
+
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = match self.conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params_ref.as_slice(), |row| {
+            let alert_ids_str: String = row.get(5)?;
+            let alert_ids: Vec<String> = serde_json::from_str(&alert_ids_str).unwrap_or_default();
+            Ok(StoredCase {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                status: row.get(2)?,
+                priority: row.get(3)?,
+                assignee: row.get(4)?,
+                alert_ids,
+                notes: row.get(6)?,
+                tenant_id: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        });
+
+        match rows {
+            Ok(mapped) => mapped.filter_map(|r| r.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Update case status.
     pub fn update_case_status(&mut self, id: &str, status: &str) -> Result<(), StorageError> {
-        let case = self.cases.iter_mut().find(|c| c.id == id).ok_or(StorageError {
-            code: StorageErrorCode::NotFound,
-            message: format!("case {id} not found"),
+        let now = chrono::Utc::now().to_rfc3339();
+        let changed = self.conn.execute(
+            "UPDATE cases SET status = ?1, updated_at = ?2 WHERE id = ?3",
+            params![status, now, id],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("update case failed: {e}"),
         })?;
-        case.status = status.to_string();
-        case.updated_at = chrono::Utc::now().to_rfc3339();
-        self.save_cases()
+        if changed == 0 {
+            return Err(StorageError {
+                code: StorageErrorCode::NotFound,
+                message: format!("case {id} not found"),
+            });
+        }
+        Ok(())
     }
 
     // ── Audit Operations ──────────────────────────────────────────────────
 
     /// Append an audit entry with chain integrity.
     pub fn append_audit(&mut self, actor: &str, action: &str, target: Option<&str>, detail: Option<&str>, tenant_id: &str) -> Result<StoredAuditEntry, StorageError> {
-        let prev_digest = self.audit_entries.last().map(|e| e.digest.clone());
+        // Get the previous digest from the last entry
+        let prev_digest: Option<String> = self.conn.query_row(
+            "SELECT digest FROM audit_log ORDER BY id DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        ).ok();
+
         let timestamp = chrono::Utc::now().to_rfc3339();
         let digest_input = format!(
             "{}:{}:{}:{}:{}",
@@ -520,8 +708,17 @@ impl StorageBackend {
         );
         let digest = sha256_hex(digest_input.as_bytes());
 
-        let id = self.audit_entries.len() as u64 + 1;
-        let entry = StoredAuditEntry {
+        self.conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, detail, digest, prev_digest, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![timestamp, actor, action, target, detail, digest, prev_digest, tenant_id],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("append audit failed: {e}"),
+        })?;
+
+        let id = self.conn.last_insert_rowid() as u64;
+
+        Ok(StoredAuditEntry {
             id,
             timestamp,
             actor: actor.to_string(),
@@ -531,88 +728,167 @@ impl StorageBackend {
             digest,
             prev_digest,
             tenant_id: tenant_id.to_string(),
-        };
-        self.audit_entries.push(entry.clone());
-        self.save_audit()?;
-        Ok(entry)
+        })
     }
 
     /// Verify audit chain integrity.
     pub fn verify_audit_chain(&self) -> Result<usize, StorageError> {
-        for (i, entry) in self.audit_entries.iter().enumerate() {
-            let prev = if i > 0 {
-                Some(self.audit_entries[i - 1].digest.as_str())
-            } else {
-                None
-            };
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, actor, action, target, digest, prev_digest FROM audit_log ORDER BY id ASC"
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("audit query failed: {e}"),
+        })?;
+
+        let entries: Vec<(u64, String, String, String, Option<String>, String, Option<String>)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as u64,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            })
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("audit query failed: {e}"),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut prev_expected: Option<String> = None;
+        for (id, timestamp, actor, action, target, digest, _prev_digest) in &entries {
             let expected_input = format!(
                 "{}:{}:{}:{}:{}",
-                entry.timestamp,
-                entry.actor,
-                entry.action,
-                entry.target.as_deref().unwrap_or(""),
-                prev.unwrap_or("")
+                timestamp,
+                actor,
+                action,
+                target.as_deref().unwrap_or(""),
+                prev_expected.as_deref().unwrap_or("")
             );
             let expected = sha256_hex(expected_input.as_bytes());
-            if expected != entry.digest {
+            if expected != *digest {
                 return Err(StorageError {
                     code: StorageErrorCode::CorruptData,
-                    message: format!("audit chain broken at entry {}", entry.id),
+                    message: format!("audit chain broken at entry {}", id),
                 });
             }
+            prev_expected = Some(digest.clone());
         }
-        Ok(self.audit_entries.len())
+
+        Ok(entries.len())
     }
 
     // ── Fleet State ───────────────────────────────────────────────────────
 
     /// Upsert agent state (insert or update).
     pub fn upsert_agent(&mut self, agent: StoredAgentState) -> Result<(), StorageError> {
-        if let Some(existing) = self.agents.iter_mut().find(|a| a.agent_id == agent.agent_id) {
-            existing.hostname = agent.hostname;
-            existing.platform = agent.platform;
-            existing.version = agent.version;
-            existing.last_heartbeat = agent.last_heartbeat;
-            existing.status = agent.status;
-            existing.policy_version = agent.policy_version;
-            existing.tags = agent.tags;
-            existing.tenant_id = agent.tenant_id;
-        } else {
-            self.agents.push(agent);
-        }
-        self.save_agents()
+        let tags_json = serde_json::to_string(&agent.tags).unwrap_or_default();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO fleet_state (agent_id, hostname, platform, version, last_heartbeat, status, policy_version, tags, tenant_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                agent.agent_id, agent.hostname, agent.platform, agent.version,
+                agent.last_heartbeat, agent.status, agent.policy_version,
+                tags_json, agent.tenant_id
+            ],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("upsert agent failed: {e}"),
+        })?;
+        Ok(())
     }
 
     /// List agents for a tenant.
-    pub fn list_agents(&self, tenant_id: Option<&str>) -> Vec<&StoredAgentState> {
-        self.agents
-            .iter()
-            .filter(|a| {
-                if let Some(tid) = tenant_id {
-                    a.tenant_id == tid
-                } else {
-                    true
-                }
+    pub fn list_agents(&self, tenant_id: Option<&str>) -> Vec<StoredAgentState> {
+        let (sql, param_values): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(tid) = tenant_id {
+            (
+                "SELECT agent_id, hostname, platform, version, last_heartbeat, status, policy_version, tags, tenant_id FROM fleet_state WHERE tenant_id = ?1",
+                vec![Box::new(tid.to_string()) as Box<dyn rusqlite::types::ToSql>],
+            )
+        } else {
+            (
+                "SELECT agent_id, hostname, platform, version, last_heartbeat, status, policy_version, tags, tenant_id FROM fleet_state",
+                vec![],
+            )
+        };
+
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = match self.conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let rows = stmt.query_map(params_ref.as_slice(), |row| {
+            let tags_str: String = row.get(7)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(StoredAgentState {
+                agent_id: row.get(0)?,
+                hostname: row.get(1)?,
+                platform: row.get(2)?,
+                version: row.get(3)?,
+                last_heartbeat: row.get(4)?,
+                status: row.get(5)?,
+                policy_version: row.get(6)?,
+                tags,
+                tenant_id: row.get(8)?,
             })
-            .collect()
+        });
+
+        match rows {
+            Ok(mapped) => mapped.filter_map(|r| r.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Get a single agent by ID.
-    pub fn get_agent(&self, agent_id: &str) -> Option<&StoredAgentState> {
-        self.agents.iter().find(|a| a.agent_id == agent_id)
+    pub fn get_agent(&self, agent_id: &str) -> Option<StoredAgentState> {
+        self.conn.query_row(
+            "SELECT agent_id, hostname, platform, version, last_heartbeat, status, policy_version, tags, tenant_id FROM fleet_state WHERE agent_id = ?1",
+            params![agent_id],
+            |row| {
+                let tags_str: String = row.get(7)?;
+                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                Ok(StoredAgentState {
+                    agent_id: row.get(0)?,
+                    hostname: row.get(1)?,
+                    platform: row.get(2)?,
+                    version: row.get(3)?,
+                    last_heartbeat: row.get(4)?,
+                    status: row.get(5)?,
+                    policy_version: row.get(6)?,
+                    tags,
+                    tenant_id: row.get(8)?,
+                })
+            },
+        ).ok()
     }
 
     // ── Config Store ──────────────────────────────────────────────────────
 
     /// Set a configuration value.
     pub fn set_config(&mut self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.config.insert(key.to_string(), value.to_string());
-        self.save_config()
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO config_store (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![key, value, now],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("set config failed: {e}"),
+        })?;
+        Ok(())
     }
 
     /// Get a configuration value.
-    pub fn get_config(&self, key: &str) -> Option<&String> {
-        self.config.get(key)
+    pub fn get_config(&self, key: &str) -> Option<String> {
+        self.conn.query_row(
+            "SELECT value FROM config_store WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        ).ok()
     }
 
     // ── Retention / Purge ─────────────────────────────────────────────────
@@ -621,148 +897,89 @@ impl StorageBackend {
     pub fn purge_old_alerts(&mut self, retention_days: u32) -> Result<usize, StorageError> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
-        let before = self.alerts.len();
-        self.alerts.retain(|a| a.timestamp >= cutoff_str);
-        let purged = before - self.alerts.len();
-        if purged > 0 {
-            self.save_alerts()?;
-        }
+        let purged = self.conn.execute(
+            "DELETE FROM alerts WHERE timestamp < ?1",
+            params![cutoff_str],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("purge alerts failed: {e}"),
+        })?;
         Ok(purged)
     }
 
-    /// Purge audit entries older than `retention_days`.
+    /// Purge audit entries older than `retention_days` and recompute chain.
     pub fn purge_old_audit(&mut self, retention_days: u32) -> Result<usize, StorageError> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
-        let before = self.audit_entries.len();
-        self.audit_entries.retain(|e| e.timestamp >= cutoff_str);
-        let purged = before - self.audit_entries.len();
+        let purged = self.conn.execute(
+            "DELETE FROM audit_log WHERE timestamp < ?1",
+            params![cutoff_str],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("purge audit failed: {e}"),
+        })?;
+
         if purged > 0 {
-            // Recompute entire remaining chain so verify_audit_chain() stays consistent
-            let mut prev = String::new();
-            for entry in self.audit_entries.iter_mut() {
-                entry.prev_digest = if prev.is_empty() { None } else { Some(prev.clone()) };
+            // Recompute chain for remaining entries
+            let mut stmt = self.conn.prepare(
+                "SELECT id, timestamp, actor, action, target FROM audit_log ORDER BY id ASC"
+            ).map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("audit rechain query failed: {e}"),
+            })?;
+
+            let entries: Vec<(i64, String, String, String, Option<String>)> = stmt
+                .query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                })
+                .map_err(|e| StorageError {
+                    code: StorageErrorCode::QueryFailed,
+                    message: format!("audit rechain failed: {e}"),
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let mut prev_digest: Option<String> = None;
+            for (id, timestamp, actor, action, target) in &entries {
                 let digest_input = format!(
                     "{}:{}:{}:{}:{}",
-                    entry.timestamp,
-                    entry.actor,
-                    entry.action,
-                    entry.target.as_deref().unwrap_or(""),
-                    entry.prev_digest.as_deref().unwrap_or("")
+                    timestamp, actor, action,
+                    target.as_deref().unwrap_or(""),
+                    prev_digest.as_deref().unwrap_or("")
                 );
-                entry.digest = sha256_hex(digest_input.as_bytes());
-                prev = entry.digest.clone();
+                let digest = sha256_hex(digest_input.as_bytes());
+                self.conn.execute(
+                    "UPDATE audit_log SET digest = ?1, prev_digest = ?2 WHERE id = ?3",
+                    params![digest, prev_digest, id],
+                ).map_err(|e| StorageError {
+                    code: StorageErrorCode::QueryFailed,
+                    message: format!("audit rechain update failed: {e}"),
+                })?;
+                prev_digest = Some(digest);
             }
-            self.save_audit()?;
         }
+
         Ok(purged)
     }
 
     // ── Statistics ────────────────────────────────────────────────────────
 
+    fn count_table(&self, table: &str) -> usize {
+        // table names are hardcoded constants, not user input
+        let sql = format!("SELECT COUNT(*) FROM {table}");
+        self.conn.query_row(&sql, [], |row| row.get::<_, usize>(0)).unwrap_or(0)
+    }
+
     /// Get storage statistics.
     pub fn stats(&self) -> StorageStats {
         StorageStats {
-            total_alerts: self.alerts.len(),
-            total_cases: self.cases.len(),
-            total_audit_entries: self.audit_entries.len(),
-            total_agents: self.agents.len(),
+            total_alerts: self.count_table("alerts"),
+            total_cases: self.count_table("cases"),
+            total_audit_entries: self.count_table("audit_log"),
+            total_agents: self.count_table("fleet_state"),
             schema_version: self.current_version,
             storage_path: self.base_dir.display().to_string(),
         }
-    }
-
-    // ── Persistence (atomic JSON files) ───────────────────────────────────
-
-    fn save_alerts(&self) -> Result<(), StorageError> {
-        self.write_json("alerts.json", &self.alerts)
-    }
-
-    fn save_cases(&self) -> Result<(), StorageError> {
-        self.write_json("cases.json", &self.cases)
-    }
-
-    fn save_audit(&self) -> Result<(), StorageError> {
-        self.write_json("audit.json", &self.audit_entries)
-    }
-
-    fn save_agents(&self) -> Result<(), StorageError> {
-        self.write_json("agents.json", &self.agents)
-    }
-
-    fn save_config(&self) -> Result<(), StorageError> {
-        self.write_json("config.json", &self.config)
-    }
-
-    fn save_meta(&self) -> Result<(), StorageError> {
-        let meta = serde_json::json!({
-            "schema_version": self.current_version,
-            "updated_at": chrono::Utc::now().to_rfc3339(),
-        });
-        self.write_json("meta.json", &meta)
-    }
-
-    /// Atomic write: write to .tmp then rename.
-    fn write_json<T: Serialize>(&self, filename: &str, data: &T) -> Result<(), StorageError> {
-        let json = serde_json::to_string_pretty(data).map_err(|e| StorageError {
-            code: StorageErrorCode::SerializationError,
-            message: format!("serialization failed: {e}"),
-        })?;
-
-        let final_path = self.base_dir.join(filename);
-        let tmp_path = self.base_dir.join(format!("{filename}.tmp"));
-
-        {
-            let mut file = fs::File::create(&tmp_path).map_err(|e| StorageError {
-                code: StorageErrorCode::DiskFull,
-                message: format!("failed to create {}: {e}", tmp_path.display()),
-            })?;
-            std::io::Write::write_all(&mut file, json.as_bytes()).map_err(|e| StorageError {
-                code: StorageErrorCode::DiskFull,
-                message: format!("failed to write {}: {e}", tmp_path.display()),
-            })?;
-            file.sync_all().map_err(|e| StorageError {
-                code: StorageErrorCode::DiskFull,
-                message: format!("failed to sync {}: {e}", tmp_path.display()),
-            })?;
-        }
-
-        fs::rename(&tmp_path, &final_path).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("failed to rename temp file: {e}"),
-        })?;
-
-        Ok(())
-    }
-
-    fn load_all(&mut self) -> Result<(), StorageError> {
-        self.alerts = self.read_json("alerts.json").unwrap_or_default();
-        self.cases = self.read_json("cases.json").unwrap_or_default();
-        self.audit_entries = self.read_json("audit.json").unwrap_or_default();
-        self.agents = self.read_json("agents.json").unwrap_or_default();
-        self.config = self.read_json("config.json").unwrap_or_default();
-
-        // Load schema version from meta
-        if let Ok(meta) = self.read_json::<serde_json::Value>("meta.json") {
-            self.current_version = meta
-                .get("schema_version")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32;
-        }
-
-        Ok(())
-    }
-
-    fn read_json<T: serde::de::DeserializeOwned>(&self, filename: &str) -> Result<T, StorageError> {
-        let path = self.base_dir.join(filename);
-        let raw = fs::read_to_string(&path).map_err(|e| StorageError {
-            code: StorageErrorCode::NotFound,
-            message: format!("failed to read {}: {e}", path.display()),
-        })?;
-        serde_json::from_str(&raw).map_err(|e| StorageError {
-            code: StorageErrorCode::CorruptData,
-            message: format!("failed to parse {}: {e}", path.display()),
-        })
     }
 }
 
@@ -997,8 +1214,8 @@ mod tests {
         store.set_config("retention_days", "90").unwrap();
         store.set_config("alert_threshold", "7.5").unwrap();
 
-        assert_eq!(store.get_config("retention_days"), Some(&"90".to_string()));
-        assert_eq!(store.get_config("alert_threshold"), Some(&"7.5".to_string()));
+        assert_eq!(store.get_config("retention_days"), Some("90".to_string()));
+        assert_eq!(store.get_config("alert_threshold"), Some("7.5".to_string()));
         assert_eq!(store.get_config("nonexistent"), None);
     }
 
