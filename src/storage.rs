@@ -1041,6 +1041,34 @@ impl StorageBackend {
         Ok(purged)
     }
 
+    /// Purge metrics older than `retention_days`.
+    pub fn purge_old_metrics(&mut self, retention_days: u32) -> Result<usize, StorageError> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+        let purged = self.conn.execute(
+            "DELETE FROM metrics WHERE timestamp < ?1",
+            params![cutoff_str],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("purge metrics failed: {e}"),
+        })?;
+        Ok(purged)
+    }
+
+    /// Purge response actions older than `retention_days`.
+    pub fn purge_old_response_actions(&mut self, retention_days: u32) -> Result<usize, StorageError> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+        let purged = self.conn.execute(
+            "DELETE FROM response_actions WHERE created_at < ?1",
+            params![cutoff_str],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::QueryFailed,
+            message: format!("purge response_actions failed: {e}"),
+        })?;
+        Ok(purged)
+    }
+
     // ── Statistics ────────────────────────────────────────────────────────
 
     fn count_table(&self, table: &str) -> usize {

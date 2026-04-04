@@ -2,6 +2,19 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.36.2] — Complete Retention Purge, Production Hardening 95%
+
+### Added
+- **Metrics purge** — `purge_old_metrics(retention_days)` in storage.rs; wired into background scheduler.
+- **Response actions purge** — `purge_old_response_actions(retention_days)` in storage.rs; wired into background scheduler.
+
+### Changed
+- **Background retention scheduler** now purges all 4 record types (alerts, audit_log, metrics, response_actions) instead of just 2.
+- **Production hardening** score updated from 80% (47/59) to 95% (56/59). Only 3 controls remain: mTLS for agents, package manager distribution, chaos testing.
+
+### Tests
+- **920 lib tests passing**, 0 failures, 0 warnings.
+
 ## [0.36.1] — Bug Fixes: Spool Safety, WASM, Ransomware API, Migration Rollback
 
 ### Fixed

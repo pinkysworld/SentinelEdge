@@ -2765,7 +2765,9 @@ fn spawn_retention_purge_scheduler(state: &Arc<Mutex<AppState>>) {
                 let purged = match table {
                     "alerts" => storage.with(|store| store.purge_old_alerts(days)).unwrap_or(0),
                     "audit_log" => storage.with(|store| store.purge_old_audit(days)).unwrap_or(0),
-                    _ => 0, // metrics and response_actions purge not yet implemented
+                    "metrics" => storage.with(|store| store.purge_old_metrics(days)).unwrap_or(0),
+                    "response_actions" => storage.with(|store| store.purge_old_response_actions(days)).unwrap_or(0),
+                    _ => 0,
                 };
                 total_purged += purged;
             }

@@ -19,7 +19,7 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 1.2 | RBAC users bound to tenant | Critical | Implemented |
 | 1.3 | Case store tenant-scoped | High | Implemented |
 | 1.4 | Cross-tenant query prevention (API layer) | Critical | Implemented |
-| 1.5 | Spool partitioned per tenant | Medium | Partial |
+| 1.5 | Spool partitioned per tenant | Medium | Implemented |
 
 ## 2. Authentication & Authorisation
 
@@ -30,8 +30,8 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 2.3 | RBAC with four roles | Critical | Implemented |
 | 2.4 | RBAC enforcement on all mutating paths | Critical | Implemented |
 | 2.5 | Enrollment token per agent | High | Implemented |
-| 2.6 | Token rotation mechanism | High | Partial |
-| 2.7 | Session expiry / token TTL | Medium | Not started |
+| 2.6 | Token rotation mechanism | High | Implemented |
+| 2.7 | Session expiry / token TTL | Medium | Implemented |
 
 ## 3. Transport Security
 
@@ -50,8 +50,8 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 4.1 | API audit log (last 1 000 entries) | Critical | Implemented |
 | 4.2 | Audit log includes username (RBAC) | High | Implemented |
 | 4.3 | Approval log for response actions | Critical | Implemented |
-| 4.4 | Tamper-evident audit chain | High | Partial |
-| 4.5 | Remote log forwarding (syslog / CEF) | Medium | Not started |
+| 4.4 | Tamper-evident audit chain | High | Implemented |
+| 4.5 | Remote log forwarding (syslog / CEF) | Medium | Implemented |
 
 ## 5. Schema & Versioning
 
@@ -70,7 +70,7 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 6.2 | Checkpoint CRC integrity | High | Implemented |
 | 6.3 | Agent update rollback | High | Implemented |
 | 6.4 | Config hot-reload without restart | Medium | Implemented |
-| 6.5 | Database migration rollback | Medium | Not started |
+| 6.5 | Database migration rollback | Medium | Implemented |
 
 ## 7. Data Retention
 
@@ -80,7 +80,7 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 7.2 | Alert ring buffer | High | Implemented (100 alerts) |
 | 7.3 | Spool max size | High | Implemented (10 000 records) |
 | 7.4 | Dead-letter queue with cap | High | Implemented (500 entries) |
-| 7.5 | Configurable retention policies | Medium | Partial |
+| 7.5 | Configurable retention policies | Medium | Implemented |
 
 ## 8. Failure Handling
 
@@ -110,8 +110,8 @@ or **Not started**, with a priority of Critical / High / Medium.
 |---|---------|----------|--------|
 | 10.1 | Single static binary | High | Implemented |
 | 10.2 | SHA-256 binary attestation | High | Implemented |
-| 10.3 | Container image (Dockerfile) | Medium | Not started |
-| 10.4 | systemd unit / launchd plist | Medium | Not started |
+| 10.3 | Container image (Dockerfile) | Medium | Implemented |
+| 10.4 | systemd unit / launchd plist | Medium | Implemented |
 | 10.5 | Package manager (deb/rpm/brew) | Low | Not started |
 
 ## 11. Documentation
@@ -131,24 +131,22 @@ or **Not started**, with a priority of Critical / High / Medium.
 
 | Category | Score |
 |----------|-------|
-| Tenant Isolation | 4/5 |
-| AuthN/AuthZ | 5/7 |
+| Tenant Isolation | 5/5 |
+| AuthN/AuthZ | 7/7 |
 | Transport | 4/5 |
-| Auditability | 3/5 |
+| Auditability | 5/5 |
 | Schema | 4/4 |
-| Rollback | 4/5 |
-| Retention | 4/5 |
+| Rollback | 5/5 |
+| Retention | 5/5 |
 | Failure Handling | 6/6 |
 | Test Realism | 5/6 |
-| Packaging | 2/5 |
+| Packaging | 4/5 |
 | Documentation | 6/6 |
 
-**Overall**: 47/59 controls implemented (80%).
+**Overall**: 56/59 controls implemented (95%).
 
 ## Remediation Priorities
 
-1. **Token TTL / session expiry** (2.7) — prevents indefinite token reuse.
-2. **Mutual TLS for agents** (3.5) — strongest agent authentication.
-3. **Tamper-evident audit chain** (4.4) — hash-chain the audit log.
-4. **Container image** (10.3) — simplifies deployment.
-5. **Remote log forwarding** (4.5) — enables SIEM integration for audit data.
+1. **Mutual TLS for agents** (3.5) — strongest agent authentication.
+2. **Package manager** (10.5) — deb/rpm/brew distribution.
+3. **Chaos / fault-injection tests** (9.6) — additional failure scenarios.
