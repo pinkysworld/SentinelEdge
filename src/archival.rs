@@ -290,36 +290,12 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 fn compress_gzip(data: &[u8]) -> Result<Vec<u8>, String> {
-    // Simple DEFLATE-style compression stub.
-    // In production, use flate2 crate.  For now, store raw with gzip header.
-    let mut out = Vec::new();
-    // gzip header
-    out.extend_from_slice(&[0x1f, 0x8b, 0x08, 0x00]); // magic + method
-    out.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // mtime
-    out.extend_from_slice(&[0x00, 0xFF]); // xfl + OS
-
-    // Store blocks (uncompressed DEFLATE blocks)
-    let mut offset = 0;
-    for chunk in data.chunks(65535) {
-        offset += chunk.len();
-        let len = chunk.len() as u16;
-        let is_last = offset >= data.len();
-        out.push(if is_last { 0x01 } else { 0x00 }); // BFINAL
-        out.push((len & 0xFF) as u8);
-        out.push((len >> 8) as u8);
-        let nlen = !len;
-        out.push((nlen & 0xFF) as u8);
-        out.push((nlen >> 8) as u8);
-        out.extend_from_slice(chunk);
-    }
-
-    // CRC32 and size
-    let crc = crc32_simple(data);
-    out.extend_from_slice(&crc.to_le_bytes());
-    let size = data.len() as u32;
-    out.extend_from_slice(&size.to_le_bytes());
-
-    Ok(out)
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data).map_err(|e| format!("gzip write: {e}"))?;
+    encoder.finish().map_err(|e| format!("gzip finish: {e}"))
 }
 
 fn crc32_simple(data: &[u8]) -> u32 {

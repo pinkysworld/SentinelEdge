@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.32.0`
+- **Version:** `0.36.0`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, analyst workflows, fleet operations, behavioural analytics, and automated incident response
-- **Source footprint:** 70 Rust source modules
-- **API contract:** ~150 documented OpenAPI paths
-- **Verification:** 786 automated tests (639 unit + 147 integration) plus live admin-console smoke coverage
+- **Source footprint:** 70+ Rust source modules
+- **API contract:** ~160 documented OpenAPI paths
+- **Verification:** 916 automated tests (lib) plus integration suites and live admin-console smoke coverage
 
 ## Shipped in the current platform
 
@@ -80,8 +80,17 @@ Wardex is now positioned as a professional XDR/SIEM control plane rather than an
 
 ## Next release priorities
 
-- durable analytics storage for historical search and long-horizon hunts
-- stronger identity integration beyond configuration surfaces, including full enterprise SSO workflows
-- HA/failover and backup/restore automation
-- broader cloud and SaaS collectors
-- deeper content engineering workflows such as canary promotion and richer pack distribution
+- full enterprise SSO workflows beyond IDP/SCIM configuration surfaces
+- HA/failover clustering and automated backup/restore
+- broader cloud and SaaS collectors (AWS CloudTrail, Azure Sentinel, GCP SCC)
+- content pack marketplace and richer distribution
+
+## Recently shipped (v0.36.0)
+
+- **GraphQL query layer** — `/api/graphql` endpoint with resolvers for alerts, agents, events, hunts, and status plus introspection
+- **Real gzip compression** — archival exports use `flate2` instead of raw DEFLATE stub
+- **SMTP email delivery** — notification engine connects to real SMTP servers (RFC 5321) with retry and exponential backoff
+- **Mutex poison recovery** — all 230+ lock sites use `unwrap_or_else(|e| e.into_inner())` to prevent cascading panics
+- **Syslog forwarding** — HTTP audit log entries forwarded to a UDP syslog target (RFC 5424) via `WARDEX_SYSLOG_TARGET`
+- **Database schema version API** — `GET /api/admin/db/version` returns migration history and current schema version
+- **Production hardening** — panic hooks, Slowloris protection, secret management, agent auth, auto retention purge, GDPR purge, PII scanner, VecDeque O(1) eviction, memory bounds, K8s probes, X-Request-Id tracing, SBOM API, DB backup

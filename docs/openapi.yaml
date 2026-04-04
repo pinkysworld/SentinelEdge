@@ -6,7 +6,7 @@ info:
     All mutating endpoints and sensitive monitoring endpoints require
     Bearer token authentication via the `Authorization` header.
     Agent-facing enrollment and heartbeat endpoints bypass admin auth.
-  version: "0.27.0"
+  version: "0.36.0"
   contact:
     name: Wardex Project
   license:
@@ -1857,3 +1857,61 @@ paths:
       responses:
         "200":
           description: Server shutting down
+
+  # ── GraphQL ────────────────────────────────────────────────
+  /api/graphql:
+    post:
+      tags: [Query]
+      summary: Execute GraphQL queries against the Wardex data model
+      description: |
+        Supports queries for alerts, agents, events, hunts, status, and
+        introspection (__schema). Variables and aliases are supported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                variables: { type: object }
+                operationName: { type: string }
+      responses:
+        "200":
+          description: GraphQL response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message: { type: string }
+
+  # ── Database Schema Version ────────────────────────────────
+  /api/admin/db/version:
+    get:
+      tags: [Administration]
+      summary: Return current database schema version and migration history
+      responses:
+        "200":
+          description: Schema version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_version: { type: integer }
+                  migrations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version: { type: integer }
+                        name: { type: string }
+                        applied_at: { type: string, format: date-time, nullable: true }

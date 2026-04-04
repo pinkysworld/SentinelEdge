@@ -1,6 +1,6 @@
 [package]
 name = "wardex"
-version = "0.35.0"
+version = "0.36.0"
 edition = "2024"
 description = "Private-cloud XDR and SIEM platform with enterprise detection, response, and fleet operations"
 license-file = "LICENSE"
@@ -18,6 +18,8 @@ rand = "0.8"
 ureq = { version = "2", default-features = false, features = ["json"] }
 ctrlc = "3"
 rusqlite = { version = "0.31", features = ["bundled"] }
+notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
+flate2 = "1"
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }

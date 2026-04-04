@@ -455,8 +455,37 @@ fn collect_temperature() -> f32 {
 
 #[cfg(target_os = "macos")]
 fn collect_temperature() -> f32 {
-    // macOS does not expose temperature easily without IOKit bindings.
-    // Best-effort: return 0.0 (not available without native framework).
+    // Try powermetrics first (requires root but gives accurate CPU die temp)
+    if let Ok(output) = std::process::Command::new("sudo")
+        .args(["-n", "powermetrics", "--samplers", "smc", "-i", "1", "-n", "1"])
+        .output()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            if line.contains("CPU die temperature") || line.contains("die temp") {
+                if let Some(temp) = line.split_whitespace()
+                    .find_map(|w| w.trim_end_matches(" C").parse::<f32>().ok())
+                {
+                    if temp > 0.0 && temp < 150.0 {
+                        return temp;
+                    }
+                }
+            }
+        }
+    }
+    // Fallback: sysctl thermal level (0-127 scale, approximate to celsius)
+    if let Ok(output) = std::process::Command::new("sysctl")
+        .args(["-n", "machdep.xcpm.cpu_thermal_level"])
+        .output()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        if let Ok(level) = text.trim().parse::<f32>() {
+            // Thermal level 0-127 maps roughly to 30-100°C range
+            if level >= 0.0 {
+                return 30.0 + (level / 127.0) * 70.0;
+            }
+        }
+    }
     0.0
 }
 
@@ -1274,6 +1303,304 @@ pub fn parse_monitor_args(args: &mut dyn Iterator<Item = String>) -> MonitorConf
     }
 
     config
+}
+
+// ── Real-Time File Watcher ────────────────────────────────────────────
+
+use std::sync::Mutex;
+
+/// Event from the real-time file watcher.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileChangeEvent {
+    pub timestamp_ms: u64,
+    pub path: String,
+    pub kind: FileChangeKind,
+}
+
+/// Kind of file change detected.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FileChangeKind {
+    Created,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+/// Real-time cross-platform file watcher using OS-native APIs
+/// (inotify on Linux, FSEvents on macOS, ReadDirectoryChangesW on Windows).
+pub struct RealtimeFileWatcher {
+    events: Arc<Mutex<Vec<FileChangeEvent>>>,
+    _watcher: Option<notify::RecommendedWatcher>,
+}
+
+impl fmt::Debug for RealtimeFileWatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.events.lock().map(|e| e.len()).unwrap_or(0);
+        f.debug_struct("RealtimeFileWatcher")
+            .field("pending_events", &count)
+            .finish()
+    }
+}
+
+impl RealtimeFileWatcher {
+    /// Start watching the given paths for file changes.
+    pub fn new(watch_paths: &[String]) -> Self {
+        use notify::{Event, EventKind, RecursiveMode, Watcher};
+
+        let events: Arc<Mutex<Vec<FileChangeEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let events_tx = Arc::clone(&events);
+
+        let watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+            if let Ok(event) = res {
+                let kind = match event.kind {
+                    EventKind::Create(_) => FileChangeKind::Created,
+                    EventKind::Modify(_) => FileChangeKind::Modified,
+                    EventKind::Remove(_) => FileChangeKind::Deleted,
+                    _ => return,
+                };
+                let timestamp_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                for path in &event.paths {
+                    let evt = FileChangeEvent {
+                        timestamp_ms,
+                        path: path.display().to_string(),
+                        kind,
+                    };
+                    if let Ok(mut guard) = events_tx.lock() {
+                        // Cap buffer at 10K events to prevent unbounded growth
+                        if guard.len() < 10_000 {
+                            guard.push(evt);
+                        }
+                    }
+                }
+            }
+        });
+
+        let watcher = match watcher {
+            Ok(mut w) => {
+                for path_str in watch_paths {
+                    let p = Path::new(path_str);
+                    if p.exists() {
+                        let _ = w.watch(p, RecursiveMode::Recursive);
+                    }
+                }
+                Some(w)
+            }
+            Err(_) => None,
+        };
+
+        Self {
+            events,
+            _watcher: watcher,
+        }
+    }
+
+    /// Drain all pending events since last call.
+    pub fn drain_events(&self) -> Vec<FileChangeEvent> {
+        self.events
+            .lock()
+            .map(|mut guard| std::mem::take(&mut *guard))
+            .unwrap_or_default()
+    }
+
+    /// Count pending events without draining.
+    pub fn pending_count(&self) -> usize {
+        self.events.lock().map(|g| g.len()).unwrap_or(0)
+    }
+
+    /// Compute file change velocity (events per second) over the given window.
+    pub fn velocity(&self, window_ms: u64) -> f32 {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let cutoff = now.saturating_sub(window_ms);
+
+        let count = self
+            .events
+            .lock()
+            .map(|guard| guard.iter().filter(|e| e.timestamp_ms >= cutoff).count())
+            .unwrap_or(0);
+
+        if window_ms == 0 {
+            return count as f32;
+        }
+        (count as f32) / (window_ms as f32 / 1000.0)
+    }
+}
+
+// ── DNS Snapshot Collector ───────────────────────────────────────────
+
+/// A captured DNS query event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsEvent {
+    pub timestamp_ms: u64,
+    pub domain: String,
+    pub record_type: String,
+    pub source: String,
+}
+
+/// Collect recent DNS activity from OS-specific sources.
+pub fn collect_dns_snapshot() -> Vec<DnsEvent> {
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    collect_dns_platform(timestamp_ms)
+}
+
+#[cfg(target_os = "linux")]
+fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
+    // Try systemd-resolved cache via resolvectl
+    if let Ok(output) = std::process::Command::new("resolvectl")
+        .args(["statistics"])
+        .output()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        if text.contains("Current Cache Size") {
+            // resolvectl works — try query log from journal
+            if let Ok(journal) = std::process::Command::new("journalctl")
+                .args(["-u", "systemd-resolved", "--since", "1 min ago", "--no-pager", "-q"])
+                .output()
+            {
+                let jtext = String::from_utf8_lossy(&journal.stdout);
+                return parse_resolved_journal(&jtext, timestamp_ms);
+            }
+        }
+    }
+
+    // Fallback: scan /var/log/syslog for DNS queries
+    if let Ok(content) = fs::read_to_string("/var/log/syslog") {
+        return content
+            .lines()
+            .rev()
+            .take(500)
+            .filter(|l| l.contains("query[") || l.contains("dnsmasq"))
+            .filter_map(|l| parse_syslog_dns_line(l, timestamp_ms))
+            .take(100)
+            .collect();
+    }
+    Vec::new()
+}
+
+#[cfg(target_os = "linux")]
+fn parse_resolved_journal(text: &str, timestamp_ms: u64) -> Vec<DnsEvent> {
+    text.lines()
+        .filter(|l| l.contains("Positive cache") || l.contains("Lookup"))
+        .filter_map(|l| {
+            // Extract domain from log line
+            let domain = l.split_whitespace()
+                .find(|w| w.contains('.') && !w.starts_with('/') && w.len() > 3)?;
+            Some(DnsEvent {
+                timestamp_ms,
+                domain: domain.trim_end_matches(':').to_string(),
+                record_type: "A".into(),
+                source: "systemd-resolved".into(),
+            })
+        })
+        .take(100)
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn parse_syslog_dns_line(line: &str, timestamp_ms: u64) -> Option<DnsEvent> {
+    // Format: "... dnsmasq[xxx]: query[A] example.com from ..."
+    if let Some(pos) = line.find("query[") {
+        let rest = &line[pos + 6..];
+        let rtype = rest.split(']').next().unwrap_or("A");
+        let domain = rest.split(']')
+            .nth(1)?
+            .trim()
+            .split_whitespace()
+            .next()?;
+        return Some(DnsEvent {
+            timestamp_ms,
+            domain: domain.to_string(),
+            record_type: rtype.to_string(),
+            source: "dnsmasq".into(),
+        });
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
+    // Use log show to capture recent DNS resolution from mDNSResponder
+    if let Ok(output) = std::process::Command::new("log")
+        .args(["show", "--predicate", "subsystem == \"com.apple.dnssd\"",
+               "--last", "1m", "--style", "compact", "--info"])
+        .output()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        return text
+            .lines()
+            .filter(|l| l.contains("getaddrinfo") || l.contains("QueryRecord"))
+            .filter_map(|l| {
+                // Extract domain name from DNS log entry
+                let words: Vec<&str> = l.split_whitespace().collect();
+                let domain = words.iter()
+                    .find(|w| w.contains('.') && !w.starts_with('[') && w.len() > 3)?;
+                Some(DnsEvent {
+                    timestamp_ms,
+                    domain: domain.trim_end_matches(',').to_string(),
+                    record_type: "A".into(),
+                    source: "mDNSResponder".into(),
+                })
+            })
+            .take(100)
+            .collect();
+    }
+    Vec::new()
+}
+
+#[cfg(target_os = "windows")]
+fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
+    let Ok(output) = std::process::Command::new("ipconfig")
+        .args(["/displaydns"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut events = Vec::new();
+    let mut current_domain: Option<String> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.ends_with('-') && trimmed.len() > 4 {
+            // Section header: "    example.com"
+            // Might appear as: "    Record Name . . . . : example.com"
+        }
+        if let Some(rest) = trimmed.strip_prefix("Record Name") {
+            if let Some(name) = rest.split(':').nth(1) {
+                current_domain = Some(name.trim().to_string());
+            }
+        }
+        if let Some(rest) = trimmed.strip_prefix("Record Type") {
+            if let Some(ref domain) = current_domain {
+                let rtype = rest.split(':').nth(1)
+                    .map(|t| t.trim().to_string())
+                    .unwrap_or_else(|| "A".into());
+                events.push(DnsEvent {
+                    timestamp_ms,
+                    domain: domain.clone(),
+                    record_type: rtype,
+                    source: "dns-cache".into(),
+                });
+                current_domain = None;
+            }
+        }
+    }
+    events.into_iter().take(200).collect()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn collect_dns_platform(_timestamp_ms: u64) -> Vec<DnsEvent> {
+    Vec::new()
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

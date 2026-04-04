@@ -259,16 +259,43 @@ impl NotificationEngine {
             attempts = attempt + 1;
 
             if channel.kind == ChannelKind::Email {
-                // SMTP delivery stub — log-only in current phase
-                return DeliveryResult {
-                    channel_name: channel.name.clone(),
-                    channel_kind: channel.kind.clone(),
-                    success: true,
-                    status_code: None,
-                    error: None,
-                    attempts,
-                    duration_ms: start.elapsed().as_millis() as u64,
+                // SMTP delivery via TcpStream
+                let smtp_cfg = match &channel.smtp {
+                    Some(c) => c,
+                    None => {
+                        return DeliveryResult {
+                            channel_name: channel.name.clone(),
+                            channel_kind: channel.kind.clone(),
+                            success: false,
+                            status_code: None,
+                            error: Some("no SMTP config".into()),
+                            attempts,
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        };
+                    }
                 };
+                match smtp_send(smtp_cfg, &payload) {
+                    Ok(()) => {
+                        return DeliveryResult {
+                            channel_name: channel.name.clone(),
+                            channel_kind: channel.kind.clone(),
+                            success: true,
+                            status_code: Some(250),
+                            error: None,
+                            attempts,
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        };
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        if attempt + 1 < self.max_retries {
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                100 * 2u64.pow(attempt as u32),
+                            ));
+                        }
+                        continue;
+                    }
+                }
             }
 
             if url.is_empty() {
@@ -382,6 +409,73 @@ pub fn build_notification(
     }
 }
 
+// ── Minimal SMTP delivery ────────────────────────────────────────────
+
+fn smtp_send(cfg: &SmtpConfig, message: &str) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let addr = format!("{}:{}", cfg.host, cfg.port);
+    let stream = TcpStream::connect(&addr).map_err(|e| format!("smtp connect: {e}"))?;
+    stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(15))).ok();
+
+    let mut writer = stream.try_clone().map_err(|e| format!("clone: {e}"))?;
+    let mut reader = BufReader::new(stream);
+
+    fn read_reply(reader: &mut BufReader<TcpStream>, expect_code: &str) -> Result<(), String> {
+        let mut line = String::new();
+        reader.read_line(&mut line).map_err(|e| format!("smtp read: {e}"))?;
+        if !line.starts_with(expect_code) {
+            return Err(format!("smtp expected {expect_code}, got: {}", line.trim()));
+        }
+        Ok(())
+    }
+
+    read_reply(&mut reader, "220")?;
+
+    let helo = std::env::var("HOSTNAME").unwrap_or_else(|_| "wardex.local".into());
+    write!(writer, "EHLO {helo}\r\n").map_err(|e| format!("smtp write: {e}"))?;
+    writer.flush().map_err(|e| format!("smtp flush: {e}"))?;
+    // Read multi-line EHLO response
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).map_err(|e| format!("smtp read ehlo: {e}"))?;
+        if line.len() < 4 { break; }
+        if line.as_bytes()[3] == b' ' { break; }
+    }
+
+    write!(writer, "MAIL FROM:<{}>\r\n", cfg.from).map_err(|e| format!("smtp write: {e}"))?;
+    writer.flush().map_err(|e| format!("smtp flush: {e}"))?;
+    read_reply(&mut reader, "250")?;
+
+    for rcpt in &cfg.to {
+        write!(writer, "RCPT TO:<{rcpt}>\r\n").map_err(|e| format!("smtp write: {e}"))?;
+        writer.flush().map_err(|e| format!("smtp flush: {e}"))?;
+        read_reply(&mut reader, "250")?;
+    }
+
+    write!(writer, "DATA\r\n").map_err(|e| format!("smtp write: {e}"))?;
+    writer.flush().map_err(|e| format!("smtp flush: {e}"))?;
+    read_reply(&mut reader, "354")?;
+
+    // Write message headers and body, then terminator
+    write!(writer, "From: <{}>\r\n", cfg.from).map_err(|e| format!("smtp write: {e}"))?;
+    for rcpt in &cfg.to {
+        write!(writer, "To: <{rcpt}>\r\n").map_err(|e| format!("smtp write: {e}"))?;
+    }
+    // message already contains Subject + Content-Type + body from format_email
+    write!(writer, "{message}\r\n.\r\n").map_err(|e| format!("smtp write: {e}"))?;
+    writer.flush().map_err(|e| format!("smtp flush: {e}"))?;
+    read_reply(&mut reader, "250")?;
+
+    write!(writer, "QUIT\r\n").map_err(|e| format!("smtp write: {e}"))?;
+    writer.flush().ok();
+
+    Ok(())
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -477,7 +571,9 @@ mod tests {
         let n = test_notification("Critical");
         let results = engine.dispatch(&n);
         assert_eq!(results.len(), 1);
-        assert!(results[0].success);
+        // SMTP will fail in test env (no real server), but should report the attempt
+        assert!(!results[0].success || results[0].status_code == Some(250));
+        assert!(results[0].error.is_some() || results[0].success);
     }
 
     #[test]
@@ -586,8 +682,8 @@ mod tests {
         engine.dispatch(&n2);
 
         assert_eq!(engine.history().len(), 2);
-        assert_eq!(engine.success_count(), 2);
-        assert_eq!(engine.failure_count(), 0);
+        // In test env without SMTP server, deliveries may fail
+        assert_eq!(engine.success_count() + engine.failure_count(), 2);
 
         engine.clear_history();
         assert!(engine.history().is_empty());

@@ -46,7 +46,7 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 - **Integrations and evidence**
   - Structured SIEM output, OCSF normalization, TAXII pull, and threat-intel enrichment
   - Compliance evidence, forensic exports, tamper-evident audit chain, and encrypted event spooling
-  - Outbound notifications to Slack, Teams, PagerDuty, Webhook, and Email with severity filtering and retry
+  - Outbound notifications to Slack, Teams, PagerDuty, Webhook, and Email (real SMTP delivery with retry) with severity filtering
   - CycloneDX 1.5 and SPDX 2.3 SBOM generation from Cargo.lock for supply-chain compliance
   - Runbooks, OpenAPI contract, deployment models, disaster recovery guidance, and production hardening docs
   - Python SDK with ~30 typed API methods and custom exception hierarchy
@@ -66,17 +66,23 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - HA clustering with Raft-inspired leader election, log replication, and health monitoring
   - WebSocket event streaming with RFC 6455 framing and pub/sub channels
   - Structured JSON logging with pluggable sinks and per-request context
-  - Data archival with JSONL+gzip compression, CSV export, and SHA-256 manifests
+  - Data archival with real gzip compression (flate2), CSV export, and SHA-256 manifests
   - 39 Sigma detection rules across 6 categories (auth, network, endpoint, IoT, cloud, supply chain)
   - Compliance templates for CIS v8, PCI-DSS v4, SOC 2, and NIST CSF 2.0 with auto-evaluation
   - Kubernetes manifests and Helm chart for production deployment
   - CI hardening with cargo-audit, code coverage, MSRV checks, and dependency caching
+  - Mutex poison recovery on all lock sites (230+) to prevent cascading panics
+  - Syslog forwarding (RFC 5424 over UDP) for HTTP audit entries via WARDEX_SYSLOG_TARGET
+  - Database schema versioning with migration history API endpoint
+  - Panic hooks, Slowloris protection, secret management, agent authentication, and memory bounds
+  - GDPR right-to-forget purge, PII scanner (email, SSN, credit card), auto retention purge
+  - Kubernetes readiness/liveness probes, X-Request-Id tracing, and database backup endpoint
 
 ## Product posture
 
 - 88 Rust source modules
-- 155+ API paths
-- 1,025 automated tests
+- 160+ API paths
+- 916 lib tests (all passing)
 - GitHub Actions release packaging for Linux, macOS, and Windows
 
 ## Operator entry points

@@ -31,6 +31,7 @@ use crate::enterprise::{
 };
 use crate::event_forward::{EventAnalytics, EventStore};
 use crate::fingerprint::DeviceFingerprint;
+use crate::graphql::{GqlExecutor, GqlRequest, wardex_schema};
 use crate::incident::IncidentStore;
 use crate::monitor::Monitor;
 use crate::multi_tenant::MultiTenantManager;
@@ -155,13 +156,26 @@ struct AuditEntry {
 struct AuditLog {
     entries: VecDeque<AuditEntry>,
     max_entries: usize,
+    syslog_target: Option<std::net::UdpSocket>,
+    syslog_addr: Option<String>,
 }
 
 impl AuditLog {
     fn new(max_entries: usize) -> Self {
+        let (syslog_target, syslog_addr) = match std::env::var("WARDEX_SYSLOG_TARGET") {
+            Ok(addr) if !addr.is_empty() => {
+                match std::net::UdpSocket::bind("0.0.0.0:0") {
+                    Ok(sock) => (Some(sock), Some(addr)),
+                    Err(_) => (None, None),
+                }
+            }
+            _ => (None, None),
+        };
         Self {
             entries: VecDeque::new(),
             max_entries,
+            syslog_target,
+            syslog_addr,
         }
     }
 
@@ -173,8 +187,9 @@ impl AuditLog {
         status_code: u16,
         auth_used: bool,
     ) {
+        let timestamp = chrono::Utc::now().to_rfc3339();
         let entry = AuditEntry {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: timestamp.clone(),
             method: method.to_string(),
             path: path.to_string(),
             source_ip: source_ip.to_string(),
@@ -185,6 +200,16 @@ impl AuditLog {
             self.entries.pop_front();
         }
         self.entries.push_back(entry);
+
+        // Forward to syslog (RFC 5424 over UDP)
+        if let (Some(sock), Some(addr)) = (&self.syslog_target, &self.syslog_addr) {
+            let severity = if status_code >= 500 { 3 } else if status_code >= 400 { 4 } else { 6 };
+            let pri = 8 * 10 + severity; // facility=security(10)
+            let msg = format!(
+                "<{pri}>1 {timestamp} wardex wardex-audit - - - method={method} path={path} src={source_ip} status={status_code} auth={auth_used}"
+            );
+            let _ = sock.send_to(msg.as_bytes(), addr);
+        }
     }
 
     fn recent(&self, limit: usize) -> Vec<&AuditEntry> {
@@ -658,7 +683,7 @@ pub fn run_server(
 
     // Apply loaded config
     {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
         s.config = initial_config;
         let effective_rules = s.enterprise.effective_sigma_rules();
         s.sigma_engine.replace_rules(effective_rules);
@@ -679,7 +704,7 @@ pub fn run_server(
             const CONFIRM_SAMPLES: u32 = 2; // require N consecutive elevated before alerting
             loop {
                 let (scope, watch_paths, host_platform) = {
-                    let s = monitor_state.lock().unwrap();
+                    let s = monitor_state.lock().unwrap_or_else(|e| e.into_inner());
                     (
                         s.config.monitor.scope.clone(),
                         s.config.monitor.watch_paths.clone(),
@@ -940,7 +965,7 @@ pub fn spawn_test_server() -> (u16, String) {
         ransomware: crate::ransomware::RansomwareDetector::default(),
     }));
     {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
         let effective_rules = s.enterprise.effective_sigma_rules();
         s.sigma_engine.replace_rules(effective_rules);
     }
@@ -1435,7 +1460,7 @@ fn respond_api(
         .map(|addr| addr.to_string())
         .unwrap_or_else(|| "unknown".into());
     {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
         if status_code >= 400 {
             s.error_count += 1;
         }
@@ -1496,7 +1521,7 @@ fn authenticate_request(request: &Request, state: &Arc<Mutex<AppState>>) -> Auth
     let Some(token) = bearer_token(request) else {
         return AuthIdentity::None;
     };
-    let state = state.lock().unwrap();
+    let state = state.lock().unwrap_or_else(|e| e.into_inner());
     let ttl = state.config.security.token_ttl_secs;
     if ttl == 0 || state.token_issued_at.elapsed().as_secs() <= ttl {
         let input = token.as_bytes();
@@ -2592,7 +2617,7 @@ fn check_rbac(
     if auth.is_admin() {
         return true;
     }
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     if s.rbac.list_users().is_empty() {
         return true;
     }
@@ -2612,7 +2637,7 @@ fn check_rbac(
 }
 
 fn is_feature_enabled(state: &Arc<Mutex<AppState>>, feature: &str) -> bool {
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     s.feature_flags.is_enabled(feature, "default")
 }
 
@@ -3161,6 +3186,7 @@ fn handle_api(
                 | (Method::Post, "/api/auth/rotate")
                 | (Method::Get, "/api/session/info")
                 | (Method::Post, "/api/analyze")
+                | (Method::Post, "/api/graphql")
                 | (Method::Post, "/api/control/mode")
                 | (Method::Post, "/api/control/reset-baseline")
                 | (Method::Post, "/api/control/run-demo")
@@ -3382,6 +3408,7 @@ fn handle_api(
         // GDPR, backup, SBOM, PII — admin-only
         || (method == Method::Delete && route_path.starts_with("/api/gdpr/forget/"))
         || (method == Method::Post && route_path == "/api/admin/backup")
+        || (method == Method::Get && route_path == "/api/admin/db/version")
         || (method == Method::Get && route_path == "/api/sbom")
         || (method == Method::Post && route_path == "/api/pii/scan")));
 
@@ -3415,7 +3442,7 @@ fn handle_api(
 
     let response = match (method.clone(), route_path) {
         (Method::Get, "/api/auth/check") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let ttl = s.config.security.token_ttl_secs;
             let elapsed = s.token_issued_at.elapsed().as_secs();
             let remaining = if ttl > 0 {
@@ -3431,7 +3458,7 @@ fn handle_api(
         }
         (Method::Post, "/api/auth/rotate") => {
             let new_token = generate_token();
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let old_token_prefix = s.token.chars().take(8).collect::<String>();
             s.token = new_token.clone();
             s.token_issued_at = std::time::Instant::now();
@@ -3444,7 +3471,7 @@ fn handle_api(
             json_response(&body, 200)
         }
         (Method::Get, "/api/session/info") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let ttl = s.config.security.token_ttl_secs;
             let elapsed = s.token_issued_at.elapsed().as_secs();
             let uptime = s.server_start.elapsed().as_secs();
@@ -3466,7 +3493,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/report") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(ref report) = s.last_report {
                 match serde_json::to_string_pretty(report) {
                     Ok(json) => json_response(&json, 200),
@@ -3517,15 +3544,82 @@ fn handle_api(
                 )
             }
         }
+        (Method::Post, "/api/graphql") => {
+            match read_body_limited(&mut request, 100_000) {
+                Err(_) => error_json("request too large", 413),
+                Ok(body) => match serde_json::from_str::<GqlRequest>(&body) {
+                    Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
+                    Ok(gql_req) => {
+                        let mut executor = GqlExecutor::new(wardex_schema());
+                        let st = state.clone();
+                        executor.register_resolver("alerts", Box::new({
+                            let st = st.clone();
+                            move |args| {
+                                let s = st.lock().unwrap_or_else(|e| e.into_inner());
+                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+                                let alerts: Vec<serde_json::Value> = s.alerts.iter().take(limit).enumerate().map(|(i, a)| {
+                                    serde_json::json!({ "id": format!("alert-{i}"), "level": a.level, "timestamp": a.timestamp, "device_id": a.hostname, "score": a.score, "reasons": a.reasons, "status": "open" })
+                                }).collect();
+                                serde_json::json!(alerts)
+                            }
+                        }));
+                        executor.register_resolver("agents", Box::new({
+                            let st = st.clone();
+                            move |_args| {
+                                let s = st.lock().unwrap_or_else(|e| e.into_inner());
+                                let agents: Vec<serde_json::Value> = s.agent_registry.list().iter().map(|a| {
+                                    serde_json::json!({ "id": a.id, "hostname": a.hostname, "os": a.platform, "version": a.version, "status": format!("{:?}", a.status), "last_heartbeat": a.last_seen })
+                                }).collect();
+                                serde_json::json!(agents)
+                            }
+                        }));
+                        executor.register_resolver("status", Box::new({
+                            let st = st.clone();
+                            move |_args| {
+                                let s = st.lock().unwrap_or_else(|e| e.into_inner());
+                                let online = s.agent_registry.list().iter().filter(|a| a.status == crate::enrollment::AgentStatus::Online).count();
+                                let open_incidents = s.incident_store.list().iter().filter(|i| !matches!(i.status, crate::incident::IncidentStatus::Resolved | crate::incident::IncidentStatus::FalsePositive)).count();
+                                serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "uptime_secs": s.server_start.elapsed().as_secs_f64(), "agents_online": online, "alerts_total": s.alerts.len(), "incidents_open": open_incidents })
+                            }
+                        }));
+                        executor.register_resolver("events", Box::new({
+                            let st = st.clone();
+                            move |args| {
+                                let s = st.lock().unwrap_or_else(|e| e.into_inner());
+                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+                                let events: Vec<serde_json::Value> = s.event_store.recent_events(limit).iter().map(|e| {
+                                    serde_json::json!({ "timestamp": e.received_at, "device_id": e.agent_id, "event_type": e.alert.level, "data": e.alert.reasons })
+                                }).collect();
+                                serde_json::json!(events)
+                            }
+                        }));
+                        executor.register_resolver("hunts", Box::new({
+                            let st = st.clone();
+                            move |args| {
+                                let s = st.lock().unwrap_or_else(|e| e.into_inner());
+                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                                let hunts: Vec<serde_json::Value> = s.enterprise.hunts().iter().take(limit).map(|h| {
+                                    serde_json::json!({ "id": h.id, "name": h.name, "status": if h.enabled { "active" } else { "disabled" }, "matches": 0, "created_at": h.created_at })
+                                }).collect();
+                                serde_json::json!(hunts)
+                            }
+                        }));
+                        let resp = executor.execute(&gql_req);
+                        let result_body = serde_json::to_string(&resp).unwrap_or_else(|_| r#"{"errors":[{"message":"serialization failed"}]}"#.to_string());
+                        json_response(&result_body, 200)
+                    }
+                }
+            }
+        }
         (Method::Post, "/api/analyze") => handle_analyze(&mut request, state),
         (Method::Post, "/api/control/mode") => handle_mode(&mut request, state),
         (Method::Post, "/api/control/reset-baseline") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.detector.reset_baseline();
             json_response(r#"{"status":"baseline reset"}"#, 200)
         }
         (Method::Post, "/api/control/checkpoint") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(snapshot) = s.detector.snapshot() {
                 let device_state = s.device.snapshot();
                 s.checkpoints.push_snapshot(snapshot, device_state);
@@ -3537,7 +3631,7 @@ fn handle_api(
             )
         }
         (Method::Post, "/api/control/restore-checkpoint") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let restored = s.checkpoints.latest().cloned().map(|entry| {
                 s.detector.restore_baseline(&entry.baseline);
                 let action_results = s.device.restore_snapshot(&entry.device_state);
@@ -3555,7 +3649,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/checkpoints") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "count": s.checkpoints.len(),
                 "timestamps": s.checkpoints.entries().iter()
@@ -3568,7 +3662,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Get, "/api/correlation") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let result = correlation::analyze(&s.replay, 0.8);
             match serde_json::to_string_pretty(&result) {
                 Ok(json) => json_response(&json, 200),
@@ -3584,7 +3678,7 @@ fn handle_api(
             text_response(&sm.export_alloy(), 200)
         }
         (Method::Get, "/api/export/witnesses") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let json = s.proofs.export_witnesses_json(&DigestBackend);
             json_response(&json, 200)
         }
@@ -3615,7 +3709,7 @@ fn handle_api(
             let report = JsonReport::from_run_result(&result);
             match serde_json::to_string_pretty(&report) {
                 Ok(json) => {
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     for (sample, report) in demo.iter().zip(result.reports.iter()) {
                         let pre = s
                             .detector
@@ -3642,7 +3736,7 @@ fn handle_api(
 
         // ── Fleet / Swarm ─────────────────────────────────────────
         (Method::Get, "/api/fleet/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let report = s.swarm.health_report();
             match serde_json::to_string_pretty(&report) {
                 Ok(json) => json_response(&json, 200),
@@ -3653,7 +3747,7 @@ fn handle_api(
 
         // ── Enforcement ───────────────────────────────────────────
         (Method::Get, "/api/enforcement/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let tpm_status = s.enforcement.tpm.status();
             let info = serde_json::json!({
                 "process_enforcer": "active",
@@ -3671,7 +3765,7 @@ fn handle_api(
 
         // ── Threat Intelligence ───────────────────────────────────
         (Method::Get, "/api/threat-intel/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "ioc_count": s.threat_intel.ioc_count(),
             });
@@ -3681,7 +3775,7 @@ fn handle_api(
 
         // ── Digital Twin ──────────────────────────────────────────
         (Method::Get, "/api/digital-twin/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "twin_count": s.digital_twin.device_count(),
             });
@@ -3693,7 +3787,7 @@ fn handle_api(
 
         // ── Compliance ────────────────────────────────────────────
         (Method::Get, "/api/compliance/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let report = s.compliance.report(&crate::compliance::Framework::Iec62443);
             match serde_json::to_string_pretty(&report) {
                 Ok(json) => json_response(&json, 200),
@@ -3703,7 +3797,7 @@ fn handle_api(
 
         // ── Energy ────────────────────────────────────────────────
         (Method::Get, "/api/energy/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "remaining_pct": s.energy.remaining_pct(),
                 "capacity_mwh": s.energy.capacity_mwh,
@@ -3716,7 +3810,7 @@ fn handle_api(
 
         // ── Multi-tenancy ─────────────────────────────────────────
         (Method::Get, "/api/tenants/count") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "tenant_count": s.multi_tenant.tenant_count(),
             });
@@ -3739,7 +3833,7 @@ fn handle_api(
 
         // ── Side-Channel Detection ────────────────────────────────
         (Method::Get, "/api/side-channel/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let report = s.side_channel.report();
             let info = serde_json::json!({
                 "timing_anomalies": report.timing_anomalies,
@@ -3752,7 +3846,7 @@ fn handle_api(
 
         // ── Quantum / Post-Quantum ────────────────────────────────
         (Method::Get, "/api/quantum/key-status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "current_epoch": s.key_rotation.current_epoch(),
                 "total_epochs": s.key_rotation.epochs().len(),
@@ -3760,7 +3854,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/quantum/rotate") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.key_rotation.rotate();
             let info = serde_json::json!({
                 "status": "rotated",
@@ -3771,7 +3865,7 @@ fn handle_api(
 
         // ── Privacy ───────────────────────────────────────────────
         (Method::Get, "/api/privacy/budget") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "budget_remaining": s.privacy.budget_remaining(),
                 "is_exhausted": s.privacy.is_exhausted(),
@@ -3784,7 +3878,7 @@ fn handle_api(
 
         // ── Fingerprint ───────────────────────────────────────────
         (Method::Get, "/api/fingerprint/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "trained": s.fingerprint.is_some(),
                 "replay_samples": s.replay.len(),
@@ -3807,7 +3901,7 @@ fn handle_api(
 
         // ── Temporal-Logic Monitor ────────────────────────────────
         (Method::Get, "/api/monitor/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let statuses: Vec<_> = s.monitor.statuses().iter().map(|(name, status)| {
                 serde_json::json!({ "name": name, "status": format!("{:?}", status) })
             }).collect();
@@ -3818,7 +3912,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Get, "/api/monitor/violations") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let violations: Vec<_> = s
                 .monitor
                 .violations()
@@ -3838,7 +3932,7 @@ fn handle_api(
 
         // ── Deception Engine ──────────────────────────────────────
         (Method::Get, "/api/deception/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let report = s.deception.report();
             let info = serde_json::json!({
                 "total_decoys": report.total_decoys,
@@ -3855,21 +3949,21 @@ fn handle_api(
 
         // ── Drift Detection ───────────────────────────────────────
         (Method::Get, "/api/drift/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "sample_count": s.drift.sample_count(),
             });
             json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/drift/reset") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.drift.reset();
             json_response(r#"{"status":"drift detector reset"}"#, 200)
         }
 
         // ── Causal Analysis ───────────────────────────────────────
         (Method::Get, "/api/causal/graph") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "node_count": s.causal.node_count(),
                 "edge_count": s.causal.edge_count(),
@@ -3879,7 +3973,7 @@ fn handle_api(
 
         // ── Patch Management ──────────────────────────────────────
         (Method::Get, "/api/patches") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let plan = s.patches.plan();
             let info = serde_json::json!({
                 "total_patches": s.patches.patch_count(),
@@ -3945,7 +4039,7 @@ fn handle_api(
 
         // ── TLS Status ───────────────────────────────────────────
         (Method::Get, "/api/tls/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "tls_enabled": s.listener_mode.is_tls(),
                 "scheme": s.listener_mode.scheme(),
@@ -3956,7 +4050,7 @@ fn handle_api(
 
         // ── Mesh Health / Self-Healing ────────────────────────────
         (Method::Get, "/api/mesh/health") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let (report, repairs) = s.swarm.self_heal();
             let info = serde_json::json!({
                 "is_connected": report.is_connected,
@@ -3968,7 +4062,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/mesh/heal") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let (report, repairs) = s.swarm.self_heal();
             let applied = repairs.len();
             for repair in &repairs {
@@ -3987,7 +4081,7 @@ fn handle_api(
 
         // ── Energy Harvesting ─────────────────────────────────────
         (Method::Post, "/api/energy/harvest") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let recharged = s.energy.capacity_mwh * 0.05;
             s.energy.current_mwh = (s.energy.current_mwh + recharged).min(s.energy.capacity_mwh);
             let info = serde_json::json!({
@@ -4000,7 +4094,7 @@ fn handle_api(
 
         // ── Config Hot-Reload ─────────────────────────────────────
         (Method::Get, "/api/config/current") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             match serde_json::to_string_pretty(&s.config) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -4010,7 +4104,7 @@ fn handle_api(
         (Method::Post, "/api/config/save") => {
             match read_body_limited(&mut request, 10 * 1024 * 1024) {
                 Ok(body) => {
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     let config_path = s.config_path.clone();
                     match config_save_target(&s.config, &body) {
                         Ok((next_config, applied_fields)) => {
@@ -4084,11 +4178,11 @@ fn handle_api(
             200,
         ),
         (Method::Get, "/api/metrics") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             text_response(&prometheus_metrics_payload(&s), 200)
         }
         (Method::Get, "/api/slo/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let uptime = s.server_start.elapsed().as_secs();
             let total = s.request_count;
             let errors = s.error_count;
@@ -4146,7 +4240,7 @@ fn handle_api(
         }
         // ── Retention policy ──────────────────────────────────────
         (Method::Get, "/api/retention/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let retention = &s.config.retention;
             let body = serde_json::json!({
                 "audit_max_records": retention.audit_max_records,
@@ -4163,7 +4257,7 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         (Method::Post, "/api/retention/apply") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let max_alerts = s.config.retention.alert_max_records;
             let max_events = s.config.retention.event_max_records;
             let mut trimmed_alerts = 0usize;
@@ -4194,7 +4288,7 @@ fn handle_api(
                 .get("offset")
                 .and_then(|value| value.parse::<usize>().ok())
                 .unwrap_or(0);
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let alerts_vec: Vec<_> = s.alerts.iter().cloned().collect();
             match recent_alerts_json(&alerts_vec, limit, offset) {
                 Ok(json) => json_response(&json, 200),
@@ -4202,7 +4296,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/alerts/count") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let total = s.alerts.len();
             let critical = s.alerts.iter().filter(|a| a.level == "Critical").count();
             let severe = s.alerts.iter().filter(|a| a.level == "Severe").count();
@@ -4216,7 +4310,7 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         (Method::Delete, "/api/alerts") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let cleared = s.alerts.len();
             s.alerts.clear();
             json_response(&format!(r#"{{"status":"cleared","count":{cleared}}}"#), 200)
@@ -4247,7 +4341,7 @@ fn handle_api(
             };
             let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             let host = {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 s.local_host_info.hostname.clone()
             };
             let sample = crate::telemetry::TelemetrySample {
@@ -4290,7 +4384,7 @@ fn handle_api(
                 enforced: false,
                 mitre: vec![],
             };
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             if s.alerts.len() >= 10_000 {
                 s.alerts.pop_front();
             }
@@ -4302,7 +4396,7 @@ fn handle_api(
         }
         // ── Alert Analysis & Grouping ────────────────────────────
         (Method::Get, "/api/alerts/analysis") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(ref analysis) = s.last_alert_analysis {
                 match serde_json::to_string(analysis) {
                     Ok(json) => json_response(&json, 200),
@@ -4337,7 +4431,7 @@ fn handle_api(
                 }
                 Err(_) => 5,
             };
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let alerts_vec: Vec<_> = s.alerts.iter().cloned().collect();
             let analysis = crate::alert_analysis::analyze_alerts(&alerts_vec, window);
             s.last_alert_analysis = Some(analysis.clone());
@@ -4347,7 +4441,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/alerts/grouped") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let alerts_vec: Vec<_> = s.alerts.iter().cloned().collect();
             let groups = crate::alert_analysis::group_alerts(&alerts_vec);
             match serde_json::to_string(&groups) {
@@ -4357,7 +4451,7 @@ fn handle_api(
         }
         // ── Swarm Intelligence ──────────────────────────────────
         (Method::Get, "/api/swarm/intel") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let entries = s.swarm.intel_cache.all();
             match serde_json::to_string(entries) {
                 Ok(json) => json_response(&json, 200),
@@ -4365,7 +4459,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/swarm/intel/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let stats = s.swarm.intel_cache.stats();
             match serde_json::to_string(&stats) {
                 Ok(json) => json_response(&json, 200),
@@ -4374,7 +4468,7 @@ fn handle_api(
         }
         // ── Local Telemetry ──────────────────────────────────────
         (Method::Get, "/api/telemetry/current") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(sample) = s.local_telemetry.back() {
                 match serde_json::to_string(sample) {
                     Ok(json) => json_response(&json, 200),
@@ -4385,7 +4479,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/telemetry/history") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let samples: Vec<_> = s.local_telemetry.iter().rev().take(120).collect();
             match serde_json::to_string(&samples) {
                 Ok(json) => json_response(&json, 200),
@@ -4393,7 +4487,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/host/info") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let host = &s.local_host_info;
             let uptime = s.server_start.elapsed().as_secs();
             let cpu_cores = std::thread::available_parallelism()
@@ -4418,7 +4512,7 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         (Method::Get, "/api/threads/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let uptime = s.server_start.elapsed().as_secs();
             let body = serde_json::json!({
                 "monitoring_thread": "active",
@@ -4430,17 +4524,17 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         (Method::Get, "/api/monitoring/options") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let body = monitoring_options_payload(&s.local_host_info, &s.config);
             json_response(&body.to_string(), 200)
         }
         (Method::Get, "/api/monitoring/paths") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let body = monitoring_paths_payload(&s.local_host_info, &s.config);
             json_response(&body.to_string(), 200)
         }
         (Method::Get, "/api/rollout/config") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             match serde_json::to_string(&s.config.rollout) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -4677,7 +4771,7 @@ fn handle_api(
         (Method::Post, "/api/agents/enroll") => handle_agent_enroll(&mut request, state),
         (Method::Post, "/api/agents/token") => handle_agent_create_token(&mut request, state),
         (Method::Get, "/api/agents") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let agents = s.agent_registry.list();
             let payload = agents
@@ -4699,7 +4793,7 @@ fn handle_api(
         // ── XDR Events ────────────────────────────────────────────
         (Method::Post, "/api/events") => handle_event_ingest(&mut request, state),
         (Method::Get, "/api/events") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let query = parse_event_query(&url);
             let events = filtered_events(&s.event_store, &query);
             match serde_json::to_string(&events) {
@@ -4708,13 +4802,13 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/events/export") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let query = parse_event_query(&url);
             let events = filtered_events(&s.event_store, &query);
             csv_response(&events_to_csv(&events), 200)
         }
         (Method::Get, "/api/events/summary") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let analytics = s.event_store.analytics();
             match serde_json::to_string(&analytics) {
                 Ok(json) => json_response(&json, 200),
@@ -4724,7 +4818,7 @@ fn handle_api(
 
         // ── XDR Policy Distribution ──────────────────────────────
         (Method::Get, "/api/policy/current") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             match s.policy_store.current() {
                 Some(policy) => match serde_json::to_string(policy) {
                     Ok(json) => json_response(&json, 200),
@@ -4734,7 +4828,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/policy/history") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             match serde_json::to_string(s.policy_store.history()) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -4751,7 +4845,7 @@ fn handle_api(
 
         // ── Detection Analysis ─────────────────────────────────
         (Method::Get, "/api/detection/summary") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let vel_state = &s.velocity;
             let ent_state = &s.entropy;
             let cmp_state = &s.compound;
@@ -4783,7 +4877,7 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         (Method::Get, "/api/detection/weights") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let weights = s.detector.signal_weights();
             match serde_json::to_string(&weights) {
                 Ok(json) => json_response(&json, 200),
@@ -4819,7 +4913,7 @@ fn handle_api(
                     return;
                 }
             };
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.detector.set_signal_weights(weights.clone());
             drop(s);
             json_response(
@@ -4830,7 +4924,7 @@ fn handle_api(
 
         // ── Audit Log ─────────────────────────────────────────────
         (Method::Get, "/api/audit/log") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let entries = s.audit_log.recent(200);
             match serde_json::to_string(&entries) {
                 Ok(json) => json_response(&json, 200),
@@ -4840,7 +4934,7 @@ fn handle_api(
 
         // ── Incidents ─────────────────────────────────────────────
         (Method::Get, "/api/incidents") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let query = parse_query_string(&url);
             match incidents_json(&s.incident_store, &query) {
                 Ok(json) => json_response(&json, 200),
@@ -4887,7 +4981,7 @@ fn handle_api(
                     return;
                 }
             };
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let inc = s.incident_store.create(
                 req.title,
                 req.severity,
@@ -4904,7 +4998,7 @@ fn handle_api(
 
         // ── Fleet Inventory ──────────────────────────────────────
         (Method::Get, "/api/fleet/inventory") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let summary: Vec<serde_json::Value> = s
                 .agent_inventories
                 .iter()
@@ -4925,7 +5019,7 @@ fn handle_api(
 
         // ── Reports ──────────────────────────────────────────────
         (Method::Get, "/api/reports") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let list = s.report_store.list();
             match serde_json::to_string(&list) {
                 Ok(json) => json_response(&json, 200),
@@ -4933,7 +5027,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/reports/executive-summary") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let summary = s.report_store.executive_summary(&s.incident_store);
             match serde_json::to_string(&summary) {
                 Ok(json) => json_response(&json, 200),
@@ -4943,7 +5037,7 @@ fn handle_api(
 
         // ── SIEM Status ──────────────────────────────────────────
         (Method::Get, "/api/siem/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let status = s.siem_connector.status();
             match serde_json::to_string(&status) {
                 Ok(json) => json_response(&json, 200),
@@ -4951,7 +5045,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/siem/config") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let cfg = s.siem_connector.config();
             match serde_json::to_string(&cfg) {
                 Ok(json) => json_response(&json, 200),
@@ -4972,7 +5066,7 @@ fn handle_api(
                         } else if let Err(e) = new_cfg.validate() {
                             error_json(&e, 400)
                         } else {
-                            let mut s = state.lock().unwrap();
+                            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                             let mut next_config = s.config.clone();
                             next_config.siem = new_cfg.clone();
                             if let Err(e) = persist_config_to_path(&next_config, &s.config_path) {
@@ -4993,7 +5087,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/taxii/status") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let status = s.taxii_client.status();
             match serde_json::to_string(&status) {
                 Ok(j) => json_response(&j, 200),
@@ -5001,7 +5095,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/taxii/config") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             match serde_json::to_string(s.taxii_client.config()) {
                 Ok(j) => json_response(&j, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -5019,7 +5113,7 @@ fn handle_api(
                         {
                             error_json("TAXII URL must use http:// or https://", 400)
                         } else {
-                            let mut s = state.lock().unwrap();
+                            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                             let mut next_config = s.config.clone();
                             next_config.taxii = new_cfg.clone();
                             if let Err(e) = persist_config_to_path(&next_config, &s.config_path) {
@@ -5040,7 +5134,7 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/taxii/pull") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             match s.taxii_client.pull_indicators() {
                 Ok(records) => {
                     let count = records.len();
@@ -5057,7 +5151,7 @@ fn handle_api(
 
         // ── Fleet Dashboard ──────────────────────────────────────
         (Method::Get, "/api/fleet/dashboard") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let agents = s.agent_registry.list();
             let mut counts = HashMap::new();
@@ -5121,7 +5215,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Get, "/api/workbench/overview") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let analytics = s.event_store.analytics();
             let overview = build_workbench_overview(
@@ -5141,7 +5235,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/manager/overview") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let analytics = s.event_store.analytics();
             let siem_status = s.siem_connector.status();
@@ -5168,7 +5262,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/hunts") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let items: Vec<serde_json::Value> = s
                 .enterprise
                 .hunts()
@@ -5213,7 +5307,7 @@ fn handle_api(
                 });
                 match serde_json::from_value::<crate::analyst::SearchQuery>(query) {
                     Ok(query) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let hunt = s.enterprise.create_or_update_hunt(
                             v["id"].as_str(),
                             v["name"].as_str().unwrap_or("Untitled Hunt").to_string(),
@@ -5246,7 +5340,7 @@ fn handle_api(
             Err(e) => error_json(&e, 400),
         },
         (Method::Get, "/api/content/rules") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let items = build_content_rules_view(&s.enterprise);
             json_response(
                 &serde_json::json!({"rules": items, "count": items.len()}).to_string(),
@@ -5277,7 +5371,7 @@ fn handle_api(
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     if is_builtin {
                         match s.enterprise.update_builtin_metadata(
                             v["id"].as_str().unwrap_or(""),
@@ -5348,7 +5442,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/content/packs") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&serde_json::json!({"packs": s.enterprise.packs(), "count": s.enterprise.packs().len()}).to_string(), 200)
         }
         (Method::Post, "/api/content/packs") => match read_json_value(&mut request, 12 * 1024) {
@@ -5363,7 +5457,7 @@ fn handle_api(
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let pack = s.enterprise.create_or_update_pack(
                     v["id"].as_str(),
                     v["name"].as_str().unwrap_or("Untitled Pack").to_string(),
@@ -5389,12 +5483,12 @@ fn handle_api(
             Err(e) => error_json(&e, 400),
         },
         (Method::Get, "/api/coverage/mitre") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let coverage = build_mitre_coverage(&s.enterprise, s.incident_store.list());
             json_response(&coverage.to_string(), 200)
         }
         (Method::Get, "/api/suppressions") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(
                 &serde_json::json!({
                     "suppressions": s.enterprise.suppressions(),
@@ -5407,7 +5501,7 @@ fn handle_api(
         }
         (Method::Post, "/api/suppressions") => match read_json_value(&mut request, 12 * 1024) {
             Ok(v) => {
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let suppression = s.enterprise.create_or_update_suppression(
                     v["id"].as_str(),
                     v["name"].as_str().unwrap_or("suppression").to_string(),
@@ -5457,7 +5551,7 @@ fn handle_api(
             Err(e) => error_json(&e, 400),
         },
         (Method::Get, "/api/enrichments/connectors") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&serde_json::json!({"connectors": s.enterprise.connectors(), "count": s.enterprise.connectors().len()}).to_string(), 200)
         }
         (Method::Post, "/api/enrichments/connectors") => {
@@ -5470,7 +5564,7 @@ fn handle_api(
                             serde_json::from_value::<HashMap<String, String>>(value).ok()
                         })
                         .unwrap_or_default();
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     let connector = s.enterprise.create_or_update_connector(
                         v["id"].as_str(),
                         v["kind"].as_str().unwrap_or("custom").to_string(),
@@ -5512,7 +5606,7 @@ fn handle_api(
             let started = std::time::Instant::now();
             match read_json_value(&mut request, 12 * 1024) {
                 Ok(v) => {
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     let sync = s.enterprise.sync_ticket(
                         v["provider"].as_str().unwrap_or("jira").to_string(),
                         v["object_kind"].as_str().unwrap_or("incident").to_string(),
@@ -5548,7 +5642,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/idp/providers") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&serde_json::json!({"providers": s.enterprise.idp_providers(), "count": s.enterprise.idp_providers().len()}).to_string(), 200)
         }
         (Method::Post, "/api/idp/providers") => match read_json_value(&mut request, 12 * 1024) {
@@ -5558,7 +5652,7 @@ fn handle_api(
                     .cloned()
                     .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
                     .unwrap_or_default();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let provider = s.enterprise.create_or_update_idp_provider(
                     v["id"].as_str(),
                     v["kind"].as_str().unwrap_or("oidc").to_string(),
@@ -5602,7 +5696,7 @@ fn handle_api(
             Err(e) => error_json(&e, 400),
         },
         (Method::Get, "/api/scim/config") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(
                 &serde_json::json!({"config": s.enterprise.scim()}).to_string(),
                 200,
@@ -5615,7 +5709,7 @@ fn handle_api(
                     .cloned()
                     .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
                     .unwrap_or_default();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let config = s.enterprise.update_scim(
                     v.get("enabled")
                         .and_then(|value| value.as_bool())
@@ -5649,7 +5743,7 @@ fn handle_api(
             Err(e) => error_json(&e, 400),
         },
         (Method::Get, "/api/audit/admin") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let payload = serde_json::json!({
                 "api_audit": s.audit_log.recent(200),
                 "change_control": s.enterprise.change_control(),
@@ -5659,7 +5753,7 @@ fn handle_api(
             json_response(&payload.to_string(), 200)
         }
         (Method::Get, "/api/support/diagnostics") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let siem_status = s.siem_connector.status();
             let analytics = s.event_store.analytics();
@@ -5712,7 +5806,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/system/health/dependencies") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let stale_agents = s
                 .agent_registry
@@ -5764,7 +5858,7 @@ fn handle_api(
             json_response(&payload.to_string(), 200)
         }
         (Method::Get, "/api/updates/releases") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             match serde_json::to_string(s.update_manager.list_releases()) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -5772,7 +5866,7 @@ fn handle_api(
         }
 
         (Method::Post, "/api/shutdown") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.shutdown.store(true, Ordering::SeqCst);
             drop(s);
             server.unblock();
@@ -5803,7 +5897,7 @@ fn handle_api(
 
         // ── Sigma Detection Engine ────────────────────────────────
         (Method::Get, "/api/sigma/rules") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let rules: Vec<serde_json::Value> = s
                 .sigma_engine
                 .rules()
@@ -5824,7 +5918,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/sigma/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let info = serde_json::json!({
                 "total_rules": s.sigma_engine.rules().len(),
                 "engine_status": "active",
@@ -5860,7 +5954,7 @@ fn handle_api(
 
         // ── Dead-Letter Queue ─────────────────────────────────────
         (Method::Get, "/api/dlq") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let items: Vec<serde_json::Value> = s
                 .dead_letter_queue
                 .list()
@@ -5884,7 +5978,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/dlq/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(
                 &serde_json::json!({
                     "count": s.dead_letter_queue.len(),
@@ -5895,7 +5989,7 @@ fn handle_api(
             )
         }
         (Method::Delete, "/api/dlq") => {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             let before = s.dead_letter_queue.len();
             s.dead_letter_queue.clear();
             json_response(&serde_json::json!({"cleared": before}).to_string(), 200)
@@ -5903,7 +5997,7 @@ fn handle_api(
 
         // ── Response Orchestration ────────────────────────────────
         (Method::Get, "/api/response/pending") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let pending = s.response_orchestrator.pending_requests();
             let items: Vec<serde_json::Value> = pending.iter().map(response_request_json).collect();
             json_response(
@@ -5912,7 +6006,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/response/requests") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let mut requests = s.response_orchestrator.all_requests();
             requests.sort_by(|left, right| right.requested_at.cmp(&left.requested_at));
             let items: Vec<serde_json::Value> =
@@ -5932,7 +6026,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/response/audit") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let ledger = s.response_orchestrator.audit_ledger();
             let entries: Vec<serde_json::Value> = ledger
                 .iter()
@@ -5950,7 +6044,7 @@ fn handle_api(
             json_response(&serde_json::json!({"audit_log": entries}).to_string(), 200)
         }
         (Method::Get, "/api/response/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let pending = s.response_orchestrator.pending_requests();
             let all = s.response_orchestrator.all_requests();
             let audit = s.response_orchestrator.audit_ledger();
@@ -5983,7 +6077,7 @@ fn handle_api(
 
         // ── Feature Flags ─────────────────────────────────────────
         (Method::Get, "/api/feature-flags") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let flags = s.feature_flags.all_flags();
             let items: Vec<serde_json::Value> = flags
                 .iter()
@@ -6002,7 +6096,7 @@ fn handle_api(
 
         // ── Process Tree ──────────────────────────────────────────
         (Method::Get, "/api/process-tree") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let alive = s.process_tree.alive_processes();
             let nodes: Vec<serde_json::Value> = alive
                 .iter()
@@ -6026,7 +6120,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/process-tree/deep-chains") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let chains = s.process_tree.deep_chains(4);
             let items: Vec<serde_json::Value> = chains
                 .iter()
@@ -6045,7 +6139,7 @@ fn handle_api(
 
         // ── Encrypted Spool ───────────────────────────────────────
         (Method::Get, "/api/spool/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let stats = s.spool.stats();
             let info = serde_json::json!({
                 "queued": stats.current_depth,
@@ -6061,7 +6155,7 @@ fn handle_api(
 
         // ── RBAC ──────────────────────────────────────────────────
         (Method::Get, "/api/rbac/users") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let users = s.rbac.list_users();
             let items: Vec<serde_json::Value> = users
                 .iter()
@@ -6101,7 +6195,7 @@ fn handle_api(
                                 created_at: chrono::Utc::now().to_rfc3339(),
                                 tenant_id: None,
                             };
-                            let s = state.lock().unwrap();
+                            let s = state.lock().unwrap_or_else(|e| e.into_inner());
                             s.rbac.add_user(user);
                             json_response(&serde_json::json!({"status": "created", "username": username, "token": token}).to_string(), 201)
                         }
@@ -6117,7 +6211,7 @@ fn handle_api(
             if username.is_empty() {
                 error_json("username is required", 400)
             } else {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 if s.rbac.remove_user(username) {
                     json_response(
                         &serde_json::json!({"status": "removed", "username": username}).to_string(),
@@ -6131,7 +6225,7 @@ fn handle_api(
 
         // ── Analyst Console: Cases ─────────────────────────────────
         (Method::Get, "/api/cases") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let status = url_param(&url, "status");
             let priority = url_param(&url, "priority");
             let assignee = url_param(&url, "assignee");
@@ -6187,7 +6281,7 @@ fn handle_api(
                                     .collect()
                             })
                             .unwrap_or_default();
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let case = s
                             .case_store
                             .create(title, desc, prio, inc_ids, evt_ids, tags);
@@ -6202,7 +6296,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/cases/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let cases = s.case_store.list_filtered(None, None, None);
             let total = cases.len();
             let resolved = cases
@@ -6238,7 +6332,7 @@ fn handle_api(
 
         // ── Analyst Console: Alert Queue ───────────────────────────
         (Method::Get, "/api/queue/alerts") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let pending = s.alert_queue.pending();
             let items: Vec<QueueAlertSummary> = pending
                 .iter()
@@ -6250,7 +6344,7 @@ fn handle_api(
             )
         }
         (Method::Get, "/api/queue/stats") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&s.alert_queue.stats().to_string(), 200)
         }
         (Method::Post, "/api/queue/acknowledge") => {
@@ -6262,7 +6356,7 @@ fn handle_api(
                             .as_u64()
                             .or_else(|| v["alert_id"].as_u64())
                             .unwrap_or(0);
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         if s.alert_queue.acknowledge(event_id) {
                             json_response(
                                 &serde_json::json!({"acknowledged": event_id}).to_string(),
@@ -6285,7 +6379,7 @@ fn handle_api(
                         Ok(v) => {
                             let event_id = v["event_id"].as_u64().unwrap_or(0);
                             let assignee = v["assignee"].as_str().unwrap_or("").to_string();
-                            let mut s = state.lock().unwrap();
+                            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                             if s.alert_queue.assign(event_id, assignee.clone()) {
                                 json_response(&serde_json::json!({"assigned": event_id, "assignee": assignee}).to_string(), 200)
                             } else {
@@ -6305,7 +6399,7 @@ fn handle_api(
             match body {
                 Ok(b) => match serde_json::from_str::<crate::analyst::SearchQuery>(&b) {
                     Ok(q) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let events = s.event_store.all_events();
                         let results = crate::analyst::search_events(events, &q);
                         let items: Vec<serde_json::Value> = results
@@ -6337,7 +6431,7 @@ fn handle_api(
             if hostname.is_empty() {
                 error_json("hostname parameter required", 400)
             } else {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let events = s.event_store.all_events();
                 let tl = crate::analyst::build_host_timeline(events, &hostname);
                 json_response(
@@ -6352,7 +6446,7 @@ fn handle_api(
             if agent_id.is_empty() {
                 error_json("agent_id parameter required", 400)
             } else {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let events = s.event_store.all_events();
                 let tl = crate::analyst::build_agent_timeline(events, &agent_id);
                 json_response(
@@ -6374,7 +6468,7 @@ fn handle_api(
                                 .as_array()
                                 .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
                                 .unwrap_or_default();
-                            let s = state.lock().unwrap();
+                            let s = state.lock().unwrap_or_else(|e| e.into_inner());
                             let events = s.event_store.all_events();
                             let graph =
                                 crate::analyst::build_investigation_graph(events, &event_ids);
@@ -6476,7 +6570,7 @@ fn handle_api(
                             is_protected_asset: false,
                         };
 
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.response_orchestrator.submit(request_record) {
                             Ok(request_id) => {
                                 let stored = s.response_orchestrator.get_request(&request_id);
@@ -6546,7 +6640,7 @@ fn handle_api(
                         };
                         let approver = v["approver"].as_str().unwrap_or("unknown").to_string();
                         let reason = v["reason"].as_str().unwrap_or("").to_string();
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let status = s.response_orchestrator.approve(
                             &request_id,
                             ResponseApprovalRecord {
@@ -6603,7 +6697,7 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/response/approvals") => {
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let entries = s.approval_log.recent(50);
             let items: Vec<serde_json::Value> = entries
                 .iter()
@@ -6651,7 +6745,7 @@ fn handle_api(
                     }
                 }
             };
-            let s = state.lock().unwrap();
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let executed = s
                 .response_orchestrator
                 .execute_approved_matching(request_id.as_deref());
@@ -6672,14 +6766,14 @@ fn handle_api(
                 // GET /api/agents/update?current_version=xxx&platform=yyy
                 handle_agent_update_check(&mut request, state)
             } else if method == Method::Get && url_path == "/api/reports/executive-summary" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let summary = s.report_store.executive_summary(&s.incident_store);
                 match serde_json::to_string(&summary) {
                     Ok(json) => json_response(&json, 200),
                     Err(e) => error_json(&format!("serialization error: {e}"), 500),
                 }
             } else if method == Method::Get && url_path == "/api/alerts/analysis" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(ref analysis) = s.last_alert_analysis {
                     match serde_json::to_string(analysis) {
                         Ok(json) => json_response(&json, 200),
@@ -6694,7 +6788,7 @@ fn handle_api(
                     }
                 }
             } else if method == Method::Get && url_path == "/api/alerts/grouped" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let alerts_vec: Vec<_> = s.alerts.iter().cloned().collect();
                 let groups = crate::alert_analysis::group_alerts(&alerts_vec);
                 match serde_json::to_string(&groups) {
@@ -6702,7 +6796,7 @@ fn handle_api(
                     Err(e) => error_json(&format!("serialization error: {e}"), 500),
                 }
             } else if method == Method::Get && url_path == "/api/cases/stats" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let cases = s.case_store.list_filtered(None, None, None);
                 let total = cases.len();
                 let resolved = cases
@@ -6752,7 +6846,7 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/activity"))
                     .unwrap_or("");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match build_agent_activity_snapshot(&s, agent_id) {
                     Ok(snapshot) => match serde_json::to_string(&snapshot) {
                         Ok(json) => json_response(&json, 200),
@@ -6806,7 +6900,7 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/status"))
                     .unwrap_or("");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.agent_registry.get(agent_id) {
                     Some(agent) => match serde_json::to_string(agent) {
                         Ok(json) => json_response(&json, 200),
@@ -6817,7 +6911,7 @@ fn handle_api(
             } else if method == Method::Delete && url_path.starts_with("/api/agents/") {
                 // DELETE /api/agents/{id}
                 let agent_id = url_path.strip_prefix("/api/agents/").unwrap_or("");
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.agent_registry.deregister(agent_id) {
                     Ok(()) => {
                         let body =
@@ -6864,7 +6958,7 @@ fn handle_api(
                     }
                 };
                 let count = logs.len();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 // Cap total tracked agents to prevent unbounded memory growth
                 if !s.agent_logs.contains_key(agent_id) && s.agent_logs.len() >= 10_000 {
                     // Evict a random agent to make room
@@ -6891,7 +6985,7 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/logs"))
                     .unwrap_or("");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let logs = s.agent_logs.get(agent_id).cloned().unwrap_or_default();
                 match serde_json::to_string(&logs) {
                     Ok(json) => json_response(&json, 200),
@@ -6935,7 +7029,7 @@ fn handle_api(
                         return;
                     }
                 };
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 // Cap total tracked agents to prevent unbounded memory growth
                 if !s.agent_inventories.contains_key(agent_id) && s.agent_inventories.len() >= 10_000 {
                     if let Some(evict_key) = s.agent_inventories.keys().next().cloned() {
@@ -6956,7 +7050,7 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.agent_inventories.get(agent_id) {
                     Some(inv) => match serde_json::to_string(inv) {
                         Ok(json) => json_response(&json, 200),
@@ -6971,7 +7065,7 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/incidents/", "/report") {
                     Some(id) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.incident_store.get(id) {
                             Some(inc) => {
                                 let report =
@@ -7092,7 +7186,7 @@ fn handle_api(
                         } else {
                             None
                         };
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.incident_store.update(id, upd.assignee, note, status) {
                             Ok(()) => json_response(
                                 &serde_json::json!({"status":"updated"}).to_string(),
@@ -7110,7 +7204,7 @@ fn handle_api(
             {
                 match parse_numeric_path_suffix::<u64>(url_path, "/api/incidents/") {
                     Some(id) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.incident_store.get(id) {
                             Some(inc) => match serde_json::to_string(inc) {
                                 Ok(json) => json_response(&json, 200),
@@ -7128,7 +7222,7 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/reports/", "/html") {
                     Some(id) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.report_store.get(id) {
                             Some(report) => {
                                 let html = report.report.to_html();
@@ -7181,7 +7275,7 @@ fn handle_api(
             } else if method == Method::Delete && url_path.starts_with("/api/reports/") {
                 match parse_numeric_path_suffix::<u64>(url_path, "/api/reports/") {
                     Some(id) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         if s.report_store.delete(id) {
                             json_response(&serde_json::json!({"status":"deleted"}).to_string(), 200)
                         } else {
@@ -7193,7 +7287,7 @@ fn handle_api(
             } else if method == Method::Get && url_path.starts_with("/api/reports/") {
                 match parse_numeric_path_suffix::<u64>(url_path, "/api/reports/") {
                     Some(id) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.report_store.get(id) {
                             Some(report) => match serde_json::to_string(report) {
                                 Ok(json) => json_response(&json, 200),
@@ -7209,7 +7303,7 @@ fn handle_api(
                 let file_name = url_path
                     .strip_prefix("/api/updates/download/")
                     .unwrap_or("");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.update_manager.get_release_binary(file_name) {
                     Ok(data) => {
                         let len = data.len();
@@ -7240,7 +7334,7 @@ fn handle_api(
                 // GET /api/alerts/{index} — detailed alert view
                 match parse_numeric_path_suffix::<usize>(url_path, "/api/alerts/") {
                     Some(idx) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         if idx < s.alerts.len() {
                             let alert = &s.alerts[idx];
                             let detail = serde_json::json!({
@@ -7297,7 +7391,7 @@ fn handle_api(
                 let hunt_id = url_path
                     .trim_start_matches("/api/hunts/")
                     .trim_end_matches("/history");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let runs = s.enterprise.hunt_runs(hunt_id);
                 json_response(
                     &serde_json::json!({"hunt_id": hunt_id, "history": runs, "count": runs.len()})
@@ -7313,7 +7407,7 @@ fn handle_api(
                     .trim_end_matches("/run")
                     .trim_end_matches('/');
                 let started = std::time::Instant::now();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let events = s.event_store.all_events().to_vec();
                 match s.enterprise.run_hunt(hunt_id, &events) {
                     Ok(run) => {
@@ -7343,7 +7437,7 @@ fn handle_api(
                     .trim_end_matches("/test")
                     .trim_end_matches('/');
                 let started = std::time::Instant::now();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let events = s.event_store.all_events().to_vec();
                 match s.enterprise.test_rule(rule_id, &events) {
                     Ok(result) => {
@@ -7379,7 +7473,7 @@ fn handle_api(
                             return respond_api(request, state, &method, &url, needs_auth, error_json(&format!("invalid target_status: {status_str}"), 400));
                         };
                         let reason = v["reason"].as_str().unwrap_or("promotion");
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.enterprise.promote_rule(
                             rule_id,
                             target,
@@ -7415,7 +7509,7 @@ fn handle_api(
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/rollback")
                     .trim_end_matches('/');
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.enterprise.rollback_rule(rule_id, auth_identity.actor()) {
                     Ok(rule) => {
                         sync_enterprise_sigma_engine(&mut s);
@@ -7440,7 +7534,7 @@ fn handle_api(
             {
                 match parse_entity_timeline_path(url_path) {
                     Some((kind, id)) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let timeline = build_entity_timeline(
                             kind,
                             id,
@@ -7461,7 +7555,7 @@ fn handle_api(
             } else if method == Method::Get && url_path.starts_with("/api/entities/") {
                 match parse_entity_profile_path(url_path) {
                     Some((kind, id)) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let profile = build_entity_profile(
                             kind,
                             id,
@@ -7484,7 +7578,7 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/incidents/", "/storyline") {
                     Some(id) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.incident_store.get(id) {
                             Some(incident) => {
                                 let related_events =
@@ -7509,7 +7603,7 @@ fn handle_api(
             } else if method == Method::Get && url_path.starts_with("/api/cases/") {
                 match parse_numeric_path_suffix::<u64>(url_path, "/api/cases/") {
                     Some(id) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         if let Some(c) = s.case_store.get(id) {
                             json_response(&serde_json::json!({
                                 "id": c.id, "title": c.title, "description": c.description,
@@ -7545,7 +7639,7 @@ fn handle_api(
                             Ok(v) => {
                                 let author = v["author"].as_str().unwrap_or("analyst").to_string();
                                 let text = v["text"].as_str().unwrap_or("").to_string();
-                                let mut s = state.lock().unwrap();
+                                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                                 if s.case_store.add_comment(id, author, text) {
                                     json_response(&serde_json::json!({"case_id": id, "action": "comment_added"}).to_string(), 200)
                                 } else {
@@ -7568,7 +7662,7 @@ fn handle_api(
                             serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                         }) {
                             Ok(v) => {
-                                let mut s = state.lock().unwrap();
+                                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(status_str) = v["status"].as_str() {
                                     let status = match status_str {
                                         "triaging" => Some(CaseStatus::Triaging),
@@ -7619,7 +7713,7 @@ fn handle_api(
                                 let kind = v["kind"].as_str().unwrap_or("other").to_string();
                                 let ref_id = v["reference_id"].as_str().unwrap_or("").to_string();
                                 let desc = v["description"].as_str().unwrap_or("").to_string();
-                                let mut s = state.lock().unwrap();
+                                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                                 if s.case_store.add_evidence(id, kind, ref_id, desc) {
                                     json_response(&serde_json::json!({"case_id": id, "action": "evidence_added"}).to_string(), 200)
                                 } else {
@@ -7641,7 +7735,7 @@ fn handle_api(
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(obs) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let anomalies = s.ueba_engine.observe(&obs);
                         json_response(
                             &serde_json::to_string(&serde_json::json!({
@@ -7654,12 +7748,12 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/ueba/risky" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let risky = s.ueba_engine.risky_entities(10.0);
                 json_response(&serde_json::to_string(&risky).unwrap(), 200)
             } else if method == Method::Get && url_path.starts_with("/api/ueba/entity/") {
                 let entity_id = url_path.trim_start_matches("/api/ueba/entity/");
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s
                     .ueba_engine
                     .entity_risk(&crate::ueba::EntityKind::User, entity_id)
@@ -7676,7 +7770,7 @@ fn handle_api(
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(conn) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         s.beacon_detector.record_connection(conn);
                         json_response(r#"{"status":"recorded"}"#, 200)
                     }
@@ -7688,14 +7782,14 @@ fn handle_api(
                     serde_json::from_str::<crate::beacon::DnsRecord>(&b).map_err(|e| e.to_string())
                 }) {
                     Ok(dns) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         s.beacon_detector.record_dns(dns);
                         json_response(r#"{"status":"recorded"}"#, 200)
                     }
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/beacon/analyze" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let summary = s.beacon_detector.analyze();
                 json_response(&serde_json::to_string(&summary).unwrap(), 200)
 
@@ -7707,7 +7801,7 @@ fn handle_api(
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(events) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let chain = s.kill_chain_analyzer.reconstruct("api-request", &events);
                         json_response(&serde_json::to_string(&chain).unwrap(), 200)
                     }
@@ -7722,14 +7816,14 @@ fn handle_api(
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(conn) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         s.lateral_detector.record(conn);
                         json_response(r#"{"status":"recorded"}"#, 200)
                     }
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/lateral/analyze" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let summary = s.lateral_detector.analyze();
                 json_response(&serde_json::to_string(&summary).unwrap(), 200)
 
@@ -7741,20 +7835,20 @@ fn handle_api(
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(event) => {
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         s.kernel_event_stream.push(event);
                         json_response(r#"{"status":"recorded"}"#, 200)
                     }
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/kernel/recent" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let events = s.kernel_event_stream.recent(100, None);
                 json_response(&serde_json::to_string(&events).unwrap(), 200)
 
             // Playbooks
             } else if method == Method::Get && url_path == "/api/playbooks" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let pbs = s.playbook_engine.list_playbooks();
                 json_response(&serde_json::to_string(&pbs).unwrap(), 200)
             } else if method == Method::Post && url_path == "/api/playbooks" {
@@ -7763,7 +7857,7 @@ fn handle_api(
                     serde_json::from_str::<crate::playbook::Playbook>(&b).map_err(|e| e.to_string())
                 }) {
                     Ok(pb) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         s.playbook_engine.register(pb);
                         json_response(r#"{"status":"registered"}"#, 200)
                     }
@@ -7778,7 +7872,7 @@ fn handle_api(
                         let pb_id = v["playbook_id"].as_str().unwrap_or("");
                         let alert_id = v["alert_id"].as_str();
                         let now = chrono::Utc::now().timestamp_millis() as u64;
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.playbook_engine.start_execution(pb_id, alert_id, now) {
                             Some(eid) => json_response(
                                 &serde_json::json!({"execution_id": eid}).to_string(),
@@ -7790,7 +7884,7 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/playbooks/executions" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let execs = s.playbook_engine.recent_executions(50);
                 json_response(&serde_json::to_string(&execs).unwrap(), 200)
 
@@ -7810,7 +7904,7 @@ fn handle_api(
                             _ => crate::live_response::LiveResponsePlatform::Linux,
                         };
                         let now = chrono::Utc::now().timestamp_millis() as u64;
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let sid = s
                             .live_response_engine
                             .open_session(agent_id, hostname, platform, op, now);
@@ -7835,7 +7929,7 @@ fn handle_api(
                             })
                             .unwrap_or_default();
                         let now = chrono::Utc::now().timestamp_millis() as u64;
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.live_response_engine.submit_command(sid, cmd, args, now) {
                             Ok(cid) => json_response(
                                 &serde_json::json!({"command_id": cid}).to_string(),
@@ -7847,11 +7941,11 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/live-response/sessions" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let sessions = s.live_response_engine.all_sessions();
                 json_response(&serde_json::to_string(&sessions).unwrap(), 200)
             } else if method == Method::Get && url_path == "/api/live-response/audit" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let log: Vec<serde_json::Value> = s
                     .live_response_engine
                     .audit_log()
@@ -7903,24 +7997,24 @@ fn handle_api(
                                 );
                             }
                         };
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let plan = s.remediation_engine.plan(&action, &platform);
                         json_response(&serde_json::to_string(&plan).unwrap(), 200)
                     }
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/remediation/results" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let results = s.remediation_engine.recent_results(50);
                 json_response(&serde_json::to_string(&results).unwrap(), 200)
             } else if method == Method::Get && url_path == "/api/remediation/stats" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let stats = s.remediation_engine.stats();
                 json_response(&serde_json::to_string(&stats).unwrap(), 200)
 
             // Escalation
             } else if method == Method::Get && url_path == "/api/escalation/policies" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let policies = s.escalation_engine.list_policies();
                 json_response(&serde_json::to_string(&policies).unwrap(), 200)
             } else if method == Method::Post && url_path == "/api/escalation/policies" {
@@ -7930,7 +8024,7 @@ fn handle_api(
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(policy) => {
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         s.escalation_engine.add_policy(policy);
                         json_response(r#"{"status":"added"}"#, 200)
                     }
@@ -7945,7 +8039,7 @@ fn handle_api(
                         let policy_id = v["policy_id"].as_str().unwrap_or("");
                         let alert_id = v["alert_id"].as_str().unwrap_or("");
                         let now = chrono::Utc::now().timestamp_millis() as u64;
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s
                             .escalation_engine
                             .start_escalation(policy_id, alert_id, now)
@@ -7968,7 +8062,7 @@ fn handle_api(
                         let eid = v["escalation_id"].as_str().unwrap_or("");
                         let by = v["acknowledged_by"].as_str().unwrap_or("api");
                         let now = chrono::Utc::now().timestamp_millis() as u64;
-                        let mut s = state.lock().unwrap();
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         if s.escalation_engine.acknowledge(eid, by, now) {
                             json_response(r#"{"status":"acknowledged"}"#, 200)
                         } else {
@@ -7978,12 +8072,12 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/escalation/active" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let active = s.escalation_engine.active_escalations();
                 json_response(&serde_json::to_string(&active).unwrap(), 200)
             } else if method == Method::Post && url_path == "/api/escalation/check-sla" {
                 let now = chrono::Utc::now().timestamp_millis() as u64;
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let escalated = s.escalation_engine.check_sla(now);
                 json_response(
                     &serde_json::json!({"escalated": escalated}).to_string(),
@@ -8017,7 +8111,7 @@ fn handle_api(
                         };
                         let target = v["target"].as_str().unwrap_or("");
                         let platform = v["platform"].as_str().unwrap_or("linux");
-                        let s = state.lock().unwrap();
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let cmds = s.enforcement.containment_commands(&level, target, platform);
                         json_response(&serde_json::to_string(&cmds).unwrap(), 200)
                     }
@@ -8036,7 +8130,7 @@ fn handle_api(
                     offset: query.get("offset").and_then(|v| v.parse().ok()),
                     ..Default::default()
                 };
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.query_alerts(&filter))) {
                     Ok(alerts) => json_response(&serde_json::to_string(&alerts).unwrap_or_default(), 200),
                     Err(e) => error_json(&e.message, 500),
@@ -8049,13 +8143,13 @@ fn handle_api(
                     limit: query.get("limit").and_then(|v| v.parse().ok()),
                     ..Default::default()
                 };
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.list_cases(&filter))) {
                     Ok(cases) => json_response(&serde_json::to_string(&cases).unwrap_or_default(), 200),
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Get && url_path == "/api/storage/audit" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| {
                     let chain_len = store.verify_audit_chain()?;
                     Ok(serde_json::json!({
@@ -8067,7 +8161,7 @@ fn handle_api(
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Get && url_path == "/api/storage/stats" {
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.stats())) {
                     Ok(stats) => json_response(&serde_json::to_string(&stats).unwrap_or_default(), 200),
                     Err(e) => error_json(&e.message, 500),
@@ -8075,7 +8169,7 @@ fn handle_api(
             } else if method == Method::Get && url_path == "/api/storage/agents" {
                 let query = parse_query_string(&url);
                 let tenant = query.get("tenant_id").map(|s| s.as_str());
-                let s = state.lock().unwrap();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.list_agents(tenant))) {
                     Ok(agents) => json_response(&serde_json::to_string(&agents).unwrap_or_default(), 200),
                     Err(e) => error_json(&e.message, 500),
@@ -8085,7 +8179,7 @@ fn handle_api(
                     Ok(body) => {
                         match serde_json::from_str::<crate::storage::StoredAlert>(&body) {
                             Ok(alert) => {
-                                let s = state.lock().unwrap();
+                                let s = state.lock().unwrap_or_else(|e| e.into_inner());
                                 match s.storage.with(|store| store.insert_alert(alert)) {
                                     Ok(()) => json_response(r#"{"status":"stored"}"#, 201),
                                     Err(e) => error_json(&e.message, 409),
@@ -8149,6 +8243,17 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e.message, 500),
                 }
+
+            // ── Database schema version ───────────────────────────
+            } else if method == Method::Get && url_path == "/api/admin/db/version" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let info = s.storage.with(|store| Ok(store.schema_info()));
+                let version = s.storage.with(|store| Ok(store.schema_version()));
+                let body = serde_json::json!({
+                    "current_version": version.unwrap_or(0),
+                    "migrations": info.unwrap_or_default(),
+                });
+                json_response(&body.to_string(), 200)
 
             // ── SBOM generation ───────────────────────────────────
             } else if method == Method::Get && url_path == "/api/sbom" {
@@ -8267,7 +8372,7 @@ fn handle_analyze(
                 Ok(j) => j,
                 Err(e) => return error_json(&format!("serialization error: {e}"), 500),
             };
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             // Update the live detector baseline with the analyzed samples
             for (sample, report) in samples.iter().zip(result.reports.iter()) {
                 let pre = s
@@ -8336,7 +8441,7 @@ fn handle_mode(
         other => return error_json(&format!("unknown mode: {other}"), 400),
     };
 
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     s.detector.set_adaptation(mode);
     let body = serde_json::json!({"status": format!("mode set to {}", mode_req.mode)});
     json_response(&body.to_string(), 200)
@@ -8372,7 +8477,7 @@ fn handle_fleet_register(
         status: DeviceStatus::Online,
         tags: Vec::new(),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     s.swarm.register_device(record);
     let body = serde_json::json!({"status": "registered", "device": req.device_id});
     json_response(&body.to_string(), 200)
@@ -8394,7 +8499,7 @@ fn handle_enforcement_quarantine(
         Ok(r) => r,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let results = s.enforcement.enforce(
         &crate::enforcement::EnforcementLevel::Quarantine,
         &req.target,
@@ -8443,7 +8548,7 @@ fn handle_threat_intel_ioc(
     };
 
     let now = chrono::Utc::now().to_rfc3339();
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     s.threat_intel.add_ioc(crate::threat_intel::IoC {
         ioc_type,
         value: req.value.clone(),
@@ -8505,7 +8610,7 @@ fn handle_digital_twin_simulate(
         events: vec![event],
     };
 
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let result = s.digital_twin.simulate(&[step]);
     let info = serde_json::json!({
         "device_id": req.device_id,
@@ -8532,7 +8637,7 @@ fn handle_energy_consume(
         Ok(r) => r,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     s.energy.drain_rate_mw = req.drain_rate_mw;
     let new_state = s.energy.tick();
     let info = serde_json::json!({
@@ -8559,7 +8664,7 @@ fn handle_policy_vm_execute(
         Ok(r) => r,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     // Build a simple program that loads env values and computes a risk composite
     let program = crate::wasm_engine::PolicyProgram::new(
         "api-eval",
@@ -8608,7 +8713,7 @@ fn handle_deception_deploy(
         "canary" => crate::threat_intel::DecoyType::Canary,
         _ => crate::threat_intel::DecoyType::Honeypot,
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let id = s.deception.deploy(
         decoy_type,
         &req.name,
@@ -8716,7 +8821,7 @@ fn handle_config_reload(
         Ok(p) => p,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let result = patch.apply(&mut s.config);
     match serde_json::to_string_pretty(&result) {
         Ok(json) => {
@@ -8766,7 +8871,7 @@ fn handle_agent_enroll(
         Ok(r) => r,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.agent_registry.enroll(&req) {
         Ok(resp) => match serde_json::to_string(&resp) {
             Ok(json) => json_response(&json, 200),
@@ -8802,7 +8907,7 @@ fn handle_agent_create_token(
             ttl_secs: None,
         },
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let token = if let Some(ttl) = req.ttl_secs {
         s.agent_registry.create_token_with_ttl(req.max_uses, ttl)
     } else {
@@ -8834,7 +8939,7 @@ fn handle_agent_heartbeat(
         version: env!("CARGO_PKG_VERSION").to_string(),
         health: None,
     });
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s
         .agent_registry
         .heartbeat(agent_id, &req.version, req.health.clone())
@@ -8999,7 +9104,7 @@ fn handle_agent_details(
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     match build_agent_activity_snapshot(&s, agent_id) {
         Ok(snapshot) => match serde_json::to_string(&snapshot) {
             Ok(json) => json_response(&json, 200),
@@ -9024,7 +9129,7 @@ fn handle_agent_update_check(
     if current_version.is_empty() {
         current_version = env!("CARGO_PKG_VERSION").to_string();
     }
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(agent_id) = agent_id.as_deref() {
         if platform == "universal" {
             if let Some(agent) = s.agent_registry.get(agent_id) {
@@ -9083,7 +9188,7 @@ fn handle_update_deploy(
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
 
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let agent = match s.agent_registry.get(&req.agent_id) {
         Some(agent) => agent,
         None => return error_json("agent not found", 404),
@@ -9155,7 +9260,7 @@ fn handle_event_triage(
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
 
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.event_store.update_triage(event_id, update) {
         Ok(event) => json_response(
             &serde_json::json!({ "status": "updated", "event": event }).to_string(),
@@ -9178,7 +9283,7 @@ fn handle_event_ingest(
         Ok(b) => b,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let native_rule_matches: usize = batch
         .events
         .iter_mut()
@@ -9270,7 +9375,7 @@ fn handle_bulk_triage(
     if req.event_ids.len() > 500 {
         return error_json("too many event_ids (max 500)", 400);
     }
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let result = s
         .event_store
         .bulk_update_triage(&req.event_ids, &req.update);
@@ -9298,7 +9403,7 @@ fn handle_update_rollback(
         Ok(r) => r,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let agent = match s.agent_registry.get(&req.agent_id) {
         Some(a) => a.clone(),
         None => return error_json("agent not found", 404),
@@ -9356,7 +9461,7 @@ fn handle_update_cancel(
         Ok(r) => r,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.remote_deployments.get_mut(&req.agent_id) {
         Some(deployment) => {
             if is_terminal_deployment_status(&deployment.status) {
@@ -9394,7 +9499,7 @@ fn handle_agent_set_scope(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     if is_clear {
         match s.agent_registry.set_monitor_scope(agent_id, None) {
             Ok(()) => json_response(
@@ -9425,7 +9530,7 @@ fn handle_agent_get_scope(
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.agent_registry.get(agent_id) {
         Some(agent) => {
             let effective_scope = agent
@@ -9456,7 +9561,7 @@ fn handle_policy_publish(
         Ok(p) => p,
         Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
     };
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     s.policy_store.publish(policy);
     let version = s.policy_store.current_version();
     json_response(
@@ -9494,7 +9599,7 @@ fn handle_update_publish(
         Err(e) => return error_json(&format!("invalid base64: {e}"), 400),
     };
 
-    let mut s = state.lock().unwrap();
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.update_manager.publish_release(
         &req.version,
         &req.platform,

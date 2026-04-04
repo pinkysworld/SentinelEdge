@@ -2,6 +2,23 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.36.0] — Completeness: GraphQL, Real SMTP/Gzip, Poison Recovery, Syslog
+
+### Added
+- **GraphQL API** — wired `/api/graphql` POST endpoint with 5 resolvers (alerts, agents, status, events, hunts) backed by live `AppState`, plus schema introspection.
+- **Syslog forwarding** — audit events forwarded via UDP RFC 5424 to configurable target (`WARDEX_SYSLOG_TARGET` env var) with severity mapping.
+- **DB schema version API** — `GET /api/admin/db/version` endpoint returning migration history and current schema version.
+- **Schema introspection** — `StorageBackend::schema_version()` and `schema_info()` methods exposing migration state.
+
+### Changed
+- **Real gzip compression** — replaced CRC32/DEFLATE stub in `archival.rs` with `flate2::GzEncoder` for standards-compliant gzip output.
+- **Real SMTP delivery** — replaced email stub in `notifications.rs` with full SMTP conversation (EHLO → MAIL FROM → RCPT TO → DATA → QUIT) over TCP with retry and exponential back-off.
+- **Mutex poison recovery** — all 232 `.lock().unwrap()` sites now use `.unwrap_or_else(|e| e.into_inner())` to survive poisoned mutexes without panicking.
+- **OpenAPI spec** bumped to 0.36.0 with GraphQL and DB version endpoint definitions.
+
+### Tests
+- **916 lib tests passing**, 0 failures.
+
 ## [0.35.0] — Ship-Readiness, Operational Maturity, and Competitive Differentiation
 
 ### Added

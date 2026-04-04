@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::baseline::PersistedBaseline;
 use crate::telemetry::TelemetrySample;
 
@@ -1315,5 +1317,224 @@ mod tests {
         let without = compound.evaluate(&signal);
         let with = compound.evaluate_with_side_channel(&signal, Some(&sc_report));
         assert!(with.compound_score > without.compound_score, "side-channel fusion should boost score");
+    }
+
+    #[test]
+    fn slow_attack_cumulative_detection() {
+        use super::SlowAttackDetector;
+        let mut det = SlowAttackDetector::default();
+        // Feed gradual auth failures: 1 per sample over 50 samples
+        for _ in 0..50 {
+            let sample = TelemetrySample {
+                timestamp_ms: 0,
+                cpu_load_pct: 30.0,
+                memory_load_pct: 40.0,
+                temperature_c: 50.0,
+                network_kbps: 100.0,
+                auth_failures: 1,
+                battery_pct: 80.0,
+                integrity_drift: 0.0,
+                process_count: 100,
+                disk_pressure_pct: 30.0,
+            };
+            det.observe(&sample);
+        }
+        let report = det.evaluate();
+        assert!(report.cumulative_auth_failures >= 50);
+        assert!(report.auth_failure_rate > 0.0);
+    }
+}
+
+// ─── Slow / Low-and-Slow Attack Detector ──────────────────────────
+
+/// Detects gradual, below-threshold attacks that accumulate over
+/// long horizons (hours/days). Maintains sliding-window aggregates
+/// and cumulative counters alongside the fast EWMA baseline.
+#[derive(Debug, Clone)]
+pub struct SlowAttackConfig {
+    /// Short window for rate computation (samples).
+    pub short_window: usize,
+    /// Long window for cumulative tracking (samples).
+    pub long_window: usize,
+    /// Cumulative auth failure threshold to trigger alert.
+    pub auth_cumulative_threshold: u64,
+    /// Auth failure rate (per sample) that is considered suspicious.
+    pub auth_rate_threshold: f32,
+    /// Network bytes cumulative anomaly threshold (KB).
+    pub network_cumulative_threshold: f64,
+    /// Score threshold for alert.
+    pub alert_threshold: f32,
+}
+
+impl Default for SlowAttackConfig {
+    fn default() -> Self {
+        Self {
+            short_window: 60,       // ~1 hour at 1 sample/min
+            long_window: 1440,      // ~24 hours at 1 sample/min
+            auth_cumulative_threshold: 100,
+            auth_rate_threshold: 0.5,
+            network_cumulative_threshold: 500_000.0, // 500 MB
+            alert_threshold: 3.0,
+        }
+    }
+}
+
+/// Result of slow-attack analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlowAttackReport {
+    /// Combined slow-attack risk score.
+    pub score: f32,
+    /// Whether the score exceeds the alert threshold.
+    pub alert: bool,
+    /// Cumulative auth failures in the long window.
+    pub cumulative_auth_failures: u64,
+    /// Auth failure rate (failures per sample) in short window.
+    pub auth_failure_rate: f32,
+    /// Cumulative network KB in the long window.
+    pub cumulative_network_kb: f64,
+    /// Number of samples observed.
+    pub samples_observed: u64,
+    /// Detected patterns.
+    pub patterns: Vec<String>,
+    /// MITRE ATT&CK technique IDs.
+    pub mitre_techniques: Vec<String>,
+}
+
+/// Slow-attack detector using long-horizon aggregation.
+pub struct SlowAttackDetector {
+    config: SlowAttackConfig,
+    /// Short-window auth failure ring.
+    short_auth: std::collections::VecDeque<u32>,
+    /// Long-window auth failure ring.
+    long_auth: std::collections::VecDeque<u32>,
+    /// Long-window network KB ring.
+    long_network: std::collections::VecDeque<f32>,
+    /// Total samples observed.
+    total_samples: u64,
+}
+
+impl std::fmt::Debug for SlowAttackDetector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SlowAttackDetector")
+            .field("total_samples", &self.total_samples)
+            .finish()
+    }
+}
+
+impl Default for SlowAttackDetector {
+    fn default() -> Self {
+        Self::new(SlowAttackConfig::default())
+    }
+}
+
+impl SlowAttackDetector {
+    pub fn new(config: SlowAttackConfig) -> Self {
+        Self {
+            short_auth: std::collections::VecDeque::with_capacity(config.short_window),
+            long_auth: std::collections::VecDeque::with_capacity(config.long_window),
+            long_network: std::collections::VecDeque::with_capacity(config.long_window),
+            config,
+            total_samples: 0,
+        }
+    }
+
+    /// Ingest a telemetry sample.
+    pub fn observe(&mut self, sample: &TelemetrySample) {
+        self.total_samples += 1;
+
+        // Short window
+        if self.short_auth.len() >= self.config.short_window {
+            self.short_auth.pop_front();
+        }
+        self.short_auth.push_back(sample.auth_failures);
+
+        // Long window
+        if self.long_auth.len() >= self.config.long_window {
+            self.long_auth.pop_front();
+        }
+        self.long_auth.push_back(sample.auth_failures);
+
+        if self.long_network.len() >= self.config.long_window {
+            self.long_network.pop_front();
+        }
+        self.long_network.push_back(sample.network_kbps);
+    }
+
+    /// Evaluate slow-attack signals.
+    pub fn evaluate(&self) -> SlowAttackReport {
+        let cumulative_auth: u64 = self.long_auth.iter().map(|&f| f as u64).sum();
+        let short_auth_sum: u32 = self.short_auth.iter().sum();
+        let auth_rate = if self.short_auth.is_empty() {
+            0.0
+        } else {
+            short_auth_sum as f32 / self.short_auth.len() as f32
+        };
+
+        let cumulative_network_kb: f64 = self.long_network.iter().map(|&k| k as f64).sum();
+
+        let mut score = 0.0f32;
+        let mut patterns = Vec::new();
+
+        // Auth failure accumulation
+        if cumulative_auth >= self.config.auth_cumulative_threshold {
+            let ratio = cumulative_auth as f32 / self.config.auth_cumulative_threshold as f32;
+            score += ratio.min(3.0) * 1.5;
+            patterns.push(format!(
+                "cumulative_auth_failures:{cumulative_auth} (threshold:{})",
+                self.config.auth_cumulative_threshold
+            ));
+        }
+
+        // Sustained auth failure rate (below burst threshold but persistent)
+        if auth_rate >= self.config.auth_rate_threshold && self.short_auth.len() >= 10 {
+            score += (auth_rate / self.config.auth_rate_threshold).min(2.0);
+            patterns.push(format!("sustained_auth_rate:{auth_rate:.2}/sample"));
+        }
+
+        // Cumulative network anomaly (slow exfiltration)
+        if cumulative_network_kb >= self.config.network_cumulative_threshold {
+            let ratio = cumulative_network_kb / self.config.network_cumulative_threshold;
+            score += (ratio as f32).min(2.0);
+            patterns.push(format!(
+                "cumulative_network_kb:{cumulative_network_kb:.0} (threshold:{})",
+                self.config.network_cumulative_threshold
+            ));
+        }
+
+        let score = score.min(10.0);
+        let alert = score >= self.config.alert_threshold;
+
+        let mut mitre = Vec::new();
+        if alert {
+            if cumulative_auth >= self.config.auth_cumulative_threshold {
+                mitre.push("T1110".into()); // Brute Force
+                mitre.push("T1110.001".into()); // Password Guessing
+            }
+            if cumulative_network_kb >= self.config.network_cumulative_threshold {
+                mitre.push("T1048".into()); // Exfiltration Over Alternative Protocol
+                mitre.push("T1030".into()); // Data Transfer Size Limits
+            }
+        }
+
+        SlowAttackReport {
+            score,
+            alert,
+            cumulative_auth_failures: cumulative_auth,
+            auth_failure_rate: auth_rate,
+            cumulative_network_kb,
+            samples_observed: self.total_samples,
+            patterns,
+            mitre_techniques: mitre,
+        }
+    }
+
+    /// Get the configuration.
+    pub fn config(&self) -> &SlowAttackConfig {
+        &self.config
+    }
+
+    /// Total samples observed.
+    pub fn total_samples(&self) -> u64 {
+        self.total_samples
     }
 }

@@ -367,6 +367,50 @@ impl StorageBackend {
         &self.conn
     }
 
+    /// Return the current schema version number.
+    pub fn schema_version(&self) -> u32 {
+        self.current_version
+    }
+
+    /// Return migration history as JSON-serializable records.
+    pub fn schema_info(&self) -> Vec<Migration> {
+        let all = migrations();
+        let mut result = Vec::new();
+        let mut stmt = self.conn
+            .prepare("SELECT version, name, applied_at FROM schema_version ORDER BY version")
+            .ok();
+        if let Some(ref mut s) = stmt {
+            let rows = s.query_map([], |row| {
+                Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            });
+            if let Ok(rows) = rows {
+                for row in rows.flatten() {
+                    result.push(Migration {
+                        version: row.0,
+                        name: row.1,
+                        sql_up: String::new(),
+                        sql_down: String::new(),
+                        applied_at: Some(row.2),
+                    });
+                }
+            }
+        }
+        // Add unapplied migrations
+        let applied_max = result.last().map(|m| m.version).unwrap_or(0);
+        for m in &all {
+            if m.version > applied_max {
+                result.push(Migration {
+                    version: m.version,
+                    name: m.name.clone(),
+                    sql_up: String::new(),
+                    sql_down: String::new(),
+                    applied_at: None,
+                });
+            }
+        }
+        result
+    }
+
     /// Run all pending migrations.
     fn run_migrations(&mut self) -> Result<(), StorageError> {
         let all = migrations();
