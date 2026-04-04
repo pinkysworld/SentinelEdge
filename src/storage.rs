@@ -434,6 +434,36 @@ impl StorageBackend {
         Ok(())
     }
 
+    /// Rollback the most recent migration, executing its `sql_down`.
+    /// Returns the version that was rolled back, or None if already at v0.
+    pub fn rollback_migration(&mut self) -> Result<Option<u32>, StorageError> {
+        if self.current_version == 0 {
+            return Ok(None);
+        }
+        let all = migrations();
+        let target = all.iter().find(|m| m.version == self.current_version);
+        let Some(m) = target else {
+            return Err(StorageError {
+                code: StorageErrorCode::MigrationFailed,
+                message: format!("no migration found for version {}", self.current_version),
+            });
+        };
+        let rolled_back = m.version;
+        self.conn.execute_batch(&m.sql_down).map_err(|e| StorageError {
+            code: StorageErrorCode::MigrationFailed,
+            message: format!("rollback v{} '{}' failed: {e}", m.version, m.name),
+        })?;
+        self.conn.execute(
+            "DELETE FROM schema_version WHERE version = ?1",
+            params![m.version],
+        ).map_err(|e| StorageError {
+            code: StorageErrorCode::MigrationFailed,
+            message: format!("failed to remove migration record v{}: {e}", m.version),
+        })?;
+        self.current_version = m.version - 1;
+        Ok(Some(rolled_back))
+    }
+
     // ── Alert Operations ──────────────────────────────────────────────────
 
     /// Insert a new alert.
@@ -1405,5 +1435,36 @@ mod tests {
         let counts = store.alert_counts(None);
         assert_eq!(counts.get("Critical"), Some(&2));
         assert_eq!(counts.get("Elevated"), Some(&3));
+    }
+
+    #[test]
+    fn audit_chain_survives_purge() {
+        let mut store = temp_storage();
+
+        // Insert 5 audit entries with proper chaining
+        store.append_audit("system", "old_action_0", None, None, "default").unwrap();
+        store.append_audit("system", "old_action_1", None, None, "default").unwrap();
+        store.append_audit("system", "old_action_2", None, None, "default").unwrap();
+        store.append_audit("admin", "recent_1", None, None, "default").unwrap();
+        store.append_audit("admin", "recent_2", None, None, "default").unwrap();
+
+        // Verify chain before purge
+        let before = store.verify_audit_chain();
+        assert!(before.is_ok(), "chain should be valid before purge: {:?}", before);
+
+        // Backdate the first 3 entries so they fall outside retention
+        let old_ts = "2020-01-01T00:00:00+00:00";
+        store.conn.execute(
+            "UPDATE audit_log SET timestamp = ?1 WHERE id <= 3",
+            params![old_ts],
+        ).unwrap();
+
+        // Purge entries older than 1 day (should remove old_ts entries)
+        let purged = store.purge_old_audit(1).unwrap();
+        assert!(purged >= 3, "should purge at least 3 old entries, got {}", purged);
+
+        // Verify chain survives purge (rechain should rebuild)
+        let after = store.verify_audit_chain();
+        assert!(after.is_ok(), "chain should be valid after purge: {:?}", after);
     }
 }

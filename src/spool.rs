@@ -29,7 +29,7 @@ fn spool_cipher(data: &[u8], key: &[u8]) -> Vec<u8> {
             result.push(data[offset + i] ^ block[i]);
         }
         offset += take;
-        counter = counter.checked_add(1).expect("spool cipher counter overflow");
+        counter = counter.wrapping_add(1);
     }
     result
 }
@@ -149,9 +149,36 @@ impl EncryptedSpool {
         serde_json::from_slice(&decrypted).ok()
     }
 
+    /// Peek at the next entry for a specific tenant.
+    pub fn peek_for_tenant(&self, tenant_id: &str) -> Option<SpoolEntry> {
+        for encrypted in &self.queue {
+            let decrypted = spool_cipher(encrypted, &self.key);
+            if let Ok(entry) = serde_json::from_slice::<SpoolEntry>(&decrypted) {
+                if entry.tenant_id.as_deref() == Some(tenant_id) {
+                    return Some(entry);
+                }
+            }
+        }
+        None
+    }
+
     /// Dequeue the next entry (successful delivery).
     pub fn dequeue(&mut self) -> Option<SpoolEntry> {
         let encrypted = self.queue.pop_front()?;
+        let decrypted = spool_cipher(&encrypted, &self.key);
+        self.total_delivered += 1;
+        serde_json::from_slice(&decrypted).ok()
+    }
+
+    /// Dequeue the next entry belonging to a specific tenant.
+    pub fn dequeue_for_tenant(&mut self, tenant_id: &str) -> Option<SpoolEntry> {
+        let pos = self.queue.iter().position(|encrypted| {
+            let decrypted = spool_cipher(encrypted, &self.key);
+            serde_json::from_slice::<SpoolEntry>(&decrypted)
+                .map(|e| e.tenant_id.as_deref() == Some(tenant_id))
+                .unwrap_or(false)
+        })?;
+        let encrypted = self.queue.remove(pos)?;
         let decrypted = spool_cipher(&encrypted, &self.key);
         self.total_delivered += 1;
         serde_json::from_slice(&decrypted).ok()
@@ -182,6 +209,11 @@ impl EncryptedSpool {
         self.queue.len()
     }
 
+    /// Number of entries for a specific tenant.
+    pub fn len_for_tenant(&self, tenant_id: &str) -> usize {
+        self.entries_for_tenant(tenant_id).len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
@@ -192,6 +224,25 @@ impl EncryptedSpool {
         while let Some(entry) = self.dequeue() {
             results.push(entry);
         }
+        results
+    }
+
+    /// Drain entries for a specific tenant only.
+    pub fn drain_for_tenant(&mut self, tenant_id: &str) -> Vec<SpoolEntry> {
+        let mut results = Vec::new();
+        let mut remaining = VecDeque::new();
+        while let Some(encrypted) = self.queue.pop_front() {
+            let decrypted = spool_cipher(&encrypted, &self.key);
+            if let Ok(entry) = serde_json::from_slice::<SpoolEntry>(&decrypted) {
+                if entry.tenant_id.as_deref() == Some(tenant_id) {
+                    self.total_delivered += 1;
+                    results.push(entry);
+                } else {
+                    remaining.push_back(encrypted);
+                }
+            }
+        }
+        self.queue = remaining;
         results
     }
 
@@ -477,5 +528,63 @@ mod tests {
         restored.restore(&persisted).unwrap();
         let entry = restored.dequeue().unwrap();
         assert_eq!(entry.tenant_id.as_deref(), Some("acme-corp"));
+    }
+
+    #[test]
+    fn tenant_isolation_dequeue() {
+        let mut spool = EncryptedSpool::new(b"tenant-isolate!!", 100);
+        spool.enqueue_with_tenant("ev1", "dst", "t1", Some("alpha"));
+        spool.enqueue_with_tenant("ev2", "dst", "t2", Some("beta"));
+        spool.enqueue_with_tenant("ev3", "dst", "t3", Some("alpha"));
+
+        // Dequeue only alpha's entries
+        let e1 = spool.dequeue_for_tenant("alpha").unwrap();
+        assert_eq!(e1.payload, "ev1");
+        let e2 = spool.dequeue_for_tenant("alpha").unwrap();
+        assert_eq!(e2.payload, "ev3");
+        assert!(spool.dequeue_for_tenant("alpha").is_none());
+
+        // Beta's entry should still be available
+        assert_eq!(spool.len(), 1);
+        let e3 = spool.dequeue_for_tenant("beta").unwrap();
+        assert_eq!(e3.payload, "ev2");
+    }
+
+    #[test]
+    fn tenant_isolation_peek() {
+        let mut spool = EncryptedSpool::new(b"tenant-peek!!!!!", 100);
+        spool.enqueue_with_tenant("ev1", "dst", "t1", Some("alpha"));
+        spool.enqueue_with_tenant("ev2", "dst", "t2", Some("beta"));
+
+        let peeked = spool.peek_for_tenant("beta").unwrap();
+        assert_eq!(peeked.payload, "ev2");
+        // Peek doesn't consume
+        assert_eq!(spool.len(), 2);
+    }
+
+    #[test]
+    fn tenant_isolation_drain() {
+        let mut spool = EncryptedSpool::new(b"tenant-drain!!!!", 100);
+        spool.enqueue_with_tenant("ev1", "dst", "t1", Some("alpha"));
+        spool.enqueue_with_tenant("ev2", "dst", "t2", Some("beta"));
+        spool.enqueue_with_tenant("ev3", "dst", "t3", Some("alpha"));
+
+        let drained = spool.drain_for_tenant("alpha");
+        assert_eq!(drained.len(), 2);
+        assert_eq!(spool.len(), 1);
+        let remaining = spool.dequeue().unwrap();
+        assert_eq!(remaining.tenant_id.as_deref(), Some("beta"));
+    }
+
+    #[test]
+    fn tenant_len() {
+        let mut spool = EncryptedSpool::new(b"tenant-len!!!!!!", 100);
+        spool.enqueue_with_tenant("ev1", "dst", "t1", Some("alpha"));
+        spool.enqueue_with_tenant("ev2", "dst", "t2", Some("beta"));
+        spool.enqueue_with_tenant("ev3", "dst", "t3", Some("alpha"));
+
+        assert_eq!(spool.len_for_tenant("alpha"), 2);
+        assert_eq!(spool.len_for_tenant("beta"), 1);
+        assert_eq!(spool.len_for_tenant("gamma"), 0);
     }
 }

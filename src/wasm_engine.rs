@@ -165,7 +165,7 @@ impl PolicyVm {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
                         return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Div".into()) };
                     };
-                    if b.abs() < f64::EPSILON {
+                    if b == 0.0 {
                         return VmResult {
                             success: false,
                             outputs,

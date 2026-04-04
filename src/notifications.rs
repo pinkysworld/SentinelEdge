@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_dispatch_email_stub() {
+    fn engine_dispatch_email() {
         let mut engine = NotificationEngine::new();
         engine.add_channel(ChannelConfig {
             kind: ChannelKind::Email,

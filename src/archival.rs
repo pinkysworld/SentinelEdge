@@ -298,20 +298,6 @@ fn compress_gzip(data: &[u8]) -> Result<Vec<u8>, String> {
     encoder.finish().map_err(|e| format!("gzip finish: {e}"))
 }
 
-fn crc32_simple(data: &[u8]) -> u32 {
-    let mut crc: u32 = 0xFFFFFFFF;
-    for &byte in data {
-        crc ^= byte as u32;
-        for _ in 0..8 {
-            if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0xEDB88320;
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-    !crc
-}
 
 fn csv_escape(s: &str) -> String {
     // Guard against CSV formula injection (DDE attacks)
@@ -475,15 +461,5 @@ mod tests {
     fn record_type_display() {
         assert_eq!(RecordType::Alert.to_string(), "alert");
         assert_eq!(RecordType::AuditLog.to_string(), "audit_log");
-    }
-
-    #[test]
-    fn crc32_known_value() {
-        // CRC32 of empty string
-        let crc = crc32_simple(b"");
-        assert_eq!(crc, 0x00000000);
-        // CRC32 of "123456789" is well-known
-        let crc = crc32_simple(b"123456789");
-        assert_eq!(crc, 0xCBF43926);
     }
 }

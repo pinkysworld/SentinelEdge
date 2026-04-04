@@ -2,6 +2,22 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.36.1] — Bug Fixes: Spool Safety, WASM, Ransomware API, Migration Rollback
+
+### Fixed
+- **Spool counter overflow** — replaced `.expect()` panic with `wrapping_add()` in spool cipher counter (src/spool.rs).
+- **WASM div-by-zero** — replaced overly strict `f64::EPSILON` comparison with `== 0.0` check (src/wasm_engine.rs).
+- **Dead code cleanup** — removed unused `crc32_simple()` function and its test from archival.rs. Zero compiler warnings.
+
+### Added
+- **Ransomware detector API** — `GET /api/detectors/ransomware` endpoint exposing multi-signal ransomware evaluation (velocity, extension entropy, canary, FIM drift).
+- **DB migration rollback** — `POST /api/admin/db/rollback` endpoint and `StorageBackend::rollback_migration()` method executing `sql_down` for the most recent migration.
+- **Spool tenant isolation** — `peek_for_tenant()`, `dequeue_for_tenant()`, `drain_for_tenant()`, `len_for_tenant()` methods for tenant-scoped spool operations.
+- **Audit chain purge test** — validates `verify_audit_chain()` succeeds after `purge_old_audit()` rechain.
+
+### Tests
+- **920 lib tests passing** (+4 net: 5 new tenant isolation/audit tests, 1 dead CRC32 test removed), 0 failures, 0 warnings.
+
 ## [0.36.0] — Completeness: GraphQL, Real SMTP/Gzip, Poison Recovery, Syslog
 
 ### Added

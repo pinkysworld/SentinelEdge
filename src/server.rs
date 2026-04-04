@@ -3409,6 +3409,7 @@ fn handle_api(
         || (method == Method::Delete && route_path.starts_with("/api/gdpr/forget/"))
         || (method == Method::Post && route_path == "/api/admin/backup")
         || (method == Method::Get && route_path == "/api/admin/db/version")
+        || (method == Method::Post && route_path == "/api/admin/db/rollback")
         || (method == Method::Get && route_path == "/api/sbom")
         || (method == Method::Post && route_path == "/api/pii/scan")));
 
@@ -8197,6 +8198,34 @@ fn handle_api(
                 };
                 let report = s.slow_attack.evaluate();
                 json_response(&serde_json::to_string(&report).unwrap_or_default(), 200)
+
+            } else if method == Method::Get && url_path == "/api/detectors/ransomware" {
+                let mut s = match state.lock() {
+                    Ok(g) => g,
+                    Err(e) => e.into_inner(),
+                };
+                let signal = s.ransomware.evaluate(0.0);
+                json_response(&serde_json::to_string(&signal).unwrap_or_default(), 200)
+
+            // ── DB migration rollback ─────────────────────────────
+            } else if method == Method::Post && url_path == "/api/admin/db/rollback" {
+                let s = match state.lock() {
+                    Ok(g) => g,
+                    Err(e) => e.into_inner(),
+                };
+                match s.storage.with(|store| store.rollback_migration()) {
+                    Ok(Some(version)) => {
+                        let new_ver = s.storage.with(|store| Ok(store.schema_version())).unwrap_or(0);
+                        let body = serde_json::json!({
+                            "status": "rolled_back",
+                            "version": version,
+                            "current_version": new_ver,
+                        });
+                        json_response(&body.to_string(), 200)
+                    }
+                    Ok(None) => error_json("already at version 0, nothing to rollback", 400),
+                    Err(e) => error_json(&e.message, 500),
+                }
 
             // ── GDPR right-to-forget ──────────────────────────────
             } else if method == Method::Delete && url_path.starts_with("/api/gdpr/forget/") {
