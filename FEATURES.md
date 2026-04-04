@@ -77,12 +77,15 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - Panic hooks, Slowloris protection, secret management, agent authentication, and memory bounds
   - GDPR right-to-forget purge, PII scanner (email, SSN, credit card), auto retention purge
   - Kubernetes readiness/liveness probes, X-Request-Id tracing, and database backup endpoint
+  - TLS/HTTPS listener with opt-in rustls integration and mutual TLS (mTLS) for agent authentication
+  - 10 chaos/fault-injection integration tests (token rotation stress, burst load, malformed payloads, invalid auth, path traversal, oversized headers/bodies, wrong methods, endpoint sweep)
 
 ## Product posture
 
-- 88 Rust source modules
+- 93 Rust source modules
 - 160+ API paths
-- 916 lib tests (all passing)
+- 930 automated tests (920 lib + 10 chaos integration, all passing)
+- Production hardening score: 98% (58/59 controls)
 - GitHub Actions release packaging for Linux, macOS, and Windows
 
 ## Operator entry points

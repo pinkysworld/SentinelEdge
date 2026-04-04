@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.31.0` delivers the current enterprise control-plane slice:
+`v0.36.3` delivers the current enterprise control-plane slice:
 
 - SOC Workbench for queue, cases, investigation, and response
 - detection engineering with hunts, rule lifecycle, suppressions, and MITRE coverage
@@ -15,10 +15,10 @@
 
 | Priority | Outcome | Status |
 |---|---|---|
-| Durable event storage | historical hunts, long-range investigations, and manager reporting at scale | Next |
+| Durable event storage | historical hunts, long-range investigations, and manager reporting at scale | Implemented |
 | Enterprise identity completion | SSO flows, stronger group-to-role mapping, provisioning lifecycle validation | Next |
-| HA and backup/restore automation | recovery-safe upgrades and resilient control-plane deployment | Next |
-| Cloud and SaaS collectors | AWS, Azure, GCP, Entra/Okta, M365, and Workspace telemetry intake | Next |
+| HA and backup/restore automation | recovery-safe upgrades and resilient control-plane deployment | Implemented |
+| Cloud and SaaS collectors | AWS, Azure, GCP, Entra/Okta, M365, and Workspace telemetry intake | Implemented |
 
 ### Detection and content maturity
 
@@ -40,10 +40,11 @@
 
 ## Success criteria
 
-| Metric | Current (`v0.31.0`) | Target |
+| Metric | Current (`v0.36.3`) | Target |
 |---|---|---|
-| Automated tests | 692 | 1,000+ |
-| OpenAPI paths | 117 | 150+ current product paths kept documented |
+| Automated tests | 930 | 1,000+ |
+| OpenAPI paths | 160+ | maintained on every release |
 | Release targets | Linux, macOS, Windows | maintained on every tagged release |
 | Control-plane posture | single-node private-cloud | HA-ready enterprise deployment |
+| Production hardening | 98% (58/59) | 100% |
 | Detection content operations | hunts, rules, suppressions, packs | full canary/promote/distribute lifecycle |

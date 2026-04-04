@@ -4,9 +4,9 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const stats = [
-  { value: "75", label: "Rust modules" },
-  { value: "155+", label: "API endpoints" },
-  { value: "832", label: "automated tests" },
+  { value: "93", label: "Rust modules" },
+  { value: "160+", label: "API endpoints" },
+  { value: "930", label: "automated tests" },
   { value: "3", label: "release targets" },
 ];
 

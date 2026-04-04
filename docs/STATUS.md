@@ -2,11 +2,12 @@
 
 ## Current release
 
-- **Version:** `0.36.0`
+- **Version:** `0.36.3`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, analyst workflows, fleet operations, behavioural analytics, and automated incident response
-- **Source footprint:** 70+ Rust source modules
+- **Source footprint:** 93 Rust source modules
 - **API contract:** ~160 documented OpenAPI paths
-- **Verification:** 916 automated tests (lib) plus integration suites and live admin-console smoke coverage
+- **Verification:** 930 automated tests (920 lib + 10 chaos integration) plus integration suites and live admin-console smoke coverage
+- **Production hardening:** 98% (58/59 controls implemented)
 
 ## Shipped in the current platform
 
@@ -94,3 +95,23 @@ Wardex is now positioned as a professional XDR/SIEM control plane rather than an
 - **Syslog forwarding** — HTTP audit log entries forwarded to a UDP syslog target (RFC 5424) via `WARDEX_SYSLOG_TARGET`
 - **Database schema version API** — `GET /api/admin/db/version` returns migration history and current schema version
 - **Production hardening** — panic hooks, Slowloris protection, secret management, agent auth, auto retention purge, GDPR purge, PII scanner, VecDeque O(1) eviction, memory bounds, K8s probes, X-Request-Id tracing, SBOM API, DB backup
+
+## Recently shipped (v0.36.1)
+
+- **Spool counter safety** — replaced `.expect()` panic with `wrapping_add()` in spool cipher counter
+- **WASM div-by-zero fix** — replaced overly strict `f64::EPSILON` comparison with exact zero check
+- **Ransomware detector API** — `GET /api/detectors/ransomware` endpoint wired to live detector state
+- **Database migration rollback** — `POST /api/admin/db/rollback` with `rollback_migration()` on storage layer
+- **Spool tenant isolation** — per-tenant partition methods with 4 new tests
+
+## Recently shipped (v0.36.2)
+
+- **Complete retention purge** — `purge_old_metrics()` and `purge_old_response_actions()` wired into scheduler for all 4 record types
+- **Production hardening** — score updated to 95% (56/59 controls)
+
+## Recently shipped (v0.36.3)
+
+- **TLS/HTTPS listener** — opt-in `tls` Cargo feature with `WARDEX_TLS_CERT`/`WARDEX_TLS_KEY` env vars
+- **mTLS support** — `ListenerMode::Tls` carries full `TlsConfig` for mutual TLS agent authentication
+- **5 new chaos tests** — oversized headers, wrong methods, invalid auth, endpoint sweep, oversized body (total: 10)
+- **Production hardening** — score updated to 98% (58/59 controls)
