@@ -368,6 +368,12 @@ pub fn wardex_schema() -> GqlSchema {
                     field("status", "Status", &[], Some("System status")),
                     field("compliance", "ComplianceReport", &[arg("framework", "String!", None)], Some("Run compliance check")),
                     field("hunts", "[Hunt]", &[arg("limit", "Int", Some("20"))], Some("List threat hunts")),
+                    field("aggregate", "AggregateResult", &[
+                        arg("source", "String!", None),
+                        arg("op", "String!", None),
+                        arg("field", "String!", None),
+                        arg("group_by", "String", None),
+                    ], Some("Run aggregation (COUNT/SUM/AVG/MIN/MAX/DISTINCT) with optional GROUP BY")),
                 ],
             },
             gql_type("Alert", &["id: String!", "level: String!", "timestamp: String!", "device_id: String!", "score: Float!", "reasons: [String]!", "status: String!"]),
@@ -380,6 +386,8 @@ pub fn wardex_schema() -> GqlSchema {
             gql_type("ComplianceReport", &["framework: String!", "score: Float!", "passed: Int!", "failed: Int!", "findings: [Finding]!"]),
             gql_type("Finding", &["control_id: String!", "title: String!", "status: String!", "evidence: String!"]),
             gql_type("Hunt", &["id: String!", "name: String!", "status: String!", "matches: Int!", "created_at: String!"]),
+            gql_type("AggregateResult", &["op: String!", "field: String!", "value: JSON", "group_by: String", "groups: [AggregateGroup]"]),
+            gql_type("AggregateGroup", &["key: String!", "value: JSON", "count: Int!"]),
         ],
     }
 }
@@ -417,6 +425,152 @@ fn gql_type(name: &str, field_defs: &[&str]) -> GqlType {
         kind: GqlTypeKind::Object,
         fields,
         description: None,
+    }
+}
+
+// ── Aggregation Engine ───────────────────────────────────────────────────────
+
+/// Supported aggregation functions for threat-hunting queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AggregateOp {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+    Distinct,
+}
+
+impl std::str::FromStr for AggregateOp {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "count" => Ok(Self::Count),
+            "sum" => Ok(Self::Sum),
+            "avg" => Ok(Self::Avg),
+            "min" => Ok(Self::Min),
+            "max" => Ok(Self::Max),
+            "distinct" => Ok(Self::Distinct),
+            _ => Err(format!("unknown aggregate op: {s}")),
+        }
+    }
+}
+
+/// Request for an aggregation query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateRequest {
+    pub source: String,
+    pub op: AggregateOp,
+    pub field: String,
+    pub group_by: Option<String>,
+    pub filters: HashMap<String, serde_json::Value>,
+}
+
+/// Result of an aggregation query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateResult {
+    pub op: String,
+    pub field: String,
+    pub value: serde_json::Value,
+    pub group_by: Option<String>,
+    pub groups: Vec<AggregateGroup>,
+}
+
+/// A single group in a GROUP BY aggregation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateGroup {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub count: usize,
+}
+
+/// Run an aggregation over a JSON array of objects.
+pub fn aggregate(data: &[serde_json::Value], op: AggregateOp, field: &str, group_by: Option<&str>) -> AggregateResult {
+    if let Some(gb) = group_by {
+        // GROUP BY mode
+        let mut groups: HashMap<String, Vec<&serde_json::Value>> = HashMap::new();
+        for item in data {
+            let key = item.get(gb)
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .unwrap_or_else(|| "null".to_string());
+            groups.entry(key).or_default().push(item);
+        }
+
+        let mut agg_groups: Vec<AggregateGroup> = groups.into_iter().map(|(key, items)| {
+            let vals: Vec<f64> = items.iter()
+                .filter_map(|i| i.get(field).and_then(|v| v.as_f64()))
+                .collect();
+            let value = compute_agg(op, &vals, items.len(), &items, field);
+            AggregateGroup { key, value, count: items.len() }
+        }).collect();
+        agg_groups.sort_by(|a, b| a.key.cmp(&b.key));
+
+        AggregateResult {
+            op: format!("{op:?}"),
+            field: field.to_string(),
+            value: serde_json::Value::Null,
+            group_by: Some(gb.to_string()),
+            groups: agg_groups,
+        }
+    } else {
+        // Simple aggregation
+        let vals: Vec<f64> = data.iter()
+            .filter_map(|i| i.get(field).and_then(|v| v.as_f64()))
+            .collect();
+        let refs: Vec<&serde_json::Value> = data.iter().collect();
+        let value = compute_agg(op, &vals, data.len(), &refs, field);
+
+        AggregateResult {
+            op: format!("{op:?}"),
+            field: field.to_string(),
+            value,
+            group_by: None,
+            groups: vec![],
+        }
+    }
+}
+
+fn compute_agg(op: AggregateOp, vals: &[f64], item_count: usize, items: &[&serde_json::Value], field: &str) -> serde_json::Value {
+    match op {
+        AggregateOp::Count => serde_json::json!(item_count),
+        AggregateOp::Sum => {
+            let s: f64 = vals.iter().sum();
+            serde_json::json!(s)
+        }
+        AggregateOp::Avg => {
+            if vals.is_empty() {
+                serde_json::Value::Null
+            } else {
+                let avg = vals.iter().sum::<f64>() / vals.len() as f64;
+                serde_json::json!(avg)
+            }
+        }
+        AggregateOp::Min => {
+            vals.iter().copied().reduce(f64::min)
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        AggregateOp::Max => {
+            vals.iter().copied().reduce(f64::max)
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        AggregateOp::Distinct => {
+            let mut unique: Vec<String> = items.iter()
+                .filter_map(|i| i.get(field))
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+            unique.sort();
+            serde_json::json!(unique)
+        }
     }
 }
 
@@ -539,6 +693,7 @@ impl GqlExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn parse_simple_query() {
@@ -688,5 +843,85 @@ mod tests {
         let json = serde_json::to_string(&schema).unwrap();
         assert!(json.contains("Query"));
         assert!(json.contains("Alert"));
+    }
+
+    #[test]
+    fn aggregate_count() {
+        let data = vec![
+            serde_json::json!({"level": "Critical", "score": 9.0}),
+            serde_json::json!({"level": "Severe", "score": 6.0}),
+            serde_json::json!({"level": "Critical", "score": 8.5}),
+        ];
+        let result = aggregate(&data, AggregateOp::Count, "score", None);
+        assert_eq!(result.value, serde_json::json!(3));
+    }
+
+    #[test]
+    fn aggregate_avg_sum() {
+        let data = vec![
+            serde_json::json!({"score": 10.0}),
+            serde_json::json!({"score": 20.0}),
+            serde_json::json!({"score": 30.0}),
+        ];
+        let avg = aggregate(&data, AggregateOp::Avg, "score", None);
+        assert_eq!(avg.value, serde_json::json!(20.0));
+        let sum = aggregate(&data, AggregateOp::Sum, "score", None);
+        assert_eq!(sum.value, serde_json::json!(60.0));
+    }
+
+    #[test]
+    fn aggregate_min_max() {
+        let data = vec![
+            serde_json::json!({"score": 3.0}),
+            serde_json::json!({"score": 7.0}),
+            serde_json::json!({"score": 1.5}),
+        ];
+        let min = aggregate(&data, AggregateOp::Min, "score", None);
+        assert_eq!(min.value, serde_json::json!(1.5));
+        let max = aggregate(&data, AggregateOp::Max, "score", None);
+        assert_eq!(max.value, serde_json::json!(7.0));
+    }
+
+    #[test]
+    fn aggregate_distinct() {
+        let data = vec![
+            serde_json::json!({"level": "Critical"}),
+            serde_json::json!({"level": "Severe"}),
+            serde_json::json!({"level": "Critical"}),
+        ];
+        let distinct = aggregate(&data, AggregateOp::Distinct, "level", None);
+        let arr = distinct.value.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+    }
+
+    #[test]
+    fn aggregate_group_by() {
+        let data = vec![
+            serde_json::json!({"level": "Critical", "score": 9.0}),
+            serde_json::json!({"level": "Severe", "score": 6.0}),
+            serde_json::json!({"level": "Critical", "score": 8.0}),
+            serde_json::json!({"level": "Severe", "score": 5.0}),
+        ];
+        let result = aggregate(&data, AggregateOp::Avg, "score", Some("level"));
+        assert_eq!(result.groups.len(), 2);
+        let critical = result.groups.iter().find(|g| g.key == "Critical").unwrap();
+        assert_eq!(critical.count, 2);
+        assert_eq!(critical.value, serde_json::json!(8.5));
+        let severe = result.groups.iter().find(|g| g.key == "Severe").unwrap();
+        assert_eq!(severe.value, serde_json::json!(5.5));
+    }
+
+    #[test]
+    fn aggregate_op_from_str() {
+        assert_eq!(AggregateOp::from_str("count"), Ok(AggregateOp::Count));
+        assert_eq!(AggregateOp::from_str("AVG"), Ok(AggregateOp::Avg));
+        assert!(AggregateOp::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn aggregate_empty_data() {
+        let data: Vec<serde_json::Value> = vec![];
+        let result = aggregate(&data, AggregateOp::Avg, "score", None);
+        assert_eq!(result.value, serde_json::Value::Null);
     }
 }

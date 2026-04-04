@@ -174,6 +174,16 @@ pub struct EntityRisk {
     pub peer_group: Option<String>,
 }
 
+/// Peer-group aggregate baseline for comparison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerGroupBaseline {
+    pub group: String,
+    pub entity_count: usize,
+    pub avg_data_bytes: f64,
+    pub avg_risk: f32,
+    pub avg_hour_histogram: [f32; 24],
+}
+
 // ── UEBA engine ─────────────────────────────────────────────────
 
 /// The User and Entity Behavior Analytics engine.
@@ -217,8 +227,8 @@ impl UebaEngine {
         if profile.last_seen_ms > 0 && obs.timestamp_ms > profile.last_seen_ms {
             let hours_elapsed =
                 (obs.timestamp_ms - profile.last_seen_ms) as f64 / 3_600_000.0;
-            if hours_elapsed > 0.0 {
-                let decay = (self.config.risk_decay_per_hour as f64).powf(hours_elapsed);
+            if hours_elapsed >= 1.0 {
+                let decay = (self.config.risk_decay_per_hour as f64).powf(hours_elapsed.floor());
                 profile.risk_score *= decay as f32;
             }
         }
@@ -474,6 +484,108 @@ impl UebaEngine {
                 peer_group: p.peer_group.clone(),
             })
             .collect()
+    }
+
+    /// Compute the peer-group baseline for a given group label.
+    pub fn peer_group_baseline(&self, group: &str) -> Option<PeerGroupBaseline> {
+        let peers: Vec<&EntityProfile> = self.profiles
+            .values()
+            .filter(|p| p.peer_group.as_deref() == Some(group) && p.observation_count > 0)
+            .collect();
+        if peers.is_empty() {
+            return None;
+        }
+        let n = peers.len() as f64;
+        let avg_data_bytes = peers.iter().map(|p| p.avg_data_bytes).sum::<f64>() / n;
+        let avg_risk = peers.iter().map(|p| p.risk_score as f64).sum::<f64>() / n;
+        let mut avg_hours = [0.0f32; 24];
+        for p in &peers {
+            for (i, &h) in p.hour_histogram.iter().enumerate() {
+                avg_hours[i] += h;
+            }
+        }
+        for h in &mut avg_hours {
+            *h /= n as f32;
+        }
+        Some(PeerGroupBaseline {
+            group: group.to_string(),
+            entity_count: peers.len(),
+            avg_data_bytes,
+            avg_risk: avg_risk as f32,
+            avg_hour_histogram: avg_hours,
+        })
+    }
+
+    /// Check whether an entity deviates significantly from its peer group.
+    /// Returns anomalies only if the entity's metrics are outliers vs peers.
+    /// The entity itself is excluded from the peer group baseline.
+    pub fn peer_deviation_check(&self, entity_kind: &EntityKind, entity_id: &str) -> Vec<UebaAnomaly> {
+        let key = Self::profile_key(entity_kind, entity_id);
+        let profile = match self.profiles.get(&key) {
+            Some(p) => p,
+            None => return vec![],
+        };
+
+        let group = match &profile.peer_group {
+            Some(g) => g.clone(),
+            None => return vec![],
+        };
+
+        // Compute baseline excluding this entity
+        let peers: Vec<&EntityProfile> = self.profiles
+            .values()
+            .filter(|p| p.peer_group.as_deref() == Some(&group)
+                && p.observation_count > 0
+                && !(p.entity_kind == *entity_kind && p.entity_id == entity_id))
+            .collect();
+        if peers.len() < 3 {
+            return vec![];
+        }
+        let n = peers.len() as f64;
+        let peer_avg_data = peers.iter().map(|p| p.avg_data_bytes).sum::<f64>() / n;
+        let peer_avg_risk = peers.iter().map(|p| p.risk_score as f64).sum::<f64>() / n;
+
+        let mut anomalies = Vec::new();
+
+        // Risk score deviation: flag if entity risk is 3x the peer average
+        if peer_avg_risk > 0.0 && profile.risk_score > peer_avg_risk as f32 * 3.0 {
+            anomalies.push(UebaAnomaly {
+                anomaly_type: UebaAnomalyType::AnomalousAccess,
+                entity_kind: profile.entity_kind.clone(),
+                entity_id: profile.entity_id.clone(),
+                score: ((profile.risk_score / peer_avg_risk as f32 - 1.0) * 10.0).min(40.0),
+                description: format!(
+                    "Risk score {:.1} is {:.1}x peer group '{}' average ({:.1})",
+                    profile.risk_score,
+                    profile.risk_score as f64 / peer_avg_risk,
+                    group,
+                    peer_avg_risk
+                ),
+                timestamp_ms: profile.last_seen_ms,
+                evidence: vec![format!("peer_group={group}"), format!("peer_avg_risk={peer_avg_risk:.1}")],
+                mitre_technique: None,
+            });
+        }
+
+        // Data volume deviation: flag if entity avg data is 5x peer average
+        if peer_avg_data > 0.0 && profile.avg_data_bytes > peer_avg_data * 5.0 {
+            let ratio = profile.avg_data_bytes / peer_avg_data;
+            anomalies.push(UebaAnomaly {
+                anomaly_type: UebaAnomalyType::DataExfiltrationPattern,
+                entity_kind: profile.entity_kind.clone(),
+                entity_id: profile.entity_id.clone(),
+                score: ((ratio - 5.0) * 8.0).min(35.0) as f32,
+                description: format!(
+                    "Avg data volume {:.0}B is {:.1}x peer group '{}' average ({:.0}B)",
+                    profile.avg_data_bytes, ratio, group, peer_avg_data
+                ),
+                timestamp_ms: profile.last_seen_ms,
+                evidence: vec![format!("peer_group={group}"), format!("peer_avg_bytes={peer_avg_data:.0}")],
+                mitre_technique: Some("T1041".into()),
+            });
+        }
+
+        anomalies
     }
 
     /// Total number of tracked entity profiles.
@@ -751,6 +863,46 @@ mod tests {
     }
 
     #[test]
+    fn peer_group_deviation_detection() {
+        let mut engine = UebaEngine::new(UebaConfig {
+            warmup_observations: 1,
+            ..Default::default()
+        });
+
+        // Create 4 peers in "engineering" group with normal data volume
+        for i in 0..4 {
+            let name = format!("eng-{i}");
+            // Feed multiple observations so avg_data_bytes stabilises
+            for j in 0..5 {
+                let mut obs = make_obs(&name, (i * 10 + j) * 3_600_000);
+                obs.peer_group = Some("engineering".into());
+                obs.data_bytes = Some(1000);
+                engine.observe(&obs);
+            }
+        }
+
+        // One outlier with extreme data volume — feed many observations
+        for j in 0..10 {
+            let mut outlier_obs = make_obs("eng-outlier", j * 3_600_000);
+            outlier_obs.peer_group = Some("engineering".into());
+            outlier_obs.data_bytes = Some(100_000); // 100x normal
+            engine.observe(&outlier_obs);
+        }
+
+        let baseline = engine.peer_group_baseline("engineering").unwrap();
+        assert_eq!(baseline.entity_count, 5);
+        assert!(baseline.avg_data_bytes > 0.0);
+
+        let devs = engine.peer_deviation_check(&EntityKind::User, "eng-outlier");
+        // Should detect data volume deviation
+        assert!(
+            devs.iter().any(|a| a.anomaly_type == UebaAnomalyType::DataExfiltrationPattern),
+            "should detect data volume deviation from peer group, baseline avg={:.0}, outlier profile present",
+            baseline.avg_data_bytes,
+        );
+    }
+
+    #[test]
     fn peer_group_tracking() {
         let mut engine = UebaEngine::default();
         let mut obs = make_obs("alice", 1000);
@@ -779,6 +931,38 @@ mod tests {
         assert!(!risky.is_empty());
         let safe = engine.risky_entities(999.0);
         assert!(safe.is_empty());
+    }
+
+    #[test]
+    fn rapid_observations_preserve_risk() {
+        // With sub-hour observations, risk should NOT decay
+        let mut engine = UebaEngine::new(UebaConfig {
+            warmup_observations: 1,
+            risk_decay_per_hour: 0.5,
+            ..Default::default()
+        });
+        let mut obs = make_obs("rapid-user", 0);
+        obs.resource = Some("a".into());
+        engine.observe(&obs);
+        // Trigger anomaly
+        obs.timestamp_ms = 1;
+        obs.resource = Some("new".into());
+        engine.observe(&obs);
+        let risk_after_anomaly = engine.entity_risk(&EntityKind::User, "rapid-user").unwrap().risk_score;
+        assert!(risk_after_anomaly > 0.0);
+
+        // Many rapid observations 1 second apart — risk must NOT decay
+        for i in 2..100 {
+            obs.timestamp_ms = i * 1000; // every second for 100 seconds
+            obs.resource = Some("a".into());
+            engine.observe(&obs);
+        }
+        let risk_after_rapid = engine.entity_risk(&EntityKind::User, "rapid-user").unwrap().risk_score;
+        // Risk should be preserved (no sub-hour decay)
+        assert!(
+            risk_after_rapid >= risk_after_anomaly * 0.99,
+            "risk decayed from {risk_after_anomaly} to {risk_after_rapid} during sub-hour observations"
+        );
     }
 
     #[test]

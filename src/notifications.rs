@@ -149,18 +149,24 @@ fn format_webhook(n: &Notification) -> String {
     serde_json::to_string(n).unwrap_or_default()
 }
 
+/// Sanitise a string for safe inclusion in email headers / body.
+/// Strips CR and LF to prevent SMTP header injection.
+fn sanitize_email_field(s: &str) -> String {
+    s.replace('\r', "").replace('\n', " ")
+}
+
 fn format_email(n: &Notification) -> String {
+    let level = sanitize_email_field(&n.level);
+    let title = sanitize_email_field(&n.title);
+    let device = sanitize_email_field(&n.device_id);
+    let ts = sanitize_email_field(&n.timestamp);
+    let body = sanitize_email_field(&n.body);
+    let ids = sanitize_email_field(&n.alert_ids.join(", "));
     format!(
-        "Subject: [Wardex {}] {}\r\n\
+        "Subject: [Wardex {level}] {title}\r\n\
          Content-Type: text/plain; charset=UTF-8\r\n\r\n\
-         Device: {}\r\nTime: {}\r\n\r\n{}\r\n\r\n\
-         Alert IDs: {}",
-        n.level,
-        n.title,
-        n.device_id,
-        n.timestamp,
-        n.body,
-        n.alert_ids.join(", ")
+         Device: {device}\r\nTime: {ts}\r\n\r\n{body}\r\n\r\n\
+         Alert IDs: {ids}",
     )
 }
 
@@ -637,6 +643,19 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(!results[0].success);
         assert!(results[0].error.as_ref().unwrap().contains("no URL"));
+    }
+
+    #[test]
+    fn email_sanitises_crlf_injection() {
+        let mut n = test_notification("Critical");
+        n.title = "legit\r\nBcc: attacker@evil.com".into();
+        n.device_id = "dev\r\nX-Injected: yes".into();
+        let text = format_email(&n);
+        // CR/LF stripped: injected header cannot appear on its own line
+        assert!(!text.contains("\r\nBcc:"), "CRLF injection must be blocked");
+        assert!(!text.contains("\r\nX-Injected:"), "CRLF injection must be blocked");
+        // The sanitised text should still include the subject line
+        assert!(text.starts_with("Subject: [Wardex Critical]"));
     }
 
     #[test]

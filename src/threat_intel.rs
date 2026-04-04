@@ -176,6 +176,107 @@ impl ThreatIntelStore {
     pub fn feeds(&self) -> &[ThreatFeed] {
         &self.feeds
     }
+
+    /// Ingest IoCs from a STIX 2.1 JSON bundle.
+    /// Extracts indicators from the `objects` array where `type == "indicator"`.
+    pub fn ingest_stix_bundle(&mut self, feed_id: &str, json_data: &str) -> usize {
+        let parsed: serde_json::Value = match serde_json::from_str(json_data) {
+            Ok(v) => v,
+            Err(_) => return 0,
+        };
+        let objects = match parsed.get("objects").and_then(|o| o.as_array()) {
+            Some(arr) => arr,
+            None => return 0,
+        };
+        let mut count = 0;
+        for obj in objects {
+            if obj.get("type").and_then(|t| t.as_str()) != Some("indicator") {
+                continue;
+            }
+            let pattern = match obj.get("pattern").and_then(|p| p.as_str()) {
+                Some(p) => p,
+                None => continue,
+            };
+            // Parse simple STIX patterns like [ipv4-addr:value = '1.2.3.4']
+            let (ioc_type, value) = match parse_stix_pattern(pattern) {
+                Some(pair) => pair,
+                None => continue,
+            };
+            let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let confidence = obj.get("confidence").and_then(|c| c.as_f64()).unwrap_or(50.0) as f32 / 100.0;
+            let now = chrono::Utc::now().to_rfc3339();
+            let ioc = IoC {
+                ioc_type,
+                value,
+                confidence,
+                severity: if confidence > 0.7 { "high" } else { "medium" }.into(),
+                source: feed_id.to_string(),
+                first_seen: obj.get("created").and_then(|c| c.as_str()).unwrap_or(&now).to_string(),
+                last_seen: obj.get("modified").and_then(|m| m.as_str()).unwrap_or(&now).to_string(),
+                tags: obj.get("labels")
+                    .and_then(|l| l.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                related_iocs: vec![],
+            };
+            self.add_ioc(ioc);
+            count += 1;
+            let _ = name; // used in source context
+        }
+        if let Some(feed) = self.feeds.iter_mut().find(|f| f.feed_id == feed_id) {
+            feed.ioc_count += count;
+            feed.last_updated = chrono::Utc::now().to_rfc3339();
+            feed.format = "stix2.1".to_string();
+        }
+        count
+    }
+
+    /// Batch-check multiple values against the IoC store.
+    /// Returns only matches (filters out non-matches).
+    pub fn batch_check(&mut self, checks: &[(IoCType, String)]) -> Vec<MatchResult> {
+        checks.iter()
+            .map(|(ioc_type, value)| self.check(ioc_type, value))
+            .filter(|r| r.matched)
+            .collect()
+    }
+
+    /// Get IoCs expiring before a given timestamp (for feed rotation).
+    pub fn expiring_iocs(&self, before: &str) -> Vec<&IoC> {
+        self.iocs.values()
+            .filter(|ioc| ioc.last_seen.as_str() < before)
+            .collect()
+    }
+}
+
+/// Parse a simple STIX 2.1 indicator pattern.
+/// Supports: `[ipv4-addr:value = 'x']`, `[domain-name:value = 'x']`,
+/// `[file:hashes.'SHA-256' = 'x']`, `[process:name = 'x']`.
+fn parse_stix_pattern(pattern: &str) -> Option<(IoCType, String)> {
+    let inner = pattern.trim().trim_start_matches('[').trim_end_matches(']');
+    let (obj_path, value_part) = inner.split_once('=')?;
+    let obj_path = obj_path.trim();
+    let value = value_part.trim().trim_matches('\'').trim_matches('"').to_string();
+    if value.is_empty() {
+        return None;
+    }
+    let ioc_type = if obj_path.starts_with("ipv4-addr") || obj_path.starts_with("ipv6-addr") {
+        IoCType::IpAddress
+    } else if obj_path.starts_with("domain-name") {
+        IoCType::Domain
+    } else if obj_path.contains("hashes") {
+        IoCType::FileHash
+    } else if obj_path.starts_with("process") {
+        IoCType::ProcessName
+    } else if obj_path.starts_with("network-traffic") {
+        IoCType::NetworkSignature
+    } else if obj_path.starts_with("windows-registry-key") {
+        IoCType::RegistryKey
+    } else if obj_path.starts_with("x509-certificate") {
+        IoCType::Certificate
+    } else {
+        IoCType::BehaviorPattern
+    };
+    Some((ioc_type, value))
 }
 
 // ── Deception Engine (R33) ───────────────────────────────────────────────────
@@ -637,5 +738,100 @@ mod tests {
         assert_eq!(count, 1);
         let m = store.check(&IoCType::IpAddress, "203.0.113.50");
         assert!(m.matched);
+    }
+
+    #[test]
+    fn stix_bundle_ingestion() {
+        let mut store = ThreatIntelStore::new();
+        store.register_feed(ThreatFeed {
+            feed_id: "stix-feed".into(),
+            name: "STIX Test".into(),
+            url: "https://example.com/stix".into(),
+            format: "stix2.1".into(),
+            last_updated: String::new(),
+            ioc_count: 0,
+            active: true,
+        });
+
+        let bundle = r#"{
+            "type": "bundle",
+            "id": "bundle--001",
+            "objects": [
+                {
+                    "type": "indicator",
+                    "id": "indicator--001",
+                    "name": "Malicious IP",
+                    "pattern": "[ipv4-addr:value = '198.51.100.42']",
+                    "confidence": 85,
+                    "labels": ["malware", "c2"]
+                },
+                {
+                    "type": "indicator",
+                    "id": "indicator--002",
+                    "name": "Bad domain",
+                    "pattern": "[domain-name:value = 'evil.example.com']",
+                    "confidence": 70
+                },
+                {
+                    "type": "malware",
+                    "id": "malware--001",
+                    "name": "Not an indicator"
+                }
+            ]
+        }"#;
+
+        let count = store.ingest_stix_bundle("stix-feed", bundle);
+        assert_eq!(count, 2);
+        assert_eq!(store.ioc_count(), 2);
+
+        // Check the IP IoC
+        let m = store.check(&IoCType::IpAddress, "198.51.100.42");
+        assert!(m.matched);
+        assert_eq!(m.match_type, "exact");
+        let ioc = m.ioc.unwrap();
+        assert!(ioc.tags.contains(&"malware".to_string()));
+        assert!(ioc.confidence > 0.8);
+
+        // Check the domain IoC
+        let m2 = store.check(&IoCType::Domain, "evil.example.com");
+        assert!(m2.matched);
+    }
+
+    #[test]
+    fn stix_pattern_parsing() {
+        let cases = vec![
+            ("[ipv4-addr:value = '1.2.3.4']", IoCType::IpAddress, "1.2.3.4"),
+            ("[domain-name:value = 'test.com']", IoCType::Domain, "test.com"),
+            ("[file:hashes.'SHA-256' = 'abc123']", IoCType::FileHash, "abc123"),
+            ("[process:name = 'evil.exe']", IoCType::ProcessName, "evil.exe"),
+        ];
+        for (pattern, expected_type, expected_value) in cases {
+            let (ioc_type, value) = parse_stix_pattern(pattern)
+                .unwrap_or_else(|| panic!("failed to parse: {pattern}"));
+            assert_eq!(ioc_type, expected_type);
+            assert_eq!(value, expected_value);
+        }
+    }
+
+    #[test]
+    fn batch_check_returns_only_matches() {
+        let mut store = ThreatIntelStore::new();
+        store.add_ioc(IoC {
+            ioc_type: IoCType::IpAddress,
+            value: "10.0.0.1".into(),
+            confidence: 0.9, severity: "high".into(),
+            source: "test".into(),
+            first_seen: "t0".into(), last_seen: "t1".into(),
+            tags: vec![], related_iocs: vec![],
+        });
+
+        let checks = vec![
+            (IoCType::IpAddress, "10.0.0.1".into()),
+            (IoCType::IpAddress, "10.0.0.2".into()),
+            (IoCType::Domain, "safe.example.com".into()),
+        ];
+        let results = store.batch_check(&checks);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].ioc.as_ref().unwrap().value, "10.0.0.1");
     }
 }

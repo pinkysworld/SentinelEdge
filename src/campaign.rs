@@ -231,7 +231,7 @@ fn alert_similarity(a: &FleetAlert, b: &FleetAlert) -> f32 {
         .map(|s| s.as_str())
         .collect();
     if a_set.is_empty() && b_set.is_empty() {
-        return 0.0;
+        return 1.0;
     }
     let intersection = a_set.intersection(&b_set).count() as f32;
     let union = a_set.union(&b_set).count() as f32;
@@ -335,6 +335,22 @@ mod tests {
         let mut detector = CampaignDetector::default();
         let report = detector.detect(&alerts);
         assert!(report.campaigns.is_empty());
+    }
+
+    #[test]
+    fn similarity_empty_sets_returns_one() {
+        let a = FleetAlert {
+            alert_id: "x".into(), hostname: "h1".into(),
+            timestamp_ms: 0, score: 1.0, level: "L".into(),
+            reasons: vec![], mitre_techniques: vec![],
+        };
+        let b = FleetAlert {
+            alert_id: "y".into(), hostname: "h2".into(),
+            timestamp_ms: 0, score: 1.0, level: "L".into(),
+            reasons: vec![], mitre_techniques: vec![],
+        };
+        let sim = alert_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < f32::EPSILON, "empty sets should be identical, got {sim}");
     }
 
     #[test]

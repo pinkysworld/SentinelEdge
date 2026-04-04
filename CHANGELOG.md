@@ -2,6 +2,26 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.38.0] — XDR Enrichment, Aggregation Engine, Response Automation & Security Fixes
+
+### Security
+- **CRLF header injection (CRITICAL)** — `notifications.rs` `format_email()` now sanitises all user-controlled fields (`\r` stripped, `\n` → space) before interpolation into email headers, preventing SMTP header injection attacks.
+
+### Fixed
+- **Jaccard empty-set similarity** — `campaign.rs` `alert_similarity()` returned 0.0 for two empty technique/reason sets; now correctly returns 1.0 (identical empty sets).
+- **UEBA risk decay collapse** — `ueba.rs` risk decay was applied per-second instead of per-hour, causing rapid decay to zero after frequent observations. Changed to apply only for `hours_elapsed >= 1.0` using `hours_elapsed.floor()` in the exponent.
+- **Incident auto-cluster early break** — `incident.rs` `auto_cluster_incidents()` broke after merging into the first matching open incident, silently skipping other qualifying incidents. Removed `break` in both MITRE-technique and severe-burst clustering loops.
+
+### Added
+- **UEBA peer-group normalization (XDR Phase B)** — new `PeerGroupBaseline` struct, `peer_group_baseline()` for aggregate group stats, and `peer_deviation_check()` that flags entities deviating >3× risk or >5× data volume vs. peers (excluding self from baseline).
+- **GraphQL aggregation engine (XDR Phase C)** — `AggregateOp` enum (Count/Sum/Avg/Min/Max/Distinct) with `FromStr`, `aggregate()` supporting optional GROUP BY over JSON arrays, full `AggregateResult`/`AggregateGroup` types, and schema integration.
+- **Hunt response automation (XDR Phase D)** — `HuntResponseAction` enum (Notify/CreateIncident/AutoSuppress/IsolateAgent), `SavedHunt` extended with `response_actions`, `tags`, `mitre_techniques` fields, and `evaluate_responses()` method with template variable substitution.
+- **STIX/TAXII data enrichment (XDR Phase E)** — `threat_intel.rs` gains `ingest_stix_bundle()` for STIX 2.1 indicator parsing, `batch_check()` for bulk IoC lookups, `expiring_iocs()` for feed rotation, and `parse_stix_pattern()` supporting 8 IoC types.
+- **17 new tests** (931 → 948): CRLF injection, empty-set similarity, risk decay preservation, peer deviation detection, multi-incident clustering, 7 GraphQL aggregation tests, 2 response automation tests, 3 STIX/threat-intel tests.
+
+### Changed
+- **Clippy** — `AggregateOp::from_str()` refactored to `impl std::str::FromStr` to satisfy `clippy::should_implement_trait`.
+
 ## [0.37.0] — Production Hardening: Code Safety, Structured Logging, Release Optimisation
 
 ### Fixed

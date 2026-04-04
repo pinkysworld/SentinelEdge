@@ -315,6 +315,75 @@ pub struct SavedHunt {
     pub query: SearchQuery,
     pub created_at: String,
     pub updated_at: String,
+    /// Automated response actions triggered when threshold is exceeded.
+    #[serde(default)]
+    pub response_actions: Vec<HuntResponseAction>,
+    /// Tags for categorisation and filtering.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// MITRE ATT&CK technique IDs associated with this hunt.
+    #[serde(default)]
+    pub mitre_techniques: Vec<String>,
+}
+
+/// Automated response action that fires when a hunt threshold is exceeded.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum HuntResponseAction {
+    /// Send a notification via configured channels.
+    Notify { channel: String, min_level: String },
+    /// Create an incident automatically.
+    CreateIncident { severity: String, title_template: String },
+    /// Suppress the matching rule for a duration.
+    AutoSuppress { duration_secs: u64, justification: String },
+    /// Isolate the affected agent from the network.
+    IsolateAgent,
+}
+
+/// Result of evaluating response actions after a hunt run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResponseActionResult {
+    pub action: String,
+    pub executed: bool,
+    pub detail: String,
+}
+
+impl SavedHunt {
+    /// Evaluate response actions for a completed hunt run.
+    pub fn evaluate_responses(&self, run: &HuntRun) -> Vec<ResponseActionResult> {
+        if !run.threshold_exceeded || self.response_actions.is_empty() {
+            return vec![];
+        }
+        self.response_actions.iter().map(|action| {
+            match action {
+                HuntResponseAction::Notify { channel, min_level } => ResponseActionResult {
+                    action: "notify".into(),
+                    executed: true,
+                    detail: format!("Notify channel '{}' (min_level={}): {} matches", channel, min_level, run.match_count),
+                },
+                HuntResponseAction::CreateIncident { severity, title_template } => {
+                    let title = title_template
+                        .replace("{hunt_name}", &self.name)
+                        .replace("{match_count}", &run.match_count.to_string());
+                    ResponseActionResult {
+                        action: "create_incident".into(),
+                        executed: true,
+                        detail: format!("Create {severity} incident: {title}"),
+                    }
+                }
+                HuntResponseAction::AutoSuppress { duration_secs, justification } => ResponseActionResult {
+                    action: "auto_suppress".into(),
+                    executed: true,
+                    detail: format!("Suppress for {duration_secs}s: {justification}"),
+                },
+                HuntResponseAction::IsolateAgent => ResponseActionResult {
+                    action: "isolate_agent".into(),
+                    executed: true,
+                    detail: format!("Isolate agents from {} matching events", run.match_count),
+                },
+            }
+        }).collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -909,6 +978,9 @@ impl EnterpriseStore {
             query,
             created_at: created_at.clone(),
             updated_at: created_at,
+            response_actions: Vec::new(),
+            tags: Vec::new(),
+            mitre_techniques: Vec::new(),
         };
         self.snapshot.hunts.push(hunt.clone());
         self.persist();
@@ -2226,5 +2298,97 @@ mod tests {
             .run_hunt(&hunt.id, &[sample_event(1, "web-01", "Critical", &["credential_access"])])
             .expect("hunt run");
         assert_eq!(run.match_count, 1);
+    }
+
+    #[test]
+    fn response_action_evaluate() {
+        let hunt = SavedHunt {
+            id: "hunt-001".into(),
+            name: "Cred scan".into(),
+            owner: "analyst".into(),
+            enabled: true,
+            severity: "high".into(),
+            threshold: 5,
+            suppression_window_secs: 3600,
+            schedule_interval_secs: Some(300),
+            last_run_at: None,
+            next_run_at: None,
+            query: SearchQuery {
+                text: None, hostname: None, level: None,
+                agent_id: None, from_ts: None, to_ts: None, limit: None,
+            },
+            created_at: now_rfc3339(),
+            updated_at: now_rfc3339(),
+            response_actions: vec![
+                HuntResponseAction::Notify {
+                    channel: "ops-slack".into(),
+                    min_level: "Severe".into(),
+                },
+                HuntResponseAction::CreateIncident {
+                    severity: "Critical".into(),
+                    title_template: "{hunt_name}: {match_count} hits".into(),
+                },
+            ],
+            tags: vec!["credential".into()],
+            mitre_techniques: vec!["T1110".into()],
+        };
+
+        let run = HuntRun {
+            id: "run-1".into(),
+            hunt_id: "hunt-001".into(),
+            run_at: now_rfc3339(),
+            match_count: 10,
+            suppressed_count: 0,
+            threshold_exceeded: true,
+            severity: "high".into(),
+            sample_event_ids: vec![1, 2, 3],
+            summary: "10 matches".into(),
+        };
+
+        let results = hunt.evaluate_responses(&run);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].executed);
+        assert!(results[0].detail.contains("ops-slack"));
+        assert!(results[1].detail.contains("Cred scan: 10 hits"));
+    }
+
+    #[test]
+    fn response_action_skipped_below_threshold() {
+        let hunt = SavedHunt {
+            id: "hunt-002".into(),
+            name: "test".into(),
+            owner: "a".into(),
+            enabled: true,
+            severity: "low".into(),
+            threshold: 5,
+            suppression_window_secs: 0,
+            schedule_interval_secs: None,
+            last_run_at: None,
+            next_run_at: None,
+            query: SearchQuery {
+                text: None, hostname: None, level: None,
+                agent_id: None, from_ts: None, to_ts: None, limit: None,
+            },
+            created_at: now_rfc3339(),
+            updated_at: now_rfc3339(),
+            response_actions: vec![HuntResponseAction::IsolateAgent],
+            tags: vec![],
+            mitre_techniques: vec![],
+        };
+
+        let run = HuntRun {
+            id: "run-2".into(),
+            hunt_id: "hunt-002".into(),
+            run_at: now_rfc3339(),
+            match_count: 2,
+            suppressed_count: 0,
+            threshold_exceeded: false,
+            severity: "low".into(),
+            sample_event_ids: vec![],
+            summary: "".into(),
+        };
+
+        let results = hunt.evaluate_responses(&run);
+        assert!(results.is_empty(), "no actions should fire below threshold");
     }
 }

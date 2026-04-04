@@ -200,7 +200,7 @@ impl IncidentStore {
                     && event_ids.iter().any(|eid| inc.event_ids.contains(eid))
             });
             if already_covered {
-                // Merge new event_ids into the first matching open incident only
+                // Merge new event_ids into ALL matching open/investigating incidents
                 for inc in self.incidents.iter_mut() {
                     if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating)
                         && event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
@@ -210,7 +210,6 @@ impl IncidentStore {
                                 }
                             }
                             inc.updated_at = chrono::Utc::now().to_rfc3339();
-                            break;
                         }
                 }
                 continue;
@@ -273,7 +272,7 @@ impl IncidentStore {
                     && event_ids.iter().any(|eid| inc.event_ids.contains(eid))
             });
             if already_covered {
-                // Merge new event_ids into first matching open incident only
+                // Merge new event_ids into ALL matching open/investigating incidents
                 for inc in self.incidents.iter_mut() {
                     if matches!(inc.status, IncidentStatus::Open | IncidentStatus::Investigating)
                         && event_ids.iter().any(|eid| inc.event_ids.contains(eid)) {
@@ -283,7 +282,6 @@ impl IncidentStore {
                                 }
                             }
                             inc.updated_at = chrono::Utc::now().to_rfc3339();
-                            break;
                         }
                 }
                 continue;
@@ -407,6 +405,35 @@ mod tests {
 
         let new_ids = store.auto_cluster(&events);
         assert!(!new_ids.is_empty());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn auto_cluster_merges_into_all_matching_incidents() {
+        let dir = std::env::temp_dir().join("wardex_test_multi_merge");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("multi_merge.json");
+        let mut store = IncidentStore::new(path.to_str().unwrap());
+
+        // Create two open incidents sharing event_id 1
+        store.create("Inc A".into(), "Severe".into(),
+            vec![1, 2], vec!["agent-1".into()], vec![], "A".into());
+        store.create("Inc B".into(), "Severe".into(),
+            vec![1, 3], vec!["agent-2".into()], vec![], "B".into());
+
+        // Now auto-cluster events that overlap with event_id 1
+        let events = vec![
+            make_event(1, "agent-1", "Severe", "T1110", "2025-01-01T00:00:00Z"),
+            make_event(4, "agent-3", "Critical", "T1110", "2025-01-01T00:01:00Z"),
+        ];
+        store.auto_cluster(&events);
+
+        // Both incidents should now contain event_id 4
+        let inc_a = store.get(1).unwrap();
+        let inc_b = store.get(2).unwrap();
+        assert!(inc_a.event_ids.contains(&4), "Inc A should have event 4");
+        assert!(inc_b.event_ids.contains(&4), "Inc B should have event 4");
 
         let _ = std::fs::remove_file(&path);
     }
