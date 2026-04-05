@@ -276,7 +276,7 @@ impl AnomalyDetector {
                 score += c;
                 let c = weighted_positive_delta(
                     sample.network_kbps - baseline.network_kbps,
-                    1800.0,
+                    3500.0,
                     self.weight_for("network_kbps", 1.1),
                     "network burst",
                     &mut reasons,
@@ -716,9 +716,11 @@ impl EntropyDetector {
             entropies.push((name.clone(), h));
 
             // Very low entropy = suspicious uniformity (cryptominer steady-state)
-            if h < max_entropy * 0.15 && n >= 10.0 {
+            // Threshold at 10% of max entropy — avoids false positives on
+            // single-host metrics (battery, temperature) that are naturally stable.
+            if h < max_entropy * 0.10 && n >= 10.0 {
                 anomalous.push(format!("{name}:low_entropy"));
-                boost += 0.4;
+                boost += 0.25;
             }
             // Very high entropy where it shouldn't be (e.g. randomised auth failures)
             if h > max_entropy * 0.9 && dim == 4 && n >= 10.0 {

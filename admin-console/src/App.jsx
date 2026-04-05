@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
-import { useAuth, useTheme } from './hooks.jsx';
+import { useState, useCallback, useEffect } from 'react';
+import { useAuth, useTheme, useApi } from './hooks.jsx';
+import * as api from './api.js';
 import Dashboard from './components/Dashboard.jsx';
 import LiveMonitor from './components/LiveMonitor.jsx';
 import ThreatDetection from './components/ThreatDetection.jsx';
@@ -40,10 +41,43 @@ const SECTION_COMPONENTS = {
 export default function App() {
   const { authenticated, checking, connect, disconnect } = useAuth();
   const { dark, toggle } = useTheme();
-  const [section, setSection] = useState('dashboard');
+  const { data: hp } = useApi(api.health);
+
+  // Hash-based deep linking
+  const sectionFromHash = () => {
+    const raw = window.location.hash.replace(/^#\/?/, '');
+    const id = raw.split('/')[0];
+    return SECTIONS.some(s => s.id === id) ? id : 'dashboard';
+  };
+
+  const [section, setSection] = useState(sectionFromHash);
   const [tokenInput, setTokenInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Sync hash → state on popstate
+  useEffect(() => {
+    const onHash = () => setSection(sectionFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // Sync state → hash
+  const navigate = useCallback((id) => {
+    setSection(id);
+    window.location.hash = `#${id}`;
+  }, []);
+
+  const copyShareLink = useCallback(() => {
+    const url = window.location.origin + window.location.pathname + '#' + section;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => {
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      });
+    }
+  }, [section]);
 
   const handleConnect = useCallback(async (e) => {
     e.preventDefault();
@@ -70,7 +104,7 @@ export default function App() {
             <button
               key={s.id}
               className={`nav-item ${section === s.id ? 'active' : ''}`}
-              onClick={() => setSection(s.id)}
+              onClick={() => navigate(s.id)}
               title={s.label}
             >
               <span className="nav-icon">{s.icon}</span>
@@ -94,6 +128,14 @@ export default function App() {
         <header className="topbar">
           <h1 className="topbar-title">{SECTIONS.find(s => s.id === section)?.label}</h1>
           <div className="topbar-right">
+            {hp?.version && (
+              <span className="version-badge" title="Wardex version">v{hp.version}</span>
+            )}
+            {authenticated && (
+              <button className="btn btn-sm" onClick={copyShareLink} title="Copy shareable deep-link to clipboard">
+                {linkCopied ? '✓ Copied' : '🔗 Share Link'}
+              </button>
+            )}
             {!authenticated ? (
               <form className="auth-form" onSubmit={handleConnect}>
                 <input

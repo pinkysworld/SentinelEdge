@@ -68,6 +68,7 @@ pub struct AlertAnalysis {
     pub clusters: Vec<AlertCluster>,
     pub anomalies: Vec<AlertAnomaly>,
     pub severity_breakdown: SeverityBreakdown,
+    pub isolation_guidance: Vec<IsolationGuidance>,
     pub summary: String,
 }
 
@@ -77,6 +78,14 @@ pub struct SeverityBreakdown {
     pub critical: usize,
     pub severe: usize,
     pub elevated: usize,
+}
+
+/// Per-reason isolation and remediation guidance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IsolationGuidance {
+    pub reason: String,
+    pub threat_description: String,
+    pub steps: Vec<String>,
 }
 
 /// A group of alerts sharing the same reason fingerprint.
@@ -263,6 +272,7 @@ pub fn analyze_alerts(alerts: &[AlertRecord], window_minutes: u64) -> AlertAnaly
             clusters: Vec::new(),
             anomalies: Vec::new(),
             severity_breakdown: SeverityBreakdown { critical: 0, severe: 0, elevated: 0 },
+            isolation_guidance: Vec::new(),
             summary: "No alerts in the selected window.".into(),
         };
     }
@@ -284,6 +294,7 @@ pub fn analyze_alerts(alerts: &[AlertRecord], window_minutes: u64) -> AlertAnaly
         &anomalies,
         &severity_breakdown,
     );
+    let isolation_guidance = generate_isolation_guidance(&dominant_reasons);
 
     AlertAnalysis {
         window_start,
@@ -295,6 +306,7 @@ pub fn analyze_alerts(alerts: &[AlertRecord], window_minutes: u64) -> AlertAnaly
         clusters,
         anomalies,
         severity_breakdown,
+        isolation_guidance,
         summary,
     }
 }
@@ -664,6 +676,139 @@ fn generate_summary(
     }
 
     parts.join(" ")
+}
+
+fn generate_isolation_guidance(dominant_reasons: &[(String, usize)]) -> Vec<IsolationGuidance> {
+    let mut guidance = Vec::new();
+
+    for (reason, _count) in dominant_reasons {
+        let r = reason.to_lowercase();
+        let g = if r.contains("network burst") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Abnormal network traffic spike detected — may indicate data exfiltration, C2 communication, lateral movement, or a DDoS amplification attack.".into(),
+                steps: vec![
+                    "Isolate the affected host from the network or move to a quarantine VLAN.".into(),
+                    "Capture a packet trace (tcpdump/Wireshark) on the host to identify destination IPs and protocols.".into(),
+                    "Check firewall and proxy logs for connections to known-bad IPs or unusual ports.".into(),
+                    "Review running processes for unexpected network-capable binaries (netstat -tlnp / lsof -i).".into(),
+                    "If exfiltration is suspected, disable the host's internet access immediately and preserve forensic evidence.".into(),
+                    "Cross-reference destination IPs with threat intelligence feeds.".into(),
+                ],
+            }
+        } else if r.contains("auth failures surge") || r.contains("auth_failures") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Spike in authentication failures — may indicate brute-force attack, credential stuffing, or compromised credential reuse attempts.".into(),
+                steps: vec![
+                    "Temporarily lock the targeted accounts and enforce password resets.".into(),
+                    "Enable or strengthen rate-limiting on authentication endpoints.".into(),
+                    "Review source IPs of failed attempts for known-bad actors.".into(),
+                    "Check for successful logins from the same source IPs (potential breach indicator).".into(),
+                    "Enable MFA on all affected accounts if not already enabled.".into(),
+                    "Consider geofencing or IP-blocking if attempts originate from unexpected regions.".into(),
+                ],
+            }
+        } else if r.contains("integrity drift") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "File integrity drift detected — critical system files may have been modified, indicating rootkit installation, malware persistence, or unauthorized configuration changes.".into(),
+                steps: vec![
+                    "Immediately isolate the host from production networks.".into(),
+                    "Run a full file integrity check against known-good baselines.".into(),
+                    "Compare modified files with original versions to identify nature of changes.".into(),
+                    "Check for new cron jobs, startup items, systemd services, or scheduled tasks.".into(),
+                    "Scan for rootkits (rkhunter, chkrootkit, OSSEC).".into(),
+                    "If compromise is confirmed, re-image the host from a trusted golden image.".into(),
+                ],
+            }
+        } else if r.contains("process count spike") || r.contains("process_count") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Unusual increase in running processes — may indicate fork bomb, crypto-miner deployment, malware spawning child processes, or lateral movement tooling.".into(),
+                steps: vec![
+                    "List all processes with their parent PIDs to identify the spawning chain (ps auxf / pstree).".into(),
+                    "Kill suspicious process trees and note their binary paths for forensic analysis.".into(),
+                    "Check for unknown executables in /tmp, /dev/shm, or user home directories.".into(),
+                    "Review process memory maps for injected code or suspicious shared libraries.".into(),
+                    "If crypto-mining is suspected, check CPU usage patterns and network connections to mining pools.".into(),
+                ],
+            }
+        } else if r.contains("entropy") && r.contains("low_entropy") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Abnormally low entropy in telemetry dimensions — may indicate steady-state attack traffic (crypto-miner at fixed load), sensor tampering, or replay attacks feeding constant values.".into(),
+                steps: vec![
+                    "Verify sensor/agent health — constant readings may indicate a stuck or tampered sensor.".into(),
+                    "Check if affected metrics (CPU, temperature, battery) are genuinely stable or artificially clamped.".into(),
+                    "Look for processes holding CPU at a fixed percentage (common crypto-miner signature).".into(),
+                    "On single development hosts, low entropy on battery/temperature is often benign — consider tuning thresholds.".into(),
+                    "If tampering is suspected, compare agent-reported values against out-of-band monitoring (IPMI, cloud provider metrics).".into(),
+                ],
+            }
+        } else if r.contains("entropy") && r.contains("high_entropy") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Abnormally high entropy in authentication metrics — highly randomised failure patterns may indicate automated credential-stuffing or evasion-aware brute-force tools.".into(),
+                steps: vec![
+                    "Review authentication logs for patterns (rotating usernames, varied passwords).".into(),
+                    "Block source IP ranges showing randomised failure patterns.".into(),
+                    "Deploy CAPTCHA or proof-of-work challenges on affected auth endpoints.".into(),
+                    "Correlate with network burst alerts for complete attack picture.".into(),
+                    "Enable account lockout policies with progressive backoff.".into(),
+                ],
+            }
+        } else if r.contains("memory pressure") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Elevated memory usage — may indicate memory-resident malware, in-memory crypto-mining, or a memory-leak DoS attack.".into(),
+                steps: vec![
+                    "Identify the top memory consumers (top/htop sorted by RES).".into(),
+                    "Check for memory-mapped files or suspicious shared memory segments (ipcs).".into(),
+                    "Review OOM-killer logs for repeated victims indicating resource exhaustion attack.".into(),
+                    "If a specific process is responsible, dump its memory for forensic analysis before killing.".into(),
+                ],
+            }
+        } else if r.contains("thermal deviation") || r.contains("temperature") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Unusual temperature increase — sustained compute-intensive operations may indicate crypto-mining, resource abuse, or hardware-level compromise.".into(),
+                steps: vec![
+                    "Correlate with CPU and process count metrics for the same time window.".into(),
+                    "Check for GPU-intensive or CPU-intensive processes that shouldn't be running.".into(),
+                    "Verify environmental controls (HVAC) haven't failed, which could cause thermal event.".into(),
+                    "If crypto-mining is confirmed, isolate host, terminate miners, and audit deployment vector.".into(),
+                ],
+            }
+        } else if r.contains("disk_pressure") || r.contains("disk pressure") {
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: "Disk pressure increase detected — may indicate ransomware encryption activity, log flooding for evasion, or data staging for exfiltration.".into(),
+                steps: vec![
+                    "Check for rapid file creation or modification in data directories (find / -mmin -5 -type f).".into(),
+                    "Look for file extensions associated with ransomware (.encrypted, .locked, .cry).".into(),
+                    "Review disk I/O by process (iotop) to identify the source.".into(),
+                    "If ransomware is suspected, immediately disconnect from network and do NOT restart the host.".into(),
+                    "Preserve disk state for forensic recovery before any remediation.".into(),
+                ],
+            }
+        } else {
+            // Generic guidance for unrecognised reasons
+            IsolationGuidance {
+                reason: reason.clone(),
+                threat_description: format!("Detection trigger: {} — review the affected host for anomalous behaviour.", reason),
+                steps: vec![
+                    "Correlate this alert with other concurrent detections for a complete threat picture.".into(),
+                    "Review host logs, process lists, and network connections for suspicious activity.".into(),
+                    "If the alert persists, consider isolating the host pending investigation.".into(),
+                    "Escalate to the SOC team if the root cause cannot be determined within 15 minutes.".into(),
+                ],
+            }
+        };
+        guidance.push(g);
+    }
+
+    guidance
 }
 
 fn parse_timestamps(alerts: &[AlertRecord]) -> Vec<f64> {

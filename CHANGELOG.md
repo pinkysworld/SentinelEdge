@@ -2,6 +2,19 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.39.2] — Share Links, Alert Grouping UI, Isolation Guidance & Detection Tuning
+
+### Added
+- **Hash-based deep-linking** — React admin console now supports URL hash routing (`#live-monitor`, `#settings`, etc.) with browser back/forward navigation and a "Share Link" button in the topbar that copies the current view URL to clipboard.
+- **Version badge** — Wardex version (`v0.39.2`) displayed prominently in the admin console topbar, sourced from the `/api/health` endpoint.
+- **Isolation & response guidance** — Alert analysis now includes per-detection-reason `isolation_guidance` with specific threat descriptions and step-by-step remediation instructions for: network burst, auth failures surge, integrity drift, process count spike, entropy anomalies (low/high), memory pressure, thermal deviation, and disk pressure.
+- **Structured analysis display** — Analysis tab in Live Monitor renders a rich UI with summary, metrics cards, severity breakdown, reason table, and isolation guidance cards instead of raw JSON.
+
+### Improved
+- **Alert grouping display** — Grouped alerts tab renders a proper table with severity, count, scores, time range, and reasons instead of a raw JSON dump.
+- **Entropy anomaly threshold** — Low entropy detection threshold tightened from 15% to 10% of max entropy, and score boost reduced from 0.4 to 0.25, significantly reducing false positives on single-host deployments where metrics like battery, temperature, and integrity are naturally stable.
+- **Network burst threshold** — Raised from 1800 kbps (1.8 Mbps) to 3500 kbps (3.5 Mbps) to reduce false positives from normal development and operational traffic while still detecting genuine data exfiltration.
+
 ## [0.39.1] — Comprehensive Security Hardening, Bug Fixes & Clippy Cleanup
 
 ### Security
