@@ -2,10 +2,10 @@
 
 ## Current release
 
-- **Version:** `0.39.4`
+- **Version:** `0.39.5`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 93 Rust source modules
-- **API contract:** ~164 documented OpenAPI paths
+- **API contract:** ~170 documented OpenAPI paths
 - **Verification:** 1145 automated tests (982 lib + 163 integration) plus live admin-console smoke coverage
 - **Production hardening:** 98% (58/59 controls implemented)
 
@@ -39,8 +39,9 @@
 
 ### SOC operations
 
-- Dashboard with analyst and manager overviews
-- SOC Workbench with queue, cases, investigation pivots, storylines, and response approval flows
+- Dashboard with Recharts visualizations (severity pie, 24h alert timeline, CPU/memory area chart), severity filter, and clickable alert drill-down
+- SOC Workbench with queue, cases, investigation pivots, storylines, response approval flows, and escalation management console
+- Structured incident detail view with severity badge, storyline timeline, related events/agents, close/export actions
 - Event search, incident timelines, process-tree inspection, and evidence package export
 
 ### Detection engineering
@@ -48,6 +49,8 @@
 - Sigma and native managed rules
 - Rule testing, promotion, rollback, suppressions, content packs, and MITRE coverage
 - Saved hunts with thresholds, schedules, owners, history, and scheduled execution
+- Suppression rules management with inline creation form (rule_id, hostname, severity filters)
+- Hunt and suppression management UI with table views, inline create forms, and per-hunt run controls
 
 ### Fleet and release operations
 
@@ -78,6 +81,18 @@ The current release has been verified with:
 ## Current product posture
 
 Wardex is now positioned as a professional XDR/SIEM control plane rather than an implementation diary. The runtime, admin console, release process, and website have been aligned around operator workflows, deployment readiness, and product documentation.
+
+## Recently shipped (v0.39.5)
+
+- **Admin console UX overhaul** — Replaced all raw JSON dumps with structured key-value grids, tables, and timeline views across SOCWorkbench (overview, cases, response, entity, timeline), Settings, Infrastructure (monitor, correlation, drift, energy, mesh, system), and ThreatDetection
+- **Recharts visualizations** — Dashboard severity breakdown pie chart, 24h alert timeline bar chart, CPU/memory telemetry area chart
+- **Config management** — Settings structured form editor with toggle switches and number inputs, config diff view (line-by-line green/red), reset-to-defaults, and monitoring scope toggle tab
+- **FP feedback & bulk actions** — Per-alert false-positive button with auto-pattern extraction; bulk select with Mark FP / Triage / Create Incident operations; alert severity filter
+- **Cross-signal correlation** — Detector applies bonus multiplier when 3+ signal axes are simultaneously elevated (3→15%, 4→30%, 5→50%, 6+→70%)
+- **Auth rate-of-change smoothing** — 8-sample rolling window tracks auth failure acceleration; delta >4.0 over 3 samples triggers additional detection signal
+- **Escalation management console** — New SOC Workbench tab: policy CRUD (name, severity, channel, targets, timeout), active escalation tracking with acknowledge workflow
+- **Structured incident detail** — Drill-down shows severity badge, status, created/updated, owner, related events/agents, storyline timeline, close and export-report actions
+- **Hunt/suppression management** — Full table + inline creation form in ThreatDetection hunts tab; suppressions preview in sigma tab with link to management
 
 ## Next release priorities
 

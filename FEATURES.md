@@ -18,12 +18,19 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - Process security analysis: suspicious name detection, resource abuse, deleted-executable detection, LOLBin abuse
   - Installed application inventory (macOS .app bundles, Linux dpkg/rpm, Windows registry/wmic)
   - System inventory: hardware, software packages, services, network ports, users
-  - Incident storyline generation, evidence packages, and external ticket sync
+  - Structured incident detail view: severity badge, status, storyline timeline, related events/agents, close/export
+  - Escalation management console: policy CRUD, active escalation tracking with acknowledge workflow
   - Approval-gated response workflows with pending, approved, executed, denied, and expired states
   - Playbook condition DSL with numeric, string, CONTAINS, and AND/OR compound expressions
 
-- **Threat hunting and analysis**
-  - File integrity monitoring with baseline checksums, scan scheduling, and drift detection
+- **Detection engineering**
+  - Sigma and native detection content with Sigma-KernelEvent bridge
+  - Saved hunts with management table, inline creation, per-hunt run, thresholds, schedules, owners, and run history
+  - Rule testing, promote/rollback lifecycle, suppressions management with inline form, and content packs
+  - MITRE ATT&CK coverage views and threat-summary dashboards
+  - Named entity extraction from alert text (IP, domain, hash, MITRE technique, process)
+  - Cross-signal correlation bonus: 3+ simultaneously elevated axes → 15–70% score multiplier
+  - Auth failure rate-of-change smoothing: 8-sample rolling window, acceleration >4.0 triggers signal
   - Memory forensics: RWX region detection, process hollowing analysis, platform-specific collection plans
   - Fleet-wide attack campaign clustering using Jaccard similarity and connected-component analysis
   - Side-channel score fusion integrated into compound threat detector
@@ -84,11 +91,23 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - TLS/HTTPS listener with opt-in rustls integration and mutual TLS (mTLS) for agent authentication
   - 10 chaos/fault-injection integration tests (token rotation stress, burst load, malformed payloads, invalid auth, path traversal, oversized headers/bodies, wrong methods, endpoint sweep)
 
+## Admin console
+
+- Structured form editor with toggle switches and number inputs (no raw JSON required)
+- Config diff view (line-by-line green/red comparison between saved and current)
+- Reset-to-defaults and monitoring scope toggles (per-feature enable/disable)
+- Dashboard Recharts visualizations: severity pie chart, 24h alert timeline bar chart, CPU/memory area chart
+- Clickable/expandable alert and process rows for drill-down inspection
+- Per-alert FP feedback button with auto-extracted pattern submission
+- Bulk alert actions: Mark as FP, Acknowledge/Triage, Create Incident
+- Alert severity filter (all/critical/severe/elevated/low) on Dashboard and Live Monitor
+- Fully structured displays across all tabs — zero raw JSON dumps
+
 ## Product posture
 
 - 93 Rust source modules
-- 160+ API paths
-- 991 automated tests (981 lib + 10 chaos integration, all passing)
+- ~170 API paths
+- 982 lib tests + 163 integration tests, all passing
 - Production hardening score: 98% (58/59 controls)
 - GitHub Actions release packaging for Linux, macOS, and Windows
 
