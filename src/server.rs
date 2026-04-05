@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tiny_http::{Header, Method, Request, Response, Server};
@@ -28,10 +28,11 @@ use crate::enrollment::{AgentHealth, AgentIdentity, AgentRegistry};
 use crate::enterprise::{
     build_content_rules_view, build_entity_profile, build_entity_timeline,
     build_incident_storyline, build_mitre_coverage, ContentLifecycle, EnterpriseStore,
+    HuntResponseAction, HuntRun, ResponseActionResult, SavedHunt,
 };
-use crate::event_forward::{EventAnalytics, EventStore};
+use crate::event_forward::{EventAnalytics, EventStore, StoredEvent};
 use crate::fingerprint::DeviceFingerprint;
-use crate::graphql::{GqlExecutor, GqlRequest, wardex_schema};
+use crate::graphql::{aggregate, AggregateOp, GqlExecutor, GqlRequest, wardex_schema};
 use crate::incident::IncidentStore;
 use crate::monitor::Monitor;
 use crate::multi_tenant::MultiTenantManager;
@@ -1586,6 +1587,14 @@ fn authenticate_request(request: &Request, state: &Arc<Mutex<AppState>>) -> Auth
     AuthIdentity::None
 }
 
+fn response_requested_by(auth: &AuthIdentity) -> String {
+    auth.actor().to_string()
+}
+
+fn response_approver(auth: &AuthIdentity) -> String {
+    auth.actor().to_string()
+}
+
 fn host_platform_key(platform: HostPlatform) -> &'static str {
     match platform {
         HostPlatform::Linux => "linux",
@@ -2732,6 +2741,34 @@ fn spawn_enterprise_hunt_scheduler(state: &Arc<Mutex<AppState>>) {
         for hunt_id in due_hunt_ids {
             let started = std::time::Instant::now();
             if let Ok(run) = s.enterprise.run_hunt(&hunt_id, &events) {
+                let hunt = s
+                    .enterprise
+                    .hunts()
+                    .iter()
+                    .find(|hunt| hunt.id == run.hunt_id)
+                    .cloned();
+                let response_results = if let Some(hunt) = hunt {
+                    let AppState {
+                        incident_store,
+                        enterprise,
+                        response_orchestrator,
+                        ..
+                    } = &mut *s;
+                    let response_orchestrator_value = std::mem::take(response_orchestrator);
+                    let results = execute_hunt_response_actions(
+                        &hunt,
+                        &run,
+                        &events,
+                        incident_store,
+                        enterprise,
+                        &response_orchestrator_value,
+                        "system:scheduler",
+                    );
+                    *response_orchestrator = response_orchestrator_value;
+                    results
+                } else {
+                    Vec::new()
+                };
                 s.enterprise
                     .record_hunt_metrics(started.elapsed().as_millis() as u64);
                 if run.threshold_exceeded {
@@ -2741,6 +2778,7 @@ fn spawn_enterprise_hunt_scheduler(state: &Arc<Mutex<AppState>>) {
                         "match_count": run.match_count,
                         "suppressed_count": run.suppressed_count,
                         "severity": run.severity,
+                        "response_actions": response_results,
                     });
                     let payload_text = payload.to_string();
                     let _ = s.enterprise.record_change(
@@ -3643,6 +3681,21 @@ fn handle_api(
                                     serde_json::json!({ "id": h.id, "name": h.name, "status": if h.enabled { "active" } else { "disabled" }, "matches": 0, "created_at": h.created_at })
                                 }).collect();
                                 serde_json::json!(hunts)
+                            }
+                        }));
+                        executor.register_resolver("aggregate", Box::new({
+                            let st = st.clone();
+                            move |args| {
+                                let s = st.lock().unwrap_or_else(|e| e.into_inner());
+                                graphql_aggregate_json(
+                                    args,
+                                    &s.alerts,
+                                    &s.agent_registry,
+                                    &s.event_store,
+                                    &s.enterprise,
+                                    &s.incident_store,
+                                    &s.threat_intel,
+                                )
                             }
                         }));
                         let resp = executor.execute(&gql_req);
@@ -6572,11 +6625,7 @@ fn handle_api(
                             .unwrap_or("medium")
                             .trim()
                             .to_string();
-                        let requested_by = v["requested_by"]
-                            .as_str()
-                            .unwrap_or("admin-console")
-                            .trim()
-                            .to_string();
+                        let requested_by = response_requested_by(&auth_identity);
                         let dry_run = v["dry_run"].as_bool().unwrap_or(false);
                         let asset_tags = v["asset_tags"]
                             .as_array()
@@ -6594,7 +6643,7 @@ fn handle_api(
                         };
                         let now = chrono::Utc::now().to_rfc3339();
                         let request_record = ResponseRequest {
-                            id: format!("resp-{}", chrono::Utc::now().timestamp_micros()),
+                            id: next_response_request_id(),
                             action,
                             target,
                             reason,
@@ -6677,7 +6726,7 @@ fn handle_api(
                                 return;
                             }
                         };
-                        let approver = v["approver"].as_str().unwrap_or("unknown").to_string();
+                        let approver = response_approver(&auth_identity);
                         let reason = v["reason"].as_str().unwrap_or("").to_string();
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         let status = s.response_orchestrator.approve(
@@ -7449,6 +7498,34 @@ fn handle_api(
                 let events = s.event_store.all_events().to_vec();
                 match s.enterprise.run_hunt(hunt_id, &events) {
                     Ok(run) => {
+                        let hunt = s
+                            .enterprise
+                            .hunts()
+                            .iter()
+                            .find(|hunt| hunt.id == run.hunt_id)
+                            .cloned();
+                        let response_results = if let Some(hunt) = hunt {
+                            let AppState {
+                                incident_store,
+                                enterprise,
+                                response_orchestrator,
+                                ..
+                            } = &mut *s;
+                            let response_orchestrator_value = std::mem::take(response_orchestrator);
+                            let results = execute_hunt_response_actions(
+                                &hunt,
+                                &run,
+                                &events,
+                                incident_store,
+                                enterprise,
+                                &response_orchestrator_value,
+                                auth_identity.actor(),
+                            );
+                            *response_orchestrator = response_orchestrator_value;
+                            results
+                        } else {
+                            Vec::new()
+                        };
                         s.enterprise
                             .record_hunt_metrics(started.elapsed().as_millis() as u64);
                         let _ = s.enterprise.record_change(
@@ -7460,7 +7537,12 @@ fn handle_api(
                             None,
                         );
                         json_response(
-                            &serde_json::json!({"status": "completed", "run": run}).to_string(),
+                            &serde_json::json!({
+                                "status": "completed",
+                                "run": run,
+                                "response_actions": response_results,
+                            })
+                            .to_string(),
                             200,
                         )
                     }
@@ -9817,6 +9899,432 @@ fn response_action_from_json(value: &serde_json::Value) -> Result<ResponseAction
     }
 }
 
+fn graphql_source_rows(
+    source: &str,
+    alerts: &VecDeque<AlertRecord>,
+    registry: &AgentRegistry,
+    events: &EventStore,
+    enterprise: &EnterpriseStore,
+    incidents: &IncidentStore,
+    threat_intel: &ThreatIntelStore,
+) -> Option<Vec<serde_json::Value>> {
+    match source.to_ascii_lowercase().as_str() {
+        "alerts" => Some(
+            alerts
+                .iter()
+                .enumerate()
+                .map(|(i, a)| {
+                    serde_json::json!({
+                        "id": format!("alert-{i}"),
+                        "level": a.level,
+                        "timestamp": a.timestamp,
+                        "device_id": a.hostname,
+                        "score": a.score,
+                        "status": "open",
+                    })
+                })
+                .collect(),
+        ),
+        "agents" => Some(
+            registry
+                .list()
+                .iter()
+                .map(|a| {
+                    serde_json::json!({
+                        "id": a.id,
+                        "hostname": a.hostname,
+                        "os": a.platform,
+                        "version": a.version,
+                        "status": format!("{:?}", a.status),
+                        "last_heartbeat": a.last_seen,
+                    })
+                })
+                .collect(),
+        ),
+        "events" => Some(
+            events
+                .all_events()
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "timestamp": e.received_at,
+                        "device_id": e.agent_id,
+                        "event_type": e.alert.level,
+                        "hostname": e.alert.hostname,
+                        "score": e.alert.score,
+                    })
+                })
+                .collect(),
+        ),
+        "hunts" => Some(
+            enterprise
+                .hunts()
+                .iter()
+                .map(|h| {
+                    serde_json::json!({
+                        "id": h.id,
+                        "name": h.name,
+                        "status": if h.enabled { "active" } else { "disabled" },
+                        "severity": h.severity,
+                        "threshold": h.threshold,
+                        "created_at": h.created_at,
+                    })
+                })
+                .collect(),
+        ),
+        "incidents" => Some(
+            incidents
+                .list()
+                .iter()
+                .map(|inc| {
+                    serde_json::json!({
+                        "id": inc.id,
+                        "title": inc.title,
+                        "severity": inc.severity,
+                        "status": format!("{:?}", inc.status),
+                        "alert_count": inc.event_ids.len(),
+                        "created_at": inc.created_at,
+                    })
+                })
+                .collect(),
+        ),
+        "iocs" => Some(
+            threat_intel
+                .all_iocs()
+                .into_iter()
+                .map(|ioc| {
+                    serde_json::json!({
+                        "value": ioc.value,
+                        "ioc_type": format!("{:?}", ioc.ioc_type),
+                        "source": ioc.source,
+                        "severity": ioc.severity,
+                        "confidence": ioc.confidence,
+                    })
+                })
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+fn graphql_aggregate_json(
+    args: &HashMap<String, serde_json::Value>,
+    alerts: &VecDeque<AlertRecord>,
+    registry: &AgentRegistry,
+    events: &EventStore,
+    enterprise: &EnterpriseStore,
+    incidents: &IncidentStore,
+    threat_intel: &ThreatIntelStore,
+) -> serde_json::Value {
+    let source = args.get("source").and_then(|v| v.as_str()).unwrap_or("");
+    let op_raw = args.get("op").and_then(|v| v.as_str()).unwrap_or("");
+    let field = args.get("field").and_then(|v| v.as_str()).unwrap_or("");
+    let group_by = args.get("group_by").and_then(|v| v.as_str());
+
+    let Some(rows) = graphql_source_rows(
+        source,
+        alerts,
+        registry,
+        events,
+        enterprise,
+        incidents,
+        threat_intel,
+    ) else {
+        return serde_json::json!({
+            "op": op_raw,
+            "field": field,
+            "value": serde_json::Value::Null,
+            "group_by": group_by,
+            "groups": [],
+        });
+    };
+
+    let Ok(op) = AggregateOp::from_str(op_raw) else {
+        return serde_json::json!({
+            "op": op_raw,
+            "field": field,
+            "value": serde_json::Value::Null,
+            "group_by": group_by,
+            "groups": [],
+        });
+    };
+
+    serde_json::to_value(aggregate(&rows, op, field, group_by)).unwrap_or_else(|_| {
+        serde_json::json!({
+            "op": op_raw,
+            "field": field,
+            "value": serde_json::Value::Null,
+            "group_by": group_by,
+            "groups": [],
+        })
+    })
+}
+
+fn next_response_request_id() -> String {
+    static RESPONSE_REQUEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let sequence = RESPONSE_REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "resp-{}-{}",
+        chrono::Utc::now()
+            .timestamp_nanos_opt()
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_micros() * 1_000),
+        sequence
+    )
+}
+
+fn hunt_incident_marker(hunt: &SavedHunt) -> String {
+    format!("hunt_id={}", hunt.id)
+}
+
+fn execute_hunt_response_actions(
+    hunt: &SavedHunt,
+    run: &HuntRun,
+    events: &[StoredEvent],
+    incident_store: &mut IncidentStore,
+    enterprise: &mut EnterpriseStore,
+    response_orchestrator: &ResponseOrchestrator,
+    actor: &str,
+) -> Vec<ResponseActionResult> {
+    let mut results = hunt.evaluate_responses(run);
+    if results.is_empty() {
+        return results;
+    }
+
+    let event_ids = if run.matched_event_ids.is_empty() {
+        run.sample_event_ids.clone()
+    } else {
+        run.matched_event_ids.clone()
+    };
+
+    let matching_events: Vec<&StoredEvent> = events
+        .iter()
+        .filter(|event| event_ids.contains(&event.id))
+        .collect();
+
+    let mut host_targets = Vec::new();
+    let mut seen_targets = BTreeSet::new();
+    let mut agent_ids = BTreeSet::new();
+    let mut seen_techniques = BTreeSet::new();
+    let mut mitre = Vec::new();
+
+    for event in &matching_events {
+        agent_ids.insert(event.agent_id.clone());
+        let target_key = (event.alert.hostname.clone(), Some(event.agent_id.clone()));
+        if seen_targets.insert(target_key.clone()) {
+            host_targets.push(target_key);
+        }
+        for attack in &event.alert.mitre {
+            if seen_techniques.insert(attack.technique_id.clone()) {
+                mitre.push(attack.clone());
+            }
+        }
+    }
+
+    for (action, result) in hunt.response_actions.iter().zip(results.iter_mut()) {
+        if !result.executed {
+            continue;
+        }
+        match action {
+            HuntResponseAction::Notify { channel, min_level } => {
+                let mut request_ids = Vec::new();
+                for (hostname, agent_uid) in &host_targets {
+                    let request = ResponseRequest {
+                        id: next_response_request_id(),
+                        action: ResponseAction::Alert,
+                        target: ResponseTarget {
+                            hostname: hostname.clone(),
+                            agent_uid: agent_uid.clone(),
+                            asset_tags: Vec::new(),
+                        },
+                        reason: format!(
+                            "Automated hunt notification via {channel} (min_level={min_level}) from {}",
+                            hunt.name
+                        ),
+                        severity: run.severity.clone(),
+                        tier: ActionTier::Auto,
+                        status: ApprovalStatus::Pending,
+                        requested_at: chrono::Utc::now().to_rfc3339(),
+                        requested_by: actor.to_string(),
+                        approvals: Vec::new(),
+                        dry_run: false,
+                        blast_radius: None,
+                        is_protected_asset: false,
+                    };
+                    if let Ok(request_id) = response_orchestrator.submit(request) {
+                        request_ids.push(request_id);
+                    }
+                }
+                if request_ids.is_empty() {
+                    result.executed = false;
+                    result.detail = format!(
+                        "Skipped notify channel '{}' because no eligible hosts were found",
+                        channel
+                    );
+                } else {
+                    result.detail = format!(
+                        "Notify channel '{}' (min_level={}) queued {} alert notification(s): {}",
+                        channel,
+                        min_level,
+                        request_ids.len(),
+                        request_ids.join(", ")
+                    );
+                }
+            }
+            HuntResponseAction::CreateIncident { severity, title_template } => {
+                let title = title_template
+                    .replace("{hunt_name}", &hunt.name)
+                    .replace("{match_count}", &run.match_count.to_string());
+                let summary = format!(
+                    "Auto-created from hunt '{}' ({}) run {} with {} visible match(es)",
+                    hunt.name,
+                    hunt_incident_marker(hunt),
+                    run.id,
+                    run.match_count
+                );
+                let incident_agent_ids = if run.matched_agent_ids.is_empty() {
+                    agent_ids.iter().cloned().collect::<Vec<_>>()
+                } else {
+                    run.matched_agent_ids.clone()
+                };
+                if let Some(existing) = incident_store
+                    .incidents
+                    .iter_mut()
+                    .find(|incident| {
+                        matches!(
+                            incident.status,
+                            crate::incident::IncidentStatus::Open
+                                | crate::incident::IncidentStatus::Investigating
+                        ) && incident.summary.contains(&hunt_incident_marker(hunt))
+                    })
+                {
+                    for event_id in &event_ids {
+                        if !existing.event_ids.contains(event_id) {
+                            existing.event_ids.push(*event_id);
+                        }
+                    }
+                    for agent_id in &incident_agent_ids {
+                        if !existing.agent_ids.contains(agent_id) {
+                            existing.agent_ids.push(agent_id.clone());
+                        }
+                    }
+                    for attack in &mitre {
+                        if !existing
+                            .mitre_techniques
+                            .iter()
+                            .any(|current| current.technique_id == attack.technique_id)
+                        {
+                            existing.mitre_techniques.push(attack.clone());
+                        }
+                    }
+                    existing.updated_at = chrono::Utc::now().to_rfc3339();
+                    existing.summary = summary;
+                    result.detail = format!(
+                        "Updated existing {severity} incident #{}: {}",
+                        existing.id, existing.title
+                    );
+                } else {
+                    let incident = incident_store.create(
+                        title.clone(),
+                        severity.clone(),
+                        event_ids.clone(),
+                        incident_agent_ids,
+                        mitre.clone(),
+                        summary,
+                    );
+                    result.detail = format!("Create {severity} incident #{}: {title}", incident.id);
+                }
+            }
+            HuntResponseAction::AutoSuppress {
+                duration_secs,
+                justification,
+            } => {
+                let suppression_name = format!("Auto-suppress {}", hunt.name);
+                let existing_id = enterprise
+                    .suppressions()
+                    .iter()
+                    .find(|suppression| {
+                        suppression.hunt_id.as_deref() == Some(hunt.id.as_str())
+                            && suppression.name == suppression_name
+                    })
+                    .map(|suppression| suppression.id.clone());
+                let expires_at =
+                    (chrono::Utc::now() + chrono::Duration::seconds(*duration_secs as i64))
+                        .to_rfc3339();
+                let suppression = enterprise.create_or_update_suppression(
+                    existing_id.as_deref(),
+                    suppression_name,
+                    None,
+                    Some(hunt.id.clone()),
+                    None,
+                    None,
+                    Some(run.severity.clone()),
+                    None,
+                    Some(expires_at.clone()),
+                    justification.clone(),
+                    actor.to_string(),
+                    true,
+                );
+                result.detail = format!(
+                    "Suppress for {duration_secs}s until {} via suppression {}",
+                    expires_at, suppression.id
+                );
+            }
+            HuntResponseAction::IsolateAgent => {
+                let mut request_ids = Vec::new();
+                let mut failures = Vec::new();
+                for (hostname, agent_uid) in &host_targets {
+                    let request = ResponseRequest {
+                        id: next_response_request_id(),
+                        action: ResponseAction::Isolate,
+                        target: ResponseTarget {
+                            hostname: hostname.clone(),
+                            agent_uid: agent_uid.clone(),
+                            asset_tags: Vec::new(),
+                        },
+                        reason: format!(
+                            "Automated host isolation requested by hunt '{}' run {}",
+                            hunt.name, run.id
+                        ),
+                        severity: run.severity.clone(),
+                        tier: ActionTier::SingleApproval,
+                        status: ApprovalStatus::Pending,
+                        requested_at: chrono::Utc::now().to_rfc3339(),
+                        requested_by: actor.to_string(),
+                        approvals: Vec::new(),
+                        dry_run: false,
+                        blast_radius: None,
+                        is_protected_asset: false,
+                    };
+                    match response_orchestrator.submit(request) {
+                        Ok(request_id) => request_ids.push(request_id),
+                        Err(err) => failures.push(format!("{}: {}", hostname, err)),
+                    }
+                }
+                if request_ids.is_empty() {
+                    result.executed = false;
+                    result.detail = if failures.is_empty() {
+                        "Skipped isolation because no eligible hosts were found".to_string()
+                    } else {
+                        format!("Isolation requests rejected: {}", failures.join("; "))
+                    };
+                } else {
+                    let mut detail = format!(
+                        "Queued {} isolate request(s): {}",
+                        request_ids.len(),
+                        request_ids.join(", ")
+                    );
+                    if !failures.is_empty() {
+                        detail.push_str(&format!("; rejected: {}", failures.join("; ")));
+                    }
+                    result.detail = detail;
+                }
+            }
+        }
+    }
+
+    results
+}
+
 /// Simple base64 decoder (no external dependency needed).
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     if input.is_empty() {
@@ -10308,5 +10816,363 @@ mod tests {
         let _ = fs::remove_file(incident_path);
         let _ = fs::remove_file(report_path);
         let _ = fs::remove_file(agent_path);
+    }
+
+    #[test]
+    fn graphql_aggregate_json_groups_events_by_level() {
+        let mut events = EventStore::new(50);
+        events.ingest(&EventBatch {
+            agent_id: "agent-1".to_string(),
+            events: vec![
+                sample_alert("agg-host", "Critical", 9.1, "credential dump"),
+                sample_alert("agg-host", "Critical", 8.2, "lateral movement"),
+                sample_alert("agg-host", "Elevated", 4.4, "recon"),
+            ],
+        });
+
+        let args = StdHashMap::from([
+            ("source".to_string(), serde_json::json!("events")),
+            ("op".to_string(), serde_json::json!("count")),
+            ("field".to_string(), serde_json::json!("score")),
+            ("group_by".to_string(), serde_json::json!("event_type")),
+        ]);
+        let agg_agents = temp_path("agg_agents");
+        let agg_enterprise = temp_path("agg_enterprise");
+        let agg_incidents = temp_path("agg_incidents");
+
+        let aggregated = graphql_aggregate_json(
+            &args,
+            &VecDeque::new(),
+            &AgentRegistry::new(agg_agents.to_str().unwrap()),
+            &events,
+            &EnterpriseStore::new(agg_enterprise.to_str().unwrap()),
+            &IncidentStore::new(agg_incidents.to_str().unwrap()),
+            &ThreatIntelStore::new(),
+        );
+
+        let groups = aggregated["groups"].as_array().expect("groups array");
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0]["key"], serde_json::json!("Critical"));
+        assert_eq!(groups[0]["value"], serde_json::json!(2));
+        assert_eq!(groups[1]["key"], serde_json::json!("Elevated"));
+        assert_eq!(groups[1]["value"], serde_json::json!(1));
+
+        let _ = fs::remove_file(agg_agents);
+        let _ = fs::remove_file(agg_enterprise);
+        let _ = fs::remove_file(agg_incidents);
+    }
+
+    #[test]
+    fn execute_hunt_response_actions_applies_side_effects() {
+        let enterprise_path = temp_path("hunt_enterprise");
+        let incident_path = temp_path("hunt_incidents");
+        let agent_path = temp_path("hunt_agents");
+        let mut enterprise = EnterpriseStore::new(enterprise_path.to_str().unwrap());
+        let mut incidents = IncidentStore::new(incident_path.to_str().unwrap());
+        let response = ResponseOrchestrator::new();
+        let mut registry = AgentRegistry::new(agent_path.to_str().unwrap());
+        let agent_id = enroll_test_agent(&mut registry, "hunt-host", "linux", "1.0.0");
+        let mut events = EventStore::new(20);
+        events.ingest(&EventBatch {
+            agent_id: agent_id.clone(),
+            events: vec![sample_alert("hunt-host", "Critical", 9.7, "credential storm")],
+        });
+        let stored_events = events.all_events().to_vec();
+
+        let hunt = SavedHunt {
+            id: "hunt-automation".to_string(),
+            name: "Credential Storm".to_string(),
+            owner: "secops".to_string(),
+            enabled: true,
+            severity: "high".to_string(),
+            threshold: 1,
+            suppression_window_secs: 0,
+            schedule_interval_secs: None,
+            last_run_at: None,
+            next_run_at: None,
+            query: crate::analyst::SearchQuery {
+                text: None,
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: None,
+            },
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            response_actions: vec![
+                HuntResponseAction::Notify {
+                    channel: "ops-slack".to_string(),
+                    min_level: "medium".to_string(),
+                },
+                HuntResponseAction::CreateIncident {
+                    severity: "high".to_string(),
+                    title_template: "{hunt_name}: {match_count} hits".to_string(),
+                },
+                HuntResponseAction::AutoSuppress {
+                    duration_secs: 600,
+                    justification: "automatic cool-down".to_string(),
+                },
+                HuntResponseAction::IsolateAgent,
+            ],
+            tags: vec![],
+            mitre_techniques: vec![],
+        };
+        let run = HuntRun {
+            id: "run-automation".to_string(),
+            hunt_id: hunt.id.clone(),
+            run_at: chrono::Utc::now().to_rfc3339(),
+            match_count: 1,
+            suppressed_count: 0,
+            threshold_exceeded: true,
+            severity: "high".to_string(),
+            matched_event_ids: vec![stored_events[0].id],
+            matched_agent_ids: vec![agent_id],
+            sample_event_ids: vec![stored_events[0].id],
+            summary: "one matching event".to_string(),
+        };
+
+        let results = execute_hunt_response_actions(
+            &hunt,
+            &run,
+            &stored_events,
+            &mut incidents,
+            &mut enterprise,
+            &response,
+            "system:test",
+        );
+
+        assert_eq!(results.len(), 4);
+        assert!(results[0].executed);
+        assert!(results[0].detail.contains("ops-slack"));
+        assert_eq!(incidents.list().len(), 1);
+        assert!(incidents.list()[0].title.contains("Credential Storm: 1 hits"));
+        assert_eq!(enterprise.suppressions().len(), 1);
+        assert_eq!(response.all_requests().len(), 2);
+        assert!(response
+            .all_requests()
+            .iter()
+            .any(|request| request.action == ResponseAction::Alert && request.status == ApprovalStatus::Executed));
+        assert!(response
+            .all_requests()
+            .iter()
+            .any(|request| request.action == ResponseAction::Isolate && request.status == ApprovalStatus::Pending));
+
+        let _ = fs::remove_file(enterprise_path);
+        let _ = fs::remove_file(incident_path);
+        let _ = fs::remove_file(agent_path);
+    }
+
+    #[test]
+    fn execute_hunt_response_actions_targets_agents_sharing_hostname() {
+        let enterprise_path = temp_path("hunt_shared_host_enterprise");
+        let incident_path = temp_path("hunt_shared_host_incidents");
+        let mut enterprise = EnterpriseStore::new(enterprise_path.to_str().unwrap());
+        let mut incidents = IncidentStore::new(incident_path.to_str().unwrap());
+        let response = ResponseOrchestrator::new();
+
+        let event_a = crate::event_forward::StoredEvent {
+            id: 1,
+            agent_id: "agent-a".into(),
+            received_at: chrono::Utc::now().to_rfc3339(),
+            alert: sample_alert("shared-host", "Critical", 9.0, "burst-a"),
+            correlated: false,
+            triage: Default::default(),
+        };
+        let event_b = crate::event_forward::StoredEvent {
+            id: 2,
+            agent_id: "agent-b".into(),
+            received_at: chrono::Utc::now().to_rfc3339(),
+            alert: sample_alert("shared-host", "Critical", 9.1, "burst-b"),
+            correlated: false,
+            triage: Default::default(),
+        };
+        let hunt = SavedHunt {
+            id: "hunt-shared-host".to_string(),
+            name: "Shared Host Hunt".to_string(),
+            owner: "secops".to_string(),
+            enabled: true,
+            severity: "high".to_string(),
+            threshold: 1,
+            suppression_window_secs: 0,
+            schedule_interval_secs: None,
+            last_run_at: None,
+            next_run_at: None,
+            query: crate::analyst::SearchQuery {
+                text: None,
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: None,
+            },
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            response_actions: vec![HuntResponseAction::IsolateAgent],
+            tags: vec![],
+            mitre_techniques: vec![],
+        };
+        let run = HuntRun {
+            id: "run-shared-host".to_string(),
+            hunt_id: hunt.id.clone(),
+            run_at: chrono::Utc::now().to_rfc3339(),
+            match_count: 2,
+            suppressed_count: 0,
+            threshold_exceeded: true,
+            severity: "high".to_string(),
+            matched_event_ids: vec![1, 2],
+            matched_agent_ids: vec!["agent-a".into(), "agent-b".into()],
+            sample_event_ids: vec![1, 2],
+            summary: "two matching agents on shared host".to_string(),
+        };
+
+        let results = execute_hunt_response_actions(
+            &hunt,
+            &run,
+            &[event_a, event_b],
+            &mut incidents,
+            &mut enterprise,
+            &response,
+            "system:test",
+        );
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].executed);
+        let requests = response.all_requests();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().any(|request| request.target.agent_uid.as_deref() == Some("agent-a")));
+        assert!(requests.iter().any(|request| request.target.agent_uid.as_deref() == Some("agent-b")));
+
+        let _ = fs::remove_file(enterprise_path);
+        let _ = fs::remove_file(incident_path);
+    }
+
+    #[test]
+    fn execute_hunt_response_actions_reuses_existing_hunt_incident() {
+        let enterprise_path = temp_path("hunt_reuse_enterprise");
+        let incident_path = temp_path("hunt_reuse_incidents");
+        let mut enterprise = EnterpriseStore::new(enterprise_path.to_str().unwrap());
+        let mut incidents = IncidentStore::new(incident_path.to_str().unwrap());
+        let response = ResponseOrchestrator::new();
+        let events = vec![crate::event_forward::StoredEvent {
+            id: 11,
+            agent_id: "agent-a".into(),
+            received_at: chrono::Utc::now().to_rfc3339(),
+            alert: sample_alert("reuse-host", "Critical", 8.8, "reuse"),
+            correlated: false,
+            triage: Default::default(),
+        }];
+        let hunt = SavedHunt {
+            id: "hunt-reuse".to_string(),
+            name: "Reuse Incident Hunt".to_string(),
+            owner: "secops".to_string(),
+            enabled: true,
+            severity: "high".to_string(),
+            threshold: 1,
+            suppression_window_secs: 0,
+            schedule_interval_secs: None,
+            last_run_at: None,
+            next_run_at: None,
+            query: crate::analyst::SearchQuery {
+                text: None,
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: None,
+            },
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            response_actions: vec![HuntResponseAction::CreateIncident {
+                severity: "high".to_string(),
+                title_template: "{hunt_name}: {match_count} hits".to_string(),
+            }],
+            tags: vec![],
+            mitre_techniques: vec![],
+        };
+        let run = HuntRun {
+            id: "run-reuse-1".to_string(),
+            hunt_id: hunt.id.clone(),
+            run_at: chrono::Utc::now().to_rfc3339(),
+            match_count: 1,
+            suppressed_count: 0,
+            threshold_exceeded: true,
+            severity: "high".to_string(),
+            matched_event_ids: vec![11],
+            matched_agent_ids: vec!["agent-a".into()],
+            sample_event_ids: vec![11],
+            summary: "first run".to_string(),
+        };
+        let run_again = HuntRun {
+            id: "run-reuse-2".to_string(),
+            hunt_id: hunt.id.clone(),
+            run_at: chrono::Utc::now().to_rfc3339(),
+            match_count: 1,
+            suppressed_count: 0,
+            threshold_exceeded: true,
+            severity: "high".to_string(),
+            matched_event_ids: vec![11],
+            matched_agent_ids: vec!["agent-a".into()],
+            sample_event_ids: vec![11],
+            summary: "second run".to_string(),
+        };
+
+        let first = execute_hunt_response_actions(
+            &hunt,
+            &run,
+            &events,
+            &mut incidents,
+            &mut enterprise,
+            &response,
+            "system:test",
+        );
+        let second = execute_hunt_response_actions(
+            &hunt,
+            &run_again,
+            &events,
+            &mut incidents,
+            &mut enterprise,
+            &response,
+            "system:test",
+        );
+
+        assert_eq!(incidents.list().len(), 1);
+        assert!(first[0].detail.contains("Create high incident #"));
+        assert!(second[0].detail.contains("Updated existing high incident #"));
+        assert!(incidents.list()[0].summary.contains("hunt_id=hunt-reuse"));
+
+        let _ = fs::remove_file(enterprise_path);
+        let _ = fs::remove_file(incident_path);
+    }
+
+    #[test]
+    fn next_response_request_id_is_unique() {
+        let first = next_response_request_id();
+        let second = next_response_request_id();
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn response_request_actor_uses_authenticated_identity() {
+        let auth = AuthIdentity::UserToken(User {
+            username: "analyst-1".into(),
+            role: Role::Analyst,
+            token_hash: "analyst-token".into(),
+            enabled: true,
+            created_at: "now".into(),
+            tenant_id: None,
+        });
+
+        assert_eq!(response_requested_by(&auth), "analyst-1");
+        assert_eq!(response_approver(&auth), "analyst-1");
+    }
+
+    #[test]
+    fn response_request_actor_uses_admin_identity() {
+        assert_eq!(response_requested_by(&AuthIdentity::AdminToken), "admin");
+        assert_eq!(response_approver(&AuthIdentity::AdminToken), "admin");
     }
 }

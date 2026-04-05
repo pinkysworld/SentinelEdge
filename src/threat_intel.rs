@@ -242,8 +242,22 @@ impl ThreatIntelStore {
 
     /// Get IoCs expiring before a given timestamp (for feed rotation).
     pub fn expiring_iocs(&self, before: &str) -> Vec<&IoC> {
+        let before_ts = chrono::DateTime::parse_from_rfc3339(before)
+            .ok()
+            .map(|ts| ts.with_timezone(&chrono::Utc));
         self.iocs.values()
-            .filter(|ioc| ioc.last_seen.as_str() < before)
+            .filter(|ioc| {
+                match (
+                    before_ts.as_ref(),
+                    chrono::DateTime::parse_from_rfc3339(&ioc.last_seen)
+                        .ok()
+                        .map(|ts| ts.with_timezone(&chrono::Utc)),
+                ) {
+                    (Some(before_ts), Some(last_seen)) => last_seen < *before_ts,
+                    (None, None) => ioc.last_seen.as_str() < before,
+                    _ => false,
+                }
+            })
             .collect()
     }
 }
@@ -833,5 +847,43 @@ mod tests {
         let results = store.batch_check(&checks);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].ioc.as_ref().unwrap().value, "10.0.0.1");
+    }
+
+    #[test]
+    fn expiring_iocs_uses_timestamp_order_not_string_order() {
+        let mut store = ThreatIntelStore::new();
+        store.add_ioc(IoC {
+            ioc_type: IoCType::IpAddress,
+            value: "203.0.113.5".into(),
+            confidence: 0.8,
+            severity: "medium".into(),
+            source: "test".into(),
+            first_seen: "2026-04-03T22:00:00Z".into(),
+            last_seen: "2026-04-04T01:00:00+02:00".into(),
+            tags: vec![],
+            related_iocs: vec![],
+        });
+
+        let expiring = store.expiring_iocs("2026-04-03T23:30:00Z");
+        assert_eq!(expiring.len(), 1, "offset-aware comparison should treat 01:00+02:00 as earlier than 23:30Z");
+    }
+
+    #[test]
+    fn expiring_iocs_does_not_mix_parsed_and_lexicographic_fallbacks() {
+        let mut store = ThreatIntelStore::new();
+        store.add_ioc(IoC {
+            ioc_type: IoCType::Domain,
+            value: "mixed-mode.example".into(),
+            confidence: 0.7,
+            severity: "low".into(),
+            source: "test".into(),
+            first_seen: "2026-04-03T22:00:00Z".into(),
+            last_seen: "garbage".into(),
+            tags: vec![],
+            related_iocs: vec![],
+        });
+
+        let expiring = store.expiring_iocs("2026-04-03T23:30:00Z");
+        assert!(expiring.is_empty(), "invalid IoC timestamps should not be expired by mixed-mode fallback when cutoff is RFC3339");
     }
 }

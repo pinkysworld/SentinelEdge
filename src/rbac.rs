@@ -291,7 +291,11 @@ pub fn endpoint_permission(method: &str, path: &str) -> Permission {
         (_, p) if p.starts_with("/api/users") || p.starts_with("/api/rbac/users") => Permission::ManageUsers,
 
         // Response orchestration
+        ("GET", "/api/response/audit") | ("GET", "/api/response/approvals") => {
+            Permission::ViewAuditLog
+        }
         ("GET", p) if p.starts_with("/api/response") => Permission::ViewIncidents,
+        ("POST", "/api/response/request") => Permission::ApproveResponses,
         ("POST", p) if p.contains("approve") || p.contains("deny") => Permission::ApproveResponses,
         ("POST", p) if p.starts_with("/api/response") => Permission::ExecuteResponses,
 
@@ -560,7 +564,42 @@ mod tests {
             endpoint_permission("GET", "/api/threat-intel/status"),
             Permission::ViewCoverage
         );
+        assert_eq!(
+            endpoint_permission("POST", "/api/response/request"),
+            Permission::ApproveResponses
+        );
+        assert_eq!(
+            endpoint_permission("POST", "/api/response/approve"),
+            Permission::ApproveResponses
+        );
+        assert_eq!(
+            endpoint_permission("POST", "/api/response/execute"),
+            Permission::ExecuteResponses
+        );
+        assert_eq!(
+            endpoint_permission("GET", "/api/response/audit"),
+            Permission::ViewAuditLog
+        );
+        assert_eq!(
+            endpoint_permission("GET", "/api/response/approvals"),
+            Permission::ViewAuditLog
+        );
         assert_eq!(endpoint_permission("POST", "/api/content/rules/SE-001/promote"), Permission::PromoteRules);
+    }
+
+    #[test]
+    fn analyst_can_submit_but_not_execute_response_actions() {
+        let store = setup_store();
+
+        assert!(store
+            .check_api_access("analyst-token", "POST", "/api/response/request")
+            .is_allowed());
+        assert!(store
+            .check_api_access("analyst-token", "POST", "/api/response/approve")
+            .is_allowed());
+        assert!(!store
+            .check_api_access("analyst-token", "POST", "/api/response/execute")
+            .is_allowed());
     }
 
     #[test]

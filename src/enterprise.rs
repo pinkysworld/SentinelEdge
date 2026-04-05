@@ -348,6 +348,16 @@ pub struct ResponseActionResult {
     pub detail: String,
 }
 
+fn hunt_severity_rank(level: &str) -> u8 {
+    match level.trim().to_ascii_lowercase().as_str() {
+        "info" | "low" => 1,
+        "medium" | "elevated" => 2,
+        "high" | "severe" => 3,
+        "critical" => 4,
+        _ => 1,
+    }
+}
+
 impl SavedHunt {
     /// Evaluate response actions for a completed hunt run.
     pub fn evaluate_responses(&self, run: &HuntRun) -> Vec<ResponseActionResult> {
@@ -356,11 +366,21 @@ impl SavedHunt {
         }
         self.response_actions.iter().map(|action| {
             match action {
-                HuntResponseAction::Notify { channel, min_level } => ResponseActionResult {
-                    action: "notify".into(),
-                    executed: true,
-                    detail: format!("Notify channel '{}' (min_level={}): {} matches", channel, min_level, run.match_count),
-                },
+                HuntResponseAction::Notify { channel, min_level } => {
+                    let executed = hunt_severity_rank(&run.severity) >= hunt_severity_rank(min_level);
+                    ResponseActionResult {
+                        action: "notify".into(),
+                        executed,
+                        detail: if executed {
+                            format!("Notify channel '{}' (min_level={}): {} matches", channel, min_level, run.match_count)
+                        } else {
+                            format!(
+                                "Skipped notify channel '{}' because run severity '{}' is below min_level '{}'",
+                                channel, run.severity, min_level
+                            )
+                        },
+                    }
+                }
                 HuntResponseAction::CreateIncident { severity, title_template } => {
                     let title = title_template
                         .replace("{hunt_name}", &self.name)
@@ -395,6 +415,10 @@ pub struct HuntRun {
     pub suppressed_count: usize,
     pub threshold_exceeded: bool,
     pub severity: String,
+    #[serde(default)]
+    pub matched_event_ids: Vec<u64>,
+    #[serde(default)]
+    pub matched_agent_ids: Vec<String>,
     pub sample_event_ids: Vec<u64>,
     pub summary: String,
 }
@@ -1034,6 +1058,13 @@ impl EnterpriseStore {
             suppressed_count: suppressed_matches.len(),
             threshold_exceeded: visible_matches.len() >= hunt.threshold,
             severity: hunt.severity.clone(),
+            matched_event_ids: visible_matches.iter().map(|event| event.id).collect(),
+            matched_agent_ids: visible_matches
+                .iter()
+                .map(|event| event.agent_id.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect(),
             sample_event_ids: visible_matches.iter().take(10).map(|event| event.id).collect(),
             summary: format!(
                 "{} matched {} event(s){}",
@@ -2341,6 +2372,8 @@ mod tests {
             suppressed_count: 0,
             threshold_exceeded: true,
             severity: "high".into(),
+            matched_event_ids: vec![1, 2, 3],
+            matched_agent_ids: vec!["agent-1".into()],
             sample_event_ids: vec![1, 2, 3],
             summary: "10 matches".into(),
         };
@@ -2384,11 +2417,60 @@ mod tests {
             suppressed_count: 0,
             threshold_exceeded: false,
             severity: "low".into(),
+            matched_event_ids: vec![],
+            matched_agent_ids: vec![],
             sample_event_ids: vec![],
             summary: "".into(),
         };
 
         let results = hunt.evaluate_responses(&run);
         assert!(results.is_empty(), "no actions should fire below threshold");
+    }
+
+    #[test]
+    fn response_action_notify_respects_min_level() {
+        let hunt = SavedHunt {
+            id: "hunt-003".into(),
+            name: "notify-gate".into(),
+            owner: "a".into(),
+            enabled: true,
+            severity: "medium".into(),
+            threshold: 1,
+            suppression_window_secs: 0,
+            schedule_interval_secs: None,
+            last_run_at: None,
+            next_run_at: None,
+            query: SearchQuery {
+                text: None, hostname: None, level: None,
+                agent_id: None, from_ts: None, to_ts: None, limit: None,
+            },
+            created_at: now_rfc3339(),
+            updated_at: now_rfc3339(),
+            response_actions: vec![HuntResponseAction::Notify {
+                channel: "pagerduty".into(),
+                min_level: "critical".into(),
+            }],
+            tags: vec![],
+            mitre_techniques: vec![],
+        };
+
+        let run = HuntRun {
+            id: "run-3".into(),
+            hunt_id: "hunt-003".into(),
+            run_at: now_rfc3339(),
+            match_count: 3,
+            suppressed_count: 0,
+            threshold_exceeded: true,
+            severity: "medium".into(),
+            matched_event_ids: vec![1],
+            matched_agent_ids: vec!["agent-1".into()],
+            sample_event_ids: vec![1],
+            summary: "".into(),
+        };
+
+        let results = hunt.evaluate_responses(&run);
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].executed);
+        assert!(results[0].detail.contains("below min_level"));
     }
 }

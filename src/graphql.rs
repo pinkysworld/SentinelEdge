@@ -598,6 +598,16 @@ impl GqlExecutor {
     }
 
     pub fn execute(&self, request: &GqlRequest) -> GqlResponse {
+        if serde_json::to_vec(&request.variables)
+            .map(|payload| payload.len() > MAX_QUERY_SIZE)
+            .unwrap_or(true)
+        {
+            return GqlResponse::error(format!(
+                "Variables exceed maximum size of {} bytes",
+                MAX_QUERY_SIZE
+            ));
+        }
+
         let parsed = match parse_query(&request.query) {
             Ok(p) => p,
             Err(e) => return GqlResponse::error(e),
@@ -835,6 +845,23 @@ mod tests {
         let err = GqlResponse::error("bad query");
         assert!(err.data.is_none());
         assert_eq!(err.errors[0].message, "bad query");
+    }
+
+    #[test]
+    fn execute_rejects_oversized_variables() {
+        let exec = GqlExecutor::new(wardex_schema());
+        let req = GqlRequest {
+            query: "{ status { version } }".into(),
+            variables: HashMap::from([(
+                "blob".to_string(),
+                serde_json::json!("x".repeat(MAX_QUERY_SIZE + 1)),
+            )]),
+            operation_name: None,
+        };
+
+        let resp = exec.execute(&req);
+        assert!(resp.data.is_none());
+        assert!(resp.errors[0].message.contains("Variables exceed maximum size"));
     }
 
     #[test]

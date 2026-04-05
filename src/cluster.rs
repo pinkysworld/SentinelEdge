@@ -726,7 +726,7 @@ mod tests {
         assert!(resp.success);
 
         leader.handle_append_response(&NodeId("n2".into()), &resp);
-        assert!(leader.commit_index() >= 0);
+        assert_eq!(leader.commit_index(), 1);
     }
 
     #[test]
