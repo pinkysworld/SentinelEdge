@@ -1,6 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+
+function ToggleSwitch({ label, checked, onChange, description }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 0' }}>
+      <div onClick={e => { e.preventDefault(); onChange(!checked); }}
+        style={{ width: 40, height: 22, borderRadius: 11, background: checked ? 'var(--primary)' : 'var(--border)', position: 'relative', transition: 'background .2s', cursor: 'pointer', flexShrink: 0 }}>
+        <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: checked ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{label}</div>
+        {description && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{description}</div>}
+      </div>
+    </label>
+  );
+}
+
+function NumberInput({ label, value, onChange, min, max, step, unit, description }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input type="number" value={value ?? ''} onChange={e => onChange(Number(e.target.value))}
+          min={min} max={max} step={step || 1}
+          style={{ width: 90, padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+        {unit && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{unit}</span>}
+      </div>
+      {description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{description}</div>}
+    </div>
+  );
+}
+
+function TextInput({ label, value, onChange, placeholder, description }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{label}</div>
+      <input type="text" value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: '100%', maxWidth: 400, padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+      {description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{description}</div>}
+    </div>
+  );
+}
 
 export default function Settings() {
   const toast = useToast();
@@ -23,16 +64,81 @@ export default function Settings() {
   const { data: storageStats, reload: rStats } = useApi(api.storageStats);
   const [configEditing, setConfigEditing] = useState(false);
   const [configText, setConfigText] = useState('');
+  const [structuredConfig, setStructuredConfig] = useState(null);
+  const [editMode, setEditMode] = useState('form'); // 'form' or 'json'
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const [showDiff, setShowDiff] = useState(false);
   const [purgeDays, setPurgeDays] = useState(30);
   const [compacting, setCompacting] = useState(false);
   const [purging, setPurging] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [cleaning, setCleaning] = useState(false);
 
+  // Parse config into structured form when loaded
+  useEffect(() => {
+    if (config && !configEditing) {
+      const parsed = typeof config === 'string' ? (() => { try { return JSON.parse(config); } catch { return null; } })() : config;
+      if (parsed) {
+        setStructuredConfig(JSON.parse(JSON.stringify(parsed)));
+        if (!savedSnapshot) setSavedSnapshot(JSON.stringify(parsed, null, 2));
+      }
+    }
+  }, [config]);
+
   const startEdit = () => {
+    const parsed = typeof config === 'string' ? (() => { try { return JSON.parse(config); } catch { return null; } })() : config;
+    if (parsed) {
+      setStructuredConfig(JSON.parse(JSON.stringify(parsed)));
+      setSavedSnapshot(JSON.stringify(parsed, null, 2));
+    }
     setConfigText(typeof config === 'string' ? config : JSON.stringify(config, null, 2));
     setConfigEditing(true);
   };
+
+  const updateField = (path, value) => {
+    setStructuredConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const keys = path.split('.');
+      let obj = next;
+      for (let i = 0; i < keys.length - 1; i++) {
+        if (obj[keys[i]] === undefined) obj[keys[i]] = {};
+        obj = obj[keys[i]];
+      }
+      obj[keys[keys.length - 1]] = value;
+      return next;
+    });
+  };
+
+  const saveConfig = async () => {
+    try {
+      const body = editMode === 'json' ? JSON.parse(configText) : structuredConfig;
+      await api.configSave(body);
+      toast('Config saved', 'success');
+      setConfigEditing(false);
+      setSavedSnapshot(JSON.stringify(body, null, 2));
+      rConfig();
+    } catch (e) {
+      toast(editMode === 'json' && e instanceof SyntaxError ? 'Invalid JSON' : 'Save failed', 'error');
+    }
+  };
+
+  // Config diff computation
+  const configDiff = useMemo(() => {
+    if (!savedSnapshot || !structuredConfig) return null;
+    const current = JSON.stringify(structuredConfig, null, 2);
+    if (current === savedSnapshot) return null;
+    const oldLines = savedSnapshot.split('\n');
+    const newLines = current.split('\n');
+    const changes = [];
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (oldLines[i] !== newLines[i]) {
+        if (oldLines[i]) changes.push({ type: 'remove', line: i + 1, text: oldLines[i] });
+        if (newLines[i]) changes.push({ type: 'add', line: i + 1, text: newLines[i] });
+      }
+    }
+    return changes.length > 0 ? changes : null;
+  }, [savedSnapshot, structuredConfig]);
 
   const formatBytes = (bytes) => {
     if (bytes == null) return '—';
@@ -42,10 +148,30 @@ export default function Settings() {
     return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
   };
 
+  // Default config values for reset
+  const DEFAULTS = {
+    collection_interval_secs: 15,
+    alert_threshold: 2.5,
+    entropy_threshold_pct: 10,
+    network_burst_threshold_kbps: 3500,
+    port: 9097,
+    log_level: 'info',
+  };
+
+  const resetToDefaults = () => {
+    if (!confirm('Reset configuration to default values?')) return;
+    setStructuredConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      Object.entries(DEFAULTS).forEach(([k, v]) => { if (k in next) next[k] = v; });
+      return next;
+    });
+    toast('Reset to defaults — click Save to apply', 'info');
+  };
+
   return (
     <div>
       <div className="tabs">
-        {['config', 'integrations', 'flags', 'admin'].map(t => (
+        {['config', 'monitoring', 'integrations', 'flags', 'admin'].map(t => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
@@ -63,38 +189,167 @@ export default function Settings() {
                   try { await api.configReload(); toast('Config reloaded from disk', 'success'); rConfig(); } catch { toast('Reload failed', 'error'); }
                 }}>Reload from Disk</button>
                 {!configEditing && <button className="btn btn-sm btn-primary" onClick={startEdit}>Edit</button>}
+                {configEditing && (
+                  <>
+                    <button className={`btn btn-sm ${editMode === 'form' ? 'btn-primary' : ''}`} onClick={() => {
+                      setEditMode('form');
+                      if (configText) { try { setStructuredConfig(JSON.parse(configText)); } catch {} }
+                    }}>Form</button>
+                    <button className={`btn btn-sm ${editMode === 'json' ? 'btn-primary' : ''}`} onClick={() => {
+                      setEditMode('json');
+                      setConfigText(JSON.stringify(structuredConfig, null, 2));
+                    }}>JSON</button>
+                  </>
+                )}
               </div>
             </div>
             {configEditing ? (
-              <div>
-                <textarea className="form-textarea" style={{ height: 300 }} value={configText} onChange={e => setConfigText(e.target.value)} />
-                <div className="btn-group" style={{ marginTop: 8 }}>
-                  <button className="btn btn-primary" onClick={async () => {
-                    try {
-                      let body;
-                      try { body = JSON.parse(configText); } catch { toast('Invalid JSON', 'error'); return; }
-                      await api.configSave(body);
-                      toast('Config saved', 'success');
-                      setConfigEditing(false);
-                      rConfig();
-                    } catch { toast('Save failed', 'error'); }
-                  }}>Save</button>
-                  <button className="btn" onClick={() => setConfigEditing(false)}>Cancel</button>
+              editMode === 'json' ? (
+                <div>
+                  <textarea className="form-textarea" style={{ height: 300 }} value={configText} onChange={e => setConfigText(e.target.value)} />
+                  <div className="btn-group" style={{ marginTop: 8 }}>
+                    <button className="btn btn-primary" onClick={saveConfig}>Save</button>
+                    <button className="btn" onClick={() => setConfigEditing(false)}>Cancel</button>
+                  </div>
                 </div>
-              </div>
+              ) : structuredConfig ? (
+                <div>
+                  {/* Structured form for common fields */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, padding: '12px 0' }}>
+                    <div className="card" style={{ padding: 14 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--primary)' }}>General</div>
+                      <NumberInput label="Collection Interval" value={structuredConfig.collection_interval_secs} onChange={v => updateField('collection_interval_secs', v)} min={1} max={300} unit="seconds" />
+                      <NumberInput label="Port" value={structuredConfig.port} onChange={v => updateField('port', v)} min={1} max={65535} />
+                      <TextInput label="Log Level" value={structuredConfig.log_level} onChange={v => updateField('log_level', v)} placeholder="info, debug, warn" />
+                    </div>
+                    <div className="card" style={{ padding: 14 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--primary)' }}>Detection Thresholds</div>
+                      <NumberInput label="Alert Threshold" value={structuredConfig.alert_threshold} onChange={v => updateField('alert_threshold', v)} min={0} max={10} step={0.1} description="Score above which an alert fires" />
+                      <NumberInput label="Entropy Threshold" value={structuredConfig.entropy_threshold_pct} onChange={v => updateField('entropy_threshold_pct', v)} min={0} max={100} unit="%" />
+                      <NumberInput label="Network Burst Threshold" value={structuredConfig.network_burst_threshold_kbps} onChange={v => updateField('network_burst_threshold_kbps', v)} min={0} max={100000} unit="kbps" />
+                    </div>
+                    {structuredConfig.siem && (
+                      <div className="card" style={{ padding: 14 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--primary)' }}>SIEM</div>
+                        <ToggleSwitch label="SIEM Enabled" checked={!!structuredConfig.siem?.enabled} onChange={v => updateField('siem.enabled', v)} />
+                        <TextInput label="Endpoint" value={structuredConfig.siem?.endpoint} onChange={v => updateField('siem.endpoint', v)} placeholder="https://siem.example.com" />
+                        <TextInput label="Format" value={structuredConfig.siem?.format} onChange={v => updateField('siem.format', v)} placeholder="cef, json, leef" />
+                      </div>
+                    )}
+                    {structuredConfig.taxii && (
+                      <div className="card" style={{ padding: 14 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--primary)' }}>TAXII</div>
+                        <ToggleSwitch label="TAXII Enabled" checked={!!structuredConfig.taxii?.enabled} onChange={v => updateField('taxii.enabled', v)} />
+                        <TextInput label="Server URL" value={structuredConfig.taxii?.url} onChange={v => updateField('taxii.url', v)} placeholder="https://taxii.example.com" />
+                        <NumberInput label="Poll Interval" value={structuredConfig.taxii?.poll_interval_secs} onChange={v => updateField('taxii.poll_interval_secs', v)} min={60} unit="seconds" />
+                      </div>
+                    )}
+                  </div>
+                  {/* All other fields as key-value pairs */}
+                  <details style={{ marginTop: 12 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>All configuration fields ({Object.keys(structuredConfig).length})</summary>
+                    <div style={{ padding: '12px 0' }}>
+                      {Object.entries(structuredConfig).filter(([k]) => !['siem', 'taxii'].includes(k) && typeof structuredConfig[k] !== 'object').map(([k, v]) => (
+                        <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, minWidth: 200, color: 'var(--text-secondary)' }}>{k}</span>
+                          {typeof v === 'boolean' ? (
+                            <ToggleSwitch label="" checked={v} onChange={val => updateField(k, val)} />
+                          ) : (
+                            <input type={typeof v === 'number' ? 'number' : 'text'} value={v ?? ''} onChange={e => updateField(k, typeof v === 'number' ? Number(e.target.value) : e.target.value)}
+                              style={{ flex: 1, maxWidth: 300, padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                  {/* Config diff */}
+                  {configDiff && (
+                    <div style={{ marginTop: 12 }}>
+                      <button className="btn btn-sm" onClick={() => setShowDiff(!showDiff)} style={{ marginBottom: 8 }}>
+                        {showDiff ? 'Hide' : 'Show'} Changes ({configDiff.length})
+                      </button>
+                      {showDiff && (
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, background: 'var(--bg)', borderRadius: 'var(--radius)', padding: 10, maxHeight: 200, overflowY: 'auto' }}>
+                          {configDiff.map((d, i) => (
+                            <div key={i} style={{ color: d.type === 'add' ? 'var(--success)' : 'var(--danger)', whiteSpace: 'pre' }}>
+                              {d.type === 'add' ? '+' : '-'} {d.text}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="btn-group" style={{ marginTop: 12 }}>
+                    <button className="btn btn-primary" onClick={saveConfig}>Save</button>
+                    <button className="btn" onClick={() => setConfigEditing(false)}>Cancel</button>
+                    <button className="btn" onClick={resetToDefaults} title="Reset common fields to default values">Reset Defaults</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="empty">Loading configuration...</div>
+              )
             ) : (
-              <div className="json-block">{typeof config === 'string' ? config : JSON.stringify(config, null, 2)}</div>
+              structuredConfig ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, padding: '12px 0' }}>
+                  {Object.entries(structuredConfig).filter(([, v]) => typeof v !== 'object').map(([k, v]) => (
+                    <div key={k} className="stat-box">
+                      <div className="stat-label">{k.replace(/_/g, ' ')}</div>
+                      <div className="stat-value" style={{ fontSize: 14 }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v)}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="json-block">{typeof config === 'string' ? config : JSON.stringify(config, null, 2)}</div>
+              )
             )}
           </div>
-          <div className="card-grid">
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>Monitoring Options</div>
+        </>
+      )}
+
+      {tab === 'monitoring' && (
+        <>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>Monitoring Scope</div>
+            {monOpts && typeof monOpts === 'object' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 0 }}>
+                {Object.entries(monOpts).map(([k, v]) => (
+                  <ToggleSwitch key={k} label={k.replace(/_/g, ' ')} checked={!!v}
+                    onChange={() => toast('Toggle via Edit Config → monitoring section', 'info')}
+                    description={typeof v === 'object' ? JSON.stringify(v) : undefined} />
+                ))}
+              </div>
+            ) : (
               <div className="json-block">{JSON.stringify(monOpts, null, 2)}</div>
-            </div>
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>Monitored Paths</div>
+            )}
+          </div>
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 12 }}>Monitored Paths</div>
+            {Array.isArray(monPaths) ? (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Path</th><th>Type</th></tr></thead>
+                  <tbody>
+                    {monPaths.map((p, i) => (
+                      <tr key={i}>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{typeof p === 'string' ? p : p.path || JSON.stringify(p)}</td>
+                        <td>{typeof p === 'object' ? p.type || '—' : 'file'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : monPaths && typeof monPaths === 'object' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 0 }}>
+                {Object.entries(monPaths).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{k}:</span>
+                    <span style={{ marginLeft: 8, fontSize: 13 }}>{typeof v === 'boolean' ? (v ? '✓ active' : '✗ inactive') : String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
               <div className="json-block">{JSON.stringify(monPaths, null, 2)}</div>
-            </div>
+            )}
           </div>
         </>
       )}
@@ -107,7 +362,18 @@ export default function Settings() {
                 <span className="card-title">SIEM Integration</span>
                 <span className={`badge ${siemSt?.connected ? 'badge-ok' : 'badge-warn'}`}>{siemSt?.connected ? 'Connected' : 'Not connected'}</span>
               </div>
-              <div className="json-block">{JSON.stringify(siemCfg, null, 2)}</div>
+              {siemCfg && typeof siemCfg === 'object' ? (
+                <div style={{ padding: '8px 0' }}>
+                  {Object.entries(siemCfg).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{k.replace(/_/g, ' ')}</span>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v ?? '—')}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="json-block">{JSON.stringify(siemCfg, null, 2)}</div>
+              )}
             </div>
             <div className="card">
               <div className="card-header">
@@ -119,21 +385,63 @@ export default function Settings() {
                   }}>Pull Now</button>
                 </div>
               </div>
-              <div className="json-block">{JSON.stringify(taxiiCfg, null, 2)}</div>
+              {taxiiCfg && typeof taxiiCfg === 'object' ? (
+                <div style={{ padding: '8px 0' }}>
+                  {Object.entries(taxiiCfg).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{k.replace(/_/g, ' ')}</span>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v ?? '—')}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="json-block">{JSON.stringify(taxiiCfg, null, 2)}</div>
+              )}
             </div>
           </div>
           <div className="card-grid" style={{ marginTop: 16 }}>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Enrichment Connectors</div>
-              <div className="json-block">{JSON.stringify(enrichConn, null, 2)}</div>
+              {Array.isArray(enrichConn) ? (
+                enrichConn.length === 0 ? <div className="empty">No connectors</div> : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
+                      <tbody>{enrichConn.map((c, i) => (
+                        <tr key={i}><td>{c.name || c.id || '—'}</td><td>{c.type || '—'}</td><td><span className={`badge ${c.enabled ? 'badge-ok' : 'badge-warn'}`}>{c.enabled ? 'Active' : 'Inactive'}</span></td></tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )
+              ) : <div className="json-block">{JSON.stringify(enrichConn, null, 2)}</div>}
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>IdP Providers</div>
-              <div className="json-block">{JSON.stringify(idp, null, 2)}</div>
+              {Array.isArray(idp) ? (
+                idp.length === 0 ? <div className="empty">No providers</div> : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
+                      <tbody>{idp.map((p, i) => (
+                        <tr key={i}><td>{p.name || p.id || '—'}</td><td>{p.type || '—'}</td><td>{p.enabled ? '✓' : '✗'}</td></tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )
+              ) : <div className="json-block">{JSON.stringify(idp, null, 2)}</div>}
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>SCIM Config</div>
-              <div className="json-block">{JSON.stringify(scim, null, 2)}</div>
+              {scim && typeof scim === 'object' && !Array.isArray(scim) ? (
+                <div style={{ padding: '4px 0' }}>
+                  {Object.entries(scim).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{k.replace(/_/g, ' ')}</span>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v ?? '—')}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="json-block">{JSON.stringify(scim, null, 2)}</div>}
             </div>
           </div>
         </>

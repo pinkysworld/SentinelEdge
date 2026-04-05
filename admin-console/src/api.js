@@ -253,6 +253,14 @@ export const contentPacks = () => get('/api/content/packs');
 export const createContentPack = (body) => post('/api/content/packs', body);
 export const suppressions = () => get('/api/suppressions');
 export const createSuppression = (body) => post('/api/suppressions', body);
+export const deleteSuppression = (id) => del(`/api/suppressions/${encodeURIComponent(id)}`);
+
+// ── Escalation ───────────────────────────────────────────────
+export const escalationPolicies = () => get('/api/escalation/policies');
+export const createEscalationPolicy = (body) => post('/api/escalation/policies', body);
+export const escalationStart = (body) => post('/api/escalation/start', body);
+export const escalationActive = () => get('/api/escalation/active');
+export const escalationAck = (body) => post('/api/escalation/acknowledge', body);
 
 // ── Integrations ─────────────────────────────────────────────
 export const siemStatus = () => get('/api/siem/status');

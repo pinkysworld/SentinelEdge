@@ -35,15 +35,42 @@ export default function Infrastructure() {
         <div className="card-grid">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Monitor Status</div>
-            <div className="json-block">{JSON.stringify(monSt, null, 2)}</div>
+            {monSt ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {Object.entries(monSt).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'boolean' ? (v ? '✓' : '✕') : typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Fingerprint</div>
-            <div className="json-block">{JSON.stringify(fp, null, 2)}</div>
+            {fp ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {Object.entries(fp).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: 'break-all' }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Causal Graph</div>
-            <div className="json-block">{JSON.stringify(causal, null, 2)}</div>
+            {causal ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {Object.entries(causal).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{typeof v === 'object' ? (Array.isArray(v) ? v.length + ' items' : JSON.stringify(v)) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
         </div>
       )}
@@ -51,7 +78,38 @@ export default function Infrastructure() {
       {tab === 'correlation' && (
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>Correlation Engine</div>
-          <div className="json-block">{JSON.stringify(corrData, null, 2)}</div>
+          {corrData ? (
+            <>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+                {Object.entries(corrData).filter(([, v]) => typeof v !== 'object').map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 12px', background: 'var(--bg)', borderRadius: 6, textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+              {(() => {
+                const rules = corrData.rules || corrData.correlations || (Array.isArray(corrData) ? corrData : []);
+                return rules.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Rule</th><th>Window</th><th>Matches</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {(Array.isArray(rules) ? rules : []).map((r, i) => (
+                          <tr key={i}>
+                            <td style={{ fontWeight: 600 }}>{r.name || r.rule || '—'}</td>
+                            <td>{r.window || r.time_window || '—'}</td>
+                            <td>{r.matches ?? r.hits ?? '—'}</td>
+                            <td><span className={`badge ${r.active !== false ? 'badge-ok' : 'badge-warn'}`}>{r.active !== false ? 'Active' : 'Disabled'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null;
+              })()}
+            </>
+          ) : <div className="empty">Loading...</div>}
         </div>
       )}
 
@@ -63,7 +121,37 @@ export default function Infrastructure() {
               try { await api.driftReset(); toast('Drift baseline reset', 'success'); } catch { toast('Failed', 'error'); }
             }}>Reset Baseline</button>
           </div>
-          <div className="json-block">{JSON.stringify(drift, null, 2)}</div>
+          {drift ? (
+            <>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+                {Object.entries(drift).filter(([, v]) => typeof v !== 'object' || v === null).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 12px', background: 'var(--bg)', borderRadius: 6, textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>{typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v ?? '—')}</div>
+                  </div>
+                ))}
+              </div>
+              {(() => {
+                const changes = drift.changes || drift.drifts || (Array.isArray(drift) ? drift : []);
+                return Array.isArray(changes) && changes.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>File / Path</th><th>Type</th><th>Detected</th></tr></thead>
+                      <tbody>
+                        {changes.map((c, i) => (
+                          <tr key={i}>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{c.path || c.file || '—'}</td>
+                            <td><span className={`badge ${c.type === 'added' ? 'badge-ok' : c.type === 'removed' ? 'badge-danger' : 'badge-warn'}`}>{c.type || '—'}</span></td>
+                            <td>{c.detected || c.timestamp || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <div className="empty" style={{ marginTop: 8 }}>No drift detected</div>;
+              })()}
+            </>
+          ) : <div className="empty">Loading...</div>}
         </div>
       )}
 
@@ -71,15 +159,60 @@ export default function Infrastructure() {
         <div className="card-grid">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Energy Status</div>
-            <div className="json-block">{JSON.stringify(energy, null, 2)}</div>
+            {energy ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                {Object.entries(energy).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Tenants</div>
-            <div className="json-block">{JSON.stringify(tenants, null, 2)}</div>
+            {tenants ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                {Object.entries(tenants).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Patches</div>
-            <div className="json-block">{JSON.stringify(patchData, null, 2)}</div>
+            {(() => {
+              const ptch = patchData?.patches || (Array.isArray(patchData) ? patchData : []);
+              if (!patchData) return <div className="empty">Loading...</div>;
+              return ptch.length > 0 ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Patch</th><th>Version</th><th>Status</th><th>Date</th></tr></thead>
+                    <tbody>
+                      {ptch.map((p, i) => (
+                        <tr key={i}>
+                          <td>{p.name || p.id || '—'}</td>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.version || '—'}</td>
+                          <td><span className={`badge ${p.status === 'applied' ? 'badge-ok' : 'badge-warn'}`}>{p.status || '—'}</span></td>
+                          <td>{p.date || p.applied_at || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                {Object.entries(patchData).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>;
+            })()}
           </div>
         </div>
       )}
@@ -93,11 +226,29 @@ export default function Infrastructure() {
                 try { await api.meshHeal(); toast('Mesh heal initiated', 'success'); } catch { toast('Failed', 'error'); }
               }}>Heal</button>
             </div>
-            <div className="json-block">{JSON.stringify(mesh, null, 2)}</div>
+            {mesh ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {Object.entries(mesh).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{typeof v === 'boolean' ? (v ? '✓ Healthy' : '✕ Unhealthy') : typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>TLS Status</div>
-            <div className="json-block">{JSON.stringify(tls, null, 2)}</div>
+            {tls ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {Object.entries(tls).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: 'break-all' }}>{typeof v === 'boolean' ? (v ? '✓' : '✕') : typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
         </div>
       )}
@@ -106,15 +257,64 @@ export default function Infrastructure() {
         <div className="card-grid">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Threads</div>
-            <div className="json-block">{JSON.stringify(threads, null, 2)}</div>
+            {threads ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                {Object.entries(threads).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>SLO Status</div>
-            <div className="json-block">{JSON.stringify(slo, null, 2)}</div>
+            {slo ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                {Object.entries(slo).map(([k, v]) => (
+                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: k.includes('violation') && v > 0 ? 'var(--danger)' : undefined }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Dependencies</div>
-            <div className="json-block">{JSON.stringify(deps, null, 2)}</div>
+            {deps ? (
+              <>
+                {(() => {
+                  const depArr = deps.dependencies || deps.deps || (Array.isArray(deps) ? deps : []);
+                  return depArr.length > 0 ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Name</th><th>Version</th><th>Status</th></tr></thead>
+                        <tbody>
+                          {(Array.isArray(depArr) ? depArr : []).map((d, i) => (
+                            <tr key={i}>
+                              <td style={{ fontWeight: 600 }}>{d.name || '—'}</td>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{d.version || '—'}</td>
+                              <td><span className={`badge ${d.healthy !== false ? 'badge-ok' : 'badge-danger'}`}>{d.healthy !== false ? 'OK' : 'Unhealthy'}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                      {Object.entries(deps).map(([k, v]) => (
+                        <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </>
+            ) : <div className="empty">Loading...</div>}
           </div>
         </div>
       )}

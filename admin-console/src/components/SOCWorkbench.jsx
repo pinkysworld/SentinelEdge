@@ -21,12 +21,17 @@ export default function SOCWorkbench() {
   const { data: procFindings } = useApi(api.processesAnalysis);
   const { data: rbacData, reload: rRbac } = useApi(api.rbacUsers);
   const { data: tlHost } = useApi(api.timelineHost);
+  const { data: escPolicies, reload: rEsc } = useApi(api.escalationPolicies);
+  const { data: escActive, reload: rEscActive } = useApi(api.escalationActive);
   const [selectedInc, setSelectedInc] = useState(null);
   const [incDetail, setIncDetail] = useState(null);
+  const [incStoryline, setIncStoryline] = useState(null);
   const [entityInput, setEntityInput] = useState('');
   const [entityResult, setEntityResult] = useState(null);
+  const [escForm, setEscForm] = useState({ name: '', severity: 'critical', channel: 'email', targets: '', timeout_minutes: 30 });
+  const [showEscForm, setShowEscForm] = useState(false);
 
-  useInterval(() => { rOverview(); rQueue(); }, 15000);
+  useInterval(() => { rOverview(); rQueue(); rEscActive(); }, 15000);
 
   const incArr = Array.isArray(incList) ? incList : incList?.incidents || [];
   const caseArr = Array.isArray(caseList) ? caseList : caseList?.cases || [];
@@ -35,13 +40,15 @@ export default function SOCWorkbench() {
 
   const viewInc = async (id) => {
     setSelectedInc(id);
+    setIncStoryline(null);
     try { const d = await api.incidentById(id); setIncDetail(d); } catch { setIncDetail(null); }
+    try { const s = await api.incidentStoryline(id); setIncStoryline(s); } catch { /* optional */ }
   };
 
   return (
     <div>
       <div className="tabs">
-        {['overview', 'incidents', 'cases', 'queue', 'response', 'process-tree', 'entity', 'rbac', 'timeline'].map(t => (
+        {['overview', 'incidents', 'cases', 'queue', 'response', 'escalation', 'process-tree', 'entity', 'rbac', 'timeline'].map(t => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
             {t.replace(/-/g, ' ').replace(/^\w/, c => c.toUpperCase())}
           </button>
@@ -51,7 +58,16 @@ export default function SOCWorkbench() {
       {tab === 'overview' && (
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>Workbench Overview</div>
-          <div className="json-block">{JSON.stringify(overview, null, 2)}</div>
+          {overview ? (
+            <div className="card-grid" style={{ gap: 12 }}>
+              {Object.entries(overview).map(([k, v]) => (
+                <div key={k} style={{ padding: '8px 12px', background: 'var(--bg)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 2 }}>{k.replace(/_/g, ' ')}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                </div>
+              ))}
+            </div>
+          ) : <div className="empty">Loading...</div>}
         </div>
       )}
 
@@ -86,9 +102,59 @@ export default function SOCWorkbench() {
             </div>
           )}
           {selectedInc !== null && incDetail && (
-            <div style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 8 }}>Incident Detail</div>
-              <div className="json-block">{JSON.stringify(incDetail, null, 2)}</div>
+            <div className="card" style={{ marginTop: 16, borderLeft: '3px solid var(--primary)' }}>
+              <div className="card-header">
+                <span className="card-title">Incident Detail — {incDetail.title || incDetail.id || selectedInc}</span>
+                <button className="btn btn-sm" onClick={() => { setSelectedInc(null); setIncDetail(null); setIncStoryline(null); }}>✕ Close</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+                <div><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>ID</span><div style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{incDetail.id || selectedInc}</div></div>
+                <div><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Severity</span><div><span className={`sev-${(incDetail.severity || 'low').toLowerCase()}`}>{incDetail.severity || '—'}</span></div></div>
+                <div><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Status</span><div><span className={`badge ${incDetail.status === 'closed' ? 'badge-ok' : 'badge-warn'}`}>{incDetail.status || '—'}</span></div></div>
+                <div><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Created</span><div>{incDetail.created || incDetail.timestamp || '—'}</div></div>
+                <div><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Updated</span><div>{incDetail.updated || incDetail.last_updated || '—'}</div></div>
+                <div><span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Owner</span><div>{incDetail.owner || incDetail.assigned_to || '—'}</div></div>
+              </div>
+              {incDetail.summary && <div style={{ marginBottom: 12, padding: '8px 12px', background: 'var(--bg)', borderRadius: 6, fontSize: 13 }}>{incDetail.summary}</div>}
+              {(incDetail.event_ids?.length > 0 || incDetail.alert_ids?.length > 0) && (
+                <div style={{ marginBottom: 12 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Related Events / Alerts</span>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                    {(incDetail.event_ids || incDetail.alert_ids || []).map((eid, i) => (
+                      <span key={i} className="badge badge-info" style={{ fontSize: 11 }}>{eid}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(incDetail.agent_ids?.length > 0) && (
+                <div style={{ marginBottom: 12 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Agents</span>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                    {incDetail.agent_ids.map((aid, i) => <span key={i} className="badge" style={{ fontSize: 11 }}>{aid}</span>)}
+                  </div>
+                </div>
+              )}
+              {incStoryline && (
+                <div style={{ marginTop: 12 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Storyline</span>
+                  <div style={{ marginTop: 6, borderLeft: '2px solid var(--border)', paddingLeft: 12 }}>
+                    {(incStoryline.events || incStoryline.steps || (Array.isArray(incStoryline) ? incStoryline : [])).map((ev, i) => (
+                      <div key={i} style={{ marginBottom: 8, fontSize: 13 }}>
+                        <span style={{ fontWeight: 600, marginRight: 8 }}>{ev.timestamp || ev.time || `Step ${i + 1}`}</span>
+                        <span>{ev.description || ev.message || ev.action || JSON.stringify(ev)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                <button className="btn btn-sm btn-primary" onClick={async () => {
+                  try { await api.updateIncident(selectedInc, { status: 'closed' }); toast('Incident closed', 'success'); viewInc(selectedInc); rInc(); } catch { toast('Failed', 'error'); }
+                }}>Close Incident</button>
+                <button className="btn btn-sm" onClick={async () => {
+                  try { const r = await api.incidentReport(selectedInc); const blob = new Blob([typeof r === 'string' ? r : JSON.stringify(r, null, 2)], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `incident-${selectedInc}-report.txt`; a.click(); } catch { toast('Failed to generate report', 'error'); }
+                }}>Export Report</button>
+              </div>
             </div>
           )}
         </div>
@@ -102,9 +168,33 @@ export default function SOCWorkbench() {
               try { await api.createCase({ title: 'New investigation' }); toast('Case created', 'success'); rCases(); } catch { toast('Failed', 'error'); }
             }}>+ New Case</button>
           </div>
-          {caseStats && <div className="json-block" style={{ marginBottom: 12 }}>{JSON.stringify(caseStats, null, 2)}</div>}
+          {caseStats && (
+            <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+              {Object.entries(caseStats).map(([k, v]) => (
+                <div key={k} style={{ padding: '6px 12px', background: 'var(--bg)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                </div>
+              ))}
+            </div>
+          )}
           {caseArr.length === 0 ? <div className="empty">No cases</div> : (
-            <div className="json-block">{JSON.stringify(caseArr, null, 2)}</div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Owner</th><th>Created</th></tr></thead>
+                <tbody>
+                  {caseArr.map((c, i) => (
+                    <tr key={i}>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{c.id || i}</td>
+                      <td>{c.title || '—'}</td>
+                      <td><span className={`badge ${c.status === 'closed' ? 'badge-ok' : 'badge-warn'}`}>{c.status || '—'}</span></td>
+                      <td>{c.owner || c.assigned_to || '—'}</td>
+                      <td>{c.created || c.timestamp || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -147,26 +237,184 @@ export default function SOCWorkbench() {
           <div className="card-grid">
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Pending Responses</div>
-              <div className="json-block">{JSON.stringify(pending, null, 2)}</div>
+              {(() => {
+                const items = pending?.actions || pending?.pending || (Array.isArray(pending) ? pending : []);
+                return items.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Action</th><th>Target</th><th>Severity</th><th>Requested</th></tr></thead>
+                      <tbody>
+                        {items.map((a, i) => (
+                          <tr key={i}>
+                            <td style={{ fontWeight: 600 }}>{a.action || a.type || '—'}</td>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.target || a.host || '—'}</td>
+                            <td><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity || '—'}</span></td>
+                            <td>{a.requested || a.timestamp || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <div className="empty">{pending ? 'No pending responses' : 'Loading...'}</div>;
+              })()}
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Response Stats</div>
-              <div className="json-block">{JSON.stringify(respStats, null, 2)}</div>
+              {respStats ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+                  {Object.entries(respStats).map(([k, v]) => (
+                    <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="empty">Loading...</div>}
             </div>
           </div>
           {respReq && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Response Requests</div>
-              <div className="json-block">{JSON.stringify(respReq, null, 2)}</div>
+              {(() => {
+                const reqs = respReq?.requests || (Array.isArray(respReq) ? respReq : []);
+                return reqs.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>ID</th><th>Type</th><th>Target</th><th>Status</th><th>Requested</th></tr></thead>
+                      <tbody>
+                        {reqs.map((r, i) => (
+                          <tr key={i}>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.id || i}</td>
+                            <td>{r.type || r.action || '—'}</td>
+                            <td>{r.target || r.host || '—'}</td>
+                            <td><span className={`badge ${r.status === 'completed' ? 'badge-ok' : 'badge-warn'}`}>{r.status || '—'}</span></td>
+                            <td>{r.requested_at || r.timestamp || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <div className="empty">No response requests</div>;
+              })()}
             </div>
           )}
           {respAudit && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Response Audit Trail</div>
-              <div className="json-block">{JSON.stringify(respAudit, null, 2)}</div>
+              {(() => {
+                const entries = respAudit?.entries || respAudit?.audit || (Array.isArray(respAudit) ? respAudit : []);
+                return entries.length > 0 ? (
+                  <div style={{ borderLeft: '2px solid var(--border)', paddingLeft: 12 }}>
+                    {entries.map((e, i) => (
+                      <div key={i} style={{ marginBottom: 8, fontSize: 13 }}>
+                        <span style={{ fontWeight: 600, marginRight: 8 }}>{e.timestamp || e.time || '—'}</span>
+                        <span style={{ marginRight: 8, color: 'var(--primary)' }}>{e.user || e.actor || '—'}</span>
+                        <span>{e.action || e.message || e.description || JSON.stringify(e)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <div className="empty">No audit entries</div>;
+              })()}
             </div>
           )}
         </>
+      )}
+
+      {tab === 'escalation' && (
+        <div>
+          {/* Active Escalations */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <span className="card-title">Active Escalations</span>
+              <button className="btn btn-sm" onClick={rEscActive}>↻ Refresh</button>
+            </div>
+            {(() => {
+              const esc = escActive?.escalations || (Array.isArray(escActive) ? escActive : []);
+              return esc.length === 0 ? <div className="empty">No active escalations</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>ID</th><th>Incident</th><th>Severity</th><th>Policy</th><th>Started</th><th>Level</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {esc.map((e, i) => (
+                        <tr key={i}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{e.id || i}</td>
+                          <td>{e.incident_id || e.alert_id || '—'}</td>
+                          <td><span className={`sev-${(e.severity || 'low').toLowerCase()}`}>{e.severity || '—'}</span></td>
+                          <td>{e.policy || e.policy_name || '—'}</td>
+                          <td>{e.started || e.timestamp || '—'}</td>
+                          <td><span className="badge badge-warn">Level {e.level || e.current_level || 1}</span></td>
+                          <td>
+                            <button className="btn btn-sm btn-primary" onClick={async () => {
+                              try { await api.escalationAck({ escalation_id: e.id }); toast('Escalation acknowledged', 'success'); rEscActive(); } catch { toast('Failed', 'error'); }
+                            }}>Acknowledge</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+          {/* Escalation Policies */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Escalation Policies</span>
+              <div className="btn-group">
+                <button className="btn btn-sm" onClick={rEsc}>↻ Refresh</button>
+                <button className="btn btn-sm btn-primary" onClick={() => setShowEscForm(!showEscForm)}>{showEscForm ? 'Cancel' : '+ New Policy'}</button>
+              </div>
+            </div>
+            {showEscForm && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, padding: 12, background: 'var(--bg)', borderRadius: 6 }}>
+                <input className="form-input" style={{ width: 200 }} placeholder="Policy name" value={escForm.name} onChange={e => setEscForm(f => ({ ...f, name: e.target.value }))} />
+                <select className="form-input" style={{ width: 120 }} value={escForm.severity} onChange={e => setEscForm(f => ({ ...f, severity: e.target.value }))}>
+                  <option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                </select>
+                <select className="form-input" style={{ width: 120 }} value={escForm.channel} onChange={e => setEscForm(f => ({ ...f, channel: e.target.value }))}>
+                  <option value="email">Email</option><option value="slack">Slack</option><option value="pagerduty">PagerDuty</option><option value="webhook">Webhook</option>
+                </select>
+                <input className="form-input" style={{ width: 250 }} placeholder="Targets (comma-separated)" value={escForm.targets} onChange={e => setEscForm(f => ({ ...f, targets: e.target.value }))} />
+                <input className="form-input" style={{ width: 120 }} type="number" placeholder="Timeout (min)" value={escForm.timeout_minutes} onChange={e => setEscForm(f => ({ ...f, timeout_minutes: parseInt(e.target.value) || 30 }))} />
+                <button className="btn btn-primary" onClick={async () => {
+                  if (!escForm.name) { toast('Name required', 'error'); return; }
+                  try {
+                    await api.createEscalationPolicy({ ...escForm, targets: escForm.targets.split(',').map(t => t.trim()).filter(Boolean) });
+                    toast('Policy created', 'success');
+                    setShowEscForm(false); setEscForm({ name: '', severity: 'critical', channel: 'email', targets: '', timeout_minutes: 30 });
+                    rEsc();
+                  } catch { toast('Failed', 'error'); }
+                }}>Create</button>
+              </div>
+            )}
+            {(() => {
+              const pols = escPolicies?.policies || (Array.isArray(escPolicies) ? escPolicies : []);
+              return pols.length === 0 ? <div className="empty">No escalation policies configured</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Name</th><th>Severity</th><th>Channel</th><th>Targets</th><th>Timeout</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {pols.map((p, i) => (
+                        <tr key={i}>
+                          <td style={{ fontWeight: 600 }}>{p.name || '—'}</td>
+                          <td><span className={`sev-${(p.severity || 'low').toLowerCase()}`}>{p.severity || '—'}</span></td>
+                          <td>{p.channel || '—'}</td>
+                          <td style={{ fontSize: 12 }}>{Array.isArray(p.targets) ? p.targets.join(', ') : p.targets || '—'}</td>
+                          <td>{p.timeout_minutes || p.timeout || '—'} min</td>
+                          <td>
+                            <button className="btn btn-sm" onClick={async () => {
+                              try { await api.escalationStart({ policy_id: p.id || p.name, incident_id: 'manual-test' }); toast('Escalation triggered', 'success'); rEscActive(); } catch { toast('Failed', 'error'); }
+                            }}>Test</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       )}
 
       {tab === 'process-tree' && (
@@ -275,7 +523,16 @@ export default function SOCWorkbench() {
               } catch { try { const r = await api.entityById(entityInput); setEntityResult(r); } catch { toast('Entity not found', 'error'); } }
             }}>Lookup</button>
           </div>
-          {entityResult && <div className="json-block">{JSON.stringify(entityResult, null, 2)}</div>}
+          {entityResult && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+              {Object.entries(entityResult).map(([k, v]) => (
+                <div key={k} style={{ padding: '8px 12px', background: 'var(--bg)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 2 }}>{k.replace(/_/g, ' ')}</div>
+                  <div style={{ fontSize: 13, wordBreak: 'break-all' }}>{typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -312,7 +569,28 @@ export default function SOCWorkbench() {
       {tab === 'timeline' && (
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>Host Timeline</div>
-          <div className="json-block">{JSON.stringify(tlHost, null, 2)}</div>
+          {(() => {
+            const events = tlHost?.events || tlHost?.timeline || (Array.isArray(tlHost) ? tlHost : []);
+            if (events.length === 0 && !tlHost) return <div className="empty">Loading...</div>;
+            if (events.length === 0) return <div className="empty">No timeline events</div>;
+            return (
+              <div style={{ borderLeft: '2px solid var(--primary)', paddingLeft: 16 }}>
+                {events.map((ev, i) => (
+                  <div key={i} style={{ marginBottom: 12, position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: -22, top: 4, width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)' }} />
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>
+                      {ev.timestamp || ev.time || '—'}
+                      {ev.host && <span style={{ marginLeft: 8, fontWeight: 600 }}>{ev.host}</span>}
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      {ev.severity && <span className={`sev-${ev.severity.toLowerCase()}`} style={{ marginRight: 8 }}>{ev.severity}</span>}
+                      {ev.event || ev.message || ev.description || ev.action || JSON.stringify(ev)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

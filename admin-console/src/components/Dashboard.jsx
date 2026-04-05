@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-function Metric({ label, value, sub, accent }) {
+function Metric({ label, value, sub, accent, onClick }) {
   return (
-    <div className={`card metric${accent ? ' metric-accent' : ''}`}>
+    <div className={`card metric${accent ? ' metric-accent' : ''}`}
+      style={onClick ? { cursor: 'pointer' } : undefined} onClick={onClick}>
       <div className="metric-label">{label}</div>
       <div className="metric-value">{value ?? '—'}</div>
       {sub && <div className="metric-sub">{sub}</div>}
@@ -15,6 +17,8 @@ function Metric({ label, value, sub, accent }) {
 function SectionTitle({ children }) {
   return <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '.5px', margin: '20px 0 10px' }}>{children}</h3>;
 }
+
+const SEV_COLORS = { critical: '#ef4444', severe: '#f97316', elevated: '#eab308', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
 
 export default function Dashboard() {
   const toast = useToast();
@@ -30,7 +34,10 @@ export default function Dashboard() {
   const { data: profile } = useApi(api.detectionProfile);
   const { data: procAnalysis, reload: rPA } = useApi(api.processesAnalysis);
   const { data: hostInf } = useApi(api.hostInfo);
+  const { data: telemHistory } = useApi(api.telemetryHistory);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedAlert, setExpandedAlert] = useState(null);
+  const [sevFilter, setSevFilter] = useState('all');
 
   const reloadAll = async () => {
     setRefreshing(true);
@@ -45,6 +52,54 @@ export default function Dashboard() {
   const alertList = Array.isArray(alertData) ? alertData : alertData?.alerts || [];
   const critical = alertList.filter(a => (a.severity || '').toLowerCase() === 'critical').length;
   const elevated = alertList.filter(a => ['elevated', 'severe', 'high'].includes((a.severity || '').toLowerCase())).length;
+  const low = alertList.filter(a => ['low', 'medium', 'info'].includes((a.severity || '').toLowerCase())).length;
+
+  // Severity breakdown for pie chart
+  const sevBreakdown = useMemo(() => {
+    const counts = {};
+    alertList.forEach(a => {
+      const s = (a.severity || 'unknown').toLowerCase();
+      counts[s] = (counts[s] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [alertList]);
+
+  // Alert timeline data (last 24 hours bucketed into ~12 intervals)
+  const alertTimeline = useMemo(() => {
+    if (!alertList.length) return [];
+    const now = Date.now();
+    const buckets = 12;
+    const interval = 2 * 60 * 60 * 1000; // 2 hours
+    const data = [];
+    for (let i = buckets - 1; i >= 0; i--) {
+      const start = now - (i + 1) * interval;
+      const end = now - i * interval;
+      const count = alertList.filter(a => {
+        const t = new Date(a.timestamp || a.time || 0).getTime();
+        return t >= start && t < end;
+      }).length;
+      const label = new Date(end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      data.push({ time: label, alerts: count });
+    }
+    return data;
+  }, [alertList]);
+
+  // Telemetry history for area chart
+  const telemChart = useMemo(() => {
+    if (!telemHistory) return [];
+    const arr = Array.isArray(telemHistory) ? telemHistory : telemHistory?.samples || telemHistory?.history || [];
+    return arr.slice(-30).map((s, i) => ({
+      t: i,
+      cpu: s.cpu_load_pct ?? s.cpu,
+      mem: s.memory_load_pct ?? s.memory,
+      net: s.network_kbps ?? s.network,
+    }));
+  }, [telemHistory]);
+
+  // Filtered alerts
+  const filteredAlerts = sevFilter === 'all' ? alertList : alertList.filter(a =>
+    (a.severity || '').toLowerCase() === sevFilter
+  );
 
   return (
     <div>
@@ -67,7 +122,25 @@ export default function Dashboard() {
         <Metric label="Queue Pending" value={qStats?.pending ?? qStats?.total ?? '—'} sub={qStats?.assigned ? `${qStats.assigned} assigned` : undefined} />
       </div>
 
-      {/* ── Threat Overview ── */}
+      {/* ── Telemetry Chart ── */}
+      {telemChart.length > 0 && (
+        <>
+          <SectionTitle>System Telemetry</SectionTitle>
+          <div className="card" style={{ padding: '12px 8px', marginBottom: 16 }}>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={telemChart}>
+                <XAxis dataKey="t" tick={false} />
+                <YAxis width={35} tick={{ fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+                <Area type="monotone" dataKey="cpu" name="CPU %" stroke="#3b82f6" fill="#3b82f680" strokeWidth={2} />
+                <Area type="monotone" dataKey="mem" name="Memory %" stroke="#8b5cf6" fill="#8b5cf680" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {/* ── Threat Overview with Charts ── */}
       <SectionTitle>Threat Overview</SectionTitle>
       <div className="card-grid">
         <Metric label="Total Alerts" value={alertList.length} sub={`${critical} critical · ${elevated} elevated`} />
@@ -75,6 +148,40 @@ export default function Dashboard() {
         <Metric label="Threat Intel IoCs" value={tiStatus?.total_iocs ?? tiStatus?.ioc_count ?? '—'} sub={tiStatus?.active_feeds ? `${tiStatus.active_feeds} feeds` : undefined} />
         <Metric label="Response Actions" value={respStats?.total ?? '—'} sub={respStats?.pending ? `${respStats.pending} pending` : undefined} />
       </div>
+
+      {/* Alert timeline + severity pie */}
+      {(alertTimeline.length > 0 || sevBreakdown.length > 0) && (
+        <div className="card-grid" style={{ marginTop: 12, marginBottom: 16 }}>
+          {alertTimeline.length > 0 && (
+            <div className="card" style={{ padding: '12px 8px', gridColumn: sevBreakdown.length > 0 ? 'span 2' : 'span 3' }}>
+              <div className="card-title" style={{ marginBottom: 8, paddingLeft: 8 }}>Alert Timeline (24h)</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={alertTimeline}>
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} interval={1} />
+                  <YAxis width={25} tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+                  <Bar dataKey="alerts" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {sevBreakdown.length > 0 && (
+            <div className="card" style={{ padding: '12px 8px' }}>
+              <div className="card-title" style={{ marginBottom: 8, paddingLeft: 8 }}>By Severity</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <PieChart>
+                  <Pie data={sevBreakdown} cx="50%" cy="50%" outerRadius={50} innerRadius={25} paddingAngle={2} dataKey="value" label={({ name, value }) => `${name} (${value})`} style={{ fontSize: 10 }}>
+                    {sevBreakdown.map((entry, i) => (
+                      <Cell key={i} fill={SEV_COLORS[entry.name] || '#6b7280'} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Process Security ── */}
       {procAnalysis && (
@@ -95,7 +202,8 @@ export default function Dashboard() {
                   <thead><tr><th>PID</th><th>Process</th><th>User</th><th>Risk</th><th>Reason</th><th>CPU%</th><th>Mem%</th></tr></thead>
                   <tbody>
                     {procAnalysis.findings.map((f, i) => (
-                      <tr key={i}>
+                      <tr key={i} style={{ cursor: 'pointer', background: expandedAlert === `proc-${i}` ? 'rgba(59,130,246,.08)' : undefined }}
+                        onClick={() => setExpandedAlert(expandedAlert === `proc-${i}` ? null : `proc-${i}`)}>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{f.pid}</td>
                         <td><strong>{f.name}</strong></td>
                         <td>{f.user}</td>
@@ -133,34 +241,72 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* ── Recent Alerts ── */}
+      {/* ── Recent Alerts with severity filter ── */}
       <SectionTitle>Recent Alerts</SectionTitle>
       <div className="card">
         <div className="card-header">
-          <span className="card-title">Latest ({Math.min(alertList.length, 25)} of {alertList.length})</span>
-          <button className="btn btn-sm btn-danger" onClick={async () => {
-            try { await api.alertsClear(); toast('Alerts cleared', 'success'); r3(); } catch { toast('Failed to clear alerts', 'error'); }
-          }}>Clear All</button>
+          <span className="card-title">Latest ({Math.min(filteredAlerts.length, 25)} of {alertList.length})</span>
+          <div className="btn-group">
+            {['all', 'critical', 'severe', 'elevated', 'low'].map(s => (
+              <button key={s} className={`btn btn-sm ${sevFilter === s ? 'btn-primary' : ''}`} onClick={() => setSevFilter(s)}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+            <button className="btn btn-sm btn-danger" onClick={async () => {
+              try { await api.alertsClear(); toast('Alerts cleared', 'success'); r3(); } catch { toast('Failed to clear alerts', 'error'); }
+            }}>Clear All</button>
+          </div>
         </div>
-        {alertList.length === 0 ? (
-          <div className="empty">No alerts — system is quiet</div>
+        {filteredAlerts.length === 0 ? (
+          <div className="empty">No alerts{sevFilter !== 'all' ? ` matching "${sevFilter}"` : ''} — system is quiet</div>
         ) : (
           <div className="table-wrap">
             <table>
               <thead><tr><th>Time</th><th>Severity</th><th>Category</th><th>Message</th></tr></thead>
               <tbody>
-                {alertList.slice(0, 25).map((a, i) => (
-                  <tr key={i}>
-                    <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.timestamp || a.time || '—'}</td>
-                    <td><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity || '—'}</span></td>
-                    <td>{a.category || a.type || '—'}</td>
-                    <td style={{ fontSize: 13 }}>{a.message || a.description || JSON.stringify(a).slice(0, 120)}</td>
-                  </tr>
-                ))}
+                {filteredAlerts.slice(0, 25).map((a, i) => {
+                  const aid = a.id || a.alert_id || `alert-${i}`;
+                  return (
+                    <tr key={aid} style={{ cursor: 'pointer', background: expandedAlert === aid ? 'rgba(59,130,246,.08)' : undefined }}
+                      onClick={() => setExpandedAlert(expandedAlert === aid ? null : aid)}>
+                      <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.timestamp || a.time || '—'}</td>
+                      <td><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity || '—'}</span></td>
+                      <td>{a.category || a.type || '—'}</td>
+                      <td style={{ fontSize: 13 }}>{a.message || a.description || JSON.stringify(a).slice(0, 120)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+        {expandedAlert && (() => {
+          const a = filteredAlerts.find((x, i) => (x.id || x.alert_id || `alert-${i}`) === expandedAlert);
+          if (!a) return null;
+          return (
+            <div style={{ marginTop: 12, padding: '12px 16px', background: 'var(--bg)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--primary)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
+                {a.score != null && <div><span className="metric-label">Score</span><div style={{ fontSize: 16, fontWeight: 600 }}>{a.score}</div></div>}
+                {a.source && <div><span className="metric-label">Source</span><div style={{ fontSize: 14 }}>{a.source}</div></div>}
+                {a.hostname && <div><span className="metric-label">Host</span><div style={{ fontSize: 14 }}>{a.hostname}</div></div>}
+                {a.agent_id && <div><span className="metric-label">Agent</span><div style={{ fontSize: 14, fontFamily: 'var(--font-mono)' }}>{a.agent_id}</div></div>}
+              </div>
+              {a.reasons && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Reasons: {Array.isArray(a.reasons) ? a.reasons.join(', ') : a.reasons}</div>}
+              {a.contributions && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>Signal Contributions:</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {(Array.isArray(a.contributions) ? a.contributions : Object.entries(a.contributions || {})).map(([k, v], j) => (
+                      <span key={j} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--border)' }}>
+                        {Array.isArray(a.contributions) ? `${k}` : `${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

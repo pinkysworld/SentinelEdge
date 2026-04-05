@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 
@@ -10,16 +10,78 @@ export default function LiveMonitor() {
   const { data: hp } = useApi(api.health);
   const { data: procData, reload: reloadProcs } = useApi(api.processesLive);
   const { data: procAnalysis, reload: reloadPA } = useApi(api.processesAnalysis);
+  const { data: fpStats, reload: reloadFP } = useApi(api.fpFeedbackStats);
   const [selectedId, setSelectedId] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [tab, setTab] = useState('stream');
   const [procSort, setProcSort] = useState('cpu');
   const [procFilter, setProcFilter] = useState('');
+  const [sevFilter, setSevFilter] = useState('all');
+  const [selectedAlerts, setSelectedAlerts] = useState(new Set());
+  const [bulkAction, setBulkAction] = useState('');
 
   const reloadAll = () => { reload(); reloadCount(); reloadGrouped(); };
   useInterval(reloadAll, 10000);
 
   const alertList = Array.isArray(alertData) ? alertData : alertData?.alerts || [];
+
+  // Severity filter
+  const filteredAlerts = useMemo(() => {
+    if (sevFilter === 'all') return alertList;
+    return alertList.filter(a => (a.severity || '').toLowerCase() === sevFilter);
+  }, [alertList, sevFilter]);
+
+  // Bulk selection helpers
+  const toggleSelect = (aid) => {
+    setSelectedAlerts(prev => {
+      const next = new Set(prev);
+      next.has(aid) ? next.delete(aid) : next.add(aid);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (selectedAlerts.size === filteredAlerts.length) {
+      setSelectedAlerts(new Set());
+    } else {
+      setSelectedAlerts(new Set(filteredAlerts.map((a, i) => a.id || a.alert_id || `${a.timestamp}-${i}`)));
+    }
+  };
+
+  // FP feedback handler
+  const markFP = async (alert) => {
+    const pattern = (alert.reasons || [alert.category || alert.type || 'unknown']).join(', ');
+    try {
+      await api.fpFeedback({ alert_id: alert.id || alert.alert_id, pattern, is_false_positive: true });
+      toast(`Marked as FP: ${pattern}`, 'success');
+      reloadFP();
+    } catch { toast('FP feedback failed', 'error'); }
+  };
+
+  // Bulk actions
+  const executeBulk = async () => {
+    if (!selectedAlerts.size) { toast('No alerts selected', 'error'); return; }
+    const ids = [...selectedAlerts];
+    if (bulkAction === 'fp') {
+      for (const aid of ids) {
+        const alert = filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === aid);
+        if (alert) await markFP(alert);
+      }
+      toast(`Marked ${ids.length} alerts as false positive`, 'success');
+    } else if (bulkAction === 'triage') {
+      try {
+        await api.bulkTriage({ event_ids: ids.filter(id => typeof id === 'number'), verdict: 'acknowledged' });
+        toast(`Triaged ${ids.length} alerts`, 'success');
+      } catch { toast('Bulk triage failed', 'error'); }
+    } else if (bulkAction === 'incident') {
+      try {
+        await api.createIncident({ title: `Bulk incident (${ids.length} alerts)`, severity: 'medium', event_ids: ids.filter(id => typeof id === 'number') });
+        toast('Incident created from selected alerts', 'success');
+      } catch { toast('Incident creation failed', 'error'); }
+    }
+    setSelectedAlerts(new Set());
+    setBulkAction('');
+    reload();
+  };
 
   // Process list with sorting and filtering
   const procList = (() => {
@@ -61,24 +123,54 @@ export default function LiveMonitor() {
 
       {tab === 'stream' && !loading && (
         <div className="card">
-          {alertList.length === 0 ? <div className="empty">No alerts — system is quiet</div> : (
+          {/* Severity filter + Bulk actions bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 12 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Filter:</span>
+            {['all', 'critical', 'severe', 'elevated', 'low'].map(s => (
+              <button key={s} className={`btn btn-sm ${sevFilter === s ? 'btn-primary' : ''}`} onClick={() => setSevFilter(s)}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+            {selectedAlerts.size > 0 && (
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{selectedAlerts.size} selected</span>
+                <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }}>
+                  <option value="">Bulk Action…</option>
+                  <option value="fp">Mark as False Positive</option>
+                  <option value="triage">Acknowledge / Triage</option>
+                  <option value="incident">Create Incident</option>
+                </select>
+                <button className="btn btn-sm btn-primary" disabled={!bulkAction} onClick={executeBulk}>Apply</button>
+              </div>
+            )}
+          </div>
+          {filteredAlerts.length === 0 ? <div className="empty">No alerts{sevFilter !== 'all' ? ` matching "${sevFilter}"` : ''}</div> : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Time</th><th>Severity</th><th>Source</th><th>Category</th><th>Message</th><th>Actions</th></tr></thead>
+                <thead><tr>
+                  <th style={{ width: 30 }}><input type="checkbox" checked={selectedAlerts.size === filteredAlerts.length && filteredAlerts.length > 0} onChange={toggleSelectAll} /></th>
+                  <th>Time</th><th>Severity</th><th>Source</th><th>Category</th><th>Message</th><th>Actions</th>
+                </tr></thead>
                 <tbody>
-                  {alertList.map((a, i) => {
+                  {filteredAlerts.map((a, i) => {
                     const aid = a.id || a.alert_id || `${a.timestamp}-${i}`;
+                    const isSelected = selectedAlerts.has(aid);
                     return (
-                    <tr key={aid} style={selectedId === aid ? { background: 'rgba(59,130,246,.08)' } : undefined}>
-                      <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.timestamp || a.time || '—'}</td>
-                      <td><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity}</span></td>
-                      <td>{a.source || '—'}</td>
-                      <td>{a.category || a.type || '—'}</td>
-                      <td>{a.message || a.description || '—'}</td>
+                    <tr key={aid} style={{ cursor: 'pointer', background: selectedId === aid ? 'rgba(59,130,246,.08)' : isSelected ? 'rgba(59,130,246,.04)' : undefined }}>
+                      <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(aid)} /></td>
+                      <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }} onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.timestamp || a.time || '—'}</td>
+                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity}</span></td>
+                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.source || '—'}</td>
+                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.category || a.type || '—'}</td>
+                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.message || a.description || '—'}</td>
                       <td>
-                        <button className="btn btn-sm" onClick={() => setSelectedId(selectedId === aid ? null : aid)}>
-                          {selectedId === aid ? 'Hide' : 'Details'}
-                        </button>
+                        <div className="btn-group">
+                          <button className="btn btn-sm" onClick={() => setSelectedId(selectedId === aid ? null : aid)}>
+                            {selectedId === aid ? 'Hide' : 'Details'}
+                          </button>
+                          <button className="btn btn-sm" onClick={() => markFP(a)} title="Mark as false positive" style={{ color: 'var(--warning)' }}>FP</button>
+                        </div>
                       </td>
                     </tr>
                     );
@@ -88,14 +180,37 @@ export default function LiveMonitor() {
             </div>
           )}
           {selectedId !== null && (() => {
-            const sel = alertList.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === selectedId);
+            const sel = filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === selectedId);
             return sel ? (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 16, padding: '12px 16px', background: 'var(--bg)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--primary)' }}>
               <div className="card-title" style={{ marginBottom: 8 }}>Alert Detail</div>
-              <div className="json-block">{JSON.stringify(sel, null, 2)}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
+                {sel.score != null && <div><span className="metric-label">Score</span><div style={{ fontSize: 16, fontWeight: 600 }}>{sel.score}</div></div>}
+                {sel.hostname && <div><span className="metric-label">Host</span><div>{sel.hostname}</div></div>}
+                {sel.source && <div><span className="metric-label">Source</span><div>{sel.source}</div></div>}
+                {sel.agent_id && <div><span className="metric-label">Agent</span><div style={{ fontFamily: 'var(--font-mono)' }}>{sel.agent_id}</div></div>}
+              </div>
+              {sel.reasons && <div style={{ fontSize: 12, marginBottom: 8 }}>Reasons: {Array.isArray(sel.reasons) ? sel.reasons.join(', ') : sel.reasons}</div>}
+              <details>
+                <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>Full JSON</summary>
+                <div className="json-block" style={{ marginTop: 6 }}>{JSON.stringify(sel, null, 2)}</div>
+              </details>
             </div>
             ) : null;
           })()}
+          {/* FP Feedback Stats */}
+          {Array.isArray(fpStats) && fpStats.length > 0 && (
+            <div style={{ marginTop: 16, padding: 12, background: 'var(--bg)', borderRadius: 'var(--radius)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>FP Feedback Summary</div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {fpStats.slice(0, 5).map((f, i) => (
+                  <span key={i} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--border)' }}>
+                    {f.pattern}: {(f.fp_ratio * 100).toFixed(0)}% FP ({f.total_marked} total)
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

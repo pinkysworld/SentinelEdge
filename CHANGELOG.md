@@ -2,6 +2,32 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.39.5] — Admin Console UX Overhaul, Detection Engine Improvements & Escalation Management
+
+### Added
+- **Structured form editor** — Settings page replaces raw JSON with toggle switches, number inputs, and text fields organized by section. Form/JSON toggle for power users.
+- **Monitoring scope toggles** — New Settings "Monitoring" tab with toggle switches for each monitoring feature (file integrity, network, auth events, process monitoring) and path listing.
+- **Config diff view** — "Show Changes" button in Settings computes line-by-line diff between saved and current config, highlighting additions (green) and removals (red).
+- **Reset to defaults** — Settings "Reset Defaults" button restores sensible defaults (collection_interval: 15s, alert_threshold: 2.5, entropy: 10%, etc.).
+- **Recharts visualizations** — Dashboard now features severity breakdown pie chart, 24h alert timeline bar chart, and telemetry area chart (CPU + memory trends).
+- **Dashboard drill-down** — Clickable alert rows expand to show score, host, source, agent, signal contributions, and full reason breakdown.
+- **Alert severity filter** — Both Dashboard and Live Monitor support filtering alerts by severity level (all/critical/severe/elevated/low).
+- **FP feedback button** — Each alert in Live Monitor stream has a "FP" button that submits false-positive feedback with auto-extracted pattern from alert reasons.
+- **Bulk alert actions** — Multi-select checkboxes in Live Monitor with bulk operations: Mark as FP, Acknowledge/Triage, Create Incident.
+- **Cross-signal correlation** — Detector applies bonus multiplier when ≥3 signal axes are simultaneously elevated (3→15%, 4→30%, 5→50%, 6+→70%).
+- **Auth failure rate smoothing** — Rolling 8-sample window tracks auth failure acceleration; rate-of-change >4.0 over 3 samples triggers additional detection signal.
+- **Suppression rules management** — ThreatDetection hunts tab includes suppression table with inline creation form (name, rule_id, hostname, severity filters).
+- **Hunt management UI** — ThreatDetection hunts tab displays hunt table with Name/Severity/Owner/Enabled/Threshold/Last Run columns, inline creation form, and per-hunt Run button.
+- **Escalation management console** — New SOC Workbench "Escalation" tab with policy management (create/list with name, severity, channel, targets, timeout), active escalation tracking with acknowledge button.
+- **Incident detail view** — Incident drill-down shows structured fields (ID, severity badge, status, created, updated, owner), related events/alerts/agents, storyline timeline, close/export buttons.
+- **Escalation API functions** — `escalationPolicies`, `createEscalationPolicy`, `escalationStart`, `escalationActive`, `escalationAck`, `deleteSuppression`.
+
+### Improved
+- **Eliminated JSON dumps** — SOCWorkbench overview, cases, response, entity, timeline tabs now render structured key-value grids, tables, and timeline views instead of raw JSON blocks.
+- **Infrastructure structured display** — Monitor, correlation, drift, energy, mesh, and system tabs replaced JSON dumps with key-value grids and proper tables.
+- **Sigma suppressions preview** — Sigma tab shows suppression summary table with link to full management in hunts tab.
+- **Clickable table rows** — Dashboard alerts/processes and Live Monitor alerts support click-to-expand for detailed inspection.
+
 ## [0.39.4] — Cross-Platform Process Monitoring, Enhanced Thread Analysis & Bug Fixes
 
 ### Added

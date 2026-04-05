@@ -18,11 +18,15 @@ export default function ThreatDetection() {
   const { data: heatmap } = useApi(api.mitreHeatmap);
   const { data: checks } = useApi(api.checkpoints);
   const { data: weights } = useApi(api.detectionWeights);
-  const { data: fpStats } = useApi(api.fpFeedbackStats);
+  const { data: fpStats, reload: rFP } = useApi(api.fpFeedbackStats);
   const { data: contentRulesData } = useApi(api.contentRules);
   const { data: packsData } = useApi(api.contentPacks);
-  const { data: huntList } = useApi(api.hunts);
-  const { data: suppressList } = useApi(api.suppressions);
+  const { data: huntList, reload: rHunts } = useApi(api.hunts);
+  const { data: suppressList, reload: rSuppress } = useApi(api.suppressions);
+  const [huntForm, setHuntForm] = useState({ name: '', severity: 'medium', threshold: 1, text: '' });
+  const [suppressForm, setSuppressForm] = useState({ name: '', rule_id: '', hostname: '', severity: '', text: '' });
+  const [showHuntForm, setShowHuntForm] = useState(false);
+  const [showSuppressForm, setShowSuppressForm] = useState(false);
 
   const handleProfileChange = async (name) => {
     try {
@@ -131,8 +135,25 @@ export default function ThreatDetection() {
           )}
           {suppressList && (
             <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>Suppressions</div>
-              <div className="json-block">{JSON.stringify(suppressList, null, 2)}</div>
+              <div className="card-header">
+                <span className="card-title">Active Suppressions ({suppressList?.count ?? (suppressList?.suppressions || []).length})</span>
+                <button className="btn btn-sm" onClick={() => setTab('hunts')}>Manage →</button>
+              </div>
+              {(() => {
+                const sups = suppressList?.suppressions || (Array.isArray(suppressList) ? suppressList : []);
+                return sups.length === 0 ? <div className="empty">No active suppressions</div> : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Name</th><th>Rule</th><th>Host</th><th>Severity</th></tr></thead>
+                      <tbody>
+                        {sups.slice(0, 10).map((s, i) => (
+                          <tr key={i}><td>{s.name || '—'}</td><td style={{ fontSize: 12 }}>{s.rule_id || '—'}</td><td>{s.hostname || '—'}</td><td>{s.severity || '—'}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </>
@@ -210,15 +231,160 @@ export default function ThreatDetection() {
       )}
 
       {tab === 'hunts' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Threat Hunts</span>
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <span className="card-title">Threat Hunts ({(huntList?.hunts || huntList || []).length})</span>
+              <button className="btn btn-sm btn-primary" onClick={() => setShowHuntForm(!showHuntForm)}>
+                {showHuntForm ? 'Cancel' : '+ New Hunt'}
+              </button>
+            </div>
+            {showHuntForm && (
+              <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)', marginBottom: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Name</label>
+                  <input type="text" value={huntForm.name} onChange={e => setHuntForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="Hunt name" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Severity</label>
+                  <select value={huntForm.severity} onChange={e => setHuntForm(p => ({ ...p, severity: e.target.value }))}
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
+                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Threshold</label>
+                  <input type="number" value={huntForm.threshold} onChange={e => setHuntForm(p => ({ ...p, threshold: Number(e.target.value) }))}
+                    min={1} style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Search Text</label>
+                  <input type="text" value={huntForm.text} onChange={e => setHuntForm(p => ({ ...p, text: e.target.value }))}
+                    placeholder="Search pattern" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button className="btn btn-primary" onClick={async () => {
+                    if (!huntForm.name) { toast('Name required', 'error'); return; }
+                    try {
+                      await api.createHunt({ name: huntForm.name, severity: huntForm.severity, threshold: huntForm.threshold, text: huntForm.text || undefined });
+                      toast('Hunt created', 'success');
+                      setShowHuntForm(false);
+                      setHuntForm({ name: '', severity: 'medium', threshold: 1, text: '' });
+                      rHunts();
+                    } catch { toast('Failed to create hunt', 'error'); }
+                  }}>Create</button>
+                </div>
+              </div>
+            )}
+            {(() => {
+              const hunts = huntList?.hunts || (Array.isArray(huntList) ? huntList : []);
+              return hunts.length === 0 ? <div className="empty">No hunts defined</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Name</th><th>Severity</th><th>Owner</th><th>Enabled</th><th>Threshold</th><th>Last Run</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {hunts.map((h, i) => (
+                        <tr key={h.id || i}>
+                          <td style={{ fontWeight: 600 }}>{h.name}</td>
+                          <td><span className={`sev-${(h.severity || 'medium').toLowerCase()}`}>{h.severity}</span></td>
+                          <td>{h.owner || '—'}</td>
+                          <td><span className={`badge ${h.enabled ? 'badge-ok' : 'badge-warn'}`}>{h.enabled ? 'Yes' : 'No'}</span></td>
+                          <td>{h.threshold}</td>
+                          <td style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{h.last_run_at || '—'}</td>
+                          <td>
+                            <button className="btn btn-sm" onClick={async () => {
+                              try { await api.runHunt(h.id); toast('Hunt executed', 'success'); rHunts(); } catch { toast('Run failed', 'error'); }
+                            }}>Run</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
-          {!huntList || (Array.isArray(huntList) && huntList.length === 0) ? (
-            <div className="empty">No hunts defined</div>
-          ) : (
-            <div className="json-block">{JSON.stringify(huntList, null, 2)}</div>
-          )}
+
+          {/* Suppression Management */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Suppression Rules ({suppressList?.count ?? (suppressList?.suppressions || []).length})</span>
+              <button className="btn btn-sm btn-primary" onClick={() => setShowSuppressForm(!showSuppressForm)}>
+                {showSuppressForm ? 'Cancel' : '+ New Suppression'}
+              </button>
+            </div>
+            {showSuppressForm && (
+              <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)', marginBottom: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Name</label>
+                  <input type="text" value={suppressForm.name} onChange={e => setSuppressForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="Suppression name" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Rule ID (optional)</label>
+                  <input type="text" value={suppressForm.rule_id} onChange={e => setSuppressForm(p => ({ ...p, rule_id: e.target.value }))}
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Hostname (optional)</label>
+                  <input type="text" value={suppressForm.hostname} onChange={e => setSuppressForm(p => ({ ...p, hostname: e.target.value }))}
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Severity (optional)</label>
+                  <select value={suppressForm.severity} onChange={e => setSuppressForm(p => ({ ...p, severity: e.target.value }))}
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
+                    <option value="">Any</option><option value="low">Low</option><option value="medium">Medium</option><option value="elevated">Elevated</option><option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Text match</label>
+                  <input type="text" value={suppressForm.text} onChange={e => setSuppressForm(p => ({ ...p, text: e.target.value }))}
+                    placeholder="Pattern to suppress" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button className="btn btn-primary" onClick={async () => {
+                    if (!suppressForm.name) { toast('Name required', 'error'); return; }
+                    try {
+                      const body = { name: suppressForm.name };
+                      if (suppressForm.rule_id) body.rule_id = suppressForm.rule_id;
+                      if (suppressForm.hostname) body.hostname = suppressForm.hostname;
+                      if (suppressForm.severity) body.severity = suppressForm.severity;
+                      if (suppressForm.text) body.text = suppressForm.text;
+                      await api.createSuppression(body);
+                      toast('Suppression created', 'success');
+                      setShowSuppressForm(false);
+                      setSuppressForm({ name: '', rule_id: '', hostname: '', severity: '', text: '' });
+                      rSuppress();
+                    } catch { toast('Failed', 'error'); }
+                  }}>Create</button>
+                </div>
+              </div>
+            )}
+            {(() => {
+              const sups = suppressList?.suppressions || (Array.isArray(suppressList) ? suppressList : []);
+              return sups.length === 0 ? <div className="empty">No suppressions</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>ID</th><th>Name</th><th>Rule</th><th>Host</th><th>Severity</th><th>Active</th></tr></thead>
+                    <tbody>
+                      {sups.map((s, i) => (
+                        <tr key={s.id || i}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{s.id || i}</td>
+                          <td>{s.name || '—'}</td>
+                          <td style={{ fontSize: 12 }}>{s.rule_id || '—'}</td>
+                          <td>{s.hostname || '—'}</td>
+                          <td>{s.severity ? <span className={`sev-${s.severity}`}>{s.severity}</span> : '—'}</td>
+                          <td><span className={`badge ${s.active !== false ? 'badge-ok' : 'badge-warn'}`}>{s.active !== false ? 'Active' : 'Inactive'}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 

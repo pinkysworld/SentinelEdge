@@ -110,6 +110,8 @@ pub struct AnomalyDetector {
     observed_samples: usize,
     adaptation: AdaptationMode,
     custom_weights: Option<HashMap<String, f32>>,
+    /// Rolling window of recent auth_failures for rate-of-change smoothing.
+    auth_history: Vec<u32>,
 }
 
 impl Default for AnomalyDetector {
@@ -126,6 +128,7 @@ impl AnomalyDetector {
             observed_samples: 0,
             adaptation: AdaptationMode::Normal,
             custom_weights: None,
+            auth_history: Vec::new(),
         }
     }
 
@@ -190,6 +193,7 @@ impl AnomalyDetector {
     pub fn reset_baseline(&mut self) {
         self.baseline = None;
         self.observed_samples = 0;
+        self.auth_history.clear();
     }
 
     /// Restore from a persisted baseline so the detector continues
@@ -345,6 +349,48 @@ impl AnomalyDetector {
                     contributions.push(("battery_pct", bw));
                     reasons.push("battery dropped sharply under load".to_string());
                     suspicious_axes += 1;
+                }
+
+                // ── Cross-signal correlation bonus ──
+                // When multiple independent axes spike simultaneously, it's
+                // more likely a real attack than random noise. Apply a
+                // multiplier that grows with the number of correlated signals.
+                if suspicious_axes >= 3 {
+                    let correlation_bonus = match suspicious_axes {
+                        3 => 0.15,
+                        4 => 0.30,
+                        5 => 0.50,
+                        _ => 0.70, // 6+ axes
+                    };
+                    let bonus_score = score * correlation_bonus;
+                    score += bonus_score;
+                    contributions.push(("cross_signal_correlation", bonus_score));
+                    reasons.push(format!(
+                        "cross-signal correlation: {suspicious_axes} axes elevated (+{:.0}%)",
+                        correlation_bonus * 100.0
+                    ));
+                }
+
+                // ── Auth failure rate-of-change smoothing ──
+                // Track a rolling window of auth_failures to detect acceleration.
+                // A sudden spike from 0 → 10 is suspicious even if baseline is low.
+                self.auth_history.push(sample.auth_failures);
+                if self.auth_history.len() > 8 {
+                    self.auth_history.remove(0);
+                }
+                if self.auth_history.len() >= 3 {
+                    let recent = &self.auth_history[self.auth_history.len() - 3..];
+                    let rate_of_change = recent[2] as f32 - recent[0] as f32;
+                    if rate_of_change > 4.0 {
+                        let roc_weight = self.weight_for("auth_rate_of_change", 0.8);
+                        let roc_score = (rate_of_change / 8.0).min(1.5) * roc_weight;
+                        score += roc_score;
+                        contributions.push(("auth_rate_of_change", roc_score));
+                        reasons.push(format!(
+                            "auth failure acceleration (+{rate_of_change:.0} in 3 samples)"
+                        ));
+                        suspicious_axes += 1;
+                    }
                 }
 
                 score *= history_factor;
