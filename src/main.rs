@@ -39,13 +39,14 @@ fn main() {
         eprintln!("[PANIC]{location}: {payload}");
     }));
 
-    if let Err(error) = run() {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    if let Err(error) = rt.block_on(run()) {
         eprintln!("error: {error}");
         process::exit(1);
     }
 }
 
-fn run() -> Result<(), String> {
+async fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
     let command = args.next().unwrap_or_else(|| "start".into());
 
@@ -59,12 +60,12 @@ fn run() -> Result<(), String> {
 
             let shutdown = Arc::new(AtomicBool::new(false));
 
-            // Spawn server in background thread
+            // Spawn server in background task
             let site_dir_clone = site_dir.clone();
             let shutdown_clone = shutdown.clone();
             let server_config = config.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = server::run_server(port, &site_dir_clone, shutdown_clone, server_config) {
+            tokio::task::spawn(async move {
+                if let Err(e) = server::run_server(port, &site_dir_clone, shutdown_clone, server_config).await {
                     eprintln!("server error: {e}");
                 }
             });
@@ -76,8 +77,10 @@ fn run() -> Result<(), String> {
             let shutdown_sig = shutdown.clone();
             let _ = register_ctrlc(shutdown_sig);
 
-            // Run monitor on main thread
-            collector::run_monitor(&config, &mon, shutdown);
+            // Run monitor in blocking task
+            tokio::task::spawn_blocking(move || {
+                collector::run_monitor(&config, &mon, shutdown);
+            }).await.map_err(|e| format!("monitor task failed: {e}"))?;
         }
         "monitor" => {
             // CLI-only monitor (no web server) — for headless/embedded use
@@ -338,7 +341,7 @@ fn run() -> Result<(), String> {
             let shutdown_sig = shutdown.clone();
             let _ = register_ctrlc(shutdown_sig);
 
-            server::run_server(port, &site_dir, shutdown, config)?;
+            server::run_server(port, &site_dir, shutdown, config).await?;
         }
         "server" => {
             // XDR server mode — central management + event correlation
@@ -359,7 +362,7 @@ fn run() -> Result<(), String> {
             let _ = register_ctrlc(shutdown_sig);
 
             eprintln!("Wardex XDR Server v{}", env!("CARGO_PKG_VERSION"));
-            server::run_server(port, &site_dir, shutdown, config)?;
+            server::run_server(port, &site_dir, shutdown, config).await?;
         }
         "agent" => {
             // XDR agent mode — enroll with server and run local monitoring

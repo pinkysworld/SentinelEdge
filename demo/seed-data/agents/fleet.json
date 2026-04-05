@@ -1,0 +1,102 @@
+[
+  {
+    "hostname": "WORKSTATION-01",
+    "os": "Windows 11 Pro",
+    "arch": "x86_64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.1.10",
+    "tags": ["production", "engineering"],
+    "last_seen": "2026-04-05T15:59:00Z"
+  },
+  {
+    "hostname": "DC01",
+    "os": "Windows Server 2022",
+    "arch": "x86_64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.0.5",
+    "tags": ["production", "domain-controller"],
+    "last_seen": "2026-04-05T15:58:30Z"
+  },
+  {
+    "hostname": "SRV02-APP",
+    "os": "Ubuntu 22.04 LTS",
+    "arch": "x86_64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.2.20",
+    "tags": ["production", "app-server"],
+    "last_seen": "2026-04-05T15:57:45Z"
+  },
+  {
+    "hostname": "LNX01-WEB",
+    "os": "Debian 12",
+    "arch": "x86_64",
+    "agent_version": "0.39.4",
+    "status": "healthy",
+    "ip": "10.0.2.25",
+    "tags": ["production", "web-server"],
+    "last_seen": "2026-04-05T15:56:00Z"
+  },
+  {
+    "hostname": "MAC-DEV-01",
+    "os": "macOS 15.4 Sequoia",
+    "arch": "aarch64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.3.100",
+    "tags": ["development", "engineering"],
+    "last_seen": "2026-04-05T15:55:10Z"
+  },
+  {
+    "hostname": "K8S-NODE-01",
+    "os": "Flatcar Container Linux",
+    "arch": "x86_64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.4.10",
+    "tags": ["production", "kubernetes"],
+    "last_seen": "2026-04-05T15:54:30Z"
+  },
+  {
+    "hostname": "K8S-NODE-02",
+    "os": "Flatcar Container Linux",
+    "arch": "x86_64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.4.11",
+    "tags": ["production", "kubernetes"],
+    "last_seen": "2026-04-05T15:53:50Z"
+  },
+  {
+    "hostname": "WORKSTATION-05",
+    "os": "Windows 10 Enterprise",
+    "arch": "x86_64",
+    "agent_version": "0.38.0",
+    "status": "stale",
+    "ip": "10.0.1.15",
+    "tags": ["production", "finance"],
+    "last_seen": "2026-04-03T09:30:00Z"
+  },
+  {
+    "hostname": "LAPTOP-REMOTE",
+    "os": "macOS 14.5 Sonoma",
+    "arch": "aarch64",
+    "agent_version": "0.39.3",
+    "status": "stale",
+    "ip": "192.168.1.105",
+    "tags": ["remote", "sales"],
+    "last_seen": "2026-04-04T18:00:00Z"
+  },
+  {
+    "hostname": "CI-RUNNER-01",
+    "os": "Ubuntu 24.04 LTS",
+    "arch": "x86_64",
+    "agent_version": "0.39.5",
+    "status": "healthy",
+    "ip": "10.0.5.50",
+    "tags": ["ci-cd", "infrastructure"],
+    "last_seen": "2026-04-05T15:59:30Z"
+  }
+]

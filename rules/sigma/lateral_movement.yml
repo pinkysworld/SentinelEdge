@@ -1,0 +1,220 @@
+title: Lateral Movement via PsExec
+id: lateral-001
+status: stable
+level: high
+description: Detects PsExec usage for lateral movement
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1570
+  - attack.t1021.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    process_name|endswith:
+      - '\psexec.exe'
+      - '\psexesvc.exe'
+  condition: selection
+falsepositives:
+  - Legitimate admin tools
+---
+title: WMI Remote Execution
+id: lateral-002
+status: stable
+level: high
+description: Detects WMI-based lateral movement
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1047
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'wmic /node:'
+      - 'Invoke-WmiMethod'
+      - 'Win32_Process Create'
+  condition: selection
+falsepositives:
+  - SCCM management
+---
+title: Remote Desktop Protocol Brute Force
+id: lateral-003
+status: stable
+level: high
+description: Detects RDP brute force attempts from multiple failed logons
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1021.001
+logsource:
+  category: security
+  product: windows
+detection:
+  selection:
+    EventID: 4625
+    LogonType: '10'
+  condition: selection | count() by SourceIP > 10
+  timeframe: 5m
+falsepositives:
+  - Misconfigured RDP clients
+---
+title: SSH Lateral Movement Chain
+id: lateral-004
+status: stable
+level: medium
+description: Detects SSH sessions originating from another SSH session
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1021.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    process_name: ssh
+    ParentImage|endswith: sshd
+  condition: selection
+falsepositives:
+  - Jump hosts and bastion servers
+---
+title: SMB Share Enumeration
+id: lateral-005
+status: stable
+level: medium
+description: Detects SMB share enumeration used for lateral movement reconnaissance
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1135
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'net view'
+      - 'net share'
+      - 'Get-SmbShare'
+  condition: selection
+falsepositives:
+  - IT administration
+---
+title: DCOM Remote Execution
+id: lateral-006
+status: stable
+level: high
+description: Detects DCOM-based lateral movement via MMC or ShellWindows
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1021.003
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'MMC20.Application'
+      - 'ShellWindows'
+      - 'ShellBrowserWindow'
+  condition: selection
+falsepositives:
+  - Remote management tools
+---
+title: WinRM Remote Shell
+id: lateral-007
+status: stable
+level: high
+description: Detects WinRM shell sessions for lateral movement
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1021.006
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    ParentImage|endswith: '\wsmprovhost.exe'
+  condition: selection
+falsepositives:
+  - PowerShell remoting in admin scripts
+---
+title: Pass-the-Hash Attack
+id: lateral-008
+status: stable
+level: critical
+description: Detects Pass-the-Hash authentication patterns
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1550.002
+logsource:
+  category: security
+  product: windows
+detection:
+  selection:
+    EventID: 4624
+    LogonType: '9'
+    AuthenticationPackageName: 'Negotiate'
+  condition: selection
+falsepositives:
+  - Legitimate RunAs usage
+---
+title: Remote Service Installation
+id: lateral-009
+status: stable
+level: high
+description: Detects remote service creation for lateral movement
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1021.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'sc \\\\' 
+      - 'sc.exe create'
+  condition: selection
+falsepositives:
+  - Deployment tools
+---
+title: Internal Port Scanning
+id: lateral-010
+status: stable
+level: medium
+description: Detects port scanning activity within the internal network
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1046
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    event_type: connection
+    dst_port|count_distinct: '>50'
+  condition: selection
+  timeframe: 5m
+falsepositives:
+  - Vulnerability scanners

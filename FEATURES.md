@@ -78,7 +78,20 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - WebSocket event streaming with RFC 6455 framing and pub/sub channels
   - Structured JSON logging with pluggable sinks and per-request context
   - Data archival with real gzip compression (flate2), CSV export, and SHA-256 manifests
-  - 39 Sigma detection rules across 6 categories (auth, network, endpoint, IoT, cloud, supply chain)
+  - 202 Sigma detection rules across 21 categories
+  - ClickHouse storage adapter with buffered batch inserts, MergeTree DDL, and materialized views
+  - ML triage engine with true-positive/false-positive/needs-review classification
+  - HA cluster snapshots with log compaction and persistent Raft state schema
+  - OIDC/SAML SSO with session management (config, login, callback, session, logout)
+  - Cloud collectors for AWS CloudTrail, Azure Activity Log, and GCP Audit Log
+  - Full-text search index with query parsing and faceted results
+  - Usage metering with plan limits and overage calculation
+  - Billing engine with subscription management and invoice generation
+  - Content marketplace with 10 built-in packs and install/uninstall lifecycle
+  - Prevention engine with block/allow/quarantine response policies
+  - Ingestion pipeline with backpressure tracking and dead-letter queue
+  - Scheduled backup manager with retention and restore verification
+  - Ed25519-signed license validation with tier enforcement and feature gating
   - Compliance templates for CIS v8, PCI-DSS v4, SOC 2, and NIST CSF 2.0 with auto-evaluation
   - Kubernetes manifests and Helm chart for production deployment
   - CI hardening with cargo-audit, code coverage, MSRV checks, and dependency caching
@@ -105,9 +118,9 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 
 ## Product posture
 
-- 93 Rust source modules
-- ~170 API paths
-- 982 lib tests + 163 integration tests, all passing
+- 105 Rust source modules
+- ~200 API paths
+- 1088 lib tests + 163 integration tests, all passing
 - Production hardening score: 98% (58/59 controls)
 - GitHub Actions release packaging for Linux, macOS, and Windows
 

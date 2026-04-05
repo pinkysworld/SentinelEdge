@@ -1,0 +1,232 @@
+title: C2 Communication via DNS Tunneling
+id: c2-001
+status: stable
+level: high
+description: Detects DNS tunneling used for command and control
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1071.004
+logsource:
+  category: dns
+  product: wardex
+detection:
+  selection:
+    dns_query_length|gt: 50
+    dns_query_type: TXT
+  condition: selection | count() > 20
+  timeframe: 5m
+falsepositives:
+  - DKIM/SPF DNS records
+---
+title: Cobalt Strike Default Profile
+id: c2-002
+status: stable
+level: critical
+description: Detects default Cobalt Strike C2 communication patterns
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1071.001
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    dst_port:
+      - '50050'
+      - '443'
+    http_uri|contains:
+      - '/pixel'
+      - '/submit.php'
+      - '/ca'
+      - '/__utm.gif'
+  condition: selection
+falsepositives:
+  - Web analytics
+---
+title: C2 via HTTPS Beaconing
+id: c2-003
+status: stable
+level: high
+description: Detects periodic HTTPS beaconing indicative of C2 communication
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1071.001
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    event_type: connection
+    dst_port: '443'
+  condition: selection | count() by dst_ip | near(interval=60s, tolerance=5s)
+  timeframe: 30m
+falsepositives:
+  - Heartbeat/keepalive connections
+---
+title: Domain Fronting Detection
+id: c2-004
+status: stable
+level: high
+description: Detects domain fronting used to hide C2 traffic
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1090.004
+logsource:
+  category: proxy
+  product: wardex
+detection:
+  selection:
+    sni_mismatch: 'true'
+  condition: selection
+falsepositives:
+  - CDN configurations
+---
+title: Tor Exit Node Communication
+id: c2-005
+status: stable
+level: high
+description: Detects communication with known Tor exit nodes
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1090.003
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    dst_port:
+      - '9001'
+      - '9030'
+      - '9050'
+      - '9150'
+  condition: selection
+falsepositives:
+  - Legitimate Tor usage
+---
+title: IRC-Based C2 Communication
+id: c2-006
+status: stable
+level: high
+description: Detects IRC protocol usage indicating botnet C2
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1071.001
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    dst_port:
+      - '6667'
+      - '6668'
+      - '6669'
+  condition: selection
+falsepositives:
+  - Legitimate IRC usage
+---
+title: Sliver C2 Framework Detection
+id: c2-007
+status: stable
+level: critical
+description: Detects Sliver C2 framework communication indicators
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1071
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    http_user_agent|contains:
+      - 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit'
+    http_method: POST
+    http_content_type: 'application/octet-stream'
+  condition: selection
+falsepositives:
+  - Binary file uploads
+---
+title: C2 via Cloud Storage Services
+id: c2-008
+status: stable
+level: medium
+description: Detects C2 communication via cloud storage (Dropbox, Google Drive, OneDrive)
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1102
+logsource:
+  category: proxy
+  product: wardex
+detection:
+  selection:
+    url|contains:
+      - 'api.dropboxapi.com'
+      - 'www.googleapis.com/upload/drive'
+      - 'graph.microsoft.com/v1.0/me/drive'
+    http_method: PUT
+  condition: selection | count() > 10
+  timeframe: 1h
+falsepositives:
+  - Legitimate cloud sync
+---
+title: Encrypted Channel via Non-Standard Port
+id: c2-009
+status: stable
+level: medium
+description: Detects TLS/SSL traffic on non-standard ports indicating C2
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1573.002
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    protocol: tls
+    dst_port|not:
+      - '443'
+      - '8443'
+      - '993'
+      - '995'
+      - '465'
+  condition: selection
+falsepositives:
+  - VPN connections
+---
+title: Fast Flux DNS Detection
+id: c2-010
+status: stable
+level: high
+description: Detects fast flux DNS patterns used for C2 infrastructure resilience
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1568.001
+logsource:
+  category: dns
+  product: wardex
+detection:
+  selection:
+    dns_answer_count|gt: 5
+    dns_ttl|lt: 300
+  condition: selection
+falsepositives:
+  - CDN load balancing

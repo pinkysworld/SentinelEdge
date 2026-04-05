@@ -1,0 +1,223 @@
+title: Privilege Escalation via Sudo Misconfiguration
+id: privesc-001
+status: stable
+level: high
+description: Detects exploitation of sudo NOPASSWD or wildcard misconfigurations
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.003
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'sudo -l'
+      - 'sudo -i'
+      - 'sudo su'
+  condition: selection
+falsepositives:
+  - Normal sudo usage
+---
+title: UAC Bypass via Fodhelper
+id: privesc-002
+status: stable
+level: critical
+description: Detects UAC bypass through fodhelper.exe registry manipulation
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.002
+logsource:
+  category: registry_event
+  product: windows
+detection:
+  selection:
+    TargetObject|contains: 'ms-settings\Shell\Open\command'
+  condition: selection
+falsepositives:
+  - None known
+---
+title: SUID/SGID Binary Exploitation
+id: privesc-003
+status: stable
+level: high
+description: Detects suspicious execution of SUID/SGID binaries for privilege escalation
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.001
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'find / -perm -4000'
+      - 'find / -perm -u=s'
+      - 'find / -perm -2000'
+  condition: selection
+falsepositives:
+  - Security auditing tools
+---
+title: Token Impersonation via Named Pipe
+id: privesc-004
+status: stable
+level: critical
+description: Detects token impersonation attacks via named pipes (Potato attacks)
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1134.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'JuicyPotato'
+      - 'RottenPotato'
+      - 'SweetPotato'
+      - 'PrintSpoofer'
+      - 'GodPotato'
+  condition: selection
+falsepositives:
+  - Penetration testing
+---
+title: Kernel Module Loading
+id: privesc-005
+status: stable
+level: critical
+description: Detects suspicious kernel module loading for privilege escalation
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1547.006
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'insmod'
+      - 'modprobe'
+  condition: selection
+falsepositives:
+  - Driver installation
+---
+title: Scheduled Task Privilege Escalation
+id: privesc-006
+status: stable
+level: high
+description: Detects scheduled task creation running as SYSTEM
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1053.005
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'schtasks /create'
+      - '/ru SYSTEM'
+  condition: selection
+falsepositives:
+  - System management tools
+---
+title: DLL Hijacking via PATH Manipulation
+id: privesc-007
+status: stable
+level: high
+description: Detects DLL hijacking attempts via writable PATH directories
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1574.001
+logsource:
+  category: file_creation
+  product: windows
+detection:
+  selection:
+    TargetFilename|endswith: '.dll'
+    TargetFilename|contains:
+      - '\Temp\'
+      - '\Users\Public\'
+  condition: selection
+falsepositives:
+  - Software installation
+---
+title: Linux Capability Abuse
+id: privesc-008
+status: stable
+level: high
+description: Detects abuse of Linux capabilities for privilege escalation
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.001
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'getcap -r /'
+      - 'setcap'
+      - 'cap_setuid'
+  condition: selection
+falsepositives:
+  - Capability-based management
+---
+title: Windows Service Path Unquoted
+id: privesc-009
+status: stable
+level: medium
+description: Detects exploitation of unquoted service paths for privilege escalation
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1574.009
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains: 'wmic service get name,pathname'
+  condition: selection
+falsepositives:
+  - Security audits
+---
+title: Container Escape via Host Namespace
+id: privesc-010
+status: stable
+level: critical
+description: Detects container escape attempts using host namespace access
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - attack.t1611
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'nsenter --target 1'
+      - '--mount=/proc/1/ns'
+      - 'chroot /host'
+  condition: selection
+falsepositives:
+  - Container debugging

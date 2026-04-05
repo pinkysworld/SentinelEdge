@@ -1,0 +1,17 @@
+[
+  {"type": "ip", "value": "203.0.113.42", "source": "abuse-ch", "confidence": 95, "tags": ["brute-force", "scanner"], "first_seen": "2026-04-01T00:00:00Z"},
+  {"type": "ip", "value": "198.51.100.77", "source": "alienvault-otx", "confidence": 90, "tags": ["c2", "apt29"], "first_seen": "2026-03-28T00:00:00Z"},
+  {"type": "ip", "value": "192.0.2.15", "source": "emerging-threats", "confidence": 85, "tags": ["malware-distribution"], "first_seen": "2026-04-02T00:00:00Z"},
+  {"type": "domain", "value": "exfil.badactor.xyz", "source": "wardex-internal", "confidence": 99, "tags": ["dns-tunneling", "exfiltration"], "first_seen": "2026-04-04T15:55:00Z"},
+  {"type": "domain", "value": "update-service.evil.com", "source": "abuse-ch", "confidence": 92, "tags": ["c2", "cobalt-strike"], "first_seen": "2026-04-03T00:00:00Z"},
+  {"type": "domain", "value": "cdn-static.malware.net", "source": "alienvault-otx", "confidence": 88, "tags": ["payload-delivery"], "first_seen": "2026-03-30T00:00:00Z"},
+  {"type": "hash_sha256", "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "source": "virustotal", "confidence": 75, "tags": ["suspicious"], "first_seen": "2026-04-05T00:00:00Z"},
+  {"type": "hash_sha256", "value": "a7f5f35426e0b3ae8d6c5c3e1fa2db02c66fc53e59e2297e2d3f9a28ea1c7aff", "source": "malware-bazaar", "confidence": 98, "tags": ["ransomware", "lockbit"], "first_seen": "2026-04-04T00:00:00Z"},
+  {"type": "hash_sha256", "value": "d4c7e5c2b8f1a9023e4db20c57a5f12e9b3c8d7a6f1e0c9b8a7d6e5f4c3b2a1d", "source": "wardex-internal", "confidence": 95, "tags": ["mimikatz"], "first_seen": "2026-04-05T08:42:00Z"},
+  {"type": "url", "value": "https://paste.ee/r/abc123", "source": "phishtank", "confidence": 80, "tags": ["phishing", "credential-harvesting"], "first_seen": "2026-04-01T00:00:00Z"},
+  {"type": "ip", "value": "45.33.32.156", "source": "emerging-threats", "confidence": 70, "tags": ["scanner", "recon"], "first_seen": "2026-04-03T12:00:00Z"},
+  {"type": "domain", "value": "loginportal-secure.tk", "source": "phishtank", "confidence": 93, "tags": ["phishing"], "first_seen": "2026-03-29T00:00:00Z"},
+  {"type": "ip", "value": "10.255.0.1", "source": "wardex-internal", "confidence": 60, "tags": ["internal-anomaly"], "first_seen": "2026-04-05T02:00:00Z"},
+  {"type": "hash_md5", "value": "d41d8cd98f00b204e9800998ecf8427e", "source": "virustotal", "confidence": 50, "tags": ["empty-file"], "first_seen": "2026-04-05T01:00:00Z"},
+  {"type": "domain", "value": "crypto-miner-pool.xyz", "source": "abuse-ch", "confidence": 97, "tags": ["cryptomining"], "first_seen": "2026-04-02T00:00:00Z"}
+]

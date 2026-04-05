@@ -1,0 +1,237 @@
+title: Suspicious PowerShell Execution
+id: exec-001
+status: stable
+level: high
+description: Detects suspicious PowerShell execution with encoded commands
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1059.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - '-enc'
+      - '-EncodedCommand'
+      - 'FromBase64String'
+      - 'IEX'
+      - 'Invoke-Expression'
+  condition: selection
+falsepositives:
+  - Encoded deployment scripts
+---
+title: Living-off-the-Land Binary Execution
+id: exec-002
+status: stable
+level: high
+description: Detects abuse of LOLBins for code execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1218
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    process_name|endswith:
+      - '\mshta.exe'
+      - '\certutil.exe'
+      - '\regsvr32.exe'
+      - '\rundll32.exe'
+      - '\msiexec.exe'
+      - '\cmstp.exe'
+      - '\msxsl.exe'
+  condition: selection
+falsepositives:
+  - Legitimate use of system tools
+---
+title: Python Reverse Shell
+id: exec-003
+status: stable
+level: critical
+description: Detects Python-based reverse shell execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1059.006
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'python -c "import socket'
+      - 'python3 -c "import socket'
+      - 'python -c ''import socket'
+      - 'pty.spawn'
+  condition: selection
+falsepositives:
+  - Development environments
+---
+title: Bash Reverse Shell
+id: exec-004
+status: stable
+level: critical
+description: Detects bash-based reverse shell execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1059.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'bash -i >& /dev/tcp'
+      - '/bin/sh -i'
+      - 'mkfifo /tmp/f'
+      - 'nc -e /bin'
+  condition: selection
+falsepositives:
+  - None expected
+---
+title: MSHTA JavaScript Execution
+id: exec-005
+status: stable
+level: high
+description: Detects MSHTA executing inline JavaScript for code execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1218.005
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    process_name|endswith: '\mshta.exe'
+    CommandLine|contains:
+      - 'javascript:'
+      - 'vbscript:'
+  condition: selection
+falsepositives:
+  - Legacy HTA applications
+---
+title: CronJob Persistence via Execution
+id: exec-006
+status: stable
+level: medium
+description: Detects suspicious cron job modifications for persistent execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1053.003
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'crontab -e'
+      - 'crontab -l'
+      - '/etc/cron'
+  condition: selection
+falsepositives:
+  - System maintenance scripts
+---
+title: Windows Script Host Execution
+id: exec-007
+status: stable
+level: medium
+description: Detects Windows Script Host executing suspicious scripts
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1059.005
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    process_name|endswith:
+      - '\wscript.exe'
+      - '\cscript.exe'
+    CommandLine|contains:
+      - '.vbs'
+      - '.js'
+      - '.wsf'
+  condition: selection
+falsepositives:
+  - Logon scripts
+---
+title: Curl/Wget Download and Execute
+id: exec-008
+status: stable
+level: high
+description: Detects download-and-execute patterns using curl or wget
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1059.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'curl.*|.*sh'
+      - 'wget.*-O-.*|.*sh'
+      - 'curl.*|.*bash'
+      - 'wget.*|.*bash'
+  condition: selection
+falsepositives:
+  - Installation scripts
+---
+title: Process Injection via CreateRemoteThread
+id: exec-009
+status: stable
+level: critical
+description: Detects process injection using CreateRemoteThread API
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1055.001
+logsource:
+  category: process_access
+  product: windows
+detection:
+  selection:
+    CallTrace|contains: 'UNKNOWN'
+    GrantedAccess: '0x1F0FFF'
+  condition: selection
+falsepositives:
+  - Debugging tools
+---
+title: Scheduled Task Execution via At
+id: exec-010
+status: stable
+level: medium
+description: Detects scheduled task creation using at command
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - attack.t1053.002
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    process_name: at
+    CommandLine|contains: '-f'
+  condition: selection
+falsepositives:
+  - Scheduled batch jobs

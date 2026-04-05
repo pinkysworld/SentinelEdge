@@ -1,0 +1,82 @@
+[
+  {
+    "title": "Active Ransomware Campaign - WORKSTATION-01",
+    "severity": "critical",
+    "status": "investigating",
+    "assignee": "analyst-1",
+    "created_at": "2026-04-05T09:20:00Z",
+    "description": "Ransomware indicators detected: shadow copy deletion, file encryption patterns, and ransom note creation on WORKSTATION-01. Immediate containment initiated.",
+    "related_alerts": 3,
+    "affected_hosts": ["WORKSTATION-01"],
+    "mitre_techniques": ["T1490", "T1486", "T1027"],
+    "timeline": [
+      {"time": "2026-04-05T09:15:23Z", "event": "Shadow copy deletion detected"},
+      {"time": "2026-04-05T09:16:01Z", "event": "Mass file rename with .locked extension"},
+      {"time": "2026-04-05T09:17:45Z", "event": "Ransom note README_DECRYPT.txt created"},
+      {"time": "2026-04-05T09:20:00Z", "event": "Incident created, host isolated"}
+    ]
+  },
+  {
+    "title": "Suspected APT Lateral Movement",
+    "severity": "severe",
+    "status": "investigating",
+    "assignee": "analyst-2",
+    "created_at": "2026-04-05T08:50:00Z",
+    "description": "Credential theft on DC01 followed by PsExec lateral movement to SRV02. Attack chain consistent with APT29 TTPs.",
+    "related_alerts": 4,
+    "affected_hosts": ["DC01", "SRV02-APP", "WORKSTATION-03"],
+    "mitre_techniques": ["T1003.001", "T1021.002", "T1071.001"],
+    "timeline": [
+      {"time": "2026-04-05T07:33:44Z", "event": "Cobalt Strike beacon on WORKSTATION-03"},
+      {"time": "2026-04-05T08:42:11Z", "event": "Mimikatz credential dump on DC01"},
+      {"time": "2026-04-05T10:05:17Z", "event": "PsExec lateral movement to SRV02"}
+    ]
+  },
+  {
+    "title": "Cloud Infrastructure Compromise - AWS",
+    "severity": "severe",
+    "status": "new",
+    "assignee": null,
+    "created_at": "2026-04-05T11:25:00Z",
+    "description": "Compromised IAM credentials used to disable CloudTrail logging. Investigation pending to determine scope of access.",
+    "related_alerts": 2,
+    "affected_hosts": ["aws-account-prod"],
+    "mitre_techniques": ["T1562.008", "T1078.004"],
+    "timeline": [
+      {"time": "2026-04-05T11:18:30Z", "event": "CloudTrail StopLogging detected"},
+      {"time": "2026-04-05T11:19:02Z", "event": "New access key created for compromised user"}
+    ]
+  },
+  {
+    "title": "DNS Tunneling Exfiltration",
+    "severity": "elevated",
+    "status": "resolved",
+    "assignee": "analyst-1",
+    "created_at": "2026-04-04T16:00:00Z",
+    "description": "DNS tunneling to exfil.badactor.xyz detected and blocked. Source identified as compromised LNX01 web server.",
+    "related_alerts": 1,
+    "affected_hosts": ["LNX01-WEB"],
+    "mitre_techniques": ["T1048.003"],
+    "timeline": [
+      {"time": "2026-04-04T15:55:44Z", "event": "DNS tunneling detected"},
+      {"time": "2026-04-04T16:00:00Z", "event": "Domain blocked at firewall"},
+      {"time": "2026-04-04T16:30:00Z", "event": "Source host identified and remediated"}
+    ]
+  },
+  {
+    "title": "Brute Force Attack on Auth Gateway",
+    "severity": "low",
+    "status": "resolved",
+    "assignee": "analyst-3",
+    "created_at": "2026-04-05T06:30:00Z",
+    "description": "Brute force attack from 203.0.113.42 blocked after 50 failed attempts. No successful authentications.",
+    "related_alerts": 1,
+    "affected_hosts": ["auth-gw-01"],
+    "mitre_techniques": ["T1110.001"],
+    "timeline": [
+      {"time": "2026-04-05T06:22:03Z", "event": "50 failed login attempts detected"},
+      {"time": "2026-04-05T06:25:00Z", "event": "Source IP blocked"},
+      {"time": "2026-04-05T06:30:00Z", "event": "Confirmed no successful auth, closed"}
+    ]
+  }
+]

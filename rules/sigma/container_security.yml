@@ -1,0 +1,221 @@
+title: Kubernetes Privileged Container
+id: container-001
+status: stable
+level: critical
+description: Detects creation of privileged containers in Kubernetes
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - wardex.container
+  - attack.t1611
+logsource:
+  category: container
+  product: kubernetes
+detection:
+  selection:
+    event_type: pod_create
+    securityContext_privileged: 'true'
+  condition: selection
+falsepositives:
+  - System-level DaemonSets
+---
+title: Container Running as Root
+id: container-002
+status: stable
+level: high
+description: Detects containers running with root user ID
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.container
+  - attack.t1611
+logsource:
+  category: container
+  product: kubernetes
+detection:
+  selection:
+    event_type: pod_create
+    runAsUser: '0'
+  condition: selection
+falsepositives:
+  - Legacy containers not yet refactored
+---
+title: Kubernetes Secret Access from Unauthorized Pod
+id: container-003
+status: stable
+level: critical
+description: Detects unauthorized access to Kubernetes secrets
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.credential_access
+  - wardex.container
+  - attack.t1552.007
+logsource:
+  category: audit
+  product: kubernetes
+detection:
+  selection:
+    verb: get
+    resource: secrets
+    responseStatus_code: 200
+  condition: selection
+falsepositives:
+  - Service accounts with legitimate secret access
+---
+title: Container Escape via Host PID Namespace
+id: container-004
+status: stable
+level: critical
+description: Detects containers with hostPID enabled allowing process namespace escape
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - wardex.container
+  - attack.t1611
+logsource:
+  category: container
+  product: kubernetes
+detection:
+  selection:
+    event_type: pod_create
+    hostPID: 'true'
+  condition: selection
+falsepositives:
+  - Monitoring DaemonSets
+---
+title: Kubernetes RBAC Privilege Grant
+id: container-005
+status: stable
+level: high
+description: Detects creation of ClusterRoleBindings granting cluster-admin
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - wardex.container
+logsource:
+  category: audit
+  product: kubernetes
+detection:
+  selection:
+    verb: create
+    resource: clusterrolebindings
+    roleRef_name: cluster-admin
+  condition: selection
+falsepositives:
+  - Cluster setup
+---
+title: Docker Socket Mount in Container
+id: container-006
+status: stable
+level: critical
+description: Detects containers mounting the Docker socket enabling container escape
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.privilege_escalation
+  - wardex.container
+  - attack.t1611
+logsource:
+  category: container
+  product: docker
+detection:
+  selection:
+    volume_mount|contains: '/var/run/docker.sock'
+  condition: selection
+falsepositives:
+  - CI/CD build containers
+---
+title: Suspicious Container Image Pull
+id: container-007
+status: stable
+level: medium
+description: Detects pulling container images from untrusted registries
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.initial_access
+  - wardex.container
+  - attack.t1195.002
+logsource:
+  category: container
+  product: kubernetes
+detection:
+  selection:
+    event_type: image_pull
+    image|not_contains:
+      - 'gcr.io/'
+      - 'docker.io/library/'
+      - 'registry.k8s.io/'
+  condition: selection
+falsepositives:
+  - Internal registry usage
+---
+title: Container Network Policy Violation
+id: container-008
+status: stable
+level: high
+description: Detects containers bypassing or violating network policies
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.container
+  - attack.t1046
+logsource:
+  category: network
+  product: kubernetes
+detection:
+  selection:
+    event_type: network_policy_deny
+  condition: selection
+falsepositives:
+  - Misconfigured network policies
+---
+title: Pod Exec Shell Access
+id: container-009
+status: stable
+level: high
+description: Detects kubectl exec into running pods with shell access
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.execution
+  - wardex.container
+  - attack.t1059
+logsource:
+  category: audit
+  product: kubernetes
+detection:
+  selection:
+    verb: create
+    resource: pods/exec
+    command|contains:
+      - 'sh'
+      - 'bash'
+  condition: selection
+falsepositives:
+  - Debugging active incidents
+---
+title: Container Resource Limit Bypass
+id: container-010
+status: stable
+level: medium
+description: Detects containers without resource limits enabling resource abuse
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.container
+  - attack.t1496
+logsource:
+  category: container
+  product: kubernetes
+detection:
+  selection:
+    event_type: pod_create
+    resources_limits: 'none'
+  condition: selection
+falsepositives:
+  - Development clusters

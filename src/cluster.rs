@@ -157,6 +157,60 @@ pub struct ClusterHealth {
     pub healthy: bool,
 }
 
+// ── Snapshot ─────────────────────────────────────────────────────────────────
+
+/// A snapshot of the Raft state machine for log compaction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub last_included_index: u64,
+    pub last_included_term: u64,
+    pub data: serde_json::Value,
+    pub created_at: String,
+    pub size_bytes: u64,
+}
+
+/// Request to install a snapshot on a follower.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallSnapshotRequest {
+    pub term: u64,
+    pub leader_id: NodeId,
+    pub snapshot: Snapshot,
+}
+
+/// Response to a snapshot installation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallSnapshotResponse {
+    pub term: u64,
+    pub success: bool,
+}
+
+// ── Persistent log DDL ──────────────────────────────────────────────────────
+
+/// SQL schema for persistent Raft log storage.
+pub fn raft_log_schema() -> &'static str {
+    r#"
+CREATE TABLE IF NOT EXISTS raft_log (
+    idx        INTEGER PRIMARY KEY,
+    term       INTEGER NOT NULL,
+    entry_type TEXT    NOT NULL,
+    data       BLOB   NOT NULL,
+    timestamp  TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS raft_state (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS raft_snapshots (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    last_included_index  INTEGER NOT NULL,
+    last_included_term   INTEGER NOT NULL,
+    data                 BLOB    NOT NULL,
+    created_at           TEXT    NOT NULL,
+    size_bytes           INTEGER NOT NULL
+);
+"#
+}
+
 // ── Cluster Node ─────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -526,6 +580,58 @@ impl ClusterNode {
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.state.role != NodeRole::Leader && Instant::now() > inner.election_deadline
     }
+
+    /// Create a snapshot of all committed log entries up to commit_index.
+    pub fn create_snapshot(&self) -> Option<Snapshot> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.log.is_empty() || inner.state.commit_index == 0 {
+            return None;
+        }
+        let ci = inner.state.commit_index as usize;
+        let committed: Vec<&ReplicatedEntry> = inner.log.iter()
+            .filter(|e| e.index <= ci as u64)
+            .collect();
+        let last = committed.last()?;
+        let data = serde_json::json!({
+            "entries": committed.len(),
+            "last_entry": last.data,
+        });
+        let json_data = serde_json::to_string(&data).unwrap_or_default();
+        Some(Snapshot {
+            last_included_index: last.index,
+            last_included_term: last.term,
+            data,
+            created_at: Utc::now().to_rfc3339(),
+            size_bytes: json_data.len() as u64,
+        })
+    }
+
+    /// Handle an incoming InstallSnapshot request from the leader.
+    pub fn handle_install_snapshot(&self, req: &InstallSnapshotRequest) -> InstallSnapshotResponse {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if req.term < inner.state.term {
+            return InstallSnapshotResponse { term: inner.state.term, success: false };
+        }
+        // Update term
+        if req.term > inner.state.term {
+            inner.state.term = req.term;
+            inner.state.role = NodeRole::Follower;
+            inner.state.voted_for = None;
+        }
+        // Discard log entries covered by the snapshot
+        inner.log.retain(|e| e.index > req.snapshot.last_included_index);
+        inner.state.commit_index = inner.state.commit_index.max(req.snapshot.last_included_index);
+        inner.state.leader_id = Some(req.leader_id.clone());
+        InstallSnapshotResponse { term: inner.state.term, success: true }
+    }
+
+    /// Compact the log by removing entries before the given index.
+    pub fn compact_log(&self, up_to_index: u64) -> usize {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let before = inner.log.len();
+        inner.log.retain(|e| e.index > up_to_index);
+        before - inner.log.len()
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -757,5 +863,98 @@ mod tests {
         let resp = follower.handle_append(&req);
         assert!(!resp.success, "Should reject non-contiguous entries");
         assert_eq!(follower.log_len(), 0, "Log should remain empty");
+    }
+
+    #[test]
+    fn create_snapshot_empty_log_returns_none() {
+        let node = ClusterNode::new(test_config("n1", vec!["n2"]));
+        assert!(node.create_snapshot().is_none());
+    }
+
+    #[test]
+    fn create_snapshot_with_committed_entries() {
+        let leader = ClusterNode::new(test_config("n1", vec!["n2"]));
+        leader.start_election();
+        leader.become_leader();
+        for i in 0..3 {
+            leader.append_entry(EntryType::AlertCreated, serde_json::json!({"i": i}));
+        }
+        let follower = ClusterNode::new(test_config("n2", vec!["n1"]));
+        let req = leader.prepare_append(&NodeId("n2".into())).unwrap();
+        let resp = follower.handle_append(&req);
+        leader.handle_append_response(&NodeId("n2".into()), &resp);
+
+        let snap = leader.create_snapshot();
+        assert!(snap.is_some());
+        let snap = snap.unwrap();
+        assert!(snap.last_included_index >= 1);
+        assert!(snap.size_bytes > 0);
+    }
+
+    #[test]
+    fn install_snapshot_updates_follower() {
+        let leader = ClusterNode::new(test_config("n1", vec!["n2"]));
+        leader.start_election();
+        leader.become_leader();
+        for i in 0..5 {
+            leader.append_entry(EntryType::ConfigUpdated, serde_json::json!({"i": i}));
+        }
+        let follower = ClusterNode::new(test_config("n2", vec!["n1"]));
+        let req = leader.prepare_append(&NodeId("n2".into())).unwrap();
+        let resp = follower.handle_append(&req);
+        leader.handle_append_response(&NodeId("n2".into()), &resp);
+        assert_eq!(follower.log_len(), 5);
+
+        let snap = leader.create_snapshot().unwrap();
+        let install_req = InstallSnapshotRequest {
+            term: leader.term(),
+            leader_id: NodeId("n1".into()),
+            snapshot: snap.clone(),
+        };
+        let install_resp = follower.handle_install_snapshot(&install_req);
+        assert!(install_resp.success);
+    }
+
+    #[test]
+    fn install_snapshot_rejects_stale_term() {
+        let follower = ClusterNode::new(test_config("n2", vec!["n1"]));
+        // Force follower to a higher term via election
+        follower.start_election();
+        let snap = Snapshot {
+            last_included_index: 1,
+            last_included_term: 0,
+            data: serde_json::json!({}),
+            created_at: Utc::now().to_rfc3339(),
+            size_bytes: 2,
+        };
+        let req = InstallSnapshotRequest {
+            term: 0, // stale
+            leader_id: NodeId("n1".into()),
+            snapshot: snap,
+        };
+        let resp = follower.handle_install_snapshot(&req);
+        assert!(!resp.success);
+    }
+
+    #[test]
+    fn compact_log_trims_entries() {
+        let leader = ClusterNode::new(test_config("n1", vec!["n2"]));
+        leader.start_election();
+        leader.become_leader();
+        for i in 0..10 {
+            leader.append_entry(EntryType::AlertCreated, serde_json::json!({"i": i}));
+        }
+        assert_eq!(leader.log_len(), 10);
+        let removed = leader.compact_log(5);
+        assert_eq!(removed, 5);
+        assert_eq!(leader.log_len(), 5);
+    }
+
+    #[test]
+    fn raft_log_schema_contains_tables() {
+        let ddl = raft_log_schema();
+        assert!(ddl.contains("raft_log"));
+        assert!(ddl.contains("raft_state"));
+        assert!(ddl.contains("raft_snapshots"));
     }
 }

@@ -1,0 +1,242 @@
+title: Ransomware File Extension Modification
+id: impact-001
+status: stable
+level: critical
+description: Detects mass file extension changes indicating ransomware encryption
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1486
+logsource:
+  category: file_event
+  product: wardex
+detection:
+  selection:
+    event_type: file_rename
+    TargetFilename|endswith:
+      - '.encrypted'
+      - '.locked'
+      - '.crypt'
+      - '.enc'
+      - '.lockbit'
+      - '.blackcat'
+  condition: selection | count() > 50
+  timeframe: 1m
+falsepositives:
+  - Legitimate encryption tools
+---
+title: Volume Shadow Copy Deletion
+id: impact-002
+status: stable
+level: critical
+description: Detects deletion of volume shadow copies prior to ransomware execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1490
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'vssadmin delete shadows'
+      - 'wmic shadowcopy delete'
+      - 'bcdedit /set {default} recoveryenabled no'
+  condition: selection
+falsepositives:
+  - Disk cleanup operations
+---
+title: Disk Wiper Activity
+id: impact-003
+status: stable
+level: critical
+description: Detects disk wiping tools and techniques
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1561.001
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'dd if=/dev/zero'
+      - 'dd if=/dev/urandom'
+      - 'shred -f'
+      - 'rm -rf /'
+  condition: selection
+falsepositives:
+  - Secure disk sanitization
+---
+title: Service Stop for Impact
+id: impact-004
+status: stable
+level: high
+description: Detects stopping of critical services before destructive actions
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1489
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'net stop'
+      - 'sc stop'
+      - 'taskkill /f /im'
+    CommandLine|contains:
+      - 'sql'
+      - 'exchange'
+      - 'backup'
+      - 'vss'
+  condition: selection
+falsepositives:
+  - Maintenance windows
+---
+title: Cryptocurrency Mining Detection
+id: impact-005
+status: stable
+level: high
+description: Detects cryptocurrency mining software execution
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1496
+logsource:
+  category: process_creation
+  product: wardex
+detection:
+  selection:
+    CommandLine|contains:
+      - 'xmrig'
+      - 'stratum+tcp'
+      - 'minergate'
+      - 'nicehash'
+      - 'cryptonight'
+  condition: selection
+falsepositives:
+  - Authorized mining operations
+---
+title: Data Destruction via Batch Script
+id: impact-006
+status: stable
+level: critical
+description: Detects batch scripts attempting mass file deletion
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1485
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'del /s /q'
+      - 'rd /s /q'
+      - 'Remove-Item -Recurse -Force'
+  condition: selection
+falsepositives:
+  - Cleanup scripts
+---
+title: Database Destruction
+id: impact-007
+status: stable
+level: critical
+description: Detects commands that drop or destroy database content
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1485
+logsource:
+  category: process_creation
+  product: wardex
+detection:
+  selection:
+    CommandLine|contains:
+      - 'DROP DATABASE'
+      - 'DROP TABLE'
+      - 'TRUNCATE TABLE'
+      - 'FORMAT'
+  condition: selection
+falsepositives:
+  - Database maintenance
+---
+title: Firmware Corruption Attempt
+id: impact-008
+status: stable
+level: critical
+description: Detects attempts to modify system firmware for persistent impact
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1495
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'flashrom'
+      - 'fwupd'
+      - '/dev/sda.*of='
+  condition: selection
+falsepositives:
+  - Firmware update tools
+---
+title: Account Lockout Attack
+id: impact-009
+status: stable
+level: high
+description: Detects intentional account lockout by brute forcing known accounts
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1531
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_failure
+  condition: selection | count() by TargetUser > 30
+  timeframe: 5m
+falsepositives:
+  - User forgot password
+---
+title: Defacement Detection
+id: impact-010
+status: stable
+level: high
+description: Detects web content modification indicating defacement
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.impact
+  - attack.t1491.002
+logsource:
+  category: file_event
+  product: wardex
+detection:
+  selection:
+    event_type: file_modify
+    TargetFilename|endswith:
+      - 'index.html'
+      - 'index.php'
+      - 'default.aspx'
+  condition: selection
+falsepositives:
+  - Legitimate web updates

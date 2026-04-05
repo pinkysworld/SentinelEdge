@@ -1,0 +1,46 @@
+[
+  {
+    "title": "Ransomware Campaign Investigation",
+    "status": "investigating",
+    "priority": "critical",
+    "assignee": "analyst-1",
+    "created_at": "2026-04-05T09:25:00Z",
+    "description": "Full investigation into ransomware deployment on WORKSTATION-01 and potential lateral movement.",
+    "related_incidents": ["Active Ransomware Campaign - WORKSTATION-01"],
+    "evidence": [
+      "Shadow copy deletion command line",
+      "Encrypted file samples",
+      "Ransom note content",
+      "Process tree showing initial execution chain"
+    ]
+  },
+  {
+    "title": "APT29 Intrusion Analysis",
+    "status": "investigating",
+    "priority": "high",
+    "assignee": "analyst-2",
+    "created_at": "2026-04-05T09:00:00Z",
+    "description": "Investigating suspected APT29 intrusion across multiple hosts. Initial vector appears to be spearphishing.",
+    "related_incidents": ["Suspected APT Lateral Movement"],
+    "evidence": [
+      "Cobalt Strike beacon configuration",
+      "LSASS dump artifacts",
+      "PsExec service creation logs",
+      "Network C2 traffic captures"
+    ]
+  },
+  {
+    "title": "Q1 Compliance Audit Findings",
+    "status": "resolved",
+    "priority": "medium",
+    "assignee": "analyst-3",
+    "created_at": "2026-03-28T10:00:00Z",
+    "description": "Findings from Q1 2026 security compliance audit. All items remediated.",
+    "related_incidents": [],
+    "evidence": [
+      "CIS benchmark scan results",
+      "Remediation verification screenshots",
+      "Updated security baseline documentation"
+    ]
+  }
+]

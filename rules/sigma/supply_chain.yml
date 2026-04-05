@@ -103,3 +103,116 @@ detection:
   condition: selection
 falsepositives:
   - Planned dependency update
+
+---
+
+title: Supply Chain - Typosquatting Package Detection
+id: wdx-supply-006
+status: stable
+level: high
+description: Detects installation of packages with names similar to popular packages
+tags:
+  - attack.initial_access
+  - attack.t1195.002
+  - wardex.supply_chain
+logsource:
+  category: process_creation
+  product: wardex
+detection:
+  selection:
+    CommandLine|contains:
+      - 'pip install'
+      - 'npm install'
+      - 'gem install'
+    typo_match: 'true'
+  condition: selection
+falsepositives:
+  - Legitimately similar package names
+
+---
+
+title: Supply Chain - CI/CD Pipeline Credential Exposure
+id: wdx-supply-007
+status: stable
+level: critical
+description: Detects credentials exposed in CI/CD build logs or artifacts
+tags:
+  - attack.credential_access
+  - wardex.supply_chain
+logsource:
+  category: ci_cd
+  product: wardex
+detection:
+  selection:
+    event_type: build_log
+    content|re: '(api[_-]?key|secret|password|token)\\s*[=:]\\s*[A-Za-z0-9]{20,}'
+  condition: selection
+falsepositives:
+  - Example/placeholder credentials
+
+---
+
+title: Supply Chain - Firmware Update Integrity Failure
+id: wdx-supply-008
+status: stable
+level: critical
+description: Detects firmware updates that fail signature verification
+tags:
+  - attack.initial_access
+  - attack.t1195.003
+  - wardex.supply_chain
+logsource:
+  category: firmware
+  product: wardex
+detection:
+  selection:
+    event_type: firmware_update
+    signature_valid: 'false'
+  condition: selection
+falsepositives:
+  - Corrupted update downloads
+
+---
+
+title: Supply Chain - Unauthorized Code Signing Certificate
+id: wdx-supply-009
+status: stable
+level: critical
+description: Detects code signed with unknown or unauthorized certificates
+tags:
+  - attack.defense_evasion
+  - attack.t1553.002
+  - wardex.supply_chain
+logsource:
+  category: file_creation
+  product: wardex
+detection:
+  selection:
+    event_type: code_signature
+    signer_trusted: 'false'
+  condition: selection
+falsepositives:
+  - Self-signed development builds
+
+---
+
+title: Supply Chain - Dependency Confusion Attack
+id: wdx-supply-010
+status: stable
+level: critical
+description: Detects packages pulled from public registries that shadow internal packages
+tags:
+  - attack.initial_access
+  - attack.t1195.002
+  - wardex.supply_chain
+logsource:
+  category: package_manager
+  product: wardex
+detection:
+  selection:
+    event_type: package_install
+    source: public_registry
+    name_matches_internal: 'true'
+  condition: selection
+falsepositives:
+  - Open-sourced internal packages

@@ -1,0 +1,339 @@
+title: Compliance - Unauthorized Admin Access Attempt
+id: compliance-001
+status: stable
+level: high
+description: Detects unauthorized attempts to access administrative functions
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - compliance.pci
+  - wardex.compliance
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_failure
+    target_resource: admin_panel
+  condition: selection | count() > 3
+  timeframe: 5m
+falsepositives:
+  - Legitimate admin lockouts
+---
+title: Compliance - Data Export without Approval
+id: compliance-002
+status: stable
+level: high
+description: Detects bulk data exports without prior approval workflow completion
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.gdpr
+  - compliance.hipaa
+  - wardex.compliance
+logsource:
+  category: application
+  product: wardex
+detection:
+  selection:
+    event_type: data_export
+    approval_status: 'none'
+  condition: selection
+falsepositives:
+  - Emergency data requests
+---
+title: Compliance - Password Policy Violation
+id: compliance-003
+status: stable
+level: medium
+description: Detects password changes that violate organizational password policy
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.nist
+  - compliance.soc2
+  - wardex.compliance
+logsource:
+  category: security
+  product: wardex
+detection:
+  selection:
+    event_type: password_change
+    policy_compliant: 'false'
+  condition: selection
+falsepositives:
+  - Policy transition period
+---
+title: Compliance - MFA Bypass Attempt
+id: compliance-004
+status: stable
+level: critical
+description: Detects attempts to bypass multi-factor authentication
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - compliance.pci
+  - wardex.compliance
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: mfa_bypass
+  condition: selection
+falsepositives:
+  - MFA infrastructure issues
+---
+title: Compliance - Encryption at Rest Not Enabled
+id: compliance-005
+status: stable
+level: high
+description: Detects storage volumes or databases without encryption at rest
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.hipaa
+  - compliance.pci
+  - wardex.compliance
+logsource:
+  category: configuration
+  product: wardex
+detection:
+  selection:
+    event_type: config_audit
+    encryption_at_rest: 'false'
+  condition: selection
+falsepositives:
+  - Development environments
+---
+title: Compliance - Privileged Account without Review
+id: compliance-006
+status: stable
+level: medium
+description: Detects privileged accounts that haven't been reviewed within policy period
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - compliance.iso27001
+  - wardex.compliance
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: access_review
+    role: admin
+    last_review_days|gt: 90
+  condition: selection
+falsepositives:
+  - New accounts pending first review
+---
+title: Compliance - Audit Log Tampering
+id: compliance-007
+status: stable
+level: critical
+description: Detects attempts to modify, delete, or disable audit logging
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - compliance.pci
+  - compliance.hipaa
+  - wardex.compliance
+logsource:
+  category: security
+  product: wardex
+detection:
+  selection:
+    event_type|contains:
+      - 'audit_disable'
+      - 'log_delete'
+      - 'log_modify'
+  condition: selection
+falsepositives:
+  - Log rotation operations
+---
+title: Compliance - PII Access Logging
+id: compliance-008
+status: stable
+level: medium
+description: Detects access to tables or fields containing personally identifiable information
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.gdpr
+  - compliance.ccpa
+  - wardex.compliance
+logsource:
+  category: database
+  product: wardex
+detection:
+  selection:
+    table_name|contains:
+      - 'customer'
+      - 'patient'
+      - 'employee'
+    column_name|contains:
+      - 'ssn'
+      - 'email'
+      - 'phone'
+      - 'address'
+  condition: selection
+falsepositives:
+  - Authorized data processing
+---
+title: Compliance - Certificate Expiry Warning
+id: compliance-009
+status: stable
+level: medium
+description: Detects TLS certificates approaching expiration
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - wardex.compliance
+logsource:
+  category: configuration
+  product: wardex
+detection:
+  selection:
+    event_type: cert_check
+    days_to_expiry|lt: 30
+  condition: selection
+falsepositives:
+  - Certificates with short renewal cycles
+---
+title: Compliance - Data Retention Violation
+id: compliance-010
+status: stable
+level: medium
+description: Detects data retained beyond the organization's retention policy
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.gdpr
+  - compliance.hipaa
+  - wardex.compliance
+logsource:
+  category: storage
+  product: wardex
+detection:
+  selection:
+    event_type: retention_check
+    policy_violated: 'true'
+  condition: selection
+falsepositives:
+  - Legal hold data
+---
+title: Compliance - Third-Party Access Audit
+id: compliance-011
+status: stable
+level: medium
+description: Detects third-party vendor access to production systems
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - compliance.iso27001
+  - wardex.compliance
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_success
+    user_type: vendor
+  condition: selection
+falsepositives:
+  - Authorized vendor maintenance
+---
+title: Compliance - Network Segmentation Violation
+id: compliance-012
+status: stable
+level: high
+description: Detects traffic crossing network segments without authorization
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.pci
+  - wardex.compliance
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    event_type: firewall_allow
+    src_zone: untrusted
+    dst_zone: cardholder_data
+  condition: selection
+falsepositives:
+  - Approved cross-zone traffic
+---
+title: Compliance - Unpatched System Detection
+id: compliance-013
+status: stable
+level: medium
+description: Detects systems missing critical security patches beyond SLA
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.nist
+  - compliance.soc2
+  - wardex.compliance
+logsource:
+  category: vulnerability
+  product: wardex
+detection:
+  selection:
+    event_type: patch_status
+    severity: critical
+    days_overdue|gt: 14
+  condition: selection
+falsepositives:
+  - Systems with approved exceptions
+---
+title: Compliance - API Key Rotation Overdue
+id: compliance-014
+status: stable
+level: medium
+description: Detects API keys that haven't been rotated within policy period
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - wardex.compliance
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: key_audit
+    key_age_days|gt: 90
+  condition: selection
+falsepositives:
+  - Legacy integrations
+---
+title: Compliance - Backup Verification Failure
+id: compliance-015
+status: stable
+level: high
+description: Detects backup verification or restore test failures
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - compliance.soc2
+  - compliance.iso27001
+  - wardex.compliance
+logsource:
+  category: backup
+  product: wardex
+detection:
+  selection:
+    event_type: backup_verify
+    status: failed
+  condition: selection
+falsepositives:
+  - Transient storage issues

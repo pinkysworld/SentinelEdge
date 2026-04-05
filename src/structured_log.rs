@@ -403,6 +403,71 @@ pub fn audit_log(actor: &str, action: &str, resource: &str) -> LogEntry {
         .with_field("resource", resource)
 }
 
+// ── Tracing-compatible configuration ─────────────────────────────────────────
+
+/// Configuration for structured logging, compatible with future `tracing` migration.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TracingConfig {
+    /// Output format: "json" or "pretty"
+    pub format: TracingFormat,
+    /// Minimum log level
+    pub level: String,
+    /// Whether to include span events (enter/exit)
+    pub span_events: bool,
+    /// Whether to include file/line info
+    pub with_file: bool,
+    /// Whether to include target module
+    pub with_target: bool,
+    /// Whether to include thread info
+    pub with_thread_ids: bool,
+    /// Custom env filter string (e.g. "wardex=info,tower=warn")
+    pub env_filter: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TracingFormat {
+    Json,
+    Pretty,
+    Compact,
+}
+
+impl Default for TracingConfig {
+    fn default() -> Self {
+        Self {
+            format: TracingFormat::Json,
+            level: "info".into(),
+            span_events: true,
+            with_file: false,
+            with_target: true,
+            with_thread_ids: false,
+            env_filter: "wardex=info".into(),
+        }
+    }
+}
+
+/// Generate a unique request ID (hex-encoded random bytes).
+pub fn generate_request_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    // Simple: timestamp + random suffix for uniqueness
+    format!("req-{:x}-{:04x}", ts, rand::random::<u16>())
+}
+
+/// Build a pre-configured SharedLogger from TracingConfig.
+pub fn build_logger(config: &TracingConfig) -> SharedLogger {
+    let level = LogLevel::from_str_loose(&config.level);
+    let logger = SharedLogger::new(level);
+
+    let pretty = config.format == TracingFormat::Pretty;
+    logger.add_sink(Box::new(StdoutSink::new(pretty)));
+
+    logger.set_default_field("service", "wardex");
+    logger
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

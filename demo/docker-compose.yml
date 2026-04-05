@@ -1,0 +1,28 @@
+# Wardex Demo Environment
+# Usage: docker compose up
+# Boots Wardex pre-populated with realistic data for demos and trials.
+
+services:
+  wardex:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      WARDEX_MODE: demo
+      WARDEX_SEED: "true"
+      WARDEX_LOG_LEVEL: info
+      RUST_LOG: wardex=info
+    volumes:
+      - wardex-data:/app/var
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  wardex-data:

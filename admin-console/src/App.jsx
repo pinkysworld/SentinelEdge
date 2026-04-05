@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useAuth, useTheme, useApi } from './hooks.jsx';
+import { useState, useCallback } from 'react';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { useAuth, useTheme, useRole, useApi } from './hooks.jsx';
 import * as api from './api.js';
 import Dashboard from './components/Dashboard.jsx';
 import LiveMonitor from './components/LiveMonitor.jsx';
@@ -13,71 +14,59 @@ import Settings from './components/Settings.jsx';
 import HelpDocs from './components/HelpDocs.jsx';
 
 const SECTIONS = [
-  { id: 'dashboard',        label: 'Dashboard',        icon: '📊' },
-  { id: 'live-monitor',     label: 'Live Monitor',     icon: '🔴' },
-  { id: 'threat-detection', label: 'Threat Detection',  icon: '🛡' },
-  { id: 'fleet-agents',     label: 'Fleet & Agents',   icon: '🖥' },
-  { id: 'security-policy',  label: 'Security Policy',  icon: '📋' },
-  { id: 'soc-workbench',    label: 'SOC Workbench',    icon: '🔬' },
-  { id: 'infrastructure',   label: 'Infrastructure',   icon: '⚙' },
-  { id: 'reports-exports',  label: 'Reports & Exports', icon: '📄' },
-  { id: 'settings',         label: 'Settings',         icon: '⚡' },
-  { id: 'help-docs',        label: 'Help & Docs',      icon: '❓' },
+  { id: 'dashboard',        path: '/',                 label: 'Dashboard',        icon: '📊', minRole: 'viewer' },
+  { id: 'live-monitor',     path: '/monitor',          label: 'Live Monitor',     icon: '🔴', minRole: 'viewer' },
+  { id: 'threat-detection', path: '/detection',        label: 'Threat Detection', icon: '🛡', minRole: 'analyst' },
+  { id: 'fleet-agents',     path: '/fleet',            label: 'Fleet & Agents',   icon: '🖥', minRole: 'viewer' },
+  { id: 'security-policy',  path: '/policy',           label: 'Security Policy',  icon: '📋', minRole: 'analyst' },
+  { id: 'soc-workbench',    path: '/soc',              label: 'SOC Workbench',    icon: '🔬', minRole: 'analyst' },
+  { id: 'infrastructure',   path: '/infrastructure',   label: 'Infrastructure',   icon: '⚙', minRole: 'analyst' },
+  { id: 'reports-exports',  path: '/reports',          label: 'Reports & Exports',icon: '📄', minRole: 'viewer' },
+  { id: 'settings',         path: '/settings',         label: 'Settings',         icon: '⚡', minRole: 'admin' },
+  { id: 'help-docs',        path: '/help',             label: 'Help & Docs',      icon: '❓', minRole: 'viewer' },
 ];
 
-const SECTION_COMPONENTS = {
-  'dashboard': Dashboard,
-  'live-monitor': LiveMonitor,
-  'threat-detection': ThreatDetection,
-  'fleet-agents': FleetAgents,
-  'security-policy': SecurityPolicy,
-  'soc-workbench': SOCWorkbench,
-  'infrastructure': Infrastructure,
-  'reports-exports': ReportsExports,
-  'settings': Settings,
-  'help-docs': HelpDocs,
-};
+const ROLE_LEVEL = { viewer: 0, analyst: 1, admin: 2 };
+
+function RequireRole({ minRole, children }) {
+  const { role } = useRole();
+  if (ROLE_LEVEL[role] >= ROLE_LEVEL[minRole]) return children;
+  return (
+    <div className="access-denied">
+      <h2>Access Denied</h2>
+      <p>You need the <strong>{minRole}</strong> role or higher to view this section.</p>
+    </div>
+  );
+}
 
 export default function App() {
   const { authenticated, checking, connect, disconnect } = useAuth();
   const { dark, toggle } = useTheme();
+  const { role } = useRole();
   const { data: hp } = useApi(api.health);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // Hash-based deep linking
-  const sectionFromHash = () => {
-    const raw = window.location.hash.replace(/^#\/?/, '');
-    const id = raw.split('/')[0];
-    return SECTIONS.some(s => s.id === id) ? id : 'dashboard';
-  };
-
-  const [section, setSection] = useState(sectionFromHash);
   const [tokenInput, setTokenInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
-  // Sync hash → state on popstate
-  useEffect(() => {
-    const onHash = () => setSection(sectionFromHash());
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, []);
+  const currentSection = SECTIONS.find(s => s.path === location.pathname) || SECTIONS[0];
 
-  // Sync state → hash
-  const navigate = useCallback((id) => {
-    setSection(id);
-    window.location.hash = `#${id}`;
-  }, []);
+  const handleNavigate = useCallback((path) => {
+    navigate(path);
+  }, [navigate]);
 
   const copyShareLink = useCallback(() => {
-    const url = window.location.origin + window.location.pathname + '#' + section;
+    const url = window.location.origin + location.pathname;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(url).then(() => {
         setLinkCopied(true);
         setTimeout(() => setLinkCopied(false), 2000);
       });
     }
-  }, [section]);
+  }, [location.pathname]);
 
   const handleConnect = useCallback(async (e) => {
     e.preventDefault();
@@ -86,7 +75,8 @@ export default function App() {
     if (!ok) setAuthError('Authentication failed — check your token');
   }, [tokenInput, connect]);
 
-  const SectionComponent = SECTION_COMPONENTS[section];
+  // Filter sidebar items by role
+  const visibleSections = SECTIONS.filter(s => ROLE_LEVEL[role] >= ROLE_LEVEL[s.minRole]);
 
   return (
     <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -100,11 +90,11 @@ export default function App() {
           </button>
         </div>
         <nav className="sidebar-nav">
-          {SECTIONS.map(s => (
+          {visibleSections.map(s => (
             <button
               key={s.id}
-              className={`nav-item ${section === s.id ? 'active' : ''}`}
-              onClick={() => navigate(s.id)}
+              className={`nav-item ${location.pathname === s.path ? 'active' : ''}`}
+              onClick={() => handleNavigate(s.path)}
               title={s.label}
             >
               <span className="nav-icon">{s.icon}</span>
@@ -113,6 +103,9 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-footer">
+          {authenticated && !sidebarCollapsed && (
+            <span className="role-badge" title="Current role">{role}</span>
+          )}
           <button className="btn-icon" onClick={toggle} title={dark ? 'Light mode' : 'Dark mode'}>
             {dark ? '☀' : '🌙'}
           </button>
@@ -126,7 +119,7 @@ export default function App() {
       <main className="main">
         {/* Top Bar */}
         <header className="topbar">
-          <h1 className="topbar-title">{SECTIONS.find(s => s.id === section)?.label}</h1>
+          <h1 className="topbar-title">{currentSection.label}</h1>
           <div className="topbar-right">
             {hp?.version && (
               <span className="version-badge" title="Wardex version">v{hp.version}</span>
@@ -166,7 +159,19 @@ export default function App() {
               <p className="hint">The token is displayed in the terminal when you start Wardex.</p>
             </div>
           ) : (
-            SectionComponent && <SectionComponent />
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/monitor" element={<LiveMonitor />} />
+              <Route path="/detection" element={<RequireRole minRole="analyst"><ThreatDetection /></RequireRole>} />
+              <Route path="/fleet" element={<FleetAgents />} />
+              <Route path="/policy" element={<RequireRole minRole="analyst"><SecurityPolicy /></RequireRole>} />
+              <Route path="/soc" element={<RequireRole minRole="analyst"><SOCWorkbench /></RequireRole>} />
+              <Route path="/infrastructure" element={<RequireRole minRole="analyst"><Infrastructure /></RequireRole>} />
+              <Route path="/reports" element={<ReportsExports />} />
+              <Route path="/settings" element={<RequireRole minRole="admin"><Settings /></RequireRole>} />
+              <Route path="/help" element={<HelpDocs />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
           )}
         </div>
       </main>

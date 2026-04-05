@@ -47,6 +47,32 @@ export function AuthProvider({ children }) {
 
 export function useAuth() { return useContext(AuthContext); }
 
+// ── Role Context ─────────────────────────────────────────────
+
+const RoleContext = createContext({ role: 'admin' });
+
+export function RoleProvider({ children }) {
+  const { authenticated } = useAuth();
+  const [role, setRole] = useState('admin');
+
+  useEffect(() => {
+    if (!authenticated) { setRole('viewer'); return; }
+    // Fetch role from session endpoint
+    fetch('/api/auth/session', { headers: { 'Authorization': `Bearer ${getToken()}` } })
+      .then(r => r.json())
+      .then(data => { if (data.role) setRole(data.role); })
+      .catch(() => setRole('admin')); // Default to admin for backwards compat
+  }, [authenticated]);
+
+  return (
+    <RoleContext.Provider value={{ role, setRole }}>
+      {children}
+    </RoleContext.Provider>
+  );
+}
+
+export function useRole() { return useContext(RoleContext); }
+
 // ── Theme Context ────────────────────────────────────────────
 
 const ThemeContext = createContext(null);

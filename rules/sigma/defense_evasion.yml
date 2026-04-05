@@ -119,3 +119,174 @@ falsepositives:
 mitre:
   techniques:
     - T1070.006  # Timestomp
+
+---
+
+title: Defense Evasion - AMSI Bypass
+id: wdx-evasion-004
+status: stable
+level: critical
+description: Detects attempts to bypass AMSI (Antimalware Scan Interface)
+tags:
+  - attack.defense_evasion
+  - attack.t1562.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'AmsiUtils'
+      - 'amsiInitFailed'
+      - 'AmsiScanBuffer'
+      - 'SetField.*NonPublic.*amsiContext'
+  condition: selection
+falsepositives:
+  - Security research
+
+---
+
+title: Defense Evasion - Process Hollowing
+id: wdx-evasion-005
+status: stable
+level: critical
+description: Detects process hollowing techniques used to inject malicious code
+tags:
+  - attack.defense_evasion
+  - attack.t1055.012
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    process_name|endswith:
+      - '\svchost.exe'
+      - '\explorer.exe'
+      - '\RuntimeBroker.exe'
+    ParentImage|not_endswith:
+      - '\services.exe'
+      - '\userinit.exe'
+  condition: selection
+falsepositives:
+  - Custom service wrappers
+
+---
+
+title: Defense Evasion - ETW Tampering
+id: wdx-evasion-006
+status: stable
+level: critical
+description: Detects attempts to disable Event Tracing for Windows
+tags:
+  - attack.defense_evasion
+  - attack.t1562.006
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'logman stop'
+      - 'Remove-EtwTraceSession'
+      - 'Set-EtwTraceSession.*0x0'
+  condition: selection
+falsepositives:
+  - Trace session management
+
+---
+
+title: Defense Evasion - DLL Side-Loading
+id: wdx-evasion-007
+status: stable
+level: high
+description: Detects DLL side-loading via legitimate signed executables
+tags:
+  - attack.defense_evasion
+  - attack.t1574.002
+logsource:
+  category: image_load
+  product: windows
+detection:
+  selection:
+    ImageLoaded|endswith: '.dll'
+    ImageLoaded|not_contains:
+      - '\System32\'
+      - '\SysWOW64\'
+      - '\Program Files'
+    signed: 'false'
+  condition: selection
+falsepositives:
+  - Third-party plugins
+
+---
+
+title: Defense Evasion - Reflective DLL Loading
+id: wdx-evasion-008
+status: stable
+level: critical
+description: Detects reflective DLL injection via memory-only loading
+tags:
+  - attack.defense_evasion
+  - attack.t1620
+logsource:
+  category: process_access
+  product: windows
+detection:
+  selection:
+    CallTrace|contains:
+      - 'UNKNOWN'
+      - 'clr.dll'
+    GrantedAccess:
+      - '0x1F0FFF'
+      - '0x1FFFFF'
+  condition: selection
+falsepositives:
+  - .NET JIT compilation
+
+---
+
+title: Defense Evasion - Windows Defender Exclusion
+id: wdx-evasion-009
+status: stable
+level: high
+description: Detects adding exclusions to Windows Defender
+tags:
+  - attack.defense_evasion
+  - attack.t1562.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'Add-MpPreference -ExclusionPath'
+      - 'Add-MpPreference -ExclusionProcess'
+      - 'Add-MpPreference -ExclusionExtension'
+  condition: selection
+falsepositives:
+  - Authorized exclusions for known applications
+
+---
+
+title: Defense Evasion - Linux Log Clearing
+id: wdx-evasion-010
+status: stable
+level: high
+description: Detects clearing of Linux system logs
+tags:
+  - attack.defense_evasion
+  - attack.t1070.002
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'truncate -s 0 /var/log'
+      - '> /var/log/auth.log'
+      - '> /var/log/syslog'
+      - 'rm -f /var/log'
+      - 'history -c'
+  condition: selection
+falsepositives:
+  - Log rotation

@@ -2,6 +2,31 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.41.0] — Enterprise Scale: ClickHouse Storage, ML Triage, HA Snapshots & Cloud Collectors
+
+### Added
+- **ClickHouse storage adapter** (`storage_clickhouse.rs`) — `EventStore` trait with `ClickHouseStorage` (buffered batch inserts, MergeTree DDL, materialized views, auto-flush, retention purge) and `InMemoryEventStore` fallback. 12 tests.
+- **ML triage engine** (`ml_engine.rs`) — `TriageResult`, `TriageLabel` enum (TruePositive/FalsePositive/NeedsReview), `TriageFeatures` normalization, `triage_alert()` heuristic scoring. API endpoints: `GET /api/ml/models`, `POST /api/ml/triage`. 4 new tests.
+- **HA cluster snapshots** (`cluster.rs`) — `Snapshot` struct, `InstallSnapshotRequest/Response`, `create_snapshot()`, `handle_install_snapshot()`, `compact_log()` for log compaction, `raft_log_schema()` DDL for persistent Raft state (raft_log, raft_state, raft_snapshots tables). 6 new tests (24 total).
+- **OIDC/SAML SSO endpoints** — 5 API routes wired: `/api/auth/sso/config`, `/api/auth/sso/login`, `/api/auth/sso/callback`, `/api/auth/session`, `/api/auth/logout`.
+- **Cloud collector endpoints** — 4 API routes: `/api/collectors/status` (combined AWS/Azure/GCP), `/api/collectors/aws`, `/api/collectors/azure`, `/api/collectors/gcp`.
+- **Structured logging enhancements** (`structured_log.rs`) — `TracingConfig`, `TracingFormat` enum (Json/Pretty/Compact), `generate_request_id()`, `build_logger()` factory function.
+- **React Router + RBAC** — Admin console migrated from hash routing to `react-router-dom` with `RequireRole` component, `RoleProvider`, and role-level filtering (viewer/analyst/admin).
+- **Demo seed data** — `demo/` directory with Docker Compose, `seed.sh` script, and JSON datasets: 10 alerts, 10 agents, 5 incidents, 3 cases, 15 IoCs.
+- **Search module** (`search.rs`) — Full-text `SearchIndex` with tantivy-style API, query parsing, faceted results. 7 tests.
+- **Metering module** (`metering.rs`) — `MeteringManager` with usage tracking, plan limits, overage calculation. 9 tests.
+- **Billing module** (`billing.rs`) — `BillingManager` with plans, subscriptions, invoice generation. 9 tests.
+- **Marketplace module** (`marketplace.rs`) — 10 built-in content packs, install/uninstall lifecycle. 8 tests.
+- **Prevention module** (`prevention.rs`) — `PreventionEngine` with default response policies, block/allow/quarantine actions. 9 tests.
+- **Pipeline module** (`pipeline.rs`) — `PipelineManager` with ingestion metrics, backpressure tracking, DLQ handling. 7 tests.
+- **Backup module** (`backup.rs`) — `BackupManager` with scheduled backups, retention, restore verification. 8 tests.
+- **License module** (`license.rs`) — Ed25519-signed license validation, tier enforcement, feature gating. API endpoints wired.
+
+### Improved
+- **API surface** — 30+ new endpoint blocks wired into server.rs covering all new modules.
+- **Sigma rules** — Expanded from 51 to 202 detection rules across 21 categories.
+- **Admin console** — Full SPA routing with browser back/forward, role-based section visibility, history fallback.
+
 ## [0.39.5] — Admin Console UX Overhaul, Detection Engine Improvements & Escalation Management
 
 ### Added

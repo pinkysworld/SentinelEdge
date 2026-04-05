@@ -134,3 +134,140 @@ falsepositives:
 mitre:
   techniques:
     - T1543.004  # Launch Agent
+
+---
+
+title: Persistence - SSH Authorized Keys Modification
+id: wdx-persist-005
+status: stable
+level: high
+description: Detects unauthorized SSH authorized_keys modifications for persistent access
+tags:
+  - attack.persistence
+  - attack.t1098.004
+logsource:
+  category: file_event
+  product: linux
+detection:
+  selection:
+    TargetFilename|endswith: '.ssh/authorized_keys'
+    event_type: file_modify
+  condition: selection
+falsepositives:
+  - SSH key management tools
+
+---
+
+title: Persistence - Windows Registry Run Keys
+id: wdx-persist-006
+status: stable
+level: high
+description: Detects registry modifications to Run/RunOnce keys for persistence
+tags:
+  - attack.persistence
+  - attack.t1547.001
+logsource:
+  category: registry_event
+  product: windows
+detection:
+  selection:
+    TargetObject|contains:
+      - '\CurrentVersion\Run'
+      - '\CurrentVersion\RunOnce'
+  condition: selection
+falsepositives:
+  - Legitimate software installation
+
+---
+
+title: Persistence - Systemd Service Creation
+id: wdx-persist-007
+status: stable
+level: high
+description: Detects creation of systemd services for persistence
+tags:
+  - attack.persistence
+  - attack.t1543.002
+logsource:
+  category: file_creation
+  product: linux
+detection:
+  selection:
+    TargetFilename|contains:
+      - '/etc/systemd/system/'
+      - '/usr/lib/systemd/system/'
+  condition: selection
+falsepositives:
+  - Package installation
+
+---
+
+title: Persistence - WMI Event Subscription
+id: wdx-persist-008
+status: stable
+level: high
+description: Detects WMI event subscriptions for persistence
+tags:
+  - attack.persistence
+  - attack.t1546.003
+logsource:
+  category: wmi_event
+  product: windows
+detection:
+  selection:
+    EventType: WMIEventConsumerToFilter
+  condition: selection
+falsepositives:
+  - Monitoring tools
+
+---
+
+title: Persistence - Web Shell Detection
+id: wdx-persist-009
+status: stable
+level: critical
+description: Detects web shell files dropped in web server directories
+tags:
+  - attack.persistence
+  - attack.t1505.003
+logsource:
+  category: file_creation
+  product: wardex
+detection:
+  selection:
+    TargetFilename|endswith:
+      - '.aspx'
+      - '.jsp'
+      - '.php'
+    TargetFilename|contains:
+      - '\inetpub\wwwroot'
+      - '/var/www'
+      - '/opt/tomcat'
+  condition: selection
+falsepositives:
+  - Web deployments
+
+---
+
+title: Persistence - Boot or Logon Init Scripts
+id: wdx-persist-010
+status: stable
+level: high
+description: Detects modification of init scripts for boot persistence
+tags:
+  - attack.persistence
+  - attack.t1037
+logsource:
+  category: file_event
+  product: linux
+detection:
+  selection:
+    TargetFilename|contains:
+      - '/etc/rc.local'
+      - '/etc/init.d/'
+      - '/etc/profile.d/'
+      - '.bashrc'
+      - '.bash_profile'
+  condition: selection
+falsepositives:
+  - System configuration

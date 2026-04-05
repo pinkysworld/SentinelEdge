@@ -127,3 +127,159 @@ mitre:
   techniques:
     - T1560.001  # Archive via Utility
     - T1074.001  # Local Data Staging
+
+---
+
+title: Exfiltration - Large File Upload to Cloud Storage
+id: wdx-exfil-004
+status: stable
+level: high
+description: Detects large file uploads to cloud storage services
+tags:
+  - attack.exfiltration
+  - attack.t1567.002
+logsource:
+  category: proxy
+  product: wardex
+detection:
+  selection:
+    url|contains:
+      - 'upload.googleapis.com'
+      - 'api.dropboxapi.com'
+      - 'blob.core.windows.net'
+    bytes_out|gt: 50000000
+  condition: selection
+falsepositives:
+  - Approved cloud backups
+
+---
+
+title: Exfiltration - Email with Large Attachment
+id: wdx-exfil-005
+status: stable
+level: medium
+description: Detects emails with unusually large attachments
+tags:
+  - attack.exfiltration
+  - attack.t1048.003
+logsource:
+  category: email
+  product: wardex
+detection:
+  selection:
+    event_type: email_send
+    attachment_size|gt: 25000000
+  condition: selection
+falsepositives:
+  - Large presentation files
+
+---
+
+title: Exfiltration - USB Mass Storage Write
+id: wdx-exfil-006
+status: stable
+level: high
+description: Detects data written to USB mass storage devices
+tags:
+  - attack.exfiltration
+  - attack.t1052.001
+logsource:
+  category: device
+  product: wardex
+detection:
+  selection:
+    event_type: usb_write
+    device_class: mass_storage
+    bytes_written|gt: 10000000
+  condition: selection
+falsepositives:
+  - Authorized media transfers
+
+---
+
+title: Exfiltration - Clipboard Exfiltration
+id: wdx-exfil-007
+status: stable
+level: medium
+description: Detects automated clipboard access patterns for data theft
+tags:
+  - attack.exfiltration
+  - attack.t1115
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'Get-Clipboard'
+      - 'clip.exe'
+      - 'xclip'
+  condition: selection
+falsepositives:
+  - Clipboard utilities
+
+---
+
+title: Exfiltration - Steganography Tool Usage
+id: wdx-exfil-008
+status: stable
+level: high
+description: Detects tools embedding data in images for covert exfiltration
+tags:
+  - attack.exfiltration
+  - attack.t1027.003
+logsource:
+  category: process_creation
+  product: wardex
+detection:
+  selection:
+    CommandLine|contains:
+      - 'steghide'
+      - 'stegano'
+      - 'openstego'
+  condition: selection
+falsepositives:
+  - Digital forensics research
+
+---
+
+title: Exfiltration - Bluetooth Data Transfer
+id: wdx-exfil-009
+status: stable
+level: medium
+description: Detects data exfiltration via Bluetooth connections
+tags:
+  - attack.exfiltration
+  - attack.t1011
+logsource:
+  category: device
+  product: wardex
+detection:
+  selection:
+    event_type: bluetooth_transfer
+    bytes_transferred|gt: 5000000
+  condition: selection
+falsepositives:
+  - Authorized file sharing
+
+---
+
+title: Exfiltration - Covert Channel via ICMP
+id: wdx-exfil-010
+status: stable
+level: high
+description: Detects ICMP-based data exfiltration via oversized packets
+tags:
+  - attack.exfiltration
+  - attack.t1048.003
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    protocol: icmp
+    packet_size|gt: 200
+  condition: selection | count() > 100
+  timeframe: 5m
+falsepositives:
+  - Network monitoring tools

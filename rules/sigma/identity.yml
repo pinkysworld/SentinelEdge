@@ -1,0 +1,321 @@
+title: Identity - Impossible Travel Login
+id: identity-001
+status: stable
+level: high
+description: Detects user authentication from geographically distant locations in short time
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1078
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_success
+  condition: selection | geo_distance(src_ip) > 1000km | timeframe < 2h
+falsepositives:
+  - VPN usage
+---
+title: Identity - Service Account Interactive Login
+id: identity-002
+status: stable
+level: critical
+description: Detects service accounts used for interactive/console login
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1078.001
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_success
+    account_type: service
+    logon_type: interactive
+  condition: selection
+falsepositives:
+  - Emergency maintenance
+---
+title: Identity - Dormant Account Reactivation
+id: identity-003
+status: stable
+level: high
+description: Detects login to accounts dormant for more than 90 days
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1078
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_success
+    last_login_days|gt: 90
+  condition: selection
+falsepositives:
+  - Returning users
+---
+title: Identity - Mass Account Creation
+id: identity-004
+status: stable
+level: high
+description: Detects rapid creation of multiple user accounts
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1136
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: account_create
+  condition: selection | count() > 10
+  timeframe: 10m
+falsepositives:
+  - Onboarding batches
+---
+title: Identity - MFA Token Replay
+id: identity-005
+status: stable
+level: critical
+description: Detects reuse of MFA tokens indicating compromise
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1111
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: mfa_verify
+    token_reuse: 'true'
+  condition: selection
+falsepositives:
+  - Clock skew issues
+---
+title: Identity - Privilege Role Assignment
+id: identity-006
+status: stable
+level: high
+description: Detects assignment of admin or privileged roles to users
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1098
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: role_assign
+    role|contains:
+      - 'admin'
+      - 'root'
+      - 'superuser'
+      - 'owner'
+  condition: selection
+falsepositives:
+  - Approved role changes
+---
+title: Identity - OAuth Token Abuse
+id: identity-007
+status: stable
+level: high
+description: Detects suspicious OAuth token usage patterns
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1550.001
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: oauth_token_use
+    scope|contains:
+      - 'admin'
+      - 'full_access'
+  condition: selection
+falsepositives:
+  - Authorized service integrations
+---
+title: Identity - Group Policy Modification
+id: identity-008
+status: stable
+level: high
+description: Detects unauthorized modifications to group policies
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1484.001
+logsource:
+  category: security
+  product: windows
+detection:
+  selection:
+    EventID:
+      - '5136'
+      - '5137'
+    objectClass: groupPolicyContainer
+  condition: selection
+falsepositives:
+  - Authorized GPO changes
+---
+title: Identity - Password Never Expires
+id: identity-009
+status: stable
+level: medium
+description: Detects accounts configured with password never expires
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - compliance.nist
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: account_modify
+    password_expires: 'never'
+  condition: selection
+falsepositives:
+  - Service accounts with managed rotation
+---
+title: Identity - Suspicious API Key Usage
+id: identity-010
+status: stable
+level: high
+description: Detects API key usage from unexpected locations or with unusual patterns
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1552.004
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: api_key_auth
+    geo_anomaly: 'true'
+  condition: selection
+falsepositives:
+  - Global services
+---
+title: Identity - Federated Identity Provider Change
+id: identity-011
+status: stable
+level: critical
+description: Detects changes to federated identity providers (SAML/OIDC configuration)
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1556.007
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: idp_config_change
+  condition: selection
+falsepositives:
+  - Planned IdP migrations
+---
+title: Identity - Session Hijacking Indicator
+id: identity-012
+status: stable
+level: critical
+description: Detects same session token used from different source IPs
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1563
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: session_verify
+    src_ip_changed: 'true'
+  condition: selection
+falsepositives:
+  - Mobile device IP changes
+---
+title: Identity - Break Glass Account Usage
+id: identity-013
+status: stable
+level: critical
+description: Detects usage of emergency break-glass accounts
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - compliance.soc2
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_success
+    account_type: break_glass
+  condition: selection
+falsepositives:
+  - Approved emergency access
+---
+title: Identity - Conditional Access Policy Bypass
+id: identity-014
+status: stable
+level: high
+description: Detects authentication that bypasses conditional access policies
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1556
+logsource:
+  category: authentication
+  product: wardex
+detection:
+  selection:
+    event_type: auth_success
+    conditional_access_bypassed: 'true'
+  condition: selection
+falsepositives:
+  - Approved exceptions
+---
+title: Identity - Bulk Permission Change
+id: identity-015
+status: stable
+level: high
+description: Detects bulk permission modifications across resources
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - wardex.identity
+  - attack.t1222
+logsource:
+  category: identity
+  product: wardex
+detection:
+  selection:
+    event_type: permission_change
+  condition: selection | count() > 20
+  timeframe: 5m
+falsepositives:
+  - Automated provisioning

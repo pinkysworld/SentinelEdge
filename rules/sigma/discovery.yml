@@ -1,0 +1,224 @@
+title: Reconnaissance via Bloodhound
+id: recon-001
+status: stable
+level: high
+description: Detects Active Directory reconnaissance using Bloodhound/SharpHound
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1087.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'SharpHound'
+      - 'BloodHound'
+      - 'Invoke-BloodHound'
+  condition: selection
+falsepositives:
+  - AD security assessments
+---
+title: Network Discovery via Nmap
+id: recon-002
+status: stable
+level: medium
+description: Detects network scanning and service enumeration using nmap
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1046
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    process_name: nmap
+  condition: selection
+falsepositives:
+  - Security assessments
+---
+title: AD Domain Enumeration
+id: recon-003
+status: stable
+level: medium
+description: Detects Active Directory enumeration commands
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1087.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'net group "domain admins"'
+      - 'Get-ADUser'
+      - 'Get-ADGroupMember'
+      - 'dsquery'
+  condition: selection
+falsepositives:
+  - IT administration
+---
+title: System Information Discovery
+id: recon-004
+status: stable
+level: low
+description: Detects system information gathering commands
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1082
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'systeminfo'
+      - 'hostname'
+      - 'whoami /all'
+  condition: selection
+falsepositives:
+  - Administrative scripts
+---
+title: Cloud Metadata Service Access
+id: recon-005
+status: stable
+level: high
+description: Detects SSRF or local access to cloud metadata services
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1552.005
+logsource:
+  category: network
+  product: wardex
+detection:
+  selection:
+    dst_ip: '169.254.169.254'
+  condition: selection
+falsepositives:
+  - Legitimate cloud workloads
+---
+title: WiFi Password Extraction
+id: recon-006
+status: stable
+level: high
+description: Detects extraction of stored WiFi credentials
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1040
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'netsh wlan show profile'
+      - 'key=clear'
+  condition: selection
+falsepositives:
+  - Network troubleshooting
+---
+title: Docker Container Enumeration
+id: recon-007
+status: stable
+level: medium
+description: Detects container and Docker environment enumeration
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1082
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'docker ps'
+      - 'docker inspect'
+      - 'kubectl get pods'
+      - 'kubectl get secrets'
+  condition: selection
+falsepositives:
+  - Container management
+---
+title: LDAP Enumeration Query
+id: recon-008
+status: stable
+level: medium
+description: Detects LDAP queries used for Active Directory reconnaissance
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1087.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    CommandLine|contains:
+      - 'ldapsearch'
+      - 'adfind'
+      - 'ADFind.exe'
+  condition: selection
+falsepositives:
+  - AD management tools
+---
+title: AWS IAM Enumeration
+id: recon-009
+status: stable
+level: medium
+description: Detects AWS IAM reconnaissance commands
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1087.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - 'aws iam list-users'
+      - 'aws iam list-roles'
+      - 'aws iam get-account-authorization-details'
+  condition: selection
+falsepositives:
+  - Cloud administration
+---
+title: Azure AD Enumeration
+id: recon-010
+status: stable
+level: medium
+description: Detects Azure Active Directory enumeration commands
+author: Wardex Team
+date: 2025/06/01
+tags:
+  - attack.discovery
+  - attack.t1087.004
+logsource:
+  category: process_creation
+  product: azure
+detection:
+  selection:
+    CommandLine|contains:
+      - 'az ad user list'
+      - 'az ad group list'
+      - 'Get-AzureADUser'
+  condition: selection
+falsepositives:
+  - Cloud administration

@@ -35,6 +35,49 @@ pub struct Prediction {
     pub features_used: usize,
 }
 
+/// Alert triage classification from the ML model.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TriageResult {
+    pub label: TriageLabel,
+    pub confidence: f64,
+    pub model_version: String,
+}
+
+/// Triage label for an alert — true positive, false positive, or needs human review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TriageLabel {
+    TruePositive,
+    FalsePositive,
+    NeedsReview,
+}
+
+/// Feature vector extracted from an anomaly signal for ML triage.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TriageFeatures {
+    pub anomaly_score: f64,
+    pub confidence: f64,
+    pub suspicious_axes: u32,
+    pub hour_of_day: u8,
+    pub day_of_week: u8,
+    pub alert_frequency_1h: u32,
+    pub device_risk_score: f64,
+}
+
+impl TriageFeatures {
+    /// Convert to a flat f64 vector for model input.
+    pub fn to_vec(&self) -> Vec<f64> {
+        vec![
+            self.anomaly_score,
+            self.confidence,
+            self.suspicious_axes as f64,
+            self.hour_of_day as f64 / 24.0, // normalise
+            self.day_of_week as f64 / 7.0,
+            (self.alert_frequency_1h as f64).ln_1p(), // log-scale
+            self.device_risk_score,
+        ]
+    }
+}
+
 /// Status of a model in the registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ModelStatus {
@@ -67,6 +110,25 @@ pub struct StubEngine {
 impl StubEngine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Run alert triage inference on extracted features.
+    /// Returns a triage classification (TP/FP/Review).
+    pub fn triage_alert(&self, features: &TriageFeatures) -> TriageResult {
+        // Stub: heuristic triage based on anomaly score + confidence.
+        let score = features.anomaly_score * features.confidence;
+        let (label, conf) = if score > 0.8 {
+            (TriageLabel::TruePositive, score)
+        } else if score < 0.2 {
+            (TriageLabel::FalsePositive, 1.0 - score)
+        } else {
+            (TriageLabel::NeedsReview, 0.5)
+        };
+        TriageResult {
+            label,
+            confidence: conf,
+            model_version: "0.0.0-stub".into(),
+        }
     }
 
     /// List built-in model slots that will ship with the first release.
@@ -186,5 +248,55 @@ mod tests {
         assert!(planned.iter().any(|m| m.name == "anomaly_detector_v1"));
         assert!(planned.iter().any(|m| m.name == "entity_classifier_v1"));
         assert!(planned.iter().any(|m| m.name == "alert_triage_v1"));
+    }
+
+    #[test]
+    fn triage_high_score_is_tp() {
+        let engine = StubEngine::new();
+        let features = TriageFeatures {
+            anomaly_score: 0.95, confidence: 0.9,
+            suspicious_axes: 3, hour_of_day: 2, day_of_week: 6,
+            alert_frequency_1h: 5, device_risk_score: 0.8,
+        };
+        let result = engine.triage_alert(&features);
+        assert_eq!(result.label, TriageLabel::TruePositive);
+        assert!(result.confidence > 0.8);
+    }
+
+    #[test]
+    fn triage_low_score_is_fp() {
+        let engine = StubEngine::new();
+        let features = TriageFeatures {
+            anomaly_score: 0.1, confidence: 0.1,
+            suspicious_axes: 0, hour_of_day: 14, day_of_week: 2,
+            alert_frequency_1h: 0, device_risk_score: 0.05,
+        };
+        let result = engine.triage_alert(&features);
+        assert_eq!(result.label, TriageLabel::FalsePositive);
+    }
+
+    #[test]
+    fn triage_mid_score_needs_review() {
+        let engine = StubEngine::new();
+        let features = TriageFeatures {
+            anomaly_score: 0.5, confidence: 0.5,
+            suspicious_axes: 1, hour_of_day: 10, day_of_week: 3,
+            alert_frequency_1h: 2, device_risk_score: 0.3,
+        };
+        let result = engine.triage_alert(&features);
+        assert_eq!(result.label, TriageLabel::NeedsReview);
+    }
+
+    #[test]
+    fn triage_features_to_vec() {
+        let features = TriageFeatures {
+            anomaly_score: 0.5, confidence: 0.8,
+            suspicious_axes: 2, hour_of_day: 12, day_of_week: 3,
+            alert_frequency_1h: 10, device_risk_score: 0.6,
+        };
+        let v = features.to_vec();
+        assert_eq!(v.len(), 7);
+        assert!((v[0] - 0.5).abs() < 1e-6);
+        assert!((v[3] - 0.5).abs() < 1e-6); // 12/24
     }
 }

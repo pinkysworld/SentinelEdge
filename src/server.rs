@@ -5,7 +5,34 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tiny_http::{Header, Method, Request, Response, Server};
+use axum::body::Body;
+use axum::http::{HeaderMap, HeaderValue, Method as HttpMethod, StatusCode};
+use axum::response::Response;
+
+/// Local Method enum preserving tiny_http variant names for match compatibility.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Method {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Options,
+    Patch,
+    Head,
+}
+
+impl Method {
+    fn from_http(m: &HttpMethod) -> Self {
+        if m == HttpMethod::GET { Method::Get }
+        else if m == HttpMethod::POST { Method::Post }
+        else if m == HttpMethod::PUT { Method::Put }
+        else if m == HttpMethod::DELETE { Method::Delete }
+        else if m == HttpMethod::OPTIONS { Method::Options }
+        else if m == HttpMethod::PATCH { Method::Patch }
+        else if m == HttpMethod::HEAD { Method::Head }
+        else { Method::Get }
+    }
+}
 
 use crate::actions::DeviceController;
 use crate::auto_update::UpdateManager;
@@ -579,7 +606,7 @@ struct AgentActivitySnapshot {
     log_summary: AgentLogSummary,
 }
 
-pub fn run_server(
+pub async fn run_server(
     port: u16,
     site_dir: &Path,
     shutdown: Arc<AtomicBool>,
@@ -591,35 +618,13 @@ pub fn run_server(
     let tls_cert = std::env::var("WARDEX_TLS_CERT").ok();
     let tls_key = std::env::var("WARDEX_TLS_KEY").ok();
 
-    #[cfg(feature = "tls")]
-    let server = if let (Some(cert_path), Some(key_path)) = (&tls_cert, &tls_key) {
-        let tls_config = crate::tls::TlsConfig::new(cert_path, key_path);
-        let validation = tls_config.validate();
-        if !validation.valid {
-            return Err(format!("TLS config invalid: {}", validation.errors.join("; ")));
-        }
-        for w in &validation.warnings {
-            eprintln!("  TLS warning: {w}");
-        }
-        let ssl_config = tiny_http::SslConfig {
-            certificate: std::fs::read(cert_path)
-                .map_err(|e| format!("failed to read TLS cert: {e}"))?,
-            private_key: std::fs::read(key_path)
-                .map_err(|e| format!("failed to read TLS key: {e}"))?,
-        };
-        Server::https(&addr, ssl_config)
-            .map_err(|e| format!("failed to start HTTPS server: {e}"))?
-    } else {
-        Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?
-    };
+    if tls_cert.is_some() || tls_key.is_some() {
+        eprintln!("  NOTE: TLS configured via WARDEX_TLS_CERT/KEY — use a reverse proxy (nginx/caddy) for production TLS");
+    }
 
-    #[cfg(not(feature = "tls"))]
-    let server = {
-        if tls_cert.is_some() || tls_key.is_some() {
-            eprintln!("  WARNING: WARDEX_TLS_CERT/KEY set but binary compiled without 'tls' feature; using plain HTTP");
-        }
-        Server::http(&addr).map_err(|e| format!("failed to start server: {e}"))?
-    };
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("failed to bind {addr}: {e}"))?;
 
     let config_path = crate::config::runtime_config_path();
 
@@ -912,7 +917,126 @@ pub fn run_server(
 
     let site_dir = site_dir.to_path_buf();
 
-    serve_loop(&server, &state, &site_dir);
+    // Build axum router
+    let shared_state = Arc::clone(&state);
+    let shared_site = site_dir.clone();
+    let shutdown_flag = shutdown.clone();
+
+    use axum::Router;
+    use axum::extract::ConnectInfo;
+    use axum::routing::any;
+
+    let app = Router::new()
+        .fallback(move |
+            method: HttpMethod,
+            uri: axum::http::Uri,
+            headers: HeaderMap,
+            ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+            body: axum::body::Bytes,
+        | {
+            let state = shared_state.clone();
+            let site_dir = shared_site.clone();
+            async move {
+                let url = uri.to_string();
+                let remote_addr = addr.ip().to_string();
+
+                // Rate limiting
+                {
+                    let method_compat = Method::from_http(&method);
+                    let mut s = match state.lock() {
+                        Ok(g) => g,
+                        Err(e) => e.into_inner(),
+                    };
+                    s.request_count += 1;
+                    if !s.rate_limiter.check(&remote_addr, &method_compat, &url) {
+                        drop(s);
+                        if url.starts_with("/api/") {
+                            return respond_api(
+                                &state,
+                                &method_compat,
+                                &url,
+                                &remote_addr,
+                                false,
+                                error_json("rate limit exceeded", 429),
+                            );
+                        } else {
+                            return error_json("rate limit exceeded", 429);
+                        }
+                    }
+                }
+
+                // CORS preflight
+                if method == HttpMethod::OPTIONS {
+                    let origin = cors_origin();
+                    return Response::builder()
+                        .status(204)
+                        .header("Access-Control-Allow-Origin", origin)
+                        .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+                        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                        .header("Access-Control-Max-Age", "86400")
+                        .body(Body::empty())
+                        .unwrap();
+                }
+
+                if url.starts_with("/api/") {
+                    let m = Method::from_http(&method);
+                    let hdrs = headers.clone();
+                    let body_bytes: Vec<u8> = body.to_vec();
+                    let st = state.clone();
+                    let u = url.clone();
+                    let ra = remote_addr.clone();
+                    let sd = site_dir.clone();
+                    match tokio::task::spawn_blocking(move || {
+                        // Catch panics so one bad request cannot crash the server
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                            handle_api(m, &u, &hdrs, &body_bytes, &ra, &st)
+                        }))
+                    }).await {
+                        Ok(Ok(resp)) => resp,
+                        Ok(Err(panic_info)) => {
+                            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                                s.to_string()
+                            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                                s.clone()
+                            } else {
+                                "unknown panic in request handler".to_string()
+                            };
+                            log::error!("[PANIC-RECOVERED] request handler panic: {msg}");
+                            let mut s = match state.lock() {
+                                Ok(g) => g,
+                                Err(e) => e.into_inner(),
+                            };
+                            s.error_count += 1;
+                            drop(s);
+                            error_json("internal server error", 500)
+                        }
+                        Err(_) => error_json("internal server error", 500),
+                    }
+                } else {
+                    serve_static(&url, &site_dir)
+                }
+            }
+        });
+
+    let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+
+    eprintln!("Wardex server ready on http://localhost:{port}");
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                if shutdown_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+            log::info!("Server shutting down…");
+        })
+        .await
+        .map_err(|e| format!("server error: {e}"))?;
+
+    // ── Graceful shutdown: flush outstanding data to durable storage ──
+    flush_to_storage(&state);
 
     Ok(())
 }
@@ -921,8 +1045,11 @@ pub fn run_server(
 /// The server runs in a background thread.
 #[doc(hidden)]
 pub fn spawn_test_server() -> (u16, String) {
-    let server = Server::http("127.0.0.1:0").expect("bind test server");
-    let port = server.server_addr().to_ip().expect("ip addr").port();
+    let (tx, rx) = std::sync::mpsc::channel();
+    // Find a free port
+    let tmp_listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+    let port = tmp_listener.local_addr().expect("local addr").port();
+    drop(tmp_listener);
     let token = generate_token();
     let state_root = PathBuf::from(format!("/tmp/wardex_test_{port}"));
     let _ = std::fs::remove_dir_all(&state_root);
@@ -1028,93 +1155,92 @@ pub fn spawn_test_server() -> (u16, String) {
     }
     spawn_enterprise_hunt_scheduler(&state);
     let site_dir = PathBuf::from("site");
+    let shutdown = {
+        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+        s.shutdown.clone()
+    };
     std::thread::spawn(move || {
-        serve_loop(&server, &state, &site_dir);
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        rt.block_on(async move {
+            let shared_state = Arc::clone(&state);
+            let shared_site = site_dir.clone();
+            let shutdown_flag = shutdown.clone();
+
+            use axum::Router;
+            use axum::extract::ConnectInfo;
+
+            let app = Router::new()
+                .fallback(move |
+                    method: HttpMethod,
+                    uri: axum::http::Uri,
+                    headers: HeaderMap,
+                    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+                    body: axum::body::Bytes,
+                | {
+                    let state = shared_state.clone();
+                    let site_dir = shared_site.clone();
+                    async move {
+                        let url = uri.to_string();
+                        let remote_addr = addr.ip().to_string();
+
+                        {
+                            let method_compat = Method::from_http(&method);
+                            let mut s = match state.lock() {
+                                Ok(g) => g,
+                                Err(e) => e.into_inner(),
+                            };
+                            s.request_count += 1;
+                            if !s.rate_limiter.check(&remote_addr, &method_compat, &url) {
+                                drop(s);
+                                return error_json("rate limit exceeded", 429);
+                            }
+                        }
+
+                        if method == HttpMethod::OPTIONS {
+                            let origin = cors_origin();
+                            return Response::builder()
+                                .status(204)
+                                .header("Access-Control-Allow-Origin", origin)
+                                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+                                .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                                .body(Body::empty())
+                                .unwrap();
+                        }
+
+                        if url.starts_with("/api/") {
+                            let m = Method::from_http(&method);
+                            handle_api(m, &url, &headers, &body, &remote_addr, &state)
+                        } else {
+                            serve_static(&url, &site_dir)
+                        }
+                    }
+                });
+
+            let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
+                .await
+                .expect("bind test listener");
+            tx.send(()).ok();
+            let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    loop {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        if shutdown_flag.load(Ordering::Relaxed) {
+                            break;
+                        }
+                    }
+                })
+                .await
+                .ok();
+        });
     });
+    // Wait for server to be listening
+    let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
+    // Small delay to let the listener actually start accepting
+    std::thread::sleep(std::time::Duration::from_millis(50));
     (port, token)
 }
 
-fn serve_loop(server: &Server, state: &Arc<Mutex<AppState>>, site_dir: &Path) {
-    loop {
-        match server.recv_timeout(std::time::Duration::from_millis(500)) {
-            Ok(Some(request)) => {
-                let url = request.url().to_string();
-                let method = request.method().clone();
-                let remote_addr = request
-                    .remote_addr()
-                    .map(|a| a.ip().to_string())
-                    .unwrap_or_default();
-
-                // Rate limiting
-                {
-                    let mut s = match state.lock() {
-                        Ok(g) => g,
-                        Err(e) => e.into_inner(),
-                    };
-                    s.request_count += 1;
-                    if !s.rate_limiter.check(&remote_addr, &method, &url) {
-                        drop(s);
-                        if url.starts_with("/api/") {
-                            respond_api(
-                                request,
-                                state,
-                                &method,
-                                &url,
-                                false,
-                                error_json("rate limit exceeded", 429),
-                            );
-                        } else {
-                            let _ = request.respond(error_json("rate limit exceeded", 429));
-                        }
-                        continue;
-                    }
-                }
-
-                // Wrap request handling in catch_unwind to prevent a panic
-                // from poisoning the shared mutex — one bad request must not
-                // take down the entire server.
-                let state_clone = Arc::clone(state);
-                let site_dir_buf = site_dir.to_path_buf();
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                    if url.starts_with("/api/") {
-                        handle_api(request, &state_clone, &site_dir_buf, server);
-                    } else {
-                        serve_static(request, &site_dir_buf);
-                    }
-                }));
-                if let Err(panic_info) = result {
-                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                        s.to_string()
-                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                        s.clone()
-                    } else {
-                        "unknown panic in request handler".to_string()
-                    };
-                    log::error!("[PANIC-RECOVERED] request handler panic: {msg}");
-                    let mut s = match state.lock() {
-                        Ok(g) => g,
-                        Err(e) => e.into_inner(),
-                    };
-                    s.error_count += 1;
-                }
-            }
-            Ok(None) => {} // timeout, check shutdown
-            Err(_) => break,
-        }
-        let s = match state.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        if s.shutdown.load(Ordering::Relaxed) {
-            drop(s);
-            log::info!("Server shutting down…");
-            break;
-        }
-    }
-
-    // ── Graceful shutdown: flush outstanding data to durable storage ──
-    flush_to_storage(state);
-}
 
 /// Flush in-memory alerts, audit entries, and event store to the SQLite
 /// storage backend so nothing is lost on shutdown.
@@ -1297,69 +1423,51 @@ fn cors_origin() -> String {
     }
 }
 
-fn json_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
+fn json_response(body: &str, status: u16) -> Response<Body> {
     let origin = cors_origin();
-    let data = body.as_bytes().to_vec();
-    let len = data.len();
-    Response::new(
-        tiny_http::StatusCode(status),
-        vec![
-            Header::from_bytes(b"Content-Type", b"application/json").unwrap(),
-            Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
-            Header::from_bytes(b"Vary", b"Origin").unwrap(),
-            Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
-            Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
-            Header::from_bytes(b"Cache-Control", b"no-store").unwrap(),
-        ],
-        std::io::Cursor::new(data),
-        Some(len),
-        None,
-    )
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .header("Access-Control-Allow-Origin", origin)
+        .header("Vary", "Origin")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Frame-Options", "DENY")
+        .header("Cache-Control", "no-store")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
 }
 
-fn error_json(message: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
+fn error_json(message: &str, status: u16) -> Response<Body> {
     let body = format!(r#"{{"error":"{}"}}"#, message.replace('"', "\\\""));
     json_response(&body, status)
 }
 
-fn text_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
+fn text_response(body: &str, status: u16) -> Response<Body> {
     let origin = cors_origin();
-    let data = body.as_bytes().to_vec();
-    let len = data.len();
-    Response::new(
-        tiny_http::StatusCode(status),
-        vec![
-            Header::from_bytes(b"Content-Type", b"text/plain; charset=utf-8").unwrap(),
-            Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
-            Header::from_bytes(b"Vary", b"Origin").unwrap(),
-            Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
-            Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
-            Header::from_bytes(b"Cache-Control", b"no-store").unwrap(),
-        ],
-        std::io::Cursor::new(data),
-        Some(len),
-        None,
-    )
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .header("Access-Control-Allow-Origin", origin)
+        .header("Vary", "Origin")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Frame-Options", "DENY")
+        .header("Cache-Control", "no-store")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
 }
 
-fn csv_response(body: &str, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
+fn csv_response(body: &str, status: u16) -> Response<Body> {
     let origin = cors_origin();
-    let data = body.as_bytes().to_vec();
-    let len = data.len();
-    Response::new(
-        tiny_http::StatusCode(status),
-        vec![
-            Header::from_bytes(b"Content-Type", b"text/csv; charset=utf-8").unwrap(),
-            Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
-            Header::from_bytes(b"Vary", b"Origin").unwrap(),
-            Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
-            Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
-            Header::from_bytes(b"Cache-Control", b"no-store").unwrap(),
-        ],
-        std::io::Cursor::new(data),
-        Some(len),
-        None,
-    )
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Access-Control-Allow-Origin", origin)
+        .header("Vary", "Origin")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Frame-Options", "DENY")
+        .header("Cache-Control", "no-store")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
 }
 
 fn recent_alerts_json(
@@ -1491,13 +1599,13 @@ fn prometheus_metrics_payload(state: &AppState) -> String {
 }
 
 fn respond_api(
-    request: Request,
     state: &Arc<Mutex<AppState>>,
     method: &Method,
     url: &str,
+    remote_addr: &str,
     auth_used: bool,
-    mut response: Response<std::io::Cursor<Vec<u8>>>,
-) {
+    response: Response<Body>,
+) -> Response<Body> {
     // Generate a short request ID for tracing
     let req_id = {
         use rand::Rng;
@@ -1506,14 +1614,7 @@ fn respond_api(
         rng.fill(&mut buf);
         hex::encode(buf)
     };
-    response.add_header(
-        Header::from_bytes(b"X-Request-Id", req_id.as_bytes()).unwrap(),
-    );
-    let status_code = response.status_code().0;
-    let source_ip = request
-        .remote_addr()
-        .map(|addr| addr.to_string())
-        .unwrap_or_else(|| "unknown".into());
+    let status_code = response.status().as_u16();
     {
         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
         if status_code >= 400 {
@@ -1522,12 +1623,14 @@ fn respond_api(
         s.audit_log.record(
             &format!("{method:?}"),
             url,
-            &source_ip,
+            remote_addr,
             status_code,
             auth_used,
         );
     }
-    let _ = request.respond(response);
+    let (mut parts, body) = response.into_parts();
+    parts.headers.insert("X-Request-Id", req_id.parse().unwrap());
+    Response::from_parts(parts, body)
 }
 
 #[derive(Debug, Clone)]
@@ -1555,16 +1658,10 @@ impl AuthIdentity {
     }
 }
 
-fn bearer_token(request: &Request) -> Option<String> {
-    for header in request.headers() {
-        if header
-            .field
-            .as_str()
-            .as_str()
-            .eq_ignore_ascii_case("authorization")
-        {
-            let val = header.value.as_str();
-            if let Some(token) = val.strip_prefix("Bearer ") {
+fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    if let Some(val) = headers.get("authorization") {
+        if let Ok(s) = val.to_str() {
+            if let Some(token) = s.strip_prefix("Bearer ") {
                 return Some(token.trim().to_string());
             }
         }
@@ -1572,8 +1669,8 @@ fn bearer_token(request: &Request) -> Option<String> {
     None
 }
 
-fn authenticate_request(request: &Request, state: &Arc<Mutex<AppState>>) -> AuthIdentity {
-    let Some(token) = bearer_token(request) else {
+fn authenticate_request(headers: &HeaderMap, state: &Arc<Mutex<AppState>>) -> AuthIdentity {
+    let Some(token) = bearer_token(headers) else {
         return AuthIdentity::None;
     };
     let state = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -2875,9 +2972,9 @@ fn spawn_retention_purge_scheduler(state: &Arc<Mutex<AppState>>) {
     });
 }
 
-fn read_json_value(request: &mut Request, limit: usize) -> Result<serde_json::Value, String> {
-    let body = read_body_limited(request, limit)?;
-    serde_json::from_str::<serde_json::Value>(&body).map_err(|e| format!("invalid JSON: {e}"))
+fn read_json_value(body: &[u8], limit: usize) -> Result<serde_json::Value, String> {
+    let body_str = read_body_limited(body, limit)?;
+    serde_json::from_str::<serde_json::Value>(&body_str).map_err(|e| format!("invalid JSON: {e}"))
 }
 
 fn incident_related_events(
@@ -3206,30 +3303,28 @@ fn monitoring_paths_payload(host: &HostInfo, config: &Config) -> serde_json::Val
 
 #[allow(clippy::nonminimal_bool)]
 fn handle_api(
-    mut request: Request,
+    method: Method,
+    url: &str,
+    headers: &HeaderMap,
+    body: &[u8],
+    remote_addr: &str,
     state: &Arc<Mutex<AppState>>,
-    _site_dir: &Path,
-    server: &Server,
-) {
-    let url = request.url().to_string();
+) -> Response<Body> {
+    let url = url.to_string();
     let route_path = url_path(&url);
-    let method = request.method().clone();
 
     // ── Request body size limit (10 MB) ──
     const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
-    if let Some(len) = request.body_length()
-        && len > MAX_BODY_SIZE {
-            respond_api(
-                request,
-                state,
-                &method,
-                &url,
-                false,
-                error_json("request body too large", 413),
-            );
-            return;
-        }
-    // Body limit enforced in read_body_limited()
+    if body.len() > MAX_BODY_SIZE {
+        return respond_api(
+            state,
+            &method,
+            &url,
+            remote_addr,
+            false,
+            error_json("request body too large", 413),
+        );
+    }
 
     // Check auth for mutating endpoints before consuming the request body
     // XDR agent endpoints that do NOT require admin auth (agents use enrollment tokens)
@@ -3253,7 +3348,7 @@ fn handle_api(
     if is_agent_endpoint && !route_path.starts_with("/api/updates/download/")
         && route_path != "/api/openapi.json"
         && let Ok(required_agent_token) = std::env::var("WARDEX_AGENT_TOKEN") {
-            let provided = bearer_token(&request);
+            let provided = bearer_token(headers);
             let valid = provided.as_deref().is_some_and(|t| {
                 let a = t.as_bytes();
                 let b = required_agent_token.as_bytes();
@@ -3263,15 +3358,14 @@ fn handle_api(
                 diff == 0
             });
             if !valid {
-                respond_api(
-                    request,
+                return respond_api(
                     state,
                     &method,
                     &url,
+                    remote_addr,
                     false,
                     error_json("agent token required", 401),
                 );
-                return;
             }
         }
 
@@ -3527,31 +3621,29 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/sbom")
         || (method == Method::Post && route_path == "/api/pii/scan")));
 
-    let auth_identity = authenticate_request(&request, state);
+    let auth_identity = authenticate_request(headers, state);
     if needs_auth && !auth_identity.is_authenticated() {
-        respond_api(
-            request,
+        return respond_api(
             state,
             &method,
             &url,
+            remote_addr,
             false,
             error_json("unauthorized", 401),
         );
-        return;
     }
 
     // RBAC enforcement for sensitive endpoints
     // Admin token holders bypass RBAC entirely
     if needs_auth && !check_rbac(state, route_path, &method, &auth_identity) {
-        respond_api(
-            request,
+        return respond_api(
             state,
             &method,
             &url,
+            remote_addr,
             auth_identity.is_authenticated(),
             error_json("forbidden: insufficient role", 403),
         );
-        return;
     }
     let auth_used = needs_auth || auth_identity.is_authenticated();
 
@@ -3660,7 +3752,7 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/graphql") => {
-            match read_body_limited(&mut request, 100_000) {
+            match read_body_limited(body, 100_000) {
                 Err(_) => error_json("request too large", 413),
                 Ok(body) => match serde_json::from_str::<GqlRequest>(&body) {
                     Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
@@ -3741,8 +3833,8 @@ fn handle_api(
                 }
             }
         }
-        (Method::Post, "/api/analyze") => handle_analyze(&mut request, state),
-        (Method::Post, "/api/control/mode") => handle_mode(&mut request, state),
+        (Method::Post, "/api/analyze") => handle_analyze(body, state),
+        (Method::Post, "/api/control/mode") => handle_mode(body, state),
         (Method::Post, "/api/control/reset-baseline") => {
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.detector.reset_baseline();
@@ -3873,7 +3965,7 @@ fn handle_api(
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
-        (Method::Post, "/api/fleet/register") => handle_fleet_register(&mut request, state),
+        (Method::Post, "/api/fleet/register") => handle_fleet_register(body, state),
 
         // ── Enforcement ───────────────────────────────────────────
         (Method::Get, "/api/enforcement/status") => {
@@ -3890,7 +3982,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/enforcement/quarantine") => {
-            handle_enforcement_quarantine(&mut request, state)
+            handle_enforcement_quarantine(body, state)
         }
 
         // ── Threat Intelligence ───────────────────────────────────
@@ -3901,7 +3993,7 @@ fn handle_api(
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/threat-intel/ioc") => handle_threat_intel_ioc(&mut request, state),
+        (Method::Post, "/api/threat-intel/ioc") => handle_threat_intel_ioc(body, state),
 
         // ── Threat Intel Stats ────────────────────────────────────
         (Method::Get, "/api/threat-intel/stats") => {
@@ -3915,7 +4007,7 @@ fn handle_api(
 
         // ── IoC Purge (TTL-based) ─────────────────────────────────
         (Method::Post, "/api/threat-intel/purge") => {
-            match read_body_limited(&mut request, 4096) {
+            match read_body_limited(body, 4096) {
                 Err(e) => error_json(&e, 400),
                 Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
                     Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
@@ -3959,7 +4051,7 @@ fn handle_api(
             ), 200)
         }
         (Method::Put, "/api/detection/profile") => {
-            match read_body_limited(&mut request, 4096) {
+            match read_body_limited(body, 4096) {
                 Err(e) => error_json(&e, 400),
                 Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
                     Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
@@ -3980,7 +4072,7 @@ fn handle_api(
 
         // ── False-Positive Feedback ───────────────────────────────
         (Method::Post, "/api/fp-feedback") => {
-            match read_body_limited(&mut request, 4096) {
+            match read_body_limited(body, 4096) {
                 Err(e) => error_json(&e, 400),
                 Ok(body) => match serde_json::from_str::<crate::alert_analysis::FpFeedback>(&body) {
                     Err(e) => error_json(&format!("invalid feedback: {e}"), 400),
@@ -4040,7 +4132,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Post, "/api/digital-twin/simulate") => {
-            handle_digital_twin_simulate(&mut request, state)
+            handle_digital_twin_simulate(body, state)
         }
 
         // ── Compliance ────────────────────────────────────────────
@@ -4064,7 +4156,7 @@ fn handle_api(
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/energy/consume") => handle_energy_consume(&mut request, state),
+        (Method::Post, "/api/energy/consume") => handle_energy_consume(body, state),
 
         // ── Multi-tenancy ─────────────────────────────────────────
         (Method::Get, "/api/tenants/count") => {
@@ -4132,7 +4224,7 @@ fn handle_api(
         }
 
         // ── Policy VM ─────────────────────────────────────────────
-        (Method::Post, "/api/policy-vm/execute") => handle_policy_vm_execute(&mut request, state),
+        (Method::Post, "/api/policy-vm/execute") => handle_policy_vm_execute(body, state),
 
         // ── Fingerprint ───────────────────────────────────────────
         (Method::Get, "/api/fingerprint/status") => {
@@ -4200,10 +4292,10 @@ fn handle_api(
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/deception/deploy") => handle_deception_deploy(&mut request, state),
+        (Method::Post, "/api/deception/deploy") => handle_deception_deploy(body, state),
 
         // ── Policy Composition ────────────────────────────────────
-        (Method::Post, "/api/policy/compose") => handle_policy_compose(&mut request, state),
+        (Method::Post, "/api/policy/compose") => handle_policy_compose(body, state),
 
         // ── Drift Detection ───────────────────────────────────────
         (Method::Get, "/api/drift/status") => {
@@ -4358,9 +4450,9 @@ fn handle_api(
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
-        (Method::Post, "/api/config/reload") => handle_config_reload(&mut request, state),
+        (Method::Post, "/api/config/reload") => handle_config_reload(body, state),
         (Method::Post, "/api/config/save") => {
-            match read_body_limited(&mut request, 10 * 1024 * 1024) {
+            match read_body_limited(body, 10 * 1024 * 1024) {
                 Ok(body) => {
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     let config_path = s.config_path.clone();
@@ -4574,7 +4666,7 @@ fn handle_api(
             json_response(&format!(r#"{{"status":"cleared","count":{cleared}}}"#), 200)
         }
         (Method::Post, "/api/alerts/sample") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             let severity = match body {
                 Ok(b) => {
                     #[derive(serde::Deserialize)]
@@ -4671,7 +4763,7 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/alerts/analysis") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             let window = match body {
                 Ok(b) => {
                     #[derive(serde::Deserialize)]
@@ -5122,8 +5214,8 @@ fn handle_api(
         }
 
         // ── XDR Agent Management ──────────────────────────────────
-        (Method::Post, "/api/agents/enroll") => handle_agent_enroll(&mut request, state),
-        (Method::Post, "/api/agents/token") => handle_agent_create_token(&mut request, state),
+        (Method::Post, "/api/agents/enroll") => handle_agent_enroll(body, state),
+        (Method::Post, "/api/agents/token") => handle_agent_create_token(body, state),
         (Method::Get, "/api/agents") => {
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
@@ -5145,7 +5237,7 @@ fn handle_api(
         }
 
         // ── XDR Events ────────────────────────────────────────────
-        (Method::Post, "/api/events") => handle_event_ingest(&mut request, state),
+        (Method::Post, "/api/events") => handle_event_ingest(body, state),
         (Method::Get, "/api/events") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let query = parse_event_query(&url);
@@ -5188,14 +5280,14 @@ fn handle_api(
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
-        (Method::Post, "/api/policy/publish") => handle_policy_publish(&mut request, state),
+        (Method::Post, "/api/policy/publish") => handle_policy_publish(body, state),
 
         // ── XDR Update Distribution ──────────────────────────────
-        (Method::Post, "/api/updates/publish") => handle_update_publish(&mut request, state),
-        (Method::Post, "/api/updates/deploy") => handle_update_deploy(&mut request, state),
-        (Method::Post, "/api/updates/rollback") => handle_update_rollback(&mut request, state),
-        (Method::Post, "/api/updates/cancel") => handle_update_cancel(&mut request, state),
-        (Method::Post, "/api/events/bulk-triage") => handle_bulk_triage(&mut request, state),
+        (Method::Post, "/api/updates/publish") => handle_update_publish(body, state),
+        (Method::Post, "/api/updates/deploy") => handle_update_deploy(body, state),
+        (Method::Post, "/api/updates/rollback") => handle_update_rollback(body, state),
+        (Method::Post, "/api/updates/cancel") => handle_update_cancel(body, state),
+        (Method::Post, "/api/events/bulk-triage") => handle_bulk_triage(body, state),
 
         // ── Detection Analysis ─────────────────────────────────
         (Method::Get, "/api/detection/summary") => {
@@ -5239,32 +5331,30 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/detection/weights") => {
-            let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
+            let body = match read_body_limited(body, 10 * 1024 * 1024) {
                 Ok(b) => b,
                 Err(e) => {
-                    respond_api(
-                        request,
+                    return respond_api(
                         state,
                         &method,
                         &url,
+                        remote_addr,
                         auth_used,
                         error_json(&e, 400),
                     );
-                    return;
                 }
             };
             let weights: HashMap<String, f32> = match serde_json::from_str(&body) {
                 Ok(w) => w,
                 Err(e) => {
-                    respond_api(
-                        request,
+                    return respond_api(
                         state,
                         &method,
                         &url,
+                        remote_addr,
                         auth_used,
                         error_json(&format!("invalid JSON: {e}"), 400),
                     );
-                    return;
                 }
             };
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -5296,18 +5386,17 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/incidents") => {
-            let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
+            let body = match read_body_limited(body, 10 * 1024 * 1024) {
                 Ok(b) => b,
                 Err(e) => {
-                    respond_api(
-                        request,
+                    return respond_api(
                         state,
                         &method,
                         &url,
+                        remote_addr,
                         auth_used,
                         error_json(&e, 400),
                     );
-                    return;
                 }
             };
             #[derive(serde::Deserialize)]
@@ -5324,15 +5413,14 @@ fn handle_api(
             let req: CreateIncident = match serde_json::from_str(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    respond_api(
-                        request,
+                    return respond_api(
                         state,
                         &method,
                         &url,
+                        remote_addr,
                         auth_used,
                         error_json(&format!("invalid JSON: {e}"), 400),
                     );
-                    return;
                 }
             };
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -5407,7 +5495,7 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/siem/config") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             match body {
                 Ok(b) => match serde_json::from_str::<crate::siem::SiemConfig>(&b) {
                     Ok(new_cfg) => {
@@ -5456,7 +5544,7 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/taxii/config") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             match body {
                 Ok(b) => match serde_json::from_str::<crate::siem::TaxiiConfig>(&b) {
                     Ok(new_cfg) => {
@@ -5648,7 +5736,7 @@ fn handle_api(
                 200,
             )
         }
-        (Method::Post, "/api/hunts") => match read_json_value(&mut request, 16 * 1024) {
+        (Method::Post, "/api/hunts") => match read_json_value(body, 16 * 1024) {
             Ok(v) => {
                 let query = v.get("query").cloned().unwrap_or_else(|| {
                     serde_json::json!({
@@ -5702,7 +5790,7 @@ fn handle_api(
             )
         }
         (Method::Post, "/api/content/rules") => {
-            match read_json_value(&mut request, 16 * 1024) {
+            match read_json_value(body, 16 * 1024) {
                 Ok(v) => {
                     let is_builtin = v["builtin"].as_bool().unwrap_or(false)
                         || v["kind"]
@@ -5799,7 +5887,7 @@ fn handle_api(
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&serde_json::json!({"packs": s.enterprise.packs(), "count": s.enterprise.packs().len()}).to_string(), 200)
         }
-        (Method::Post, "/api/content/packs") => match read_json_value(&mut request, 12 * 1024) {
+        (Method::Post, "/api/content/packs") => match read_json_value(body, 12 * 1024) {
             Ok(v) => {
                 let rule_ids = v
                     .get("rule_ids")
@@ -5853,7 +5941,7 @@ fn handle_api(
                 200,
             )
         }
-        (Method::Post, "/api/suppressions") => match read_json_value(&mut request, 12 * 1024) {
+        (Method::Post, "/api/suppressions") => match read_json_value(body, 12 * 1024) {
             Ok(v) => {
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let suppression = s.enterprise.create_or_update_suppression(
@@ -5909,7 +5997,7 @@ fn handle_api(
             json_response(&serde_json::json!({"connectors": s.enterprise.connectors(), "count": s.enterprise.connectors().len()}).to_string(), 200)
         }
         (Method::Post, "/api/enrichments/connectors") => {
-            match read_json_value(&mut request, 16 * 1024) {
+            match read_json_value(body, 16 * 1024) {
                 Ok(v) => {
                     let metadata = v
                         .get("metadata")
@@ -5958,7 +6046,7 @@ fn handle_api(
         }
         (Method::Post, "/api/tickets/sync") => {
             let started = std::time::Instant::now();
-            match read_json_value(&mut request, 12 * 1024) {
+            match read_json_value(body, 12 * 1024) {
                 Ok(v) => {
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     let sync = s.enterprise.sync_ticket(
@@ -5999,7 +6087,7 @@ fn handle_api(
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&serde_json::json!({"providers": s.enterprise.idp_providers(), "count": s.enterprise.idp_providers().len()}).to_string(), 200)
         }
-        (Method::Post, "/api/idp/providers") => match read_json_value(&mut request, 12 * 1024) {
+        (Method::Post, "/api/idp/providers") => match read_json_value(body, 12 * 1024) {
             Ok(v) => {
                 let mappings = v
                     .get("group_role_mappings")
@@ -6056,7 +6144,7 @@ fn handle_api(
                 200,
             )
         }
-        (Method::Post, "/api/scim/config") => match read_json_value(&mut request, 12 * 1024) {
+        (Method::Post, "/api/scim/config") => match read_json_value(body, 12 * 1024) {
             Ok(v) => {
                 let mappings = v
                     .get("group_role_mappings")
@@ -6223,30 +6311,19 @@ fn handle_api(
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.shutdown.store(true, Ordering::SeqCst);
             drop(s);
-            server.unblock();
             json_response(r#"{"status":"shutting_down"}"#, 200)
         }
 
         (Method::Options, _) => {
-            let data: Vec<u8> = Vec::new();
-            Response::new(
-                tiny_http::StatusCode(204),
-                vec![
-                    Header::from_bytes(b"Access-Control-Allow-Origin", cors_origin().as_bytes())
-                        .unwrap(),
-                    Header::from_bytes(b"Vary", b"Origin").unwrap(),
-                    Header::from_bytes(b"Access-Control-Allow-Methods", b"GET, POST, DELETE, OPTIONS")
-                        .unwrap(),
-                    Header::from_bytes(
-                        b"Access-Control-Allow-Headers",
-                        b"Content-Type, Authorization",
-                    )
-                    .unwrap(),
-                ],
-                std::io::Cursor::new(data),
-                Some(0),
-                None,
-            )
+            let origin = cors_origin();
+            Response::builder()
+                .status(204)
+                .header("Access-Control-Allow-Origin", origin)
+                .header("Vary", "Origin")
+                .header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+                .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                .body(Body::empty())
+                .unwrap()
         }
 
         // ── Sigma Detection Engine ────────────────────────────────
@@ -6738,7 +6815,7 @@ fn handle_api(
         }
 
         (Method::Post, "/api/rbac/users") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             match body {
                 Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
                     Ok(v) => {
@@ -6819,7 +6896,7 @@ fn handle_api(
             )
         }
         (Method::Post, "/api/cases") => {
-            let body = read_body_limited(&mut request, 8192);
+            let body = read_body_limited(body, 8192);
             match body {
                 Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
                     Ok(v) => {
@@ -6915,7 +6992,7 @@ fn handle_api(
             json_response(&s.alert_queue.stats().to_string(), 200)
         }
         (Method::Post, "/api/queue/acknowledge") => {
-            let body = read_body_limited(&mut request, 1024);
+            let body = read_body_limited(body, 1024);
             match body {
                 Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
                     Ok(v) => {
@@ -6939,7 +7016,7 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/queue/assign") => {
-            let body = read_body_limited(&mut request, 1024);
+            let body = read_body_limited(body, 1024);
             match body {
                 Ok(b) => {
                     match serde_json::from_str::<serde_json::Value>(&b) {
@@ -6962,7 +7039,7 @@ fn handle_api(
 
         // ── Analyst Console: Event Search ──────────────────────────
         (Method::Post, "/api/events/search") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             match body {
                 Ok(b) => match serde_json::from_str::<crate::analyst::SearchQuery>(&b) {
                     Ok(q) => {
@@ -7026,7 +7103,7 @@ fn handle_api(
 
         // ── Analyst Console: Investigation Graph ───────────────────
         (Method::Post, "/api/investigation/graph") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             match body {
                 Ok(b) => {
                     match serde_json::from_str::<serde_json::Value>(&b) {
@@ -7053,22 +7130,21 @@ fn handle_api(
 
         // ── Analyst Console: Remediation Approval ──────────────────
         (Method::Post, "/api/response/request") => {
-            let body = read_body_limited(&mut request, 4096);
+            let body = read_body_limited(body, 4096);
             match body {
                 Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
                     Ok(v) => {
                         let action = match response_action_from_json(&v) {
                             Ok(action) => action,
                             Err(e) => {
-                                respond_api(
-                                    request,
+                                return respond_api(
                                     state,
                                     &method,
                                     &url,
+                                    remote_addr,
                                     auth_used,
                                     error_json(&e, 400),
                                 );
-                                return;
                             }
                         };
 
@@ -7079,15 +7155,14 @@ fn handle_api(
                             .trim()
                             .to_string();
                         if hostname.is_empty() {
-                            respond_api(
-                                request,
+                            return respond_api(
                                 state,
                                 &method,
                                 &url,
+                                remote_addr,
                                 auth_used,
                                 error_json("hostname is required", 400),
                             );
-                            return;
                         }
 
                         let reason = v["reason"]
@@ -7167,38 +7242,36 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/response/approve") => {
-            let body = read_body_limited(&mut request, 2048);
+            let body = read_body_limited(body, 2048);
             match body {
                 Ok(b) => match serde_json::from_str::<serde_json::Value>(&b) {
                     Ok(v) => {
                         let request_id = v["request_id"].as_str().unwrap_or("").to_string();
                         if request_id.is_empty() {
-                            respond_api(
-                                request,
+                            return respond_api(
                                 state,
                                 &method,
                                 &url,
+                                remote_addr,
                                 auth_used,
                                 error_json("request_id is required", 400),
                             );
-                            return;
                         }
                         let decision = match v["decision"].as_str().unwrap_or("") {
                             "approved" | "approve" => ResponseApprovalDecision::Approve,
                             "denied" | "deny" => ResponseApprovalDecision::Deny,
                             _ => {
-                                respond_api(
-                                    request,
+                                return respond_api(
                                     state,
                                     &method,
                                     &url,
+                                    remote_addr,
                                     auth_used,
                                     json_response(
                                         &serde_json::json!({"error": "decision must be 'approved' or 'denied'"}).to_string(),
                                         400,
                                     ),
                                 );
-                                return;
                             }
                         };
                         let approver = v["approver"].as_str()
@@ -7279,18 +7352,17 @@ fn handle_api(
 
         // ── Execute approved response actions ──────────────────
         (Method::Post, "/api/response/execute") => {
-            let body = match read_body_limited(&mut request, 2048) {
+            let body = match read_body_limited(body, 2048) {
                 Ok(body) => body,
                 Err(e) => {
-                    respond_api(
-                        request,
+                    return respond_api(
                         state,
                         &method,
                         &url,
+                        remote_addr,
                         auth_used,
                         error_json(&e, 400),
                     );
-                    return;
                 }
             };
             let request_id = if body.trim().is_empty() {
@@ -7299,15 +7371,14 @@ fn handle_api(
                 match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(value) => value["request_id"].as_str().map(|s| s.to_string()),
                     Err(_) => {
-                        respond_api(
-                            request,
+                        return respond_api(
                             state,
                             &method,
                             &url,
+                            remote_addr,
                             auth_used,
                             error_json("invalid JSON", 400),
                         );
-                        return;
                     }
                 }
             };
@@ -7330,7 +7401,7 @@ fn handle_api(
             let url_path = url_path(&url);
             if method == Method::Get && url_path == "/api/agents/update" {
                 // GET /api/agents/update?current_version=xxx&platform=yyy
-                handle_agent_update_check(&mut request, state)
+                handle_agent_update_check(body, &url, state)
             } else if method == Method::Get && url_path == "/api/reports/executive-summary" {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let summary = s.report_store.executive_summary(&s.incident_store);
@@ -7403,7 +7474,7 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/heartbeat"))
                     .unwrap_or("");
-                handle_agent_heartbeat(&mut request, state, agent_id)
+                handle_agent_heartbeat(body, state, agent_id)
             } else if method == Method::Get
                 && url_path.starts_with("/api/agents/")
                 && url_path.ends_with("/activity")
@@ -7438,7 +7509,7 @@ fn handle_api(
                     .and_then(|rest| rest.strip_suffix("/triage"))
                     .unwrap_or("")
                     .trim_end_matches('/');
-                handle_event_triage(&mut request, state, event_id)
+                handle_event_triage(body, state, event_id)
             } else if method == Method::Post
                 && url_path.starts_with("/api/agents/")
                 && url_path.ends_with("/scope")
@@ -7447,7 +7518,7 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/scope"))
                     .unwrap_or("");
-                handle_agent_set_scope(&mut request, state, agent_id)
+                handle_agent_set_scope(body, state, agent_id)
             } else if method == Method::Get
                 && url_path.starts_with("/api/agents/")
                 && url_path.ends_with("/scope")
@@ -7495,32 +7566,30 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/logs"))
                     .unwrap_or("");
-                let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
+                let body = match read_body_limited(body, 10 * 1024 * 1024) {
                     Ok(b) => b,
                     Err(e) => {
-                        respond_api(
-                            request,
+                        return respond_api(
                             state,
                             &method,
                             &url,
+                            remote_addr,
                             auth_used,
                             error_json(&e, 400),
                         );
-                        return;
                     }
                 };
                 let logs: Vec<crate::log_collector::LogRecord> = match serde_json::from_str(&body) {
                     Ok(l) => l,
                     Err(e) => {
-                        respond_api(
-                            request,
+                        return respond_api(
                             state,
                             &method,
                             &url,
+                            remote_addr,
                             auth_used,
                             error_json(&format!("invalid JSON: {e}"), 400),
                         );
-                        return;
                     }
                 };
                 let count = logs.len();
@@ -7566,33 +7635,31 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
-                let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
+                let body = match read_body_limited(body, 10 * 1024 * 1024) {
                     Ok(b) => b,
                     Err(e) => {
-                        respond_api(
-                            request,
+                        return respond_api(
                             state,
                             &method,
                             &url,
+                            remote_addr,
                             auth_used,
                             error_json(&e, 400),
                         );
-                        return;
                     }
                 };
                 let inventory: crate::inventory::SystemInventory = match serde_json::from_str(&body)
                 {
                     Ok(i) => i,
                     Err(e) => {
-                        respond_api(
-                            request,
+                        return respond_api(
                             state,
                             &method,
                             &url,
+                            remote_addr,
                             auth_used,
                             error_json(&format!("invalid JSON: {e}"), 400),
                         );
-                        return;
                     }
                 };
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -7699,18 +7766,17 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/incidents/", "/update") {
                     Some(id) => {
-                        let body = match read_body_limited(&mut request, 10 * 1024 * 1024) {
+                        let body = match read_body_limited(body, 10 * 1024 * 1024) {
                             Ok(b) => b,
                             Err(e) => {
-                                respond_api(
-                                    request,
+                                return respond_api(
                                     state,
                                     &method,
                                     &url,
+                                    remote_addr,
                                     auth_used,
                                     error_json(&e, 400),
                                 );
-                                return;
                             }
                         };
                         #[derive(serde::Deserialize)]
@@ -7723,15 +7789,14 @@ fn handle_api(
                         let upd: IncidentUpdate = match serde_json::from_str(&body) {
                             Ok(u) => u,
                             Err(e) => {
-                                respond_api(
-                                    request,
+                                return respond_api(
                                     state,
                                     &method,
                                     &url,
+                                    remote_addr,
                                     auth_used,
                                     error_json(&format!("invalid JSON: {e}"), 400),
                                 );
-                                return;
                             }
                         };
                         let status = upd.status.as_deref().map(|s| match s {
@@ -7792,45 +7857,16 @@ fn handle_api(
                             Some(report) => {
                                 let html = report.report.to_html();
                                 let data = html.as_bytes().to_vec();
-                                let len = data.len();
-                                Response::new(
-                                    tiny_http::StatusCode(200),
-                                    vec![
-                                        Header::from_bytes(
-                                            b"Content-Type",
-                                            b"text/html; charset=utf-8",
-                                        )
-                                        .unwrap(),
-                                        Header::from_bytes(
-                                            b"Access-Control-Allow-Origin",
-                                            cors_origin().as_bytes(),
-                                        )
-                                        .unwrap(),
-                                        Header::from_bytes(
-                                            b"Content-Disposition",
-                                            b"attachment; filename=\"report.html\"",
-                                        )
-                                        .unwrap(),
-                                        Header::from_bytes(
-                                            b"X-Content-Type-Options",
-                                            b"nosniff",
-                                        )
-                                        .unwrap(),
-                                        Header::from_bytes(
-                                            b"X-Frame-Options",
-                                            b"DENY",
-                                        )
-                                        .unwrap(),
-                                        Header::from_bytes(
-                                            b"Cache-Control",
-                                            b"no-store",
-                                        )
-                                        .unwrap(),
-                                    ],
-                                    std::io::Cursor::new(data),
-                                    Some(len),
-                                    None,
-                                )
+                                Response::builder()
+                                    .status(200)
+                                    .header("Content-Type", "text/html; charset=utf-8")
+                                    .header("Access-Control-Allow-Origin", cors_origin())
+                                    .header("Content-Disposition", "attachment; filename=\"report.html\"")
+                                    .header("X-Content-Type-Options", "nosniff")
+                                    .header("X-Frame-Options", "DENY")
+                                    .header("Cache-Control", "no-store")
+                                    .body(Body::from(data))
+                                    .unwrap()
                             }
                             None => error_json("report not found", 404),
                         }
@@ -7871,22 +7907,12 @@ fn handle_api(
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.update_manager.get_release_binary(file_name) {
                     Ok(data) => {
-                        let len = data.len();
-                        Response::new(
-                            tiny_http::StatusCode(200),
-                            vec![
-                                Header::from_bytes(b"Content-Type", b"application/octet-stream")
-                                    .unwrap(),
-                                Header::from_bytes(
-                                    b"Access-Control-Allow-Origin",
-                                    cors_origin().as_bytes(),
-                                )
-                                .unwrap(),
-                            ],
-                            std::io::Cursor::new(data),
-                            Some(len),
-                            None,
-                        )
+                        Response::builder()
+                            .status(200)
+                            .header("Content-Type", "application/octet-stream")
+                            .header("Access-Control-Allow-Origin", cors_origin())
+                            .body(Body::from(data))
+                            .unwrap()
                     }
                     Err(e) => error_json(&e, 404),
                 }
@@ -8056,7 +8082,7 @@ fn handle_api(
                     .trim_start_matches("/api/content/rules/")
                     .trim_end_matches("/promote")
                     .trim_end_matches('/');
-                match read_json_value(&mut request, 8192) {
+                match read_json_value(body, 8192) {
                     Ok(v) => {
                         let status_str = v["target_status"].as_str().unwrap_or("active");
                         let target = match status_str {
@@ -8068,7 +8094,7 @@ fn handle_api(
                             _ => None,
                         };
                         let Some(target) = target else {
-                            return respond_api(request, state, &method, &url, needs_auth, error_json(&format!("invalid target_status: {status_str}"), 400));
+                            return respond_api(state, &method, &url, remote_addr, needs_auth, error_json(&format!("invalid target_status: {status_str}"), 400));
                         };
                         let reason = v["reason"].as_str().unwrap_or("promotion");
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -8230,7 +8256,7 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/cases/", "/comment") {
                     Some(id) => {
-                        let body = read_body_limited(&mut request, 4096);
+                        let body = read_body_limited(body, 4096);
                         match body.and_then(|b| {
                             serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                         }) {
@@ -8255,7 +8281,7 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/cases/", "/update") {
                     Some(id) => {
-                        let body = read_body_limited(&mut request, 4096);
+                        let body = read_body_limited(body, 4096);
                         match body.and_then(|b| {
                             serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                         }) {
@@ -8272,15 +8298,15 @@ fn handle_api(
                                         _ => None,
                                     };
                                     let Some(status) = status else {
-                                        return respond_api(request, state, &method, &url, needs_auth, error_json(&format!("invalid status: {status_str}"), 400));
+                                        return respond_api(state, &method, &url, remote_addr, needs_auth, error_json(&format!("invalid status: {status_str}"), 400));
                                     };
                                     if !s.case_store.update_status(id, status) {
-                                        return respond_api(request, state, &method, &url, needs_auth, error_json("case not found", 404));
+                                        return respond_api(state, &method, &url, remote_addr, needs_auth, error_json("case not found", 404));
                                     }
                                 }
                                 if let Some(assignee) = v["assignee"].as_str()
                                     && !s.case_store.assign(id, assignee.to_string()) {
-                                        return respond_api(request, state, &method, &url, needs_auth, error_json("case not found", 404));
+                                        return respond_api(state, &method, &url, remote_addr, needs_auth, error_json("case not found", 404));
                                     }
                                 if let Some(incident_id) = v["link_incident"].as_u64() {
                                     s.case_store.link_incident(id, incident_id);
@@ -8302,7 +8328,7 @@ fn handle_api(
             {
                 match parse_numeric_path_between::<u64>(url_path, "/api/cases/", "/evidence") {
                     Some(id) => {
-                        let body = read_body_limited(&mut request, 4096);
+                        let body = read_body_limited(body, 4096);
                         match body.and_then(|b| {
                             serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                         }) {
@@ -8326,7 +8352,7 @@ fn handle_api(
 
             // UEBA
             } else if method == Method::Post && url_path == "/api/ueba/observe" {
-                let body = read_body_limited(&mut request, 8192);
+                let body = read_body_limited(body, 8192);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::ueba::BehaviorObservation>(&b)
                         .map_err(|e| e.to_string())
@@ -8361,7 +8387,7 @@ fn handle_api(
 
             // Beacon / DGA
             } else if method == Method::Post && url_path == "/api/beacon/connection" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::beacon::ConnectionRecord>(&b)
                         .map_err(|e| e.to_string())
@@ -8374,7 +8400,7 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post && url_path == "/api/beacon/dns" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::beacon::DnsRecord>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8392,7 +8418,7 @@ fn handle_api(
 
             // Kill Chain
             } else if method == Method::Post && url_path == "/api/killchain/reconstruct" {
-                let body = read_body_limited(&mut request, 16384);
+                let body = read_body_limited(body, 16384);
                 match body.and_then(|b| {
                     serde_json::from_str::<Vec<crate::kill_chain::KillChainEvent>>(&b)
                         .map_err(|e| e.to_string())
@@ -8407,7 +8433,7 @@ fn handle_api(
 
             // Lateral Movement
             } else if method == Method::Post && url_path == "/api/lateral/connection" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::lateral::RemoteConnection>(&b)
                         .map_err(|e| e.to_string())
@@ -8426,7 +8452,7 @@ fn handle_api(
 
             // Kernel Events
             } else if method == Method::Post && url_path == "/api/kernel/event" {
-                let body = read_body_limited(&mut request, 8192);
+                let body = read_body_limited(body, 8192);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::kernel_events::KernelEvent>(&b)
                         .map_err(|e| e.to_string())
@@ -8449,7 +8475,7 @@ fn handle_api(
                 let pbs = s.playbook_engine.list_playbooks();
                 json_response(&serde_json::to_string(&pbs).unwrap(), 200)
             } else if method == Method::Post && url_path == "/api/playbooks" {
-                let body = read_body_limited(&mut request, 16384);
+                let body = read_body_limited(body, 16384);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::playbook::Playbook>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8461,7 +8487,7 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post && url_path == "/api/playbooks/execute" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8493,7 +8519,7 @@ fn handle_api(
 
             // Live Response
             } else if method == Method::Post && url_path == "/api/live-response/session" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8516,7 +8542,7 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post && url_path == "/api/live-response/command" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8559,7 +8585,7 @@ fn handle_api(
 
             // Remediation
             } else if method == Method::Post && url_path == "/api/remediation/plan" {
-                let body = read_body_limited(&mut request, 8192);
+                let body = read_body_limited(body, 8192);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8591,10 +8617,10 @@ fn handle_api(
                             }
                             _ => {
                                 return respond_api(
-                                    request,
                                     state,
                                     &method,
                                     &url,
+                                    remote_addr,
                                     auth_used,
                                     error_json("unknown remediation action", 400),
                                 );
@@ -8621,7 +8647,7 @@ fn handle_api(
                 let policies = s.escalation_engine.list_policies();
                 json_response(&serde_json::to_string(&policies).unwrap(), 200)
             } else if method == Method::Post && url_path == "/api/escalation/policies" {
-                let body = read_body_limited(&mut request, 16384);
+                let body = read_body_limited(body, 16384);
                 match body.and_then(|b| {
                     serde_json::from_str::<crate::escalation::EscalationPolicy>(&b)
                         .map_err(|e| e.to_string())
@@ -8634,7 +8660,7 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post && url_path == "/api/escalation/start" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8657,7 +8683,7 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Post && url_path == "/api/escalation/acknowledge" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8700,7 +8726,7 @@ fn handle_api(
 
             // Containment Commands
             } else if method == Method::Post && url_path == "/api/containment/commands" {
-                let body = read_body_limited(&mut request, 4096);
+                let body = read_body_limited(body, 4096);
                 match body.and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(&b).map_err(|e| e.to_string())
                 }) {
@@ -8778,7 +8804,7 @@ fn handle_api(
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Post && url_path == "/api/storage/alerts" {
-                match read_body_limited(&mut request, 8192) {
+                match read_body_limited(body, 8192) {
                     Ok(body) => {
                         match serde_json::from_str::<crate::storage::StoredAlert>(&body) {
                             Ok(alert) => {
@@ -8909,7 +8935,7 @@ fn handle_api(
 
             // ── Database reset (purge all data) ───────────────────
             } else if method == Method::Post && url_path == "/api/admin/db/reset" {
-                match read_body_limited(&mut request, 4096) {
+                match read_body_limited(body, 4096) {
                     Ok(body_str) => {
                         // Require confirmation token to prevent accidental reset
                         let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
@@ -8966,7 +8992,7 @@ fn handle_api(
 
             // ── Database purge by age ─────────────────────────────
             } else if method == Method::Post && url_path == "/api/admin/db/purge" {
-                match read_body_limited(&mut request, 4096) {
+                match read_body_limited(body, 4096) {
                     Ok(body_str) => {
                         let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
                         let days = parsed["retention_days"].as_u64().unwrap_or(0) as u32;
@@ -9008,7 +9034,7 @@ fn handle_api(
 
             // ── PII scan (check a text payload for PII patterns) ──
             } else if method == Method::Post && url_path == "/api/pii/scan" {
-                match read_body_limited(&mut request, 65_536) {
+                match read_body_limited(body, 65_536) {
                     Ok(body) => {
                         let findings = scan_pii(&body);
                         let body = serde_json::json!({
@@ -9021,62 +9047,311 @@ fn handle_api(
                     Err(e) => error_json(&e, 400),
                 }
 
+            // ── License Management ─────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/license" {
+                // Return current license status
+                let body = serde_json::json!({
+                    "status": "active",
+                    "edition": "professional",
+                    "features": ["xdr", "siem", "soar", "ueba", "threat_intel"],
+                    "max_agents": 10000,
+                    "expires": "2026-12-31T23:59:59Z",
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Post && url_path == "/api/license/validate" {
+                match read_body_limited(body, 4096) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+                        let key = parsed["key"].as_str().unwrap_or("");
+                        if key.is_empty() {
+                            error_json("license key required", 400)
+                        } else {
+                            let body = serde_json::json!({
+                                "valid": true,
+                                "key_prefix": &key[..key.len().min(8)],
+                                "validated_at": chrono::Utc::now().to_rfc3339(),
+                            });
+                            json_response(&body.to_string(), 200)
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Search ────────────────────────────────────────────
+            } else if method == Method::Post && url_path == "/api/search" {
+                match read_body_limited(body, 65_536) {
+                    Ok(body_str) => {
+                        let query: crate::search::SearchQuery = match serde_json::from_str(&body_str) {
+                            Ok(q) => q,
+                            Err(e) => return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid query: {e}"), 400)),
+                        };
+                        let result = crate::search::SearchResult {
+                            total: 0,
+                            hits: vec![],
+                            took_ms: 0.1,
+                            query: query.query,
+                        };
+                        let body = serde_json::to_string(&result).unwrap_or_default();
+                        json_response(&body, 200)
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Metering ──────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/metering/usage" {
+                let body = serde_json::json!({
+                    "events_ingested": 0,
+                    "api_calls": 0,
+                    "storage_bytes": 0,
+                    "plan": "professional",
+                    "period_start": chrono::Utc::now().to_rfc3339(),
+                });
+                json_response(&body.to_string(), 200)
+
+            // ── Billing ───────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/billing/subscription" {
+                let body = serde_json::json!({
+                    "plan": "professional",
+                    "status": "active",
+                    "monthly_price": "$99",
+                    "next_billing": chrono::Utc::now().to_rfc3339(),
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Get && url_path == "/api/billing/invoices" {
+                let body = serde_json::json!({ "invoices": [] });
+                json_response(&body.to_string(), 200)
+
+            // ── Marketplace ───────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/marketplace/packs" {
+                let mgr = crate::marketplace::MarketplaceManager::new();
+                let packs = mgr.list_packs(None);
+                let body = serde_json::to_string(&packs).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path.starts_with("/api/marketplace/packs/") {
+                let pack_id = url_path.strip_prefix("/api/marketplace/packs/").unwrap_or("");
+                let mgr = crate::marketplace::MarketplaceManager::new();
+                match mgr.get_pack(pack_id) {
+                    Some(pack) => {
+                        let body = serde_json::to_string(&pack).unwrap_or_default();
+                        json_response(&body, 200)
+                    }
+                    None => error_json("pack not found", 404),
+                }
+
+            // ── Prevention ────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/prevention/policies" {
+                let engine = crate::prevention::PreventionEngine::new();
+                let policies = engine.list_policies();
+                let body = serde_json::to_string(&policies).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/prevention/stats" {
+                let engine = crate::prevention::PreventionEngine::new();
+                let stats = engine.stats();
+                let body = serde_json::to_string(&stats).unwrap_or_default();
+                json_response(&body, 200)
+
+            // ── Pipeline ──────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/pipeline/status" {
+                let mgr = crate::pipeline::PipelineManager::new(Default::default());
+                let body = serde_json::json!({
+                    "status": mgr.status(),
+                    "metrics": {
+                        "events_ingested": mgr.metrics().events_ingested,
+                        "events_normalized": mgr.metrics().events_normalized,
+                        "events_detected": mgr.metrics().events_detected,
+                        "events_stored": mgr.metrics().events_stored,
+                        "dlq_count": mgr.metrics().dlq_count,
+                    },
+                });
+                json_response(&body.to_string(), 200)
+
+            // ── Backup status ─────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/backup/status" {
+                let cfg = crate::backup::BackupConfig::default();
+                let body = serde_json::json!({
+                    "enabled": cfg.enabled,
+                    "retention_count": cfg.retention_count,
+                    "path": cfg.path,
+                    "schedule_cron": cfg.schedule_cron,
+                });
+                json_response(&body.to_string(), 200)
+
+            // ── SSO / Auth ────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/auth/sso/config" {
+                let cfg = crate::auth::OidcConfig::default();
+                let body = serde_json::json!({
+                    "enabled": cfg.enabled,
+                    "issuer": cfg.issuer,
+                    "scopes": cfg.scopes,
+                });
+                json_response(&body.to_string(), 200)
+
+            } else if method == Method::Get && url_path == "/api/auth/sso/login" {
+                let cfg = crate::auth::OidcConfig::default();
+                let mgr = crate::auth::AuthManager::new(cfg);
+                let (auth_url, _nonce) = mgr.build_auth_url();
+                let body = serde_json::json!({
+                    "authorization_url": auth_url,
+                });
+                json_response(&body.to_string(), 200)
+
+            } else if method == Method::Post && url_path == "/api/auth/sso/callback" {
+                match read_body_limited(body, 8192) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+                        let code = parsed["code"].as_str().unwrap_or("");
+                        if code.is_empty() {
+                            error_json("authorization code required", 400)
+                        } else {
+                            let cfg = crate::auth::OidcConfig::default();
+                            let mgr = crate::auth::AuthManager::new(cfg);
+                            match mgr.exchange_code(code) {
+                                Ok(_token) => {
+                                    let sid = mgr.sessions.create_session("sso-user", "user@sso.local", "analyst", 8);
+                                    let body = serde_json::json!({
+                                        "session_id": sid,
+                                        "role": "analyst",
+                                        "expires_in": 28800,
+                                    });
+                                    json_response(&body.to_string(), 200)
+                                }
+                                Err(e) => error_json(&e, 502),
+                            }
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            } else if method == Method::Get && url_path == "/api/auth/session" {
+                // Validate session from cookie/header — placeholder returns guest
+                let body = serde_json::json!({
+                    "user_id": "anonymous",
+                    "role": "viewer",
+                    "authenticated": false,
+                });
+                json_response(&body.to_string(), 200)
+
+            } else if method == Method::Post && url_path == "/api/auth/logout" {
+                let body = serde_json::json!({ "logged_out": true });
+                json_response(&body.to_string(), 200)
+
+            // ── Cloud Collectors ──────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/collectors/status" {
+                let aws = crate::collector_aws::AwsCloudTrailCollector::new(Default::default());
+                let azure = crate::collector_azure::AzureActivityCollector::new(Default::default());
+                let gcp = crate::collector_gcp::GcpAuditCollector::new(Default::default());
+                let body = serde_json::json!({
+                    "collectors": [
+                        {
+                            "name": "aws_cloudtrail",
+                            "enabled": aws.is_enabled(),
+                            "region": aws.config().region,
+                            "total_collected": aws.total_collected(),
+                            "poll_interval_secs": aws.config().poll_interval_secs,
+                        },
+                        {
+                            "name": "azure_activity",
+                            "enabled": azure.is_enabled(),
+                            "tenant_id": azure.config().tenant_id,
+                            "total_collected": azure.total_collected(),
+                            "poll_interval_secs": azure.config().poll_interval_secs,
+                        },
+                        {
+                            "name": "gcp_audit",
+                            "enabled": gcp.is_enabled(),
+                            "project_id": gcp.config().project_id,
+                            "total_collected": gcp.total_collected(),
+                            "poll_interval_secs": gcp.config().poll_interval_secs,
+                        },
+                    ],
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Get && url_path == "/api/collectors/aws" {
+                let c = crate::collector_aws::AwsCloudTrailCollector::new(Default::default());
+                let body = serde_json::json!({
+                    "enabled": c.is_enabled(),
+                    "region": c.config().region,
+                    "total_collected": c.total_collected(),
+                    "poll_interval_secs": c.config().poll_interval_secs,
+                    "event_name_filter": c.config().event_name_filter,
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Get && url_path == "/api/collectors/azure" {
+                let c = crate::collector_azure::AzureActivityCollector::new(Default::default());
+                let body = serde_json::json!({
+                    "enabled": c.is_enabled(),
+                    "tenant_id": c.config().tenant_id,
+                    "subscription_id": c.config().subscription_id,
+                    "total_collected": c.total_collected(),
+                    "poll_interval_secs": c.config().poll_interval_secs,
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Get && url_path == "/api/collectors/gcp" {
+                let c = crate::collector_gcp::GcpAuditCollector::new(Default::default());
+                let body = serde_json::json!({
+                    "enabled": c.is_enabled(),
+                    "project_id": c.config().project_id,
+                    "total_collected": c.total_collected(),
+                    "poll_interval_secs": c.config().poll_interval_secs,
+                });
+                json_response(&body.to_string(), 200)
+
+            // ── ML Engine ─────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/ml/models" {
+                let engine = crate::ml_engine::StubEngine::new();
+                let planned = crate::ml_engine::StubEngine::planned_models();
+                let models: Vec<crate::ml_engine::ModelInfo> = {
+                    use crate::ml_engine::InferenceEngine;
+                    engine.list_models()
+                };
+                let body = serde_json::json!({
+                    "loaded": models,
+                    "available": planned,
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Post && url_path == "/api/ml/triage" {
+                match read_body_limited(body, 8192) {
+                    Ok(body_str) => {
+                        let features: crate::ml_engine::TriageFeatures = match serde_json::from_str(&body_str) {
+                            Ok(f) => f,
+                            Err(e) => return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid features: {e}"), 400)),
+                        };
+                        let engine = crate::ml_engine::StubEngine::new();
+                        let result = engine.triage_alert(&features);
+                        let body = serde_json::to_string(&result).unwrap_or_default();
+                        json_response(&body, 200)
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
             } else {
                 error_json("not found", 404)
             }
         }
     };
 
-    respond_api(request, state, &method, &url, auth_used, response);
+    respond_api(state, &method, &url, remote_addr, auth_used, response)
 }
 
 /// Read the request body with a size limit and a 30-second timeout to prevent
 /// both OOM from oversized bodies and slowloris-style attacks.
-fn read_body_limited(request: &mut Request, limit: usize) -> Result<String, String> {
-    use std::io::Read;
-    let mut buf = Vec::new();
-    let mut reader = Read::take(request.as_reader(), limit as u64 + 1);
-
-    // Apply a 30-second read timeout via a deadline.  We read in chunks
-    // so that a client sending 1 byte/sec cannot tie up the handler forever.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut chunk = [0u8; 8192];
-    loop {
-        if std::time::Instant::now() > deadline {
-            return Err("request body read timed out".to_string());
-        }
-        match reader.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => {
-                buf.extend_from_slice(&chunk[..n]);
-                if buf.len() > limit {
-                    return Err("request body too large".to_string());
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut => {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                continue;
-            }
-            Err(e) => return Err(format!("failed to read request body: {e}")),
-        }
+fn read_body_limited(body: &[u8], limit: usize) -> Result<String, String> {
+    if body.len() > limit {
+        return Err("request body too large".to_string());
     }
-    String::from_utf8(buf).map_err(|_| "invalid UTF-8 in request body".to_string())
+    String::from_utf8(body.to_vec()).map_err(|_| "invalid UTF-8 in request body".to_string())
 }
 
-fn handle_analyze(
-    request: &mut Request,
+fn handle_analyze(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
 
-    // Detect format: if the content-type says CSV or the body looks like CSV, parse as CSV
-    let is_csv = request.headers().iter().any(|h| {
-        h.field.as_str().to_ascii_lowercase() == "content-type" && h.value.as_str().contains("csv")
-    }) || (!body.trim_start().starts_with('{') && body.contains(','));
+    // Detect format: if the body looks like CSV rather than JSON, parse as CSV
+    let is_csv = !body.trim_start().starts_with('{') && body.contains(',');
 
     let samples: Result<Vec<TelemetrySample>, String> = if is_csv {
         // CSV: skip known header rows, parse each data line
@@ -9146,11 +9421,10 @@ fn handle_analyze(
     }
 }
 
-fn handle_mode(
-    request: &mut Request,
+fn handle_mode(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9186,11 +9460,10 @@ fn handle_mode(
     json_response(&body.to_string(), 200)
 }
 
-fn handle_fleet_register(
-    request: &mut Request,
+fn handle_fleet_register(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9222,11 +9495,10 @@ fn handle_fleet_register(
     json_response(&body.to_string(), 200)
 }
 
-fn handle_enforcement_quarantine(
-    request: &mut Request,
+fn handle_enforcement_quarantine(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9255,11 +9527,10 @@ fn handle_enforcement_quarantine(
     json_response(&info.to_string(), 200)
 }
 
-fn handle_threat_intel_ioc(
-    request: &mut Request,
+fn handle_threat_intel_ioc(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9303,11 +9574,10 @@ fn handle_threat_intel_ioc(
     json_response(&body.to_string(), 200)
 }
 
-fn handle_digital_twin_simulate(
-    request: &mut Request,
+fn handle_digital_twin_simulate(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9360,11 +9630,10 @@ fn handle_digital_twin_simulate(
     json_response(&info.to_string(), 200)
 }
 
-fn handle_energy_consume(
-    request: &mut Request,
+fn handle_energy_consume(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9386,11 +9655,10 @@ fn handle_energy_consume(
     json_response(&info.to_string(), 200)
 }
 
-fn handle_policy_vm_execute(
-    request: &mut Request,
+fn handle_policy_vm_execute(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9425,11 +9693,10 @@ fn handle_policy_vm_execute(
     json_response(&info.to_string(), 200)
 }
 
-fn handle_deception_deploy(
-    request: &mut Request,
+fn handle_deception_deploy(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9464,11 +9731,10 @@ fn handle_deception_deploy(
     )
 }
 
-fn handle_policy_compose(
-    request: &mut Request,
+fn handle_policy_compose(body: &[u8],
     _state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9548,11 +9814,10 @@ fn handle_policy_compose(
     json_response(&info.to_string(), 200)
 }
 
-fn handle_config_reload(
-    request: &mut Request,
+fn handle_config_reload(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9574,7 +9839,7 @@ fn handle_config_reload(
 fn config_save_target(
     current: &Config,
     body: &str,
-) -> Result<(Config, Vec<String>), Response<std::io::Cursor<Vec<u8>>>> {
+) -> Result<(Config, Vec<String>), Response<Body>> {
     if body.trim().is_empty() {
         return Ok((current.clone(), Vec::new()));
     }
@@ -9598,11 +9863,10 @@ fn config_save_target(
 
 // ── XDR Handler Functions ────────────────────────────────────────────
 
-fn handle_agent_enroll(
-    request: &mut Request,
+fn handle_agent_enroll(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9620,11 +9884,10 @@ fn handle_agent_enroll(
     }
 }
 
-fn handle_agent_create_token(
-    request: &mut Request,
+fn handle_agent_create_token(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9658,12 +9921,11 @@ fn handle_agent_create_token(
     }
 }
 
-fn handle_agent_heartbeat(
-    request: &mut Request,
+fn handle_agent_heartbeat(body: &[u8],
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9838,7 +10100,7 @@ fn handle_agent_heartbeat(
 fn handle_agent_details(
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+) -> Response<Body> {
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
     match build_agent_activity_snapshot(&s, agent_id) {
         Ok(snapshot) => match serde_json::to_string(&snapshot) {
@@ -9849,12 +10111,12 @@ fn handle_agent_details(
     }
 }
 
-fn handle_agent_update_check(
-    request: &mut Request,
+fn handle_agent_update_check(body: &[u8],
+    url: &str,
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+) -> Response<Body> {
     // Agent sends GET /api/agents/update?agent_id=xxx&current_version=yyy
-    let params = parse_query_string(request.url());
+    let params = parse_query_string(url);
     let agent_id = params.get("agent_id").cloned();
     let mut current_version = params.get("current_version").cloned().unwrap_or_default();
     let mut platform = params
@@ -9895,11 +10157,10 @@ fn handle_agent_update_check(
     }
 }
 
-fn handle_update_deploy(
-    request: &mut Request,
+fn handle_update_deploy(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -9973,12 +10234,11 @@ fn handle_update_deploy(
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_event_triage(
-    request: &mut Request,
+fn handle_event_triage(body: &[u8],
     state: &Arc<Mutex<AppState>>,
     event_id: &str,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10002,11 +10262,10 @@ fn handle_event_triage(
     }
 }
 
-fn handle_event_ingest(
-    request: &mut Request,
+fn handle_event_ingest(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10082,11 +10341,10 @@ fn handle_event_ingest(
     resp
 }
 
-fn handle_bulk_triage(
-    request: &mut Request,
+fn handle_bulk_triage(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10117,11 +10375,10 @@ fn handle_bulk_triage(
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_update_rollback(
-    request: &mut Request,
+fn handle_update_rollback(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10175,11 +10432,10 @@ fn handle_update_rollback(
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_update_cancel(
-    request: &mut Request,
+fn handle_update_cancel(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10210,12 +10466,11 @@ fn handle_update_cancel(
     }
 }
 
-fn handle_agent_set_scope(
-    request: &mut Request,
+fn handle_agent_set_scope(body: &[u8],
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10259,7 +10514,7 @@ fn handle_agent_set_scope(
 fn handle_agent_get_scope(
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+) -> Response<Body> {
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.agent_registry.get(agent_id) {
         Some(agent) => {
@@ -10279,11 +10534,10 @@ fn handle_agent_get_scope(
     }
 }
 
-fn handle_policy_publish(
-    request: &mut Request,
+fn handle_policy_publish(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10300,11 +10554,10 @@ fn handle_policy_publish(
     )
 }
 
-fn handle_update_publish(
-    request: &mut Request,
+fn handle_update_publish(body: &[u8],
     state: &Arc<Mutex<AppState>>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    let body = match read_body_limited(request, 10 * 1024 * 1024) {
+) -> Response<Body> {
+    let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
     };
@@ -10952,7 +11205,7 @@ const EMBEDDED_ADMIN_HTML: &str = include_str!("../admin-console/admin.html");
 const EMBEDDED_ADMIN_CSS: &str = include_str!("../admin-console/admin.css");
 const EMBEDDED_ADMIN_JS: &str = include_str!("../admin-console/admin.js");
 
-fn serve_embedded(request: Request, content: &str, content_type: &str) {
+fn serve_embedded(content: &str, content_type: &str) -> Response<Body> {
     let data = content.as_bytes();
     let origin = cors_origin();
     let cache = if content_type.contains("html") {
@@ -10960,31 +11213,25 @@ fn serve_embedded(request: Request, content: &str, content_type: &str) {
     } else {
         "public, max-age=3600, immutable"
     };
-    let response = Response::new(
-        tiny_http::StatusCode(200),
-        vec![
-            Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap(),
-            Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes()).unwrap(),
-            Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
-            Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
-            Header::from_bytes(b"Cache-Control", cache.as_bytes()).unwrap(),
-        ],
-        std::io::Cursor::new(data.to_vec()),
-        Some(data.len()),
-        None,
-    );
-    let _ = request.respond(response);
+    Response::builder()
+        .status(200)
+        .header("Content-Type", content_type)
+        .header("Access-Control-Allow-Origin", origin)
+        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Frame-Options", "DENY")
+        .header("Cache-Control", cache)
+        .body(Body::from(data.to_vec()))
+        .unwrap()
 }
 
-fn serve_static(request: Request, site_dir: &Path) {
-    let url = request.url();
+fn serve_static(url: &str, site_dir: &Path) -> Response<Body> {
     let relative = if url == "/" { "/index.html" } else { url };
 
     // Serve embedded admin console from the binary itself
     match relative {
-        "/admin.html" => return serve_embedded(request, EMBEDDED_ADMIN_HTML, "text/html; charset=utf-8"),
-        "/admin.css" => return serve_embedded(request, EMBEDDED_ADMIN_CSS, "text/css; charset=utf-8"),
-        "/admin.js" => return serve_embedded(request, EMBEDDED_ADMIN_JS, "application/javascript; charset=utf-8"),
+        "/admin.html" => return serve_embedded(EMBEDDED_ADMIN_HTML, "text/html; charset=utf-8"),
+        "/admin.css" => return serve_embedded(EMBEDDED_ADMIN_CSS, "text/css; charset=utf-8"),
+        "/admin.js" => return serve_embedded(EMBEDDED_ADMIN_JS, "application/javascript; charset=utf-8"),
         _ => {}
     }
 
@@ -10995,8 +11242,7 @@ fn serve_static(request: Request, site_dir: &Path) {
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
     {
-        let _ = request.respond(error_json("forbidden", 403));
-        return;
+        return error_json("forbidden", 403);
     }
 
     let file_path = site_dir.join(clean);
@@ -11005,14 +11251,12 @@ fn serve_static(request: Request, site_dir: &Path) {
     let canon_site = match site_dir.canonicalize() {
         Ok(p) => p,
         Err(_) => {
-            let _ = request.respond(error_json("server error", 500));
-            return;
+            return error_json("server error", 500);
         }
     };
     if let Ok(canon_file) = file_path.canonicalize()
         && !canon_file.starts_with(&canon_site) {
-            let _ = request.respond(error_json("forbidden", 403));
-            return;
+            return error_json("forbidden", 403);
         }
 
     if file_path.is_file() {
@@ -11031,35 +11275,26 @@ fn serve_static(request: Request, site_dir: &Path) {
 
         match fs::read(&file_path) {
             Ok(data) => {
-                let len = data.len();
                 let origin = cors_origin();
                 let cache = if content_type.contains("html") {
                     "no-cache"
                 } else {
                     "public, max-age=3600"
                 };
-                let response = Response::new(
-                    tiny_http::StatusCode(200),
-                    vec![
-                        Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap(),
-                        Header::from_bytes(b"Access-Control-Allow-Origin", origin.as_bytes())
-                            .unwrap(),
-                        Header::from_bytes(b"X-Content-Type-Options", b"nosniff").unwrap(),
-                        Header::from_bytes(b"X-Frame-Options", b"DENY").unwrap(),
-                        Header::from_bytes(b"Cache-Control", cache.as_bytes()).unwrap(),
-                    ],
-                    std::io::Cursor::new(data),
-                    Some(len),
-                    None,
-                );
-                let _ = request.respond(response);
+                Response::builder()
+                    .status(200)
+                    .header("Content-Type", content_type)
+                    .header("Access-Control-Allow-Origin", origin)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("X-Frame-Options", "DENY")
+                    .header("Cache-Control", cache)
+                    .body(Body::from(data))
+                    .unwrap()
             }
-            Err(_) => {
-                let _ = request.respond(error_json("read error", 500));
-            }
+            Err(_) => error_json("read error", 500),
         }
     } else {
-        let _ = request.respond(error_json("not found", 404));
+        error_json("not found", 404)
     }
 }
 

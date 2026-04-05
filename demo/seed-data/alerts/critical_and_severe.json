@@ -1,0 +1,122 @@
+[
+  {
+    "title": "Ransomware: Volume shadow copy deletion detected",
+    "severity": "critical",
+    "source": "endpoint-w01",
+    "category": "impact",
+    "mitre": "T1490",
+    "description": "vssadmin.exe delete shadows /all detected on WORKSTATION-01. Typically used by ransomware to prevent file recovery.",
+    "timestamp": "2026-04-05T09:15:23Z",
+    "device_id": "w01-prod",
+    "user": "jsmith",
+    "process": "vssadmin.exe"
+  },
+  {
+    "title": "Mimikatz credential dump on domain controller",
+    "severity": "critical",
+    "source": "endpoint-dc01",
+    "category": "credential_access",
+    "mitre": "T1003.001",
+    "description": "LSASS memory access by mimikatz.exe detected on DC01. Credential material at risk.",
+    "timestamp": "2026-04-05T08:42:11Z",
+    "device_id": "dc01-prod",
+    "user": "SYSTEM",
+    "process": "mimikatz.exe"
+  },
+  {
+    "title": "Cobalt Strike beacon detected",
+    "severity": "critical",
+    "source": "endpoint-w03",
+    "category": "command_and_control",
+    "mitre": "T1071.001",
+    "description": "Named pipe and Malleable C2 traffic consistent with Cobalt Strike beacon identified on WORKSTATION-03.",
+    "timestamp": "2026-04-05T07:33:44Z",
+    "device_id": "w03-prod",
+    "user": "mjones",
+    "process": "rundll32.exe"
+  },
+  {
+    "title": "Lateral movement via PsExec",
+    "severity": "severe",
+    "source": "endpoint-srv02",
+    "category": "lateral_movement",
+    "mitre": "T1021.002",
+    "description": "PsExec service installation detected on SRV02 from 10.0.1.15. Potential lateral movement.",
+    "timestamp": "2026-04-05T10:05:17Z",
+    "device_id": "srv02-prod",
+    "user": "admin-svc",
+    "process": "psexesvc.exe"
+  },
+  {
+    "title": "Brute force login attempt — 50 failures in 5 minutes",
+    "severity": "elevated",
+    "source": "auth-gateway",
+    "category": "credential_access",
+    "mitre": "T1110.001",
+    "description": "50 failed login attempts from IP 203.0.113.42 targeting user accounts in the last 5 minutes.",
+    "timestamp": "2026-04-05T06:22:03Z",
+    "device_id": "auth-gw-01",
+    "user": "multiple",
+    "process": "sshd"
+  },
+  {
+    "title": "AWS CloudTrail logging disabled",
+    "severity": "severe",
+    "source": "aws-cloudtrail",
+    "category": "defense_evasion",
+    "mitre": "T1562.008",
+    "description": "StopLogging API call on trail 'prod-audit-trail' by user arn:aws:iam::123456:user/compromised-key.",
+    "timestamp": "2026-04-05T11:18:30Z",
+    "device_id": "aws-account-prod",
+    "user": "compromised-key",
+    "process": "aws-cli"
+  },
+  {
+    "title": "Suspicious PowerShell encoded command",
+    "severity": "elevated",
+    "source": "endpoint-w05",
+    "category": "execution",
+    "mitre": "T1059.001",
+    "description": "PowerShell invoked with -EncodedCommand containing a base64 payload. Decoded payload downloads from external IP.",
+    "timestamp": "2026-04-05T12:45:09Z",
+    "device_id": "w05-prod",
+    "user": "awhite",
+    "process": "powershell.exe"
+  },
+  {
+    "title": "Unauthorized SSH key added to root",
+    "severity": "severe",
+    "source": "endpoint-lnx01",
+    "category": "persistence",
+    "mitre": "T1098.004",
+    "description": "New SSH public key added to /root/.ssh/authorized_keys on LNX01 by non-root user.",
+    "timestamp": "2026-04-05T03:14:55Z",
+    "device_id": "lnx01-prod",
+    "user": "www-data",
+    "process": "bash"
+  },
+  {
+    "title": "DLL sideloading via legitimate application",
+    "severity": "elevated",
+    "source": "endpoint-w02",
+    "category": "defense_evasion",
+    "mitre": "T1574.002",
+    "description": "Unsigned DLL loaded by legitimate signed binary calc.exe in non-standard path C:\\Users\\Public\\.",
+    "timestamp": "2026-04-05T14:30:21Z",
+    "device_id": "w02-prod",
+    "user": "bclark",
+    "process": "calc.exe"
+  },
+  {
+    "title": "Data exfiltration over DNS tunneling",
+    "severity": "severe",
+    "source": "network-fw01",
+    "category": "exfiltration",
+    "mitre": "T1048.003",
+    "description": "High-volume DNS TXT queries to suspicious domain exfil.badactor.xyz detected. Possible DNS tunneling exfiltration.",
+    "timestamp": "2026-04-05T15:55:44Z",
+    "device_id": "fw01-prod",
+    "user": "N/A",
+    "process": "dns-resolver"
+  }
+]
