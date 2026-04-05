@@ -2,6 +2,25 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.38.1] — Approval Separation, Audit Attribution, and Post-Release Hardening
+
+### Security
+- **Response self-approval blocked** — `response.rs` now rejects approval decisions where the approver is the original requester, enforcing separation of duties for approval-gated response actions.
+
+### Fixed
+- **GraphQL aggregate runtime wiring** — the aggregate query path is now registered in the server execution layer instead of existing only in schema/tests.
+- **Hunt automation production wiring** — response actions now execute from scheduled and manual hunt runs, using full matched event/agent scope instead of sample-only context.
+- **Threat-intel expiry ordering** — IoC expiry evaluation now compares RFC3339 timestamps chronologically and avoids mixed parsed/string fallback errors.
+- **Response notify gating** — `min_level` is enforced when evaluating hunt notification actions.
+- **Response target deduplication** — hunt automation no longer collapses multiple agents that share a hostname when generating response targets.
+- **Hunt incident reuse** — repeat automation runs now update an existing open hunt incident instead of creating duplicates on every run.
+- **Response request IDs** — manual and automated response request IDs now use the hardened unique ID helper instead of timestamp-only generation.
+- **Approval audit attribution** — live-response sessions and playbook executions now record the authenticated actor rather than trusting request-body identity fields.
+
+### Changed
+- **Version sync** — Cargo, Helm, Kubernetes, OpenAPI, SDK, docs, and site metadata aligned to `0.38.1`.
+- **Verification** — automated library test count is now 963 passing tests.
+
 ## [0.38.0] — XDR Enrichment, Aggregation Engine, Response Automation & Security Fixes
 
 ### Security

@@ -41,23 +41,25 @@ curl -s http://localhost:9090/api/response/pending | jq
 ```bash
 curl -X POST http://localhost:9090/api/response/approve \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <approver-token>" \
   -d '{
     "request_id": "resp-001",
     "decision": "approved",
-    "approver": "analyst@company.com",
     "reason": "Confirmed malicious activity on host web-03"
   }'
 ```
+
+The approver is derived from the authenticated API token and is no longer accepted from the request body.
 
 ### Deny a Response Action
 
 ```bash
 curl -X POST http://localhost:9090/api/response/approve \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <approver-token>" \
   -d '{
     "request_id": "resp-001",
     "decision": "denied",
-    "approver": "analyst@company.com",
     "reason": "False positive — legitimate admin activity"
   }'
 ```
@@ -102,7 +104,8 @@ curl -X POST http://localhost:9090/api/investigation/graph \
 
 # 4. Approve isolation
 curl -X POST http://localhost:9090/api/response/approve \
-  -d '{"request_id": "resp-brute-001", "decision": "approved", "approver": "soc-lead", "reason": "Confirmed brute force"}'
+  -H "Authorization: Bearer <approver-token>" \
+  -d '{"request_id": "resp-brute-001", "decision": "approved", "reason": "Confirmed brute force"}'
 ```
 
 ### PB-002: Lateral Movement

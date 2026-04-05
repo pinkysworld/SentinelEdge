@@ -266,6 +266,10 @@ impl ResponseOrchestrator {
             return Ok(ApprovalStatus::Denied);
         }
 
+        if record.approver == req.requested_by {
+            return Err("Requester cannot approve their own response request".into());
+        }
+
         // Check for duplicate approver
         if req.approvals.iter().any(|a| a.approver == record.approver) {
             return Err("Same approver cannot approve twice".into());
@@ -611,6 +615,38 @@ mod tests {
         orch.approve("r7", ApprovalRecord { approver: "analyst-1".into(), decision: ApprovalDecision::Approve, timestamp: "now".into(), comment: None }).unwrap();
         let result = orch.approve("r7", ApprovalRecord { approver: "analyst-1".into(), decision: ApprovalDecision::Approve, timestamp: "now".into(), comment: None });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn requester_cannot_self_approve() {
+        let orch = ResponseOrchestrator::new();
+        let mut req = make_request(
+            "r7-self",
+            ResponseAction::KillProcess { pid: 1, process_name: "x".into() },
+            "host-1",
+            false,
+        );
+        req.requested_by = "analyst-1".into();
+        orch.submit(req).unwrap();
+
+        let result = orch.approve(
+            "r7-self",
+            ApprovalRecord {
+                approver: "analyst-1".into(),
+                decision: ApprovalDecision::Approve,
+                timestamp: "now".into(),
+                comment: None,
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Requester cannot approve their own response request"));
+        assert_eq!(
+            orch.get_request("r7-self").unwrap().status,
+            ApprovalStatus::Pending
+        );
     }
 
     #[test]
