@@ -289,6 +289,9 @@ mod tests {
             };
             fp.update_ewma(&s, 0.1);
         }
-        assert!(fp.means[0] > old_mean + 5.0, "EWMA should shift mean toward 60.0");
+        assert!(
+            fp.means[0] > old_mean + 5.0,
+            "EWMA should shift mean toward 60.0"
+        );
     }
 }

@@ -163,14 +163,8 @@ impl MultiTenantManager {
     }
 
     /// Create a new tenant with a hashed API key.
-    pub fn create_tenant(
-        &mut self,
-        name: &str,
-        tier: TenantTier,
-        api_key: &str,
-    ) -> String {
-        let id = sha256_hex(format!("tenant:{name}:{}", self.tenants.len()).as_bytes())
-            [..16]
+    pub fn create_tenant(&mut self, name: &str, tier: TenantTier, api_key: &str) -> String {
+        let id = sha256_hex(format!("tenant:{name}:{}", self.tenants.len()).as_bytes())[..16]
             .to_string();
         let tenant = Tenant {
             id: id.clone(),
@@ -190,21 +184,18 @@ impl MultiTenantManager {
     /// Authenticate a tenant by API key.
     pub fn authenticate(&self, api_key: &str) -> Option<TenantContext> {
         let hash = sha256_hex(api_key.as_bytes());
-        self.tenants.values().find(|t| t.api_key_hash == hash && t.active).map(|t| {
-            TenantContext {
+        self.tenants
+            .values()
+            .find(|t| t.api_key_hash == hash && t.active)
+            .map(|t| TenantContext {
                 tenant_id: t.id.clone(),
                 tier: t.tier.clone(),
                 quota: t.resource_quota.clone(),
-            }
-        })
+            })
     }
 
     /// Register a device under a tenant (with quota check).
-    pub fn register_device(
-        &mut self,
-        tenant_id: &str,
-        device_id: &str,
-    ) -> Result<(), String> {
+    pub fn register_device(&mut self, tenant_id: &str, device_id: &str) -> Result<(), String> {
         let tenant = self
             .tenants
             .get(tenant_id)
@@ -308,10 +299,7 @@ impl MultiTenantManager {
         tenant_id: &str,
         items: &'a [(String, serde_json::Value)],
     ) -> Vec<&'a (String, serde_json::Value)> {
-        items
-            .iter()
-            .filter(|(tid, _)| tid == tenant_id)
-            .collect()
+        items.iter().filter(|(tid, _)| tid == tenant_id).collect()
     }
 
     /// Cross-tenant analytics: aggregate usage across all active tenants.
@@ -319,12 +307,7 @@ impl MultiTenantManager {
         let active: Vec<&Tenant> = self.tenants.values().filter(|t| t.active).collect();
         let total_devices: usize = active
             .iter()
-            .map(|t| {
-                self.usage
-                    .get(&t.id)
-                    .map(|u| u.devices)
-                    .unwrap_or(0)
-            })
+            .map(|t| self.usage.get(&t.id).map(|u| u.devices).unwrap_or(0))
             .sum();
         let total_events: u64 = active
             .iter()
@@ -353,7 +336,9 @@ impl MultiTenantManager {
 
     /// Update a tenant's tier (with quota refresh).
     pub fn update_tier(&mut self, tenant_id: &str, new_tier: TenantTier) -> Result<(), String> {
-        let tenant = self.tenants.get_mut(tenant_id)
+        let tenant = self
+            .tenants
+            .get_mut(tenant_id)
             .ok_or_else(|| "tenant not found".to_string())?;
         tenant.tier = new_tier.clone();
         tenant.resource_quota = ResourceQuota::for_tier(&new_tier);

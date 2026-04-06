@@ -1857,10 +1857,12 @@ mod tests {
             .get
             .as_ref()
             .unwrap();
-        assert!(report_html
-            .parameters
-            .iter()
-            .any(|parameter| parameter.location == "path" && parameter.name == "id"));
+        assert!(
+            report_html
+                .parameters
+                .iter()
+                .any(|parameter| parameter.location == "path" && parameter.name == "id")
+        );
     }
 
     #[test]
@@ -1874,11 +1876,13 @@ mod tests {
             .as_ref()
             .unwrap();
         let metrics_response = metrics.responses.get("200").unwrap();
-        assert!(metrics_response
-            .content
-            .as_ref()
-            .unwrap()
-            .contains_key("text/plain"));
+        assert!(
+            metrics_response
+                .content
+                .as_ref()
+                .unwrap()
+                .contains_key("text/plain")
+        );
 
         let report_html = spec
             .paths
@@ -1888,11 +1892,13 @@ mod tests {
             .as_ref()
             .unwrap();
         let report_html_response = report_html.responses.get("200").unwrap();
-        assert!(report_html_response
-            .content
-            .as_ref()
-            .unwrap()
-            .contains_key("text/html"));
+        assert!(
+            report_html_response
+                .content
+                .as_ref()
+                .unwrap()
+                .contains_key("text/html")
+        );
     }
 
     #[test]

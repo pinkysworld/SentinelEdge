@@ -1530,51 +1530,66 @@ fn endpoints_returns_array() {
     let body: serde_json::Value = resp.into_json().unwrap();
     let arr = body.as_array().unwrap();
     assert!(arr.len() >= 10);
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/monitoring/options" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/host/info" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/alerts/{id}" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/threat-intel/status" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/playbooks" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/fleet/dashboard" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/agents" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/cases" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/events" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/events/search" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/response/approvals" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/rollout/config" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/timeline/host" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/queue/stats" && entry["auth"] == true));
-    assert!(arr
-        .iter()
-        .any(|entry| entry["path"] == "/api/agents/{id}/status" && entry["auth"] == true));
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/monitoring/options" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/host/info" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/alerts/{id}" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/threat-intel/status" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/playbooks" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/fleet/dashboard" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/agents" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/cases" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/events" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/events/search" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/response/approvals" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/rollout/config" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/timeline/host" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/queue/stats" && entry["auth"] == true)
+    );
+    assert!(
+        arr.iter()
+            .any(|entry| entry["path"] == "/api/agents/{id}/status" && entry["auth"] == true)
+    );
 }
 
 #[test]
@@ -1682,11 +1697,13 @@ fn monitoring_options_returns_grouped_payload() {
     assert!(body["groups"].as_array().unwrap().len() >= 2);
     let first_group = &body["groups"].as_array().unwrap()[0];
     assert!(first_group["label"].is_string());
-    assert!(first_group["options"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|option| option["id"].is_string()));
+    assert!(
+        first_group["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|option| option["id"].is_string())
+    );
     assert!(
         body["summary"]["platform_guidance"]
             .as_array()
@@ -2255,10 +2272,12 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
     .unwrap();
     assert_eq!(update["update_available"].as_bool().unwrap(), true);
     assert_eq!(update["version"].as_str().unwrap(), "0.16.0");
-    assert!(update["download_url"]
-        .as_str()
-        .unwrap()
-        .starts_with("/api/updates/download/"));
+    assert!(
+        update["download_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("/api/updates/download/")
+    );
 }
 
 #[test]
@@ -3929,11 +3948,13 @@ fn enterprise_hunts_support_manual_runs_and_scheduler_history() {
             .unwrap()
             >= 2
     );
-    assert!(diagnostics["bundle"]["change_control"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|entry| { entry["category"].as_str() == Some("hunt") }));
+    assert!(
+        diagnostics["bundle"]["change_control"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| { entry["category"].as_str() == Some("hunt") })
+    );
 }
 
 #[test]
@@ -4044,11 +4065,13 @@ fn enterprise_content_rules_suppressions_and_coverage_work() {
         .expect("mitre coverage")
         .into_json()
         .unwrap();
-    assert!(coverage["techniques"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|technique| { technique["technique_id"].as_str() == Some("T1110") }));
+    assert!(
+        coverage["techniques"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|technique| { technique["technique_id"].as_str() == Some("T1110") })
+    );
 }
 
 #[test]
@@ -4493,9 +4516,11 @@ fn openapi_endpoint_returns_live_json_spec() {
         .as_array()
         .expect("incident params");
     for name in ["status", "severity", "limit", "offset"] {
-        assert!(incident_params
-            .iter()
-            .any(|param| param["name"].as_str() == Some(name)));
+        assert!(
+            incident_params
+                .iter()
+                .any(|param| param["name"].as_str() == Some(name))
+        );
     }
 
     let report_html_params = paths["/api/reports/{id}/html"]["get"]["parameters"]

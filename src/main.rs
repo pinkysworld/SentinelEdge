@@ -1,8 +1,8 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use wardex::agent_client;
 use wardex::attestation::BuildManifest;
@@ -65,12 +65,14 @@ async fn run() -> Result<(), String> {
             let shutdown_clone = shutdown.clone();
             let server_config = config.clone();
             tokio::task::spawn(async move {
-                if let Err(e) = server::run_server(port, &site_dir_clone, shutdown_clone, server_config).await {
+                if let Err(e) =
+                    server::run_server(port, &site_dir_clone, shutdown_clone, server_config).await
+                {
                     eprintln!("server error: {e}");
                 }
             });
 
-            eprintln!("Admin console: http://localhost:{port}/admin.html");
+            eprintln!("Admin console: http://localhost:{port}/admin/");
             eprintln!();
 
             // Register Ctrl+C
@@ -80,7 +82,9 @@ async fn run() -> Result<(), String> {
             // Run monitor in blocking task
             tokio::task::spawn_blocking(move || {
                 collector::run_monitor(&config, &mon, shutdown);
-            }).await.map_err(|e| format!("monitor task failed: {e}"))?;
+            })
+            .await
+            .map_err(|e| format!("monitor task failed: {e}"))?;
         }
         "monitor" => {
             // CLI-only monitor (no web server) — for headless/embedded use
@@ -446,11 +450,12 @@ fn resolve_site_dir(site_dir: &Path) -> Result<PathBuf, String> {
     }
 
     if let Ok(exe_path) = env::current_exe()
-        && let Some(exe_dir) = exe_path.parent() {
-            candidates.push(exe_dir.join(site_dir));
-            candidates.push(exe_dir.join("..").join(site_dir));
-            candidates.push(exe_dir.join("..").join("..").join(site_dir));
-        }
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        candidates.push(exe_dir.join(site_dir));
+        candidates.push(exe_dir.join("..").join(site_dir));
+        candidates.push(exe_dir.join("..").join("..").join(site_dir));
+    }
 
     for candidate in candidates {
         if candidate.is_dir() {
@@ -508,7 +513,7 @@ fn print_usage() {
     println!();
     println!("Configuration:");
     println!("  All settings can be changed via the admin console at");
-    println!("  http://localhost:8080/admin.html (Settings panel).");
+    println!("  http://localhost:8080/admin/ (Settings panel).");
     println!("  Config is stored in var/wardex.toml and persists across restarts.");
 }
 
@@ -517,7 +522,10 @@ fn load_or_create_config() -> Config {
     if config_path.exists() {
         match Config::load_from_path(&config_path) {
             Ok(c) => return c,
-            Err(e) => eprintln!("warning: failed to load {}: {e}, using defaults", config_path.display()),
+            Err(e) => eprintln!(
+                "warning: failed to load {}: {e}, using defaults",
+                config_path.display()
+            ),
         }
     } else {
         // Create default config on first run
@@ -537,7 +545,6 @@ fn register_ctrlc(shutdown: Arc<AtomicBool>) -> Result<(), String> {
     })
     .map_err(|e| format!("failed to register Ctrl+C handler: {e}"))
 }
-
 
 fn run_bench(benign_path: &str, attack_path: &str, threshold: f32) -> Result<(), String> {
     let benign_samples =

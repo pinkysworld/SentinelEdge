@@ -127,7 +127,12 @@ impl WsFrame {
             if data.len() < offset + 4 {
                 return None;
             }
-            let key = [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
+            let key = [
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ];
             offset += 4;
             Some(key)
         } else {
@@ -146,7 +151,14 @@ impl WsFrame {
         }
 
         let total = offset + payload_len;
-        Some((Self { fin, opcode, payload }, total))
+        Some((
+            Self {
+                fin,
+                opcode,
+                payload,
+            },
+            total,
+        ))
     }
 }
 
@@ -187,23 +199,28 @@ fn sha1_digest(msg: &[u8]) -> [u8; 20] {
             w[i] = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
         for i in 16..80 {
-            w[i] = (w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16]).rotate_left(1);
+            w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
         }
 
         let (mut a, mut b, mut c, mut d, mut e) = (h0, h1, h2, h3, h4);
         for i in 0..80 {
             let (f, k) = match i {
-                0..=19  => ((b & c) | ((!b) & d), 0x5A827999u32),
+                0..=19 => ((b & c) | ((!b) & d), 0x5A827999u32),
                 20..=39 => (b ^ c ^ d, 0x6ED9EBA1u32),
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDCu32),
-                _       => (b ^ c ^ d, 0xCA62C1D6u32),
+                _ => (b ^ c ^ d, 0xCA62C1D6u32),
             };
-            let temp = a.rotate_left(5)
+            let temp = a
+                .rotate_left(5)
                 .wrapping_add(f)
                 .wrapping_add(e)
                 .wrapping_add(k)
                 .wrapping_add(w[i]);
-            e = d; d = c; c = b.rotate_left(30); b = a; a = temp;
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
         }
         h0 = h0.wrapping_add(a);
         h1 = h1.wrapping_add(b);
@@ -347,9 +364,10 @@ impl EventBus {
 
     pub fn drain(&self, subscriber_id: u64) -> Vec<WsEvent> {
         if let Ok(mut bus) = self.inner.lock()
-            && let Some(sub) = bus.subscribers.iter_mut().find(|s| s.id == subscriber_id) {
-                return sub.queue.drain(..).collect();
-            }
+            && let Some(sub) = bus.subscribers.iter_mut().find(|s| s.id == subscriber_id)
+        {
+            return sub.queue.drain(..).collect();
+        }
         vec![]
     }
 
@@ -436,8 +454,12 @@ impl WsConnection {
         }
     }
 
-    pub fn record_sent(&mut self) { self.frames_sent += 1; }
-    pub fn record_received(&mut self) { self.frames_received += 1; }
+    pub fn record_sent(&mut self) {
+        self.frames_sent += 1;
+    }
+    pub fn record_received(&mut self) {
+        self.frames_received += 1;
+    }
 
     pub fn uptime_secs(&self) -> f64 {
         self.connected_at.elapsed().as_secs_f64()
@@ -462,7 +484,10 @@ mod tests {
         assert_eq!(consumed, encoded.len());
         assert!(decoded.fin);
         assert_eq!(decoded.opcode, OPCODE_TEXT);
-        assert_eq!(std::str::from_utf8(&decoded.payload).unwrap(), "Hello, WebSocket!");
+        assert_eq!(
+            std::str::from_utf8(&decoded.payload).unwrap(),
+            "Hello, WebSocket!"
+        );
     }
 
     #[test]

@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::audit::sha256_hex;
 
@@ -332,11 +332,13 @@ impl StorageBackend {
         })?;
 
         // Enable WAL mode for concurrent readers
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
-            .map_err(|e| StorageError {
-                code: StorageErrorCode::ConnectionFailed,
-                message: format!("failed to set PRAGMA: {e}"),
-            })?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+        )
+        .map_err(|e| StorageError {
+            code: StorageErrorCode::ConnectionFailed,
+            message: format!("failed to set PRAGMA: {e}"),
+        })?;
 
         let mut backend = Self {
             conn,
@@ -352,7 +354,8 @@ impl StorageBackend {
 
     fn load_current_version(&mut self) {
         // Attempt to load current schema version
-        let version: u32 = self.conn
+        let version: u32 = self
+            .conn
             .query_row(
                 "SELECT COALESCE(MAX(version), 0) FROM schema_version",
                 [],
@@ -376,12 +379,17 @@ impl StorageBackend {
     pub fn schema_info(&self) -> Vec<Migration> {
         let all = migrations();
         let mut result = Vec::new();
-        let mut stmt = self.conn
+        let mut stmt = self
+            .conn
             .prepare("SELECT version, name, applied_at FROM schema_version ORDER BY version")
             .ok();
         if let Some(ref mut s) = stmt {
             let rows = s.query_map([], |row| {
-                Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             });
             if let Ok(rows) = rows {
                 for row in rows.flatten() {
@@ -416,10 +424,12 @@ impl StorageBackend {
         let all = migrations();
         for m in &all {
             if m.version > self.current_version {
-                self.conn.execute_batch(&m.sql_up).map_err(|e| StorageError {
-                    code: StorageErrorCode::MigrationFailed,
-                    message: format!("migration v{} '{}' failed: {e}", m.version, m.name),
-                })?;
+                self.conn
+                    .execute_batch(&m.sql_up)
+                    .map_err(|e| StorageError {
+                        code: StorageErrorCode::MigrationFailed,
+                        message: format!("migration v{} '{}' failed: {e}", m.version, m.name),
+                    })?;
                 let now = chrono::Utc::now().to_rfc3339();
                 self.conn.execute(
                     "INSERT OR REPLACE INTO schema_version (version, name, applied_at) VALUES (?1, ?2, ?3)",
@@ -449,17 +459,21 @@ impl StorageBackend {
             });
         };
         let rolled_back = m.version;
-        self.conn.execute_batch(&m.sql_down).map_err(|e| StorageError {
-            code: StorageErrorCode::MigrationFailed,
-            message: format!("rollback v{} '{}' failed: {e}", m.version, m.name),
-        })?;
-        self.conn.execute(
-            "DELETE FROM schema_version WHERE version = ?1",
-            params![m.version],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::MigrationFailed,
-            message: format!("failed to remove migration record v{}: {e}", m.version),
-        })?;
+        self.conn
+            .execute_batch(&m.sql_down)
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::MigrationFailed,
+                message: format!("rollback v{} '{}' failed: {e}", m.version, m.name),
+            })?;
+        self.conn
+            .execute(
+                "DELETE FROM schema_version WHERE version = ?1",
+                params![m.version],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::MigrationFailed,
+                message: format!("failed to remove migration record v{}: {e}", m.version),
+            })?;
         self.current_version = m.version - 1;
         Ok(Some(rolled_back))
     }
@@ -494,7 +508,9 @@ impl StorageBackend {
 
     /// Query alerts with optional filters.
     pub fn query_alerts(&self, filter: &QueryFilter) -> Vec<StoredAlert> {
-        let mut sql = String::from("SELECT id, timestamp, device_id, score, level, reasons, acknowledged, assigned_to, case_id, tenant_id FROM alerts WHERE 1=1");
+        let mut sql = String::from(
+            "SELECT id, timestamp, device_id, score, level, reasons, acknowledged, assigned_to, case_id, tenant_id FROM alerts WHERE 1=1",
+        );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
@@ -535,7 +551,8 @@ impl StorageBackend {
 
         let _ = idx; // suppress unused warning
 
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = match self.conn.prepare(&sql) {
             Ok(s) => s,
@@ -591,7 +608,13 @@ impl StorageBackend {
     }
 
     /// Update alert fields (acknowledge, assign, link to case).
-    pub fn update_alert(&mut self, id: &str, acknowledged: Option<bool>, assigned_to: Option<String>, case_id: Option<String>) -> Result<(), StorageError> {
+    pub fn update_alert(
+        &mut self,
+        id: &str,
+        acknowledged: Option<bool>,
+        assigned_to: Option<String>,
+        case_id: Option<String>,
+    ) -> Result<(), StorageError> {
         // Verify the alert exists
         if self.get_alert(id).is_none() {
             return Err(StorageError {
@@ -600,16 +623,37 @@ impl StorageBackend {
             });
         }
         if let Some(ack) = acknowledged {
-            self.conn.execute("UPDATE alerts SET acknowledged = ?1 WHERE id = ?2", params![ack as i32, id])
-                .map_err(|e| StorageError { code: StorageErrorCode::QueryFailed, message: format!("update failed: {e}") })?;
+            self.conn
+                .execute(
+                    "UPDATE alerts SET acknowledged = ?1 WHERE id = ?2",
+                    params![ack as i32, id],
+                )
+                .map_err(|e| StorageError {
+                    code: StorageErrorCode::QueryFailed,
+                    message: format!("update failed: {e}"),
+                })?;
         }
         if let Some(ref to) = assigned_to {
-            self.conn.execute("UPDATE alerts SET assigned_to = ?1 WHERE id = ?2", params![to, id])
-                .map_err(|e| StorageError { code: StorageErrorCode::QueryFailed, message: format!("update failed: {e}") })?;
+            self.conn
+                .execute(
+                    "UPDATE alerts SET assigned_to = ?1 WHERE id = ?2",
+                    params![to, id],
+                )
+                .map_err(|e| StorageError {
+                    code: StorageErrorCode::QueryFailed,
+                    message: format!("update failed: {e}"),
+                })?;
         }
         if let Some(ref cid) = case_id {
-            self.conn.execute("UPDATE alerts SET case_id = ?1 WHERE id = ?2", params![cid, id])
-                .map_err(|e| StorageError { code: StorageErrorCode::QueryFailed, message: format!("update failed: {e}") })?;
+            self.conn
+                .execute(
+                    "UPDATE alerts SET case_id = ?1 WHERE id = ?2",
+                    params![cid, id],
+                )
+                .map_err(|e| StorageError {
+                    code: StorageErrorCode::QueryFailed,
+                    message: format!("update failed: {e}"),
+                })?;
         }
         Ok(())
     }
@@ -619,21 +663,27 @@ impl StorageBackend {
         let mut counts = HashMap::new();
         let tid_owned = tenant_id.map(|s| s.to_string());
         let (sql, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match &tid_owned {
-            Some(tid) => ("SELECT level, COUNT(*) FROM alerts WHERE tenant_id = ?1 GROUP BY level", vec![Box::new(tid.clone()) as Box<dyn rusqlite::types::ToSql>]),
+            Some(tid) => (
+                "SELECT level, COUNT(*) FROM alerts WHERE tenant_id = ?1 GROUP BY level",
+                vec![Box::new(tid.clone()) as Box<dyn rusqlite::types::ToSql>],
+            ),
             None => ("SELECT level, COUNT(*) FROM alerts GROUP BY level", vec![]),
         };
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param.iter().map(|p| p.as_ref()).collect();
 
         if let Ok(mut stmt) = self.conn.prepare(sql) {
-            let _ = stmt.query_map(params_ref.as_slice(), |row| {
-                let level: String = row.get(0)?;
-                let count: usize = row.get(1)?;
-                Ok((level, count))
-            }).map(|rows| {
-                for r in rows.flatten() {
-                    counts.insert(r.0, r.1);
-                }
-            });
+            let _ = stmt
+                .query_map(params_ref.as_slice(), |row| {
+                    let level: String = row.get(0)?;
+                    let count: usize = row.get(1)?;
+                    Ok((level, count))
+                })
+                .map(|rows| {
+                    for r in rows.flatten() {
+                        counts.insert(r.0, r.1);
+                    }
+                });
         }
         counts
     }
@@ -691,7 +741,9 @@ impl StorageBackend {
 
     /// List cases with optional status/tenant filter.
     pub fn list_cases(&self, filter: &QueryFilter) -> Vec<StoredCase> {
-        let mut sql = String::from("SELECT id, title, status, priority, assignee, alert_ids, notes, tenant_id, created_at, updated_at FROM cases WHERE 1=1");
+        let mut sql = String::from(
+            "SELECT id, title, status, priority, assignee, alert_ids, notes, tenant_id, created_at, updated_at FROM cases WHERE 1=1",
+        );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
@@ -714,7 +766,8 @@ impl StorageBackend {
 
         let _ = idx;
 
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = match self.conn.prepare(&sql) {
             Ok(s) => s,
@@ -746,13 +799,16 @@ impl StorageBackend {
     /// Update case status.
     pub fn update_case_status(&mut self, id: &str, status: &str) -> Result<(), StorageError> {
         let now = chrono::Utc::now().to_rfc3339();
-        let changed = self.conn.execute(
-            "UPDATE cases SET status = ?1, updated_at = ?2 WHERE id = ?3",
-            params![status, now, id],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("update case failed: {e}"),
-        })?;
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE cases SET status = ?1, updated_at = ?2 WHERE id = ?3",
+                params![status, now, id],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("update case failed: {e}"),
+            })?;
         if changed == 0 {
             return Err(StorageError {
                 code: StorageErrorCode::NotFound,
@@ -765,13 +821,23 @@ impl StorageBackend {
     // ── Audit Operations ──────────────────────────────────────────────────
 
     /// Append an audit entry with chain integrity.
-    pub fn append_audit(&mut self, actor: &str, action: &str, target: Option<&str>, detail: Option<&str>, tenant_id: &str) -> Result<StoredAuditEntry, StorageError> {
+    pub fn append_audit(
+        &mut self,
+        actor: &str,
+        action: &str,
+        target: Option<&str>,
+        detail: Option<&str>,
+        tenant_id: &str,
+    ) -> Result<StoredAuditEntry, StorageError> {
         // Get the previous digest from the last entry
-        let prev_digest: Option<String> = self.conn.query_row(
-            "SELECT digest FROM audit_log ORDER BY id DESC LIMIT 1",
-            [],
-            |row| row.get(0),
-        ).ok();
+        let prev_digest: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT digest FROM audit_log ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
         let digest_input = format!(
@@ -816,7 +882,15 @@ impl StorageBackend {
             message: format!("audit query failed: {e}"),
         })?;
 
-        let entries: Vec<(u64, String, String, String, Option<String>, String, Option<String>)> = stmt
+        let entries: Vec<(
+            u64,
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+        )> = stmt
             .query_map([], |row| {
                 Ok((
                     row.get::<_, i64>(0)? as u64,
@@ -879,7 +953,9 @@ impl StorageBackend {
 
     /// List agents for a tenant.
     pub fn list_agents(&self, tenant_id: Option<&str>) -> Vec<StoredAgentState> {
-        let (sql, param_values): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(tid) = tenant_id {
+        let (sql, param_values): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(tid) =
+            tenant_id
+        {
             (
                 "SELECT agent_id, hostname, platform, version, last_heartbeat, status, policy_version, tags, tenant_id FROM fleet_state WHERE tenant_id = ?1",
                 vec![Box::new(tid.to_string()) as Box<dyn rusqlite::types::ToSql>],
@@ -891,7 +967,8 @@ impl StorageBackend {
             )
         };
 
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = match self.conn.prepare(sql) {
             Ok(s) => s,
@@ -948,23 +1025,27 @@ impl StorageBackend {
     /// Set a configuration value.
     pub fn set_config(&mut self, key: &str, value: &str) -> Result<(), StorageError> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT OR REPLACE INTO config_store (key, value, updated_at) VALUES (?1, ?2, ?3)",
-            params![key, value, now],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("set config failed: {e}"),
-        })?;
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO config_store (key, value, updated_at) VALUES (?1, ?2, ?3)",
+                params![key, value, now],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("set config failed: {e}"),
+            })?;
         Ok(())
     }
 
     /// Get a configuration value.
     pub fn get_config(&self, key: &str) -> Option<String> {
-        self.conn.query_row(
-            "SELECT value FROM config_store WHERE key = ?1",
-            params![key],
-            |row| row.get(0),
-        ).ok()
+        self.conn
+            .query_row(
+                "SELECT value FROM config_store WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .ok()
     }
 
     // ── Retention / Purge ─────────────────────────────────────────────────
@@ -973,13 +1054,16 @@ impl StorageBackend {
     pub fn purge_old_alerts(&mut self, retention_days: u32) -> Result<usize, StorageError> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
-        let purged = self.conn.execute(
-            "DELETE FROM alerts WHERE timestamp < ?1",
-            params![cutoff_str],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("purge alerts failed: {e}"),
-        })?;
+        let purged = self
+            .conn
+            .execute(
+                "DELETE FROM alerts WHERE timestamp < ?1",
+                params![cutoff_str],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("purge alerts failed: {e}"),
+            })?;
         Ok(purged)
     }
 
@@ -987,26 +1071,38 @@ impl StorageBackend {
     pub fn purge_old_audit(&mut self, retention_days: u32) -> Result<usize, StorageError> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
-        let purged = self.conn.execute(
-            "DELETE FROM audit_log WHERE timestamp < ?1",
-            params![cutoff_str],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("purge audit failed: {e}"),
-        })?;
+        let purged = self
+            .conn
+            .execute(
+                "DELETE FROM audit_log WHERE timestamp < ?1",
+                params![cutoff_str],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("purge audit failed: {e}"),
+            })?;
 
         if purged > 0 {
             // Recompute chain for remaining entries
-            let mut stmt = self.conn.prepare(
-                "SELECT id, timestamp, actor, action, target FROM audit_log ORDER BY id ASC"
-            ).map_err(|e| StorageError {
-                code: StorageErrorCode::QueryFailed,
-                message: format!("audit rechain query failed: {e}"),
-            })?;
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT id, timestamp, actor, action, target FROM audit_log ORDER BY id ASC",
+                )
+                .map_err(|e| StorageError {
+                    code: StorageErrorCode::QueryFailed,
+                    message: format!("audit rechain query failed: {e}"),
+                })?;
 
             let entries: Vec<(i64, String, String, String, Option<String>)> = stmt
                 .query_map([], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
                 })
                 .map_err(|e| StorageError {
                     code: StorageErrorCode::QueryFailed,
@@ -1019,18 +1115,22 @@ impl StorageBackend {
             for (id, timestamp, actor, action, target) in &entries {
                 let digest_input = format!(
                     "{}:{}:{}:{}:{}",
-                    timestamp, actor, action,
+                    timestamp,
+                    actor,
+                    action,
                     target.as_deref().unwrap_or(""),
                     prev_digest.as_deref().unwrap_or("")
                 );
                 let digest = sha256_hex(digest_input.as_bytes());
-                self.conn.execute(
-                    "UPDATE audit_log SET digest = ?1, prev_digest = ?2 WHERE id = ?3",
-                    params![digest, prev_digest, id],
-                ).map_err(|e| StorageError {
-                    code: StorageErrorCode::QueryFailed,
-                    message: format!("audit rechain update failed: {e}"),
-                })?;
+                self.conn
+                    .execute(
+                        "UPDATE audit_log SET digest = ?1, prev_digest = ?2 WHERE id = ?3",
+                        params![digest, prev_digest, id],
+                    )
+                    .map_err(|e| StorageError {
+                        code: StorageErrorCode::QueryFailed,
+                        message: format!("audit rechain update failed: {e}"),
+                    })?;
                 prev_digest = Some(digest);
             }
         }
@@ -1042,27 +1142,36 @@ impl StorageBackend {
     pub fn purge_old_metrics(&mut self, retention_days: u32) -> Result<usize, StorageError> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
-        let purged = self.conn.execute(
-            "DELETE FROM metrics WHERE timestamp < ?1",
-            params![cutoff_str],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("purge metrics failed: {e}"),
-        })?;
+        let purged = self
+            .conn
+            .execute(
+                "DELETE FROM metrics WHERE timestamp < ?1",
+                params![cutoff_str],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("purge metrics failed: {e}"),
+            })?;
         Ok(purged)
     }
 
     /// Purge response actions older than `retention_days`.
-    pub fn purge_old_response_actions(&mut self, retention_days: u32) -> Result<usize, StorageError> {
+    pub fn purge_old_response_actions(
+        &mut self,
+        retention_days: u32,
+    ) -> Result<usize, StorageError> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
         let cutoff_str = cutoff.to_rfc3339();
-        let purged = self.conn.execute(
-            "DELETE FROM response_actions WHERE created_at < ?1",
-            params![cutoff_str],
-        ).map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("purge response_actions failed: {e}"),
-        })?;
+        let purged = self
+            .conn
+            .execute(
+                "DELETE FROM response_actions WHERE created_at < ?1",
+                params![cutoff_str],
+            )
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("purge response_actions failed: {e}"),
+            })?;
         Ok(purged)
     }
 
@@ -1071,7 +1180,9 @@ impl StorageBackend {
     fn count_table(&self, table: &str) -> usize {
         // table names are hardcoded constants, not user input
         let sql = format!("SELECT COUNT(*) FROM {table}");
-        self.conn.query_row(&sql, [], |row| row.get::<_, usize>(0)).unwrap_or(0)
+        self.conn
+            .query_row(&sql, [], |row| row.get::<_, usize>(0))
+            .unwrap_or(0)
     }
 
     /// Get storage statistics.
@@ -1156,10 +1267,12 @@ impl StorageBackend {
             })?;
 
         // VACUUM to reclaim space
-        self.conn.execute_batch("VACUUM;").map_err(|e| StorageError {
-            code: StorageErrorCode::QueryFailed,
-            message: format!("vacuum failed: {e}"),
-        })?;
+        self.conn
+            .execute_batch("VACUUM;")
+            .map_err(|e| StorageError {
+                code: StorageErrorCode::QueryFailed,
+                message: format!("vacuum failed: {e}"),
+            })?;
 
         let size_after = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0)
             + std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
@@ -1171,12 +1284,20 @@ impl StorageBackend {
     /// Returns total rows deleted across all tables.
     pub fn reset_all_data(&mut self) -> Result<usize, StorageError> {
         let tables = [
-            "alerts", "cases", "audit_log", "fleet_state",
-            "threat_indicators", "response_actions", "metrics", "config_store",
+            "alerts",
+            "cases",
+            "audit_log",
+            "fleet_state",
+            "threat_indicators",
+            "response_actions",
+            "metrics",
+            "config_store",
         ];
         let mut total = 0usize;
         for table in &tables {
-            let deleted = self.conn.execute(&format!("DELETE FROM {table}"), [])
+            let deleted = self
+                .conn
+                .execute(&format!("DELETE FROM {table}"), [])
                 .unwrap_or(0);
             total += deleted;
         }
@@ -1207,9 +1328,16 @@ impl StorageBackend {
     /// Returns the list of files that were removed.
     pub fn cleanup_legacy_files(var_dir: &str) -> Vec<String> {
         let legacy_files = [
-            "agents.json", "alerts.jsonl", "cases.json", "events.json",
-            "incidents.json", "demo.audit.log", "last-run.audit.log",
-            "last-run.report.json", "enterprise.json", "deployments.json",
+            "agents.json",
+            "alerts.jsonl",
+            "cases.json",
+            "events.json",
+            "incidents.json",
+            "demo.audit.log",
+            "last-run.audit.log",
+            "last-run.report.json",
+            "enterprise.json",
+            "deployments.json",
             "test-config.toml",
         ];
         let var_path = std::path::Path::new(var_dir);
@@ -1287,8 +1415,8 @@ mod tests {
     use super::*;
 
     fn temp_storage() -> StorageBackend {
-        let dir = std::env::temp_dir()
-            .join(format!("wardex_storage_test_{}", rand::random::<u32>()));
+        let dir =
+            std::env::temp_dir().join(format!("wardex_storage_test_{}", rand::random::<u32>()));
         StorageBackend::open(dir.to_str().unwrap()).unwrap()
     }
 
@@ -1352,7 +1480,12 @@ mod tests {
         };
         store.insert_alert(alert).unwrap();
         store
-            .update_alert("A-002", Some(true), Some("analyst-1".into()), Some("C-001".into()))
+            .update_alert(
+                "A-002",
+                Some(true),
+                Some("analyst-1".into()),
+                Some("C-001".into()),
+            )
             .unwrap();
 
         let updated = store.get_alert("A-002").unwrap();
@@ -1386,9 +1519,21 @@ mod tests {
     #[test]
     fn audit_chain_integrity() {
         let mut store = temp_storage();
-        store.append_audit("admin", "login", None, None, "default").unwrap();
-        store.append_audit("admin", "create_case", Some("C-001"), None, "default").unwrap();
-        store.append_audit("analyst", "acknowledge_alert", Some("A-001"), None, "default").unwrap();
+        store
+            .append_audit("admin", "login", None, None, "default")
+            .unwrap();
+        store
+            .append_audit("admin", "create_case", Some("C-001"), None, "default")
+            .unwrap();
+        store
+            .append_audit(
+                "analyst",
+                "acknowledge_alert",
+                Some("A-001"),
+                None,
+                "default",
+            )
+            .unwrap();
 
         let verified = store.verify_audit_chain().unwrap();
         assert_eq!(verified, 3);
@@ -1433,31 +1578,35 @@ mod tests {
     fn tenant_filtering() {
         let mut store = temp_storage();
         for i in 0..3 {
-            store.insert_alert(StoredAlert {
-                id: format!("A-T1-{i}"),
-                timestamp: format!("2026-04-01T10:0{i}:00Z"),
-                device_id: "dev-1".into(),
-                score: 5.0,
-                level: "Elevated".into(),
+            store
+                .insert_alert(StoredAlert {
+                    id: format!("A-T1-{i}"),
+                    timestamp: format!("2026-04-01T10:0{i}:00Z"),
+                    device_id: "dev-1".into(),
+                    score: 5.0,
+                    level: "Elevated".into(),
+                    reasons: vec![],
+                    acknowledged: false,
+                    assigned_to: None,
+                    case_id: None,
+                    tenant_id: "tenant-1".into(),
+                })
+                .unwrap();
+        }
+        store
+            .insert_alert(StoredAlert {
+                id: "A-T2-0".into(),
+                timestamp: "2026-04-01T10:00:00Z".into(),
+                device_id: "dev-2".into(),
+                score: 7.0,
+                level: "Critical".into(),
                 reasons: vec![],
                 acknowledged: false,
                 assigned_to: None,
                 case_id: None,
-                tenant_id: "tenant-1".into(),
-            }).unwrap();
-        }
-        store.insert_alert(StoredAlert {
-            id: "A-T2-0".into(),
-            timestamp: "2026-04-01T10:00:00Z".into(),
-            device_id: "dev-2".into(),
-            score: 7.0,
-            level: "Critical".into(),
-            reasons: vec![],
-            acknowledged: false,
-            assigned_to: None,
-            case_id: None,
-            tenant_id: "tenant-2".into(),
-        }).unwrap();
+                tenant_id: "tenant-2".into(),
+            })
+            .unwrap();
 
         let filter = QueryFilter {
             tenant_id: Some("tenant-1".into()),
@@ -1488,25 +1637,27 @@ mod tests {
 
     #[test]
     fn persistence_across_reopen() {
-        let dir = std::env::temp_dir()
-            .join(format!("wardex_persist_test_{}", rand::random::<u32>()));
+        let dir =
+            std::env::temp_dir().join(format!("wardex_persist_test_{}", rand::random::<u32>()));
         let dir_str = dir.to_str().unwrap().to_string();
 
         // Write data
         {
             let mut store = StorageBackend::open(&dir_str).unwrap();
-            store.insert_alert(StoredAlert {
-                id: "A-PERSIST".into(),
-                timestamp: "2026-04-01T10:00:00Z".into(),
-                device_id: "dev-1".into(),
-                score: 9.0,
-                level: "Critical".into(),
-                reasons: vec!["test".into()],
-                acknowledged: false,
-                assigned_to: None,
-                case_id: None,
-                tenant_id: "default".into(),
-            }).unwrap();
+            store
+                .insert_alert(StoredAlert {
+                    id: "A-PERSIST".into(),
+                    timestamp: "2026-04-01T10:00:00Z".into(),
+                    device_id: "dev-1".into(),
+                    score: 9.0,
+                    level: "Critical".into(),
+                    reasons: vec!["test".into()],
+                    acknowledged: false,
+                    assigned_to: None,
+                    case_id: None,
+                    tenant_id: "default".into(),
+                })
+                .unwrap();
         }
 
         // Re-open and verify data survived
@@ -1520,26 +1671,28 @@ mod tests {
 
     #[test]
     fn shared_storage_thread_safe() {
-        let dir = std::env::temp_dir()
-            .join(format!("wardex_shared_test_{}", rand::random::<u32>()));
+        let dir =
+            std::env::temp_dir().join(format!("wardex_shared_test_{}", rand::random::<u32>()));
         let shared = SharedStorage::open(dir.to_str().unwrap()).unwrap();
 
-        let result = shared.with(|store| {
-            store.insert_alert(StoredAlert {
-                id: "A-SHARED".into(),
-                timestamp: "2026-04-01T10:00:00Z".into(),
-                device_id: "dev-1".into(),
-                score: 5.0,
-                level: "Elevated".into(),
-                reasons: vec![],
-                acknowledged: false,
-                assigned_to: None,
-                case_id: None,
-                tenant_id: "default".into(),
-            })?;
-            let stats = store.stats();
-            Ok(stats.total_alerts)
-        }).unwrap();
+        let result = shared
+            .with(|store| {
+                store.insert_alert(StoredAlert {
+                    id: "A-SHARED".into(),
+                    timestamp: "2026-04-01T10:00:00Z".into(),
+                    device_id: "dev-1".into(),
+                    score: 5.0,
+                    level: "Elevated".into(),
+                    reasons: vec![],
+                    acknowledged: false,
+                    assigned_to: None,
+                    case_id: None,
+                    tenant_id: "default".into(),
+                })?;
+                let stats = store.stats();
+                Ok(stats.total_alerts)
+            })
+            .unwrap();
         assert_eq!(result, 1);
     }
 
@@ -1547,18 +1700,20 @@ mod tests {
     fn alert_counts_by_level() {
         let mut store = temp_storage();
         for level in &["Critical", "Critical", "Elevated", "Elevated", "Elevated"] {
-            store.insert_alert(StoredAlert {
-                id: format!("A-CNT-{}", rand::random::<u32>()),
-                timestamp: "2026-04-01T10:00:00Z".into(),
-                device_id: "dev-1".into(),
-                score: 5.0,
-                level: level.to_string(),
-                reasons: vec![],
-                acknowledged: false,
-                assigned_to: None,
-                case_id: None,
-                tenant_id: "default".into(),
-            }).unwrap();
+            store
+                .insert_alert(StoredAlert {
+                    id: format!("A-CNT-{}", rand::random::<u32>()),
+                    timestamp: "2026-04-01T10:00:00Z".into(),
+                    device_id: "dev-1".into(),
+                    score: 5.0,
+                    level: level.to_string(),
+                    reasons: vec![],
+                    acknowledged: false,
+                    assigned_to: None,
+                    case_id: None,
+                    tenant_id: "default".into(),
+                })
+                .unwrap();
         }
         let counts = store.alert_counts(None);
         assert_eq!(counts.get("Critical"), Some(&2));
@@ -1570,29 +1725,54 @@ mod tests {
         let mut store = temp_storage();
 
         // Insert 5 audit entries with proper chaining
-        store.append_audit("system", "old_action_0", None, None, "default").unwrap();
-        store.append_audit("system", "old_action_1", None, None, "default").unwrap();
-        store.append_audit("system", "old_action_2", None, None, "default").unwrap();
-        store.append_audit("admin", "recent_1", None, None, "default").unwrap();
-        store.append_audit("admin", "recent_2", None, None, "default").unwrap();
+        store
+            .append_audit("system", "old_action_0", None, None, "default")
+            .unwrap();
+        store
+            .append_audit("system", "old_action_1", None, None, "default")
+            .unwrap();
+        store
+            .append_audit("system", "old_action_2", None, None, "default")
+            .unwrap();
+        store
+            .append_audit("admin", "recent_1", None, None, "default")
+            .unwrap();
+        store
+            .append_audit("admin", "recent_2", None, None, "default")
+            .unwrap();
 
         // Verify chain before purge
         let before = store.verify_audit_chain();
-        assert!(before.is_ok(), "chain should be valid before purge: {:?}", before);
+        assert!(
+            before.is_ok(),
+            "chain should be valid before purge: {:?}",
+            before
+        );
 
         // Backdate the first 3 entries so they fall outside retention
         let old_ts = "2020-01-01T00:00:00+00:00";
-        store.conn.execute(
-            "UPDATE audit_log SET timestamp = ?1 WHERE id <= 3",
-            params![old_ts],
-        ).unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE audit_log SET timestamp = ?1 WHERE id <= 3",
+                params![old_ts],
+            )
+            .unwrap();
 
         // Purge entries older than 1 day (should remove old_ts entries)
         let purged = store.purge_old_audit(1).unwrap();
-        assert!(purged >= 3, "should purge at least 3 old entries, got {}", purged);
+        assert!(
+            purged >= 3,
+            "should purge at least 3 old entries, got {}",
+            purged
+        );
 
         // Verify chain survives purge (rechain should rebuild)
         let after = store.verify_audit_chain();
-        assert!(after.is_ok(), "chain should be valid after purge: {:?}", after);
+        assert!(
+            after.is_ok(),
+            "chain should be valid after purge: {:?}",
+            after
+        );
     }
 }

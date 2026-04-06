@@ -1,4 +1,4 @@
-const { test, expect } = require('playwright/test');
+const { test, expect } = require('@playwright/test');
 
 const BASE = process.env.WARDEX_BASE_URL || 'http://127.0.0.1:8080';
 const TOKEN = process.env.WARDEX_ADMIN_TOKEN || 'wardex-live-token';
@@ -21,22 +21,18 @@ test('wardex live admin smoke', async ({ page }) => {
   });
 
   await page.goto(`${BASE}/admin.html`, { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#alert-tbody')).not.toContainText(/cargo run -- serve/i);
+  await expect(page).toHaveURL(/\/admin\/?$/);
 
-  await page.locator('#auth-token').fill(TOKEN);
-  await page.locator('#btn-connect').click();
-  await expect(page.locator('#auth-status')).toHaveText(/Authenticated/i);
+  await page.getByPlaceholder('API token').fill(TOKEN);
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.locator('.auth-badge')).toContainText(/Connected/i);
+  await expect(page.getByRole('heading', { name: 'Security Overview' })).toBeVisible();
 
-  await page.locator('#dash-sample-severity').selectOption('critical');
-  await page.locator('#btn-send-sample-alert').click();
-  await expect(page.locator('#dash-action-result')).toContainText(/sample .*alert injected/i);
-
-  await page.locator('[data-section="live-monitor"]').click();
-  await expect(page.locator('#sec-live-monitor')).toBeVisible();
-  await page.locator('#btn-refresh-alerts').click();
-  await expect(page.locator('#alert-tbody')).toContainText(
-    /sample_alert|\[sample\]|credential brute force|suspicious process injection|cpu load spike/i
-  );
+  await page.getByRole('button', { name: 'Live Monitor' }).click();
+  await expect(page.getByRole('heading', { name: 'Live Alert Stream' })).toBeVisible();
+  await page.getByRole('button', { name: 'Processes' }).click();
+  await expect(page.getByText('Running Processes')).toBeVisible();
+  await expect(page.getByText('Process Count')).toBeVisible();
 
   await page.screenshot({
     path: 'output/playwright/live-console-smoke.png',

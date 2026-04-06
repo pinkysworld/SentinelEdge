@@ -98,7 +98,11 @@ impl CampaignDetector {
 
         for i in 0..n {
             for j in (i + 1)..n {
-                if sorted[j].timestamp_ms.saturating_sub(sorted[i].timestamp_ms) > self.time_window_ms {
+                if sorted[j]
+                    .timestamp_ms
+                    .saturating_sub(sorted[i].timestamp_ms)
+                    > self.time_window_ms
+                {
                     break;
                 }
                 if sorted[i].hostname == sorted[j].hostname {
@@ -156,11 +160,13 @@ impl CampaignDetector {
             let max_score = scores.iter().cloned().fold(0.0_f32, f32::max);
 
             let shared_techniques = find_shared_strings(
-                &comp_alerts.iter().map(|a| &a.mitre_techniques).collect::<Vec<_>>(),
+                &comp_alerts
+                    .iter()
+                    .map(|a| &a.mitre_techniques)
+                    .collect::<Vec<_>>(),
             );
-            let shared_reasons = find_shared_strings(
-                &comp_alerts.iter().map(|a| &a.reasons).collect::<Vec<_>>(),
-            );
+            let shared_reasons =
+                find_shared_strings(&comp_alerts.iter().map(|a| &a.reasons).collect::<Vec<_>>());
 
             let severity = if max_score >= 5.0 {
                 "Critical"
@@ -173,9 +179,17 @@ impl CampaignDetector {
             let cid = format!("campaign-{}", self.next_id);
             self.next_id += 1;
             let name = if !shared_techniques.is_empty() {
-                format!("{} campaign across {} hosts", shared_techniques[0], hosts.len())
+                format!(
+                    "{} campaign across {} hosts",
+                    shared_techniques[0],
+                    hosts.len()
+                )
             } else if !shared_reasons.is_empty() {
-                format!("{} campaign across {} hosts", shared_reasons[0], hosts.len())
+                format!(
+                    "{} campaign across {} hosts",
+                    shared_reasons[0],
+                    hosts.len()
+                )
             } else {
                 format!("Coordinated activity across {} hosts", hosts.len())
             };
@@ -186,8 +200,16 @@ impl CampaignDetector {
                 name,
                 hosts: hosts.into_iter().map(String::from).collect(),
                 alert_count: component.len(),
-                first_seen_ms: comp_alerts.iter().map(|a| a.timestamp_ms).min().unwrap_or(0),
-                last_seen_ms: comp_alerts.iter().map(|a| a.timestamp_ms).max().unwrap_or(0),
+                first_seen_ms: comp_alerts
+                    .iter()
+                    .map(|a| a.timestamp_ms)
+                    .min()
+                    .unwrap_or(0),
+                last_seen_ms: comp_alerts
+                    .iter()
+                    .map(|a| a.timestamp_ms)
+                    .max()
+                    .unwrap_or(0),
                 avg_score,
                 max_score,
                 shared_techniques,
@@ -274,20 +296,29 @@ mod tests {
     fn detects_cross_host_campaign() {
         let alerts = vec![
             FleetAlert {
-                alert_id: "a1".into(), hostname: "host-a".into(),
-                timestamp_ms: 1000, score: 4.0, level: "Severe".into(),
+                alert_id: "a1".into(),
+                hostname: "host-a".into(),
+                timestamp_ms: 1000,
+                score: 4.0,
+                level: "Severe".into(),
                 reasons: vec!["network burst".into()],
                 mitre_techniques: vec!["T1071".into()],
             },
             FleetAlert {
-                alert_id: "a2".into(), hostname: "host-b".into(),
-                timestamp_ms: 2000, score: 4.5, level: "Severe".into(),
+                alert_id: "a2".into(),
+                hostname: "host-b".into(),
+                timestamp_ms: 2000,
+                score: 4.5,
+                level: "Severe".into(),
                 reasons: vec!["network burst".into()],
                 mitre_techniques: vec!["T1071".into()],
             },
             FleetAlert {
-                alert_id: "a3".into(), hostname: "host-c".into(),
-                timestamp_ms: 3000, score: 3.8, level: "Severe".into(),
+                alert_id: "a3".into(),
+                hostname: "host-c".into(),
+                timestamp_ms: 3000,
+                score: 3.8,
+                level: "Severe".into(),
                 reasons: vec!["network burst".into()],
                 mitre_techniques: vec!["T1071".into()],
             },
@@ -296,21 +327,33 @@ mod tests {
         let report = detector.detect(&alerts);
         assert_eq!(report.campaigns.len(), 1);
         assert_eq!(report.campaigns[0].hosts.len(), 3);
-        assert!(report.campaigns[0].shared_techniques.contains(&"T1071".into()));
+        assert!(
+            report.campaigns[0]
+                .shared_techniques
+                .contains(&"T1071".into())
+        );
     }
 
     #[test]
     fn no_campaign_single_host() {
         let alerts = vec![
             FleetAlert {
-                alert_id: "a1".into(), hostname: "host-a".into(),
-                timestamp_ms: 1000, score: 4.0, level: "Severe".into(),
-                reasons: vec!["burst".into()], mitre_techniques: vec!["T1071".into()],
+                alert_id: "a1".into(),
+                hostname: "host-a".into(),
+                timestamp_ms: 1000,
+                score: 4.0,
+                level: "Severe".into(),
+                reasons: vec!["burst".into()],
+                mitre_techniques: vec!["T1071".into()],
             },
             FleetAlert {
-                alert_id: "a2".into(), hostname: "host-a".into(),
-                timestamp_ms: 2000, score: 4.5, level: "Severe".into(),
-                reasons: vec!["burst".into()], mitre_techniques: vec!["T1071".into()],
+                alert_id: "a2".into(),
+                hostname: "host-a".into(),
+                timestamp_ms: 2000,
+                score: 4.5,
+                level: "Severe".into(),
+                reasons: vec!["burst".into()],
+                mitre_techniques: vec!["T1071".into()],
             },
         ];
         let mut detector = CampaignDetector::default();
@@ -322,14 +365,22 @@ mod tests {
     fn unrelated_alerts_not_clustered() {
         let alerts = vec![
             FleetAlert {
-                alert_id: "a1".into(), hostname: "host-a".into(),
-                timestamp_ms: 1000, score: 4.0, level: "Severe".into(),
-                reasons: vec!["auth burst".into()], mitre_techniques: vec!["T1110".into()],
+                alert_id: "a1".into(),
+                hostname: "host-a".into(),
+                timestamp_ms: 1000,
+                score: 4.0,
+                level: "Severe".into(),
+                reasons: vec!["auth burst".into()],
+                mitre_techniques: vec!["T1110".into()],
             },
             FleetAlert {
-                alert_id: "a2".into(), hostname: "host-b".into(),
-                timestamp_ms: 2000, score: 4.5, level: "Severe".into(),
-                reasons: vec!["dns tunnel".into()], mitre_techniques: vec!["T1071".into()],
+                alert_id: "a2".into(),
+                hostname: "host-b".into(),
+                timestamp_ms: 2000,
+                score: 4.5,
+                level: "Severe".into(),
+                reasons: vec!["dns tunnel".into()],
+                mitre_techniques: vec!["T1071".into()],
             },
         ];
         let mut detector = CampaignDetector::default();
@@ -340,30 +391,47 @@ mod tests {
     #[test]
     fn similarity_empty_sets_returns_zero() {
         let a = FleetAlert {
-            alert_id: "x".into(), hostname: "h1".into(),
-            timestamp_ms: 0, score: 1.0, level: "L".into(),
-            reasons: vec![], mitre_techniques: vec![],
+            alert_id: "x".into(),
+            hostname: "h1".into(),
+            timestamp_ms: 0,
+            score: 1.0,
+            level: "L".into(),
+            reasons: vec![],
+            mitre_techniques: vec![],
         };
         let b = FleetAlert {
-            alert_id: "y".into(), hostname: "h2".into(),
-            timestamp_ms: 0, score: 1.0, level: "L".into(),
-            reasons: vec![], mitre_techniques: vec![],
+            alert_id: "y".into(),
+            hostname: "h2".into(),
+            timestamp_ms: 0,
+            score: 1.0,
+            level: "L".into(),
+            reasons: vec![],
+            mitre_techniques: vec![],
         };
         let sim = alert_similarity(&a, &b);
-        assert!((sim - 0.0).abs() < f32::EPSILON, "empty sets should have zero similarity, got {sim}");
+        assert!(
+            (sim - 0.0).abs() < f32::EPSILON,
+            "empty sets should have zero similarity, got {sim}"
+        );
     }
 
     #[test]
     fn similarity_calculation() {
         let a = FleetAlert {
-            alert_id: "a".into(), hostname: "h1".into(),
-            timestamp_ms: 0, score: 1.0, level: "L".into(),
+            alert_id: "a".into(),
+            hostname: "h1".into(),
+            timestamp_ms: 0,
+            score: 1.0,
+            level: "L".into(),
             reasons: vec!["burst".into(), "auth".into()],
             mitre_techniques: vec!["T1071".into()],
         };
         let b = FleetAlert {
-            alert_id: "b".into(), hostname: "h2".into(),
-            timestamp_ms: 0, score: 1.0, level: "L".into(),
+            alert_id: "b".into(),
+            hostname: "h2".into(),
+            timestamp_ms: 0,
+            score: 1.0,
+            level: "L".into(),
             reasons: vec!["burst".into(), "dns".into()],
             mitre_techniques: vec!["T1071".into()],
         };

@@ -176,26 +176,50 @@ impl ResponseOrchestrator {
         match action {
             ResponseAction::Alert => ActionTier::Auto,
             ResponseAction::Throttle { .. } => {
-                if is_protected { ActionTier::SingleApproval } else { ActionTier::Auto }
+                if is_protected {
+                    ActionTier::SingleApproval
+                } else {
+                    ActionTier::Auto
+                }
             }
             ResponseAction::KillProcess { .. } | ResponseAction::QuarantineFile { .. } => {
-                if is_protected { ActionTier::DualApproval } else { ActionTier::SingleApproval }
+                if is_protected {
+                    ActionTier::DualApproval
+                } else {
+                    ActionTier::SingleApproval
+                }
             }
             ResponseAction::Isolate | ResponseAction::BlockIp { .. } => {
-                if is_protected { ActionTier::BreakGlass } else { ActionTier::SingleApproval }
+                if is_protected {
+                    ActionTier::BreakGlass
+                } else {
+                    ActionTier::SingleApproval
+                }
             }
             ResponseAction::DisableAccount { .. } => {
-                if is_protected { ActionTier::BreakGlass } else { ActionTier::DualApproval }
+                if is_protected {
+                    ActionTier::BreakGlass
+                } else {
+                    ActionTier::DualApproval
+                }
             }
             ResponseAction::RollbackConfig { .. } => ActionTier::SingleApproval,
             ResponseAction::Custom { .. } => {
-                if is_protected { ActionTier::DualApproval } else { ActionTier::SingleApproval }
+                if is_protected {
+                    ActionTier::DualApproval
+                } else {
+                    ActionTier::SingleApproval
+                }
             }
         }
     }
 
     /// Assess blast radius for a response action.
-    pub fn assess_blast_radius(&self, action: &ResponseAction, target: &ResponseTarget) -> BlastRadius {
+    pub fn assess_blast_radius(
+        &self,
+        action: &ResponseAction,
+        target: &ResponseTarget,
+    ) -> BlastRadius {
         let (services, endpoints, risk) = match action {
             ResponseAction::Alert => (0, 0, "low"),
             ResponseAction::Throttle { .. } => (1, 1, "low"),
@@ -203,14 +227,26 @@ impl ResponseOrchestrator {
             ResponseAction::QuarantineFile { .. } => (1, 1, "medium"),
             ResponseAction::BlockIp { .. } => {
                 // Blocking an IP could affect multiple endpoints
-                (3, 5, if self.is_protected(&target.hostname) { "critical" } else { "high" })
+                (
+                    3,
+                    5,
+                    if self.is_protected(&target.hostname) {
+                        "critical"
+                    } else {
+                        "high"
+                    },
+                )
             }
-            ResponseAction::Isolate => {
-                (5, 1, if self.is_protected(&target.hostname) { "critical" } else { "high" })
-            }
-            ResponseAction::DisableAccount { .. } => {
-                (10, 10, "critical")
-            }
+            ResponseAction::Isolate => (
+                5,
+                1,
+                if self.is_protected(&target.hostname) {
+                    "critical"
+                } else {
+                    "high"
+                },
+            ),
+            ResponseAction::DisableAccount { .. } => (10, 10, "critical"),
             ResponseAction::RollbackConfig { .. } => (2, 1, "medium"),
             ResponseAction::Custom { .. } => (1, 1, "medium"),
         };
@@ -219,8 +255,13 @@ impl ResponseOrchestrator {
             affected_services: services,
             affected_endpoints: endpoints,
             risk_level: risk.into(),
-            impact_summary: format!("Action {:?} on {} may affect {} services across {} endpoints",
-                std::mem::discriminant(action), target.hostname, services, endpoints),
+            impact_summary: format!(
+                "Action {:?} on {} may affect {} services across {} endpoints",
+                std::mem::discriminant(action),
+                target.hostname,
+                services,
+                endpoints
+            ),
         }
     }
 
@@ -238,7 +279,11 @@ impl ResponseOrchestrator {
 
         // Auto-tier actions execute immediately (or simulate in dry-run)
         if tier == ActionTier::Auto {
-            request.status = if request.dry_run { ApprovalStatus::DryRunCompleted } else { ApprovalStatus::Executed };
+            request.status = if request.dry_run {
+                ApprovalStatus::DryRunCompleted
+            } else {
+                ApprovalStatus::Executed
+            };
         } else {
             request.status = ApprovalStatus::Pending;
         }
@@ -250,13 +295,22 @@ impl ResponseOrchestrator {
     }
 
     /// Process an approval decision for a pending request.
-    pub fn approve(&self, request_id: &str, record: ApprovalRecord) -> Result<ApprovalStatus, String> {
+    pub fn approve(
+        &self,
+        request_id: &str,
+        record: ApprovalRecord,
+    ) -> Result<ApprovalStatus, String> {
         let mut requests = self.requests.lock().unwrap();
-        let req = requests.iter_mut().find(|r| r.id == request_id)
+        let req = requests
+            .iter_mut()
+            .find(|r| r.id == request_id)
             .ok_or_else(|| format!("Request {} not found", request_id))?;
 
         if req.status != ApprovalStatus::Pending {
-            return Err(format!("Request {} is not pending (status: {:?})", request_id, req.status));
+            return Err(format!(
+                "Request {} is not pending (status: {:?})",
+                request_id, req.status
+            ));
         }
 
         if record.decision == ApprovalDecision::Deny {
@@ -283,12 +337,18 @@ impl ResponseOrchestrator {
             _ => 1,
         };
 
-        let approve_count = req.approvals.iter()
+        let approve_count = req
+            .approvals
+            .iter()
             .filter(|a| a.decision == ApprovalDecision::Approve)
             .count();
 
         if approve_count >= required_approvals {
-            req.status = if req.dry_run { ApprovalStatus::DryRunCompleted } else { ApprovalStatus::Approved };
+            req.status = if req.dry_run {
+                ApprovalStatus::DryRunCompleted
+            } else {
+                ApprovalStatus::Approved
+            };
         }
 
         let status = req.status.clone();
@@ -298,7 +358,10 @@ impl ResponseOrchestrator {
 
     /// Get pending requests.
     pub fn pending_requests(&self) -> Vec<ResponseRequest> {
-        self.requests.lock().unwrap().iter()
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
             .filter(|r| r.status == ApprovalStatus::Pending)
             .cloned()
             .collect()
@@ -311,7 +374,12 @@ impl ResponseOrchestrator {
 
     /// Get a request by ID.
     pub fn get_request(&self, id: &str) -> Option<ResponseRequest> {
-        self.requests.lock().unwrap().iter().find(|r| r.id == id).cloned()
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.id == id)
+            .cloned()
     }
 
     /// Expire pending requests past SLA.
@@ -320,11 +388,12 @@ impl ResponseOrchestrator {
         for req in requests.iter_mut() {
             if req.status == ApprovalStatus::Pending {
                 // Try RFC3339 first, then fall back to plain epoch
-                let req_epoch = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&req.requested_at) {
-                    dt.timestamp() as u64
-                } else {
-                    req.requested_at.parse::<u64>().unwrap_or(0)
-                };
+                let req_epoch =
+                    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&req.requested_at) {
+                        dt.timestamp() as u64
+                    } else {
+                        req.requested_at.parse::<u64>().unwrap_or(0)
+                    };
                 if now_epoch.saturating_sub(req_epoch) >= self.approval_sla_secs {
                     req.status = ApprovalStatus::Expired;
                     self.record_audit_inner(req);
@@ -379,31 +448,43 @@ impl ResponseOrchestrator {
         let mut executed_reqs = Vec::new();
         for req in requests.iter_mut() {
             if let Some(target_id) = request_id
-                && req.id != target_id {
-                    continue;
-                }
+                && req.id != target_id
+            {
+                continue;
+            }
             if req.status != ApprovalStatus::Approved || req.dry_run {
                 continue;
             }
             let description = match &req.action {
-                ResponseAction::KillProcess { pid, process_name } =>
-                    format!("Killed process {} (PID {}) on {}", process_name, pid, req.target.hostname),
-                ResponseAction::Isolate =>
-                    format!("Isolated host {}", req.target.hostname),
-                ResponseAction::BlockIp { ip } =>
-                    format!("Blocked IP {} via {}", ip, req.target.hostname),
-                ResponseAction::QuarantineFile { path } =>
-                    format!("Quarantined file {} on {}", path, req.target.hostname),
-                ResponseAction::DisableAccount { username } =>
-                    format!("Disabled account {} on {}", username, req.target.hostname),
-                ResponseAction::Throttle { rate_limit_kbps } =>
-                    format!("Throttled {} to {} kbps", req.target.hostname, rate_limit_kbps),
-                ResponseAction::RollbackConfig { config_name } =>
-                    format!("Rolled back config {} on {}", config_name, req.target.hostname),
-                ResponseAction::Alert =>
-                    format!("Alert notification sent for {}", req.target.hostname),
-                ResponseAction::Custom { name, .. } =>
-                    format!("Custom action '{}' executed on {}", name, req.target.hostname),
+                ResponseAction::KillProcess { pid, process_name } => format!(
+                    "Killed process {} (PID {}) on {}",
+                    process_name, pid, req.target.hostname
+                ),
+                ResponseAction::Isolate => format!("Isolated host {}", req.target.hostname),
+                ResponseAction::BlockIp { ip } => {
+                    format!("Blocked IP {} via {}", ip, req.target.hostname)
+                }
+                ResponseAction::QuarantineFile { path } => {
+                    format!("Quarantined file {} on {}", path, req.target.hostname)
+                }
+                ResponseAction::DisableAccount { username } => {
+                    format!("Disabled account {} on {}", username, req.target.hostname)
+                }
+                ResponseAction::Throttle { rate_limit_kbps } => format!(
+                    "Throttled {} to {} kbps",
+                    req.target.hostname, rate_limit_kbps
+                ),
+                ResponseAction::RollbackConfig { config_name } => format!(
+                    "Rolled back config {} on {}",
+                    config_name, req.target.hostname
+                ),
+                ResponseAction::Alert => {
+                    format!("Alert notification sent for {}", req.target.hostname)
+                }
+                ResponseAction::Custom { name, .. } => format!(
+                    "Custom action '{}' executed on {}",
+                    name, req.target.hostname
+                ),
             };
             req.status = ApprovalStatus::Executed;
             executed.push(description);
@@ -418,7 +499,9 @@ impl ResponseOrchestrator {
 }
 
 impl Default for ResponseOrchestrator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ── Dry-run simulation ──────────────────────────────────────────
@@ -436,7 +519,11 @@ pub struct DryRunResult {
 }
 
 /// Simulate a response action without executing it.
-pub fn dry_run_simulate(orchestrator: &ResponseOrchestrator, action: &ResponseAction, target: &ResponseTarget) -> DryRunResult {
+pub fn dry_run_simulate(
+    orchestrator: &ResponseOrchestrator,
+    action: &ResponseAction,
+    target: &ResponseTarget,
+) -> DryRunResult {
     let tier = orchestrator.determine_tier(action, target);
     let blast = orchestrator.assess_blast_radius(action, target);
     let is_protected = orchestrator.is_protected(&target.hostname);
@@ -450,24 +537,27 @@ pub fn dry_run_simulate(orchestrator: &ResponseOrchestrator, action: &ResponseAc
 
     let mut effects = Vec::new();
     match action {
-        ResponseAction::KillProcess { pid, process_name } =>
-            effects.push(format!("Would kill process {} (PID {})", process_name, pid)),
-        ResponseAction::Isolate =>
-            effects.push(format!("Would isolate host {}", target.hostname)),
-        ResponseAction::BlockIp { ip } =>
-            effects.push(format!("Would block IP {}", ip)),
-        ResponseAction::QuarantineFile { path } =>
-            effects.push(format!("Would quarantine file {}", path)),
-        ResponseAction::DisableAccount { username } =>
-            effects.push(format!("Would disable account {}", username)),
-        ResponseAction::Throttle { rate_limit_kbps } =>
-            effects.push(format!("Would throttle to {} kbps", rate_limit_kbps)),
-        ResponseAction::RollbackConfig { config_name } =>
-            effects.push(format!("Would rollback config {}", config_name)),
-        ResponseAction::Alert =>
-            effects.push("Would generate alert notification".into()),
-        ResponseAction::Custom { name, .. } =>
-            effects.push(format!("Would execute custom action: {}", name)),
+        ResponseAction::KillProcess { pid, process_name } => {
+            effects.push(format!("Would kill process {} (PID {})", process_name, pid))
+        }
+        ResponseAction::Isolate => effects.push(format!("Would isolate host {}", target.hostname)),
+        ResponseAction::BlockIp { ip } => effects.push(format!("Would block IP {}", ip)),
+        ResponseAction::QuarantineFile { path } => {
+            effects.push(format!("Would quarantine file {}", path))
+        }
+        ResponseAction::DisableAccount { username } => {
+            effects.push(format!("Would disable account {}", username))
+        }
+        ResponseAction::Throttle { rate_limit_kbps } => {
+            effects.push(format!("Would throttle to {} kbps", rate_limit_kbps))
+        }
+        ResponseAction::RollbackConfig { config_name } => {
+            effects.push(format!("Would rollback config {}", config_name))
+        }
+        ResponseAction::Alert => effects.push("Would generate alert notification".into()),
+        ResponseAction::Custom { name, .. } => {
+            effects.push(format!("Would execute custom action: {}", name))
+        }
     }
 
     DryRunResult {
@@ -488,10 +578,19 @@ mod tests {
     use super::*;
 
     fn make_target(hostname: &str) -> ResponseTarget {
-        ResponseTarget { hostname: hostname.into(), agent_uid: None, asset_tags: Vec::new() }
+        ResponseTarget {
+            hostname: hostname.into(),
+            agent_uid: None,
+            asset_tags: Vec::new(),
+        }
     }
 
-    fn make_request(id: &str, action: ResponseAction, hostname: &str, dry_run: bool) -> ResponseRequest {
+    fn make_request(
+        id: &str,
+        action: ResponseAction,
+        hostname: &str,
+        dry_run: bool,
+    ) -> ResponseRequest {
         ResponseRequest {
             id: id.into(),
             action,
@@ -522,19 +621,32 @@ mod tests {
     #[test]
     fn single_approval_workflow() {
         let orch = ResponseOrchestrator::new();
-        let req = make_request("r2", ResponseAction::KillProcess { pid: 100, process_name: "evil".into() }, "host-1", false);
+        let req = make_request(
+            "r2",
+            ResponseAction::KillProcess {
+                pid: 100,
+                process_name: "evil".into(),
+            },
+            "host-1",
+            false,
+        );
         let id = orch.submit(req).unwrap();
 
         let r = orch.get_request(&id).unwrap();
         assert_eq!(r.status, ApprovalStatus::Pending);
         assert_eq!(r.tier, ActionTier::SingleApproval);
 
-        let status = orch.approve(&id, ApprovalRecord {
-            approver: "analyst-1".into(),
-            decision: ApprovalDecision::Approve,
-            timestamp: "now".into(),
-            comment: None,
-        }).unwrap();
+        let status = orch
+            .approve(
+                &id,
+                ApprovalRecord {
+                    approver: "analyst-1".into(),
+                    decision: ApprovalDecision::Approve,
+                    timestamp: "now".into(),
+                    comment: None,
+                },
+            )
+            .unwrap();
         assert_eq!(status, ApprovalStatus::Approved);
     }
 
@@ -549,18 +661,45 @@ mod tests {
         });
 
         // Kill on protected: DualApproval
-        let req = make_request("r3", ResponseAction::KillProcess { pid: 50, process_name: "svc".into() }, "dc-01", false);
+        let req = make_request(
+            "r3",
+            ResponseAction::KillProcess {
+                pid: 50,
+                process_name: "svc".into(),
+            },
+            "dc-01",
+            false,
+        );
         let id = orch.submit(req).unwrap();
         let r = orch.get_request(&id).unwrap();
         assert_eq!(r.tier, ActionTier::DualApproval);
         assert!(r.is_protected_asset);
 
         // Need two approvals
-        orch.approve(&id, ApprovalRecord { approver: "analyst-1".into(), decision: ApprovalDecision::Approve, timestamp: "now".into(), comment: None }).unwrap();
+        orch.approve(
+            &id,
+            ApprovalRecord {
+                approver: "analyst-1".into(),
+                decision: ApprovalDecision::Approve,
+                timestamp: "now".into(),
+                comment: None,
+            },
+        )
+        .unwrap();
         let r = orch.get_request(&id).unwrap();
         assert_eq!(r.status, ApprovalStatus::Pending); // Still pending
 
-        let status = orch.approve(&id, ApprovalRecord { approver: "analyst-2".into(), decision: ApprovalDecision::Approve, timestamp: "now".into(), comment: None }).unwrap();
+        let status = orch
+            .approve(
+                &id,
+                ApprovalRecord {
+                    approver: "analyst-2".into(),
+                    decision: ApprovalDecision::Approve,
+                    timestamp: "now".into(),
+                    comment: None,
+                },
+            )
+            .unwrap();
         assert_eq!(status, ApprovalStatus::Approved);
     }
 
@@ -597,12 +736,28 @@ mod tests {
     #[test]
     fn deny_stops_workflow() {
         let orch = ResponseOrchestrator::new();
-        let req = make_request("r6", ResponseAction::KillProcess { pid: 1, process_name: "x".into() }, "host-1", false);
+        let req = make_request(
+            "r6",
+            ResponseAction::KillProcess {
+                pid: 1,
+                process_name: "x".into(),
+            },
+            "host-1",
+            false,
+        );
         orch.submit(req).unwrap();
 
-        let status = orch.approve("r6", ApprovalRecord {
-            approver: "analyst".into(), decision: ApprovalDecision::Deny, timestamp: "now".into(), comment: Some("Not warranted".into()),
-        }).unwrap();
+        let status = orch
+            .approve(
+                "r6",
+                ApprovalRecord {
+                    approver: "analyst".into(),
+                    decision: ApprovalDecision::Deny,
+                    timestamp: "now".into(),
+                    comment: Some("Not warranted".into()),
+                },
+            )
+            .unwrap();
 
         assert_eq!(status, ApprovalStatus::Denied);
     }
@@ -610,11 +765,36 @@ mod tests {
     #[test]
     fn duplicate_approver_rejected() {
         let orch = ResponseOrchestrator::new();
-        let req = make_request("r7", ResponseAction::KillProcess { pid: 1, process_name: "x".into() }, "host-1", false);
+        let req = make_request(
+            "r7",
+            ResponseAction::KillProcess {
+                pid: 1,
+                process_name: "x".into(),
+            },
+            "host-1",
+            false,
+        );
         orch.submit(req).unwrap();
 
-        orch.approve("r7", ApprovalRecord { approver: "analyst-1".into(), decision: ApprovalDecision::Approve, timestamp: "now".into(), comment: None }).unwrap();
-        let result = orch.approve("r7", ApprovalRecord { approver: "analyst-1".into(), decision: ApprovalDecision::Approve, timestamp: "now".into(), comment: None });
+        orch.approve(
+            "r7",
+            ApprovalRecord {
+                approver: "analyst-1".into(),
+                decision: ApprovalDecision::Approve,
+                timestamp: "now".into(),
+                comment: None,
+            },
+        )
+        .unwrap();
+        let result = orch.approve(
+            "r7",
+            ApprovalRecord {
+                approver: "analyst-1".into(),
+                decision: ApprovalDecision::Approve,
+                timestamp: "now".into(),
+                comment: None,
+            },
+        );
         assert!(result.is_err());
     }
 
@@ -623,7 +803,10 @@ mod tests {
         let orch = ResponseOrchestrator::new();
         let mut req = make_request(
             "r7-self",
-            ResponseAction::KillProcess { pid: 1, process_name: "x".into() },
+            ResponseAction::KillProcess {
+                pid: 1,
+                process_name: "x".into(),
+            },
             "host-1",
             false,
         );
@@ -641,9 +824,11 @@ mod tests {
         );
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Requester cannot approve their own response request"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Requester cannot approve their own response request")
+        );
         assert_eq!(
             orch.get_request("r7-self").unwrap().status,
             ApprovalStatus::Pending
@@ -663,11 +848,20 @@ mod tests {
     fn dry_run_simulation() {
         let mut orch = ResponseOrchestrator::new();
         orch.register_protected_asset(ProtectedAsset {
-            hostname: "jump-box".into(), asset_type: ProtectedAssetType::JumpBox,
-            owner: "sec".into(), reason: "Jump box".into(),
+            hostname: "jump-box".into(),
+            asset_type: ProtectedAssetType::JumpBox,
+            owner: "sec".into(),
+            reason: "Jump box".into(),
         });
 
-        let result = dry_run_simulate(&orch, &ResponseAction::KillProcess { pid: 42, process_name: "malware.bin".into() }, &make_target("jump-box"));
+        let result = dry_run_simulate(
+            &orch,
+            &ResponseAction::KillProcess {
+                pid: 42,
+                process_name: "malware.bin".into(),
+            },
+            &make_target("jump-box"),
+        );
         assert!(result.is_protected);
         assert_eq!(result.tier, ActionTier::DualApproval);
         assert_eq!(result.approvals_required, 2);
@@ -687,7 +881,15 @@ mod tests {
     #[test]
     fn expire_stale_requests() {
         let orch = ResponseOrchestrator::new();
-        let req = make_request("r9", ResponseAction::KillProcess { pid: 1, process_name: "x".into() }, "host-1", false);
+        let req = make_request(
+            "r9",
+            ResponseAction::KillProcess {
+                pid: 1,
+                process_name: "x".into(),
+            },
+            "host-1",
+            false,
+        );
         orch.submit(req).unwrap();
 
         orch.expire_stale(2000); // 2000 - 1000 = 1000 > 300 SLA
@@ -698,8 +900,18 @@ mod tests {
     #[test]
     fn pending_requests_filter() {
         let orch = ResponseOrchestrator::new();
-        orch.submit(make_request("p1", ResponseAction::Alert, "h", false)).unwrap();
-        orch.submit(make_request("p2", ResponseAction::KillProcess { pid: 1, process_name: "x".into() }, "h", false)).unwrap();
+        orch.submit(make_request("p1", ResponseAction::Alert, "h", false))
+            .unwrap();
+        orch.submit(make_request(
+            "p2",
+            ResponseAction::KillProcess {
+                pid: 1,
+                process_name: "x".into(),
+            },
+            "h",
+            false,
+        ))
+        .unwrap();
         let pending = orch.pending_requests();
         assert_eq!(pending.len(), 1); // Only p2 is pending; p1 auto-executed
     }

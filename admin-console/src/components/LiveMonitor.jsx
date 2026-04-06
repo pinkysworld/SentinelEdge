@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import AlertDrawer from './AlertDrawer.jsx';
+import ProcessDrawer from './ProcessDrawer.jsx';
+import { downloadCsv, downloadData } from './operator.jsx';
 
 export default function LiveMonitor() {
   const toast = useToast();
@@ -19,6 +22,7 @@ export default function LiveMonitor() {
   const [sevFilter, setSevFilter] = useState('all');
   const [selectedAlerts, setSelectedAlerts] = useState(new Set());
   const [bulkAction, setBulkAction] = useState('');
+  const [selectedProcessPid, setSelectedProcessPid] = useState(null);
 
   const reloadAll = () => { reload(); reloadCount(); reloadGrouped(); };
   useInterval(reloadAll, 10000);
@@ -97,6 +101,50 @@ export default function LiveMonitor() {
     return list;
   })();
 
+  const selectedAlert = selectedId == null
+    ? null
+    : filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === selectedId);
+
+  const exportAlerts = (format) => {
+    if (format === 'csv') {
+      const rows = [
+        ['id', 'timestamp', 'severity', 'source', 'category', 'hostname', 'message'],
+        ...filteredAlerts.map((alert, index) => ([
+          alert.id || alert.alert_id || index,
+          alert.timestamp || alert.time || '',
+          alert.severity || '',
+          alert.source || '',
+          alert.category || alert.type || '',
+          alert.hostname || '',
+          alert.message || alert.description || '',
+        ])),
+      ];
+      downloadCsv(rows, 'wardex-alert-stream.csv');
+      return;
+    }
+    downloadData(filteredAlerts, 'wardex-alert-stream.json');
+  };
+
+  const exportProcesses = (format) => {
+    if (format === 'csv') {
+      const rows = [
+        ['pid', 'ppid', 'name', 'user', 'group', 'cpu_percent', 'mem_percent'],
+        ...procList.map((proc) => ([
+          proc.pid,
+          proc.ppid ?? '',
+          proc.name || '',
+          proc.user || '',
+          proc.group || '',
+          proc.cpu_percent ?? '',
+          proc.mem_percent ?? '',
+        ])),
+      ];
+      downloadCsv(rows, 'wardex-processes.csv');
+      return;
+    }
+    downloadData({ processes: procList, findings: procAnalysis?.findings || [] }, 'wardex-processes.json');
+  };
+
   return (
     <div>
       <div className="section-header">
@@ -131,8 +179,12 @@ export default function LiveMonitor() {
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}
+            <div className="btn-group" style={{ marginLeft: 'auto' }}>
+              <button className="btn btn-sm" onClick={() => exportAlerts('json')}>Export JSON</button>
+              <button className="btn btn-sm" onClick={() => exportAlerts('csv')}>Export CSV</button>
+            </div>
             {selectedAlerts.size > 0 && (
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{selectedAlerts.size} selected</span>
                 <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
                   style={{ padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }}>
@@ -167,7 +219,7 @@ export default function LiveMonitor() {
                       <td>
                         <div className="btn-group">
                           <button className="btn btn-sm" onClick={() => setSelectedId(selectedId === aid ? null : aid)}>
-                            {selectedId === aid ? 'Hide' : 'Details'}
+                            Investigate
                           </button>
                           <button className="btn btn-sm" onClick={() => markFP(a)} title="Mark as false positive" style={{ color: 'var(--warning)' }}>FP</button>
                         </div>
@@ -179,25 +231,6 @@ export default function LiveMonitor() {
               </table>
             </div>
           )}
-          {selectedId !== null && (() => {
-            const sel = filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === selectedId);
-            return sel ? (
-            <div style={{ marginTop: 16, padding: '12px 16px', background: 'var(--bg)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--primary)' }}>
-              <div className="card-title" style={{ marginBottom: 8 }}>Alert Detail</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
-                {sel.score != null && <div><span className="metric-label">Score</span><div style={{ fontSize: 16, fontWeight: 600 }}>{sel.score}</div></div>}
-                {sel.hostname && <div><span className="metric-label">Host</span><div>{sel.hostname}</div></div>}
-                {sel.source && <div><span className="metric-label">Source</span><div>{sel.source}</div></div>}
-                {sel.agent_id && <div><span className="metric-label">Agent</span><div style={{ fontFamily: 'var(--font-mono)' }}>{sel.agent_id}</div></div>}
-              </div>
-              {sel.reasons && <div style={{ fontSize: 12, marginBottom: 8 }}>Reasons: {Array.isArray(sel.reasons) ? sel.reasons.join(', ') : sel.reasons}</div>}
-              <details>
-                <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>Full JSON</summary>
-                <div className="json-block" style={{ marginTop: 6 }}>{JSON.stringify(sel, null, 2)}</div>
-              </details>
-            </div>
-            ) : null;
-          })()}
           {/* FP Feedback Stats */}
           {Array.isArray(fpStats) && fpStats.length > 0 && (
             <div style={{ marginTop: 16, padding: 12, background: 'var(--bg)', borderRadius: 'var(--radius)' }}>
@@ -337,6 +370,8 @@ export default function LiveMonitor() {
               <span className="card-title">Running Processes</span>
               <div className="btn-group">
                 <button className="btn btn-sm" onClick={() => { reloadProcs(); reloadPA(); }}>↻ Refresh</button>
+                <button className="btn btn-sm" onClick={() => exportProcesses('json')}>Export JSON</button>
+                <button className="btn btn-sm" onClick={() => exportProcesses('csv')}>Export CSV</button>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 12 }}>
@@ -384,10 +419,11 @@ export default function LiveMonitor() {
               <div className="card-title" style={{ marginBottom: 8 }}>Security Findings</div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Risk</th><th>PID</th><th>Process</th><th>User</th><th>CPU</th><th>Mem</th><th>Reason</th></tr></thead>
+                  <thead><tr><th>Risk</th><th>PID</th><th>Process</th><th>User</th><th>CPU</th><th>Mem</th><th>Reason</th><th>Actions</th></tr></thead>
                   <tbody>
                     {procAnalysis.findings.map((f, i) => (
-                      <tr key={i} style={{ background: f.risk_level === 'critical' ? 'rgba(239,68,68,.06)' : f.risk_level === 'high' ? 'rgba(249,115,22,.06)' : undefined }}>
+                      <tr key={i} style={{ background: f.risk_level === 'critical' ? 'rgba(239,68,68,.06)' : f.risk_level === 'high' ? 'rgba(249,115,22,.06)' : undefined, cursor: 'pointer' }}
+                        onClick={() => setSelectedProcessPid(f.pid)}>
                         <td><span className={`sev-${f.risk_level}`}>{f.risk_level}</span></td>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{f.pid}</td>
                         <td style={{ fontWeight: 600 }}>{f.name}</td>
@@ -395,6 +431,14 @@ export default function LiveMonitor() {
                         <td>{f.cpu_percent?.toFixed(1)}%</td>
                         <td>{f.mem_percent?.toFixed(1)}%</td>
                         <td style={{ fontSize: 12 }}>{f.reason}</td>
+                        <td>
+                          <button className="btn btn-sm" onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedProcessPid(f.pid);
+                          }}>
+                            Investigate
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -422,18 +466,27 @@ export default function LiveMonitor() {
                       <th>Group</th>
                       <th style={{ cursor: 'pointer' }} onClick={() => setProcSort('cpu')}>CPU %{procSort === 'cpu' ? ' ↓' : ''}</th>
                       <th style={{ cursor: 'pointer' }} onClick={() => setProcSort('mem')}>Mem %{procSort === 'mem' ? ' ↓' : ''}</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {procList.slice(0, 200).map(p => (
-                      <tr key={p.pid}>
+                      <tr key={p.pid} style={{ cursor: 'pointer' }} onClick={() => setSelectedProcessPid(p.pid)}>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.pid}</td>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.ppid ?? '—'}</td>
-                        <td style={{ fontWeight: p.cpu_percent > 50 ? 700 : 400 }}>{p.name}</td>
+                        <td style={{ fontWeight: p.cpu_percent > 50 ? 700 : 400 }}>{p.name?.split('/').pop() || p.name}</td>
                         <td>{p.user}</td>
                         <td>{p.group || '—'}</td>
                         <td style={{ color: p.cpu_percent > 50 ? 'var(--danger)' : undefined }}>{p.cpu_percent?.toFixed(1)}</td>
                         <td style={{ color: p.mem_percent > 30 ? 'var(--warning)' : undefined }}>{p.mem_percent?.toFixed(1)}</td>
+                        <td>
+                          <button className="btn btn-sm" onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedProcessPid(p.pid);
+                          }}>
+                            Investigate
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -448,6 +501,8 @@ export default function LiveMonitor() {
           </div>
         </div>
       )}
+      <AlertDrawer alert={selectedAlert} onClose={() => setSelectedId(null)} onUpdated={reloadAll} />
+      <ProcessDrawer pid={selectedProcessPid} onClose={() => setSelectedProcessPid(null)} onUpdated={() => { reloadProcs(); reloadPA(); }} />
     </div>
   );
 }

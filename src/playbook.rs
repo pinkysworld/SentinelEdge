@@ -49,9 +49,10 @@ impl PlaybookTrigger {
             return false;
         }
         if let Some(min) = self.min_severity
-            && severity < min {
-                return false;
-            }
+            && severity < min
+        {
+            return false;
+        }
         let reason_ok = self.alert_reasons.is_empty()
             || self
                 .alert_reasons
@@ -59,11 +60,8 @@ impl PlaybookTrigger {
                 .any(|r| reason.to_lowercase().contains(&r.to_lowercase()));
         let tech_ok = self.mitre_techniques.is_empty()
             || self.mitre_techniques.iter().any(|t| techniques.contains(t));
-        let host_ok = self.host_patterns.is_empty()
-            || self
-                .host_patterns
-                .iter()
-                .any(|p| glob_match(p, host));
+        let host_ok =
+            self.host_patterns.is_empty() || self.host_patterns.iter().any(|p| glob_match(p, host));
         reason_ok && tech_ok && host_ok
     }
 }
@@ -294,7 +292,11 @@ impl PlaybookEngine {
         error: Option<String>,
         now_ms: u64,
     ) -> bool {
-        let exec = match self.executions.iter_mut().find(|e| e.execution_id == execution_id) {
+        let exec = match self
+            .executions
+            .iter_mut()
+            .find(|e| e.execution_id == execution_id)
+        {
             Some(e) => e,
             None => return false,
         };
@@ -330,7 +332,11 @@ impl PlaybookEngine {
         error: Option<String>,
         now_ms: u64,
     ) -> bool {
-        if let Some(exec) = self.executions.iter_mut().find(|e| e.execution_id == execution_id) {
+        if let Some(exec) = self
+            .executions
+            .iter_mut()
+            .find(|e| e.execution_id == execution_id)
+        {
             exec.status = status;
             exec.error = error;
             exec.finished_at = Some(now_ms);
@@ -342,7 +348,9 @@ impl PlaybookEngine {
 
     /// Get execution record.
     pub fn get_execution(&self, execution_id: &str) -> Option<&PlaybookExecution> {
-        self.executions.iter().find(|e| e.execution_id == execution_id)
+        self.executions
+            .iter()
+            .find(|e| e.execution_id == execution_id)
     }
 
     /// List recent executions.
@@ -425,7 +433,10 @@ fn try_compare(cond: &str, op: &str, vars: &HashMap<String, String>) -> Option<b
     let upper = cond.to_uppercase();
     let pos = upper.find(&op.to_uppercase())?;
     let lhs_name = cond[..pos].trim();
-    let rhs_raw = cond[pos + op.len()..].trim().trim_matches('\'').trim_matches('"');
+    let rhs_raw = cond[pos + op.len()..]
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"');
     let lhs_val = vars.get(lhs_name).cloned().unwrap_or_default();
     Some(lhs_val.to_lowercase().contains(&rhs_raw.to_lowercase()))
 }
@@ -443,7 +454,10 @@ fn try_numeric_op(cond: &str, op: &str, vars: &HashMap<String, String>) -> Optio
         return None;
     }
     let lhs_name = cond[..pos].trim();
-    let rhs_str = cond[pos + op.len()..].trim().trim_matches('\'').trim_matches('"');
+    let rhs_str = cond[pos + op.len()..]
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"');
     let lhs_val: f64 = vars.get(lhs_name)?.parse().ok()?;
     let rhs_val: f64 = rhs_str.parse().ok()?;
     Some(match op {
@@ -458,12 +472,15 @@ fn try_numeric_op(cond: &str, op: &str, vars: &HashMap<String, String>) -> Optio
 
 fn try_string_eq(cond: &str, op: &str, vars: &HashMap<String, String>) -> Option<bool> {
     let pos = cond.find(op)?;
-    // Skip if it's actually != 
+    // Skip if it's actually !=
     if pos > 0 && cond.as_bytes().get(pos - 1) == Some(&b'!') {
         return None;
     }
     let lhs_name = cond[..pos].trim();
-    let rhs_raw = cond[pos + op.len()..].trim().trim_matches('\'').trim_matches('"');
+    let rhs_raw = cond[pos + op.len()..]
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"');
     let lhs_val = vars.get(lhs_name).cloned().unwrap_or_default();
     Some(lhs_val == rhs_raw)
 }
@@ -669,9 +686,18 @@ mod tests {
         vars.insert("score".into(), "8.0".into());
         vars.insert("reason".into(), "auth failure burst".into());
         vars.insert("level".into(), "Critical".into());
-        assert!(evaluate_condition("score > 5 AND reason CONTAINS 'auth'", &vars));
-        assert!(!evaluate_condition("score > 10 AND reason CONTAINS 'auth'", &vars));
-        assert!(evaluate_condition("score > 10 OR level == 'Critical'", &vars));
+        assert!(evaluate_condition(
+            "score > 5 AND reason CONTAINS 'auth'",
+            &vars
+        ));
+        assert!(!evaluate_condition(
+            "score > 10 AND reason CONTAINS 'auth'",
+            &vars
+        ));
+        assert!(evaluate_condition(
+            "score > 10 OR level == 'Critical'",
+            &vars
+        ));
     }
 
     #[test]

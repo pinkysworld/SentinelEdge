@@ -26,7 +26,7 @@ This document identifies the subset of blueprint tracks closest to publication-r
 | Benchmark harness | `src/benchmark.rs` | FP/FN, precision, recall, F1 metrics on deterministic fixtures |
 | Credential storm scenario | `examples/credential_storm.csv` | Realistic attack trace for evaluation |
 | Status manifest | `cargo run -- status-json` | Machine-readable implementation snapshot |
-| Browser console | `site/admin.html` | Report visualization for paper figures |
+| Browser console | `embedded /admin/` | Report visualization for paper figures |
 
 ### Evaluation plan
 

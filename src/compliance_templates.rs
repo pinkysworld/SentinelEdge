@@ -110,50 +110,134 @@ pub fn cis_controls_v8() -> ComplianceFramework {
         version: "8.0".into(),
         description: "Center for Internet Security Controls Version 8".into(),
         controls: vec![
-            ctrl("CIS-1.1", "Enterprise Asset Inventory",
+            ctrl(
+                "CIS-1.1",
+                "Enterprise Asset Inventory",
                 "Establish and maintain an accurate, detailed, and up-to-date inventory of all enterprise assets.",
-                &["fleet.agents", "fleet.discovery"], &["GET /api/fleet/agents"],
-                Some(AutoCheck { check_type: CheckType::AgentCoverage, parameter: "coverage".into(), expected: ">=80".into() })),
-            ctrl("CIS-2.1", "Software Inventory",
+                &["fleet.agents", "fleet.discovery"],
+                &["GET /api/fleet/agents"],
+                Some(AutoCheck {
+                    check_type: CheckType::AgentCoverage,
+                    parameter: "coverage".into(),
+                    expected: ">=80".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-2.1",
+                "Software Inventory",
                 "Establish and maintain a detailed inventory of all licensed software.",
-                &["sbom.generate", "sbom.verify"], &["GET /api/sbom"],
-                Some(AutoCheck { check_type: CheckType::ConfigEnabled, parameter: "sbom".into(), expected: "true".into() })),
-            ctrl("CIS-3.1", "Data Protection",
+                &["sbom.generate", "sbom.verify"],
+                &["GET /api/sbom"],
+                Some(AutoCheck {
+                    check_type: CheckType::ConfigEnabled,
+                    parameter: "sbom".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-3.1",
+                "Data Protection",
                 "Establish and maintain a data management process.",
-                &["storage.encryption", "archival"], &["GET /api/config"],
-                Some(AutoCheck { check_type: CheckType::EncryptionEnabled, parameter: "at_rest".into(), expected: "true".into() })),
-            ctrl("CIS-4.1", "Secure Configuration",
+                &["storage.encryption", "archival"],
+                &["GET /api/config"],
+                Some(AutoCheck {
+                    check_type: CheckType::EncryptionEnabled,
+                    parameter: "at_rest".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-4.1",
+                "Secure Configuration",
                 "Establish and maintain a secure configuration process for enterprise assets.",
-                &["policy.engine", "config.audit"], &["GET /api/policies"],
-                Some(AutoCheck { check_type: CheckType::PolicyExists, parameter: "hardening".into(), expected: "true".into() })),
-            ctrl("CIS-5.1", "Account Management",
+                &["policy.engine", "config.audit"],
+                &["GET /api/policies"],
+                Some(AutoCheck {
+                    check_type: CheckType::PolicyExists,
+                    parameter: "hardening".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-5.1",
+                "Account Management",
                 "Establish and maintain an inventory of all accounts.",
-                &["auth.rbac", "auth.audit"], &["GET /api/auth/users"],
-                Some(AutoCheck { check_type: CheckType::MfaEnforced, parameter: "mfa".into(), expected: "true".into() })),
-            ctrl("CIS-6.1", "Access Control Management",
+                &["auth.rbac", "auth.audit"],
+                &["GET /api/auth/users"],
+                Some(AutoCheck {
+                    check_type: CheckType::MfaEnforced,
+                    parameter: "mfa".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-6.1",
+                "Access Control Management",
                 "Establish and maintain an access control process.",
-                &["auth.rbac", "auth.tokens"], &["GET /api/auth/roles"],
-                None),
-            ctrl("CIS-8.1", "Audit Log Management",
+                &["auth.rbac", "auth.tokens"],
+                &["GET /api/auth/roles"],
+                None,
+            ),
+            ctrl(
+                "CIS-8.1",
+                "Audit Log Management",
                 "Establish and maintain an audit log management process.",
-                &["audit.log", "structured_log"], &["GET /api/audit/logs"],
-                Some(AutoCheck { check_type: CheckType::AuditLogging, parameter: "enabled".into(), expected: "true".into() })),
-            ctrl("CIS-8.9", "Log Retention",
+                &["audit.log", "structured_log"],
+                &["GET /api/audit/logs"],
+                Some(AutoCheck {
+                    check_type: CheckType::AuditLogging,
+                    parameter: "enabled".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-8.9",
+                "Log Retention",
                 "Centralize, retain audit logs for at least 90 days.",
-                &["archival", "storage.retention"], &["GET /api/config"],
-                Some(AutoCheck { check_type: CheckType::RetentionDays, parameter: "retention".into(), expected: ">=90".into() })),
-            ctrl("CIS-10.1", "Malware Defenses",
+                &["archival", "storage.retention"],
+                &["GET /api/config"],
+                Some(AutoCheck {
+                    check_type: CheckType::RetentionDays,
+                    parameter: "retention".into(),
+                    expected: ">=90".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-10.1",
+                "Malware Defenses",
                 "Deploy and maintain anti-malware software.",
-                &["detection.engine", "yara_engine", "sigma_library"], &["GET /api/detection/status"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "detection".into(), expected: "true".into() })),
-            ctrl("CIS-13.1", "Network Monitoring",
+                &["detection.engine", "yara_engine", "sigma_library"],
+                &["GET /api/detection/status"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "detection".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-13.1",
+                "Network Monitoring",
                 "Centralize security event alerting.",
-                &["correlation.engine", "alerts", "incidents"], &["GET /api/alerts"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "correlation".into(), expected: "true".into() })),
-            ctrl("CIS-17.1", "Incident Response",
+                &["correlation.engine", "alerts", "incidents"],
+                &["GET /api/alerts"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "correlation".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CIS-17.1",
+                "Incident Response",
                 "Designate personnel to manage incident handling.",
-                &["incidents", "response.playbooks"], &["GET /api/incidents"],
-                Some(AutoCheck { check_type: CheckType::IncidentProcess, parameter: "incident_process".into(), expected: "true".into() })),
+                &["incidents", "response.playbooks"],
+                &["GET /api/incidents"],
+                Some(AutoCheck {
+                    check_type: CheckType::IncidentProcess,
+                    parameter: "incident_process".into(),
+                    expected: "true".into(),
+                }),
+            ),
         ],
     }
 }
@@ -165,50 +249,118 @@ pub fn pci_dss_v4() -> ComplianceFramework {
         version: "4.0".into(),
         description: "Payment Card Industry Data Security Standard Version 4.0".into(),
         controls: vec![
-            ctrl("PCI-1.1", "Network Security Controls",
+            ctrl(
+                "PCI-1.1",
+                "Network Security Controls",
                 "Install and maintain network security controls.",
-                &["policy.firewall", "network.segmentation"], &["GET /api/policies"],
-                None),
-            ctrl("PCI-2.1", "Secure Configurations",
+                &["policy.firewall", "network.segmentation"],
+                &["GET /api/policies"],
+                None,
+            ),
+            ctrl(
+                "PCI-2.1",
+                "Secure Configurations",
                 "Apply secure configurations to all system components.",
-                &["policy.hardening", "config.audit"], &["GET /api/config"],
-                None),
-            ctrl("PCI-3.1", "Protect Stored Account Data",
+                &["policy.hardening", "config.audit"],
+                &["GET /api/config"],
+                None,
+            ),
+            ctrl(
+                "PCI-3.1",
+                "Protect Stored Account Data",
                 "Protect stored account data with strong cryptography.",
-                &["storage.encryption"], &["GET /api/config"],
-                Some(AutoCheck { check_type: CheckType::EncryptionEnabled, parameter: "at_rest".into(), expected: "true".into() })),
-            ctrl("PCI-5.1", "Anti-Malware",
+                &["storage.encryption"],
+                &["GET /api/config"],
+                Some(AutoCheck {
+                    check_type: CheckType::EncryptionEnabled,
+                    parameter: "at_rest".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PCI-5.1",
+                "Anti-Malware",
                 "Protect systems against malware with anti-malware solutions.",
-                &["detection.engine", "yara_engine"], &["GET /api/detection/status"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "detection".into(), expected: "true".into() })),
-            ctrl("PCI-6.1", "Secure Development",
+                &["detection.engine", "yara_engine"],
+                &["GET /api/detection/status"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "detection".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PCI-6.1",
+                "Secure Development",
                 "Develop and maintain secure systems and software.",
-                &["sbom", "supply_chain"], &["GET /api/sbom"],
-                None),
-            ctrl("PCI-7.1", "Access Restriction",
+                &["sbom", "supply_chain"],
+                &["GET /api/sbom"],
+                None,
+            ),
+            ctrl(
+                "PCI-7.1",
+                "Access Restriction",
                 "Restrict access to system components by business need to know.",
-                &["auth.rbac"], &["GET /api/auth/roles"],
-                None),
-            ctrl("PCI-8.1", "User Identification",
+                &["auth.rbac"],
+                &["GET /api/auth/roles"],
+                None,
+            ),
+            ctrl(
+                "PCI-8.1",
+                "User Identification",
                 "Identify users and authenticate access.",
-                &["auth.tokens", "auth.mfa"], &["GET /api/auth/users"],
-                Some(AutoCheck { check_type: CheckType::MfaEnforced, parameter: "mfa".into(), expected: "true".into() })),
-            ctrl("PCI-10.1", "Log and Monitor",
+                &["auth.tokens", "auth.mfa"],
+                &["GET /api/auth/users"],
+                Some(AutoCheck {
+                    check_type: CheckType::MfaEnforced,
+                    parameter: "mfa".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PCI-10.1",
+                "Log and Monitor",
                 "Log and monitor all access to system components and cardholder data.",
-                &["audit.log", "structured_log", "metrics"], &["GET /api/audit/logs"],
-                Some(AutoCheck { check_type: CheckType::AuditLogging, parameter: "enabled".into(), expected: "true".into() })),
-            ctrl("PCI-10.7", "Log Retention",
+                &["audit.log", "structured_log", "metrics"],
+                &["GET /api/audit/logs"],
+                Some(AutoCheck {
+                    check_type: CheckType::AuditLogging,
+                    parameter: "enabled".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PCI-10.7",
+                "Log Retention",
                 "Retain audit trail history for at least 12 months.",
-                &["archival", "storage.retention"], &["GET /api/config"],
-                Some(AutoCheck { check_type: CheckType::RetentionDays, parameter: "retention".into(), expected: ">=365".into() })),
-            ctrl("PCI-11.1", "Security Testing",
+                &["archival", "storage.retention"],
+                &["GET /api/config"],
+                Some(AutoCheck {
+                    check_type: CheckType::RetentionDays,
+                    parameter: "retention".into(),
+                    expected: ">=365".into(),
+                }),
+            ),
+            ctrl(
+                "PCI-11.1",
+                "Security Testing",
                 "Regularly test security of systems and networks.",
-                &["harness", "detection.test"], &["GET /api/harness/results"],
-                None),
-            ctrl("PCI-12.10", "Incident Response",
+                &["harness", "detection.test"],
+                &["GET /api/harness/results"],
+                None,
+            ),
+            ctrl(
+                "PCI-12.10",
+                "Incident Response",
                 "Implement an incident response plan.",
-                &["incidents", "response.playbooks"], &["GET /api/incidents"],
-                Some(AutoCheck { check_type: CheckType::IncidentProcess, parameter: "incident_process".into(), expected: "true".into() })),
+                &["incidents", "response.playbooks"],
+                &["GET /api/incidents"],
+                Some(AutoCheck {
+                    check_type: CheckType::IncidentProcess,
+                    parameter: "incident_process".into(),
+                    expected: "true".into(),
+                }),
+            ),
         ],
     }
 }
@@ -220,42 +372,102 @@ pub fn soc2_type2() -> ComplianceFramework {
         version: "2024".into(),
         description: "AICPA SOC 2 Type II Trust Services Criteria".into(),
         controls: vec![
-            ctrl("CC6.1", "Logical Access Security",
+            ctrl(
+                "CC6.1",
+                "Logical Access Security",
                 "Logical access security software, infrastructure, and architectures.",
-                &["auth.rbac", "auth.tokens", "rate_limiting"], &["GET /api/auth/roles"],
-                None),
-            ctrl("CC6.2", "User Authentication",
+                &["auth.rbac", "auth.tokens", "rate_limiting"],
+                &["GET /api/auth/roles"],
+                None,
+            ),
+            ctrl(
+                "CC6.2",
+                "User Authentication",
                 "User credentials and identity management.",
-                &["auth.mfa", "auth.tokens"], &["GET /api/auth/users"],
-                Some(AutoCheck { check_type: CheckType::MfaEnforced, parameter: "mfa".into(), expected: "true".into() })),
-            ctrl("CC6.3", "Authorized Access",
+                &["auth.mfa", "auth.tokens"],
+                &["GET /api/auth/users"],
+                Some(AutoCheck {
+                    check_type: CheckType::MfaEnforced,
+                    parameter: "mfa".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CC6.3",
+                "Authorized Access",
                 "Only authorized persons access facilities and information.",
-                &["auth.rbac", "policy.engine"], &["GET /api/auth/roles"],
-                None),
-            ctrl("CC6.6", "External Threats",
+                &["auth.rbac", "policy.engine"],
+                &["GET /api/auth/roles"],
+                None,
+            ),
+            ctrl(
+                "CC6.6",
+                "External Threats",
                 "Security measures against threats from outside system boundaries.",
-                &["detection.engine", "correlation.engine", "sigma_library"], &["GET /api/detection/status"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "detection".into(), expected: "true".into() })),
-            ctrl("CC7.1", "Monitoring",
+                &["detection.engine", "correlation.engine", "sigma_library"],
+                &["GET /api/detection/status"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "detection".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CC7.1",
+                "Monitoring",
                 "Detection and monitoring procedures.",
-                &["monitor", "alerts", "metrics"], &["GET /api/alerts"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "monitoring".into(), expected: "true".into() })),
-            ctrl("CC7.2", "Anomaly Detection",
+                &["monitor", "alerts", "metrics"],
+                &["GET /api/alerts"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "monitoring".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CC7.2",
+                "Anomaly Detection",
                 "Anomalies identified and evaluated.",
-                &["baseline", "correlation.engine", "detector"], &["GET /api/detection/baseline"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "baseline".into(), expected: "true".into() })),
-            ctrl("CC7.3", "Incident Response",
+                &["baseline", "correlation.engine", "detector"],
+                &["GET /api/detection/baseline"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "baseline".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CC7.3",
+                "Incident Response",
                 "Procedures for security incidents exist and are evaluated.",
-                &["incidents", "response.actions"], &["GET /api/incidents"],
-                Some(AutoCheck { check_type: CheckType::IncidentProcess, parameter: "incident_process".into(), expected: "true".into() })),
-            ctrl("CC8.1", "Change Management",
+                &["incidents", "response.actions"],
+                &["GET /api/incidents"],
+                Some(AutoCheck {
+                    check_type: CheckType::IncidentProcess,
+                    parameter: "incident_process".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "CC8.1",
+                "Change Management",
                 "Changes to infrastructure and software are controlled.",
-                &["auto_update", "sbom", "audit.log"], &["GET /api/updates"],
-                None),
-            ctrl("A1.2", "Data Backup",
+                &["auto_update", "sbom", "audit.log"],
+                &["GET /api/updates"],
+                None,
+            ),
+            ctrl(
+                "A1.2",
+                "Data Backup",
                 "Recovery infrastructure and data backed up.",
-                &["checkpoint", "archival"], &["GET /api/checkpoints"],
-                Some(AutoCheck { check_type: CheckType::BackupExists, parameter: "backup".into(), expected: "true".into() })),
+                &["checkpoint", "archival"],
+                &["GET /api/checkpoints"],
+                Some(AutoCheck {
+                    check_type: CheckType::BackupExists,
+                    parameter: "backup".into(),
+                    expected: "true".into(),
+                }),
+            ),
         ],
     }
 }
@@ -267,53 +479,132 @@ pub fn nist_csf_v2() -> ComplianceFramework {
         version: "2.0".into(),
         description: "NIST Cybersecurity Framework Version 2.0".into(),
         controls: vec![
-            ctrl("ID.AM-1", "Asset Inventory",
+            ctrl(
+                "ID.AM-1",
+                "Asset Inventory",
                 "Physical devices and systems are inventoried.",
-                &["fleet.agents", "fleet.discovery"], &["GET /api/fleet/agents"],
-                Some(AutoCheck { check_type: CheckType::AgentCoverage, parameter: "coverage".into(), expected: ">=80".into() })),
-            ctrl("ID.AM-2", "Software Inventory",
+                &["fleet.agents", "fleet.discovery"],
+                &["GET /api/fleet/agents"],
+                Some(AutoCheck {
+                    check_type: CheckType::AgentCoverage,
+                    parameter: "coverage".into(),
+                    expected: ">=80".into(),
+                }),
+            ),
+            ctrl(
+                "ID.AM-2",
+                "Software Inventory",
                 "Software platforms and applications are inventoried.",
-                &["sbom.generate"], &["GET /api/sbom"],
-                None),
-            ctrl("PR.AC-1", "Identity Management",
+                &["sbom.generate"],
+                &["GET /api/sbom"],
+                None,
+            ),
+            ctrl(
+                "PR.AC-1",
+                "Identity Management",
                 "Identities, credentials, and access are managed.",
-                &["auth.rbac", "auth.tokens", "auth.mfa"], &["GET /api/auth/users"],
-                Some(AutoCheck { check_type: CheckType::MfaEnforced, parameter: "mfa".into(), expected: "true".into() })),
-            ctrl("PR.DS-1", "Data-at-Rest Protection",
+                &["auth.rbac", "auth.tokens", "auth.mfa"],
+                &["GET /api/auth/users"],
+                Some(AutoCheck {
+                    check_type: CheckType::MfaEnforced,
+                    parameter: "mfa".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PR.DS-1",
+                "Data-at-Rest Protection",
                 "Data-at-rest is protected.",
-                &["storage.encryption"], &["GET /api/config"],
-                Some(AutoCheck { check_type: CheckType::EncryptionEnabled, parameter: "at_rest".into(), expected: "true".into() })),
-            ctrl("PR.DS-2", "Data-in-Transit Protection",
+                &["storage.encryption"],
+                &["GET /api/config"],
+                Some(AutoCheck {
+                    check_type: CheckType::EncryptionEnabled,
+                    parameter: "at_rest".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PR.DS-2",
+                "Data-in-Transit Protection",
                 "Data-in-transit is protected.",
-                &["tls", "encryption"], &["GET /api/config"],
-                Some(AutoCheck { check_type: CheckType::EncryptionEnabled, parameter: "in_transit".into(), expected: "true".into() })),
-            ctrl("PR.PT-1", "Audit Logging",
+                &["tls", "encryption"],
+                &["GET /api/config"],
+                Some(AutoCheck {
+                    check_type: CheckType::EncryptionEnabled,
+                    parameter: "in_transit".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "PR.PT-1",
+                "Audit Logging",
                 "Audit/log records are determined, documented, and reviewed.",
-                &["audit.log", "structured_log"], &["GET /api/audit/logs"],
-                Some(AutoCheck { check_type: CheckType::AuditLogging, parameter: "enabled".into(), expected: "true".into() })),
-            ctrl("DE.CM-1", "Network Monitoring",
+                &["audit.log", "structured_log"],
+                &["GET /api/audit/logs"],
+                Some(AutoCheck {
+                    check_type: CheckType::AuditLogging,
+                    parameter: "enabled".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "DE.CM-1",
+                "Network Monitoring",
                 "The network is monitored to detect potential cybersecurity events.",
-                &["monitor", "correlation.engine"], &["GET /api/alerts"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "correlation".into(), expected: "true".into() })),
-            ctrl("DE.AE-1", "Baseline of Operations",
+                &["monitor", "correlation.engine"],
+                &["GET /api/alerts"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "correlation".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "DE.AE-1",
+                "Baseline of Operations",
                 "A baseline of network operations is established and managed.",
-                &["baseline", "detector"], &["GET /api/detection/baseline"],
-                Some(AutoCheck { check_type: CheckType::DetectionEnabled, parameter: "baseline".into(), expected: "true".into() })),
-            ctrl("RS.RP-1", "Response Plan",
+                &["baseline", "detector"],
+                &["GET /api/detection/baseline"],
+                Some(AutoCheck {
+                    check_type: CheckType::DetectionEnabled,
+                    parameter: "baseline".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "RS.RP-1",
+                "Response Plan",
                 "Response plan is executed during or after an incident.",
-                &["incidents", "response.playbooks", "response.actions"], &["GET /api/incidents"],
-                Some(AutoCheck { check_type: CheckType::IncidentProcess, parameter: "incident_process".into(), expected: "true".into() })),
-            ctrl("RC.RP-1", "Recovery Plan",
+                &["incidents", "response.playbooks", "response.actions"],
+                &["GET /api/incidents"],
+                Some(AutoCheck {
+                    check_type: CheckType::IncidentProcess,
+                    parameter: "incident_process".into(),
+                    expected: "true".into(),
+                }),
+            ),
+            ctrl(
+                "RC.RP-1",
+                "Recovery Plan",
                 "Recovery plan is executed during or after a cybersecurity incident.",
-                &["checkpoint", "archival"], &["GET /api/checkpoints"],
-                Some(AutoCheck { check_type: CheckType::BackupExists, parameter: "backup".into(), expected: "true".into() })),
+                &["checkpoint", "archival"],
+                &["GET /api/checkpoints"],
+                Some(AutoCheck {
+                    check_type: CheckType::BackupExists,
+                    parameter: "backup".into(),
+                    expected: "true".into(),
+                }),
+            ),
         ],
     }
 }
 
 fn ctrl(
-    id: &str, title: &str, desc: &str,
-    mappings: &[&str], evidence: &[&str],
+    id: &str,
+    title: &str,
+    desc: &str,
+    mappings: &[&str],
+    evidence: &[&str],
     check: Option<AutoCheck>,
 ) -> ComplianceControl {
     ComplianceControl {
@@ -328,7 +619,10 @@ fn ctrl(
 
 // ── Evaluation Engine ────────────────────────────────────────────────────────
 
-pub fn evaluate_framework(framework: &ComplianceFramework, state: &SystemState) -> ComplianceReport {
+pub fn evaluate_framework(
+    framework: &ComplianceFramework,
+    state: &SystemState,
+) -> ComplianceReport {
     let mut findings = Vec::new();
     let mut passed = 0;
     let mut failed = 0;
@@ -338,7 +632,11 @@ pub fn evaluate_framework(framework: &ComplianceFramework, state: &SystemState) 
     for control in &framework.controls {
         let (status, evidence, remediation) = match &control.auto_check {
             Some(check) => evaluate_check(check, state),
-            None => (FindingStatus::ManualReview, "Manual verification required".into(), String::new()),
+            None => (
+                FindingStatus::ManualReview,
+                "Manual verification required".into(),
+                String::new(),
+            ),
         };
 
         match status {
@@ -383,18 +681,32 @@ fn evaluate_check(check: &AutoCheck, state: &SystemState) -> (FindingStatus, Str
     match check.check_type {
         CheckType::DetectionEnabled => {
             if state.detection_enabled {
-                (FindingStatus::Pass, "Detection engine is active".into(), String::new())
+                (
+                    FindingStatus::Pass,
+                    "Detection engine is active".into(),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, "Detection engine is not active".into(),
-                 "Enable detection engine in configuration".into())
+                (
+                    FindingStatus::Fail,
+                    "Detection engine is not active".into(),
+                    "Enable detection engine in configuration".into(),
+                )
             }
         }
         CheckType::AuditLogging => {
             if state.audit_logging {
-                (FindingStatus::Pass, "Audit logging is enabled".into(), String::new())
+                (
+                    FindingStatus::Pass,
+                    "Audit logging is enabled".into(),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, "Audit logging is disabled".into(),
-                 "Enable audit logging in wardex.toml".into())
+                (
+                    FindingStatus::Fail,
+                    "Audit logging is disabled".into(),
+                    "Enable audit logging in wardex.toml".into(),
+                )
             }
         }
         CheckType::EncryptionEnabled => {
@@ -404,18 +716,28 @@ fn evaluate_check(check: &AutoCheck, state: &SystemState) -> (FindingStatus, Str
                 _ => state.encryption_at_rest && state.encryption_in_transit,
             };
             if ok {
-                (FindingStatus::Pass, format!("Encryption ({}) is enabled", check.parameter), String::new())
+                (
+                    FindingStatus::Pass,
+                    format!("Encryption ({}) is enabled", check.parameter),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, format!("Encryption ({}) is not enabled", check.parameter),
-                 "Enable encryption in configuration".into())
+                (
+                    FindingStatus::Fail,
+                    format!("Encryption ({}) is not enabled", check.parameter),
+                    "Enable encryption in configuration".into(),
+                )
             }
         }
         CheckType::MfaEnforced => {
             if state.mfa_enforced {
                 (FindingStatus::Pass, "MFA is enforced".into(), String::new())
             } else {
-                (FindingStatus::Fail, "MFA is not enforced".into(),
-                 "Enable MFA enforcement for all users".into())
+                (
+                    FindingStatus::Fail,
+                    "MFA is not enforced".into(),
+                    "Enable MFA enforcement for all users".into(),
+                )
             }
         }
         CheckType::RetentionDays => {
@@ -423,46 +745,79 @@ fn evaluate_check(check: &AutoCheck, state: &SystemState) -> (FindingStatus, Str
             let required: u32 = match raw.parse() {
                 Ok(n) => n,
                 Err(_) => {
-                    return (FindingStatus::Fail,
+                    return (
+                        FindingStatus::Fail,
                         format!("Invalid retention expected value: '{}'", check.expected),
-                        "Fix the expected value in the compliance template".into());
+                        "Fix the expected value in the compliance template".into(),
+                    );
                 }
             };
             if state.retention_days >= required {
-                (FindingStatus::Pass,
-                 format!("Retention: {} days (>= {} required)", state.retention_days, required),
-                 String::new())
+                (
+                    FindingStatus::Pass,
+                    format!(
+                        "Retention: {} days (>= {} required)",
+                        state.retention_days, required
+                    ),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail,
-                 format!("Retention: {} days (< {} required)", state.retention_days, required),
-                 format!("Increase retention to at least {} days", required))
+                (
+                    FindingStatus::Fail,
+                    format!(
+                        "Retention: {} days (< {} required)",
+                        state.retention_days, required
+                    ),
+                    format!("Increase retention to at least {} days", required),
+                )
             }
         }
         CheckType::AgentCoverage => {
             if state.agent_coverage_percent >= 80.0 {
-                (FindingStatus::Pass,
-                 format!("Agent coverage: {:.0}%", state.agent_coverage_percent),
-                 String::new())
+                (
+                    FindingStatus::Pass,
+                    format!("Agent coverage: {:.0}%", state.agent_coverage_percent),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail,
-                 format!("Agent coverage: {:.0}% (< 80% required)", state.agent_coverage_percent),
-                 "Deploy agents to remaining assets".into())
+                (
+                    FindingStatus::Fail,
+                    format!(
+                        "Agent coverage: {:.0}% (< 80% required)",
+                        state.agent_coverage_percent
+                    ),
+                    "Deploy agents to remaining assets".into(),
+                )
             }
         }
         CheckType::IncidentProcess => {
             if state.incident_process {
-                (FindingStatus::Pass, "Incident response process is active".into(), String::new())
+                (
+                    FindingStatus::Pass,
+                    "Incident response process is active".into(),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, "No incident response process configured".into(),
-                 "Configure incident response playbooks".into())
+                (
+                    FindingStatus::Fail,
+                    "No incident response process configured".into(),
+                    "Configure incident response playbooks".into(),
+                )
             }
         }
         CheckType::BackupExists => {
             if state.backup_configured {
-                (FindingStatus::Pass, "Backups are configured".into(), String::new())
+                (
+                    FindingStatus::Pass,
+                    "Backups are configured".into(),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, "No backup configuration found".into(),
-                 "Configure checkpoint/backup strategy".into())
+                (
+                    FindingStatus::Fail,
+                    "No backup configuration found".into(),
+                    "Configure checkpoint/backup strategy".into(),
+                )
             }
         }
         CheckType::ConfigEnabled => {
@@ -476,19 +831,33 @@ fn evaluate_check(check: &AutoCheck, state: &SystemState) -> (FindingStatus, Str
                 _ => state.detection_enabled && state.baseline_active,
             };
             if enabled {
-                (FindingStatus::Pass, format!("Config '{}' is enabled", check.parameter), String::new())
+                (
+                    FindingStatus::Pass,
+                    format!("Config '{}' is enabled", check.parameter),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, format!("Config '{}' is not enabled", check.parameter),
-                 format!("Enable '{}' in configuration", check.parameter))
+                (
+                    FindingStatus::Fail,
+                    format!("Config '{}' is not enabled", check.parameter),
+                    format!("Enable '{}' in configuration", check.parameter),
+                )
             }
         }
         CheckType::PolicyExists => {
             // Check that a policy of the given type is configured
             if state.baseline_active {
-                (FindingStatus::Pass, format!("Policy '{}' exists and is active", check.parameter), String::new())
+                (
+                    FindingStatus::Pass,
+                    format!("Policy '{}' exists and is active", check.parameter),
+                    String::new(),
+                )
             } else {
-                (FindingStatus::Fail, format!("Policy '{}' not found or inactive", check.parameter),
-                 format!("Create and activate policy '{}'", check.parameter))
+                (
+                    FindingStatus::Fail,
+                    format!("Policy '{}' not found or inactive", check.parameter),
+                    format!("Create and activate policy '{}'", check.parameter),
+                )
             }
         }
     }
@@ -563,10 +932,17 @@ mod tests {
         let state = full_state();
         for fw in all_frameworks() {
             let report = evaluate_framework(&fw, &state);
-            assert!(report.score_percent > 0.0,
-                "{} score should be > 0, got {}", fw.id, report.score_percent);
-            assert_eq!(report.failed, 0,
-                "{} should have 0 failures, got {}", fw.id, report.failed);
+            assert!(
+                report.score_percent > 0.0,
+                "{} score should be > 0, got {}",
+                fw.id,
+                report.score_percent
+            );
+            assert_eq!(
+                report.failed, 0,
+                "{} should have 0 failures, got {}",
+                fw.id, report.failed
+            );
         }
     }
 
@@ -592,14 +968,20 @@ mod tests {
         let mut state = full_state();
         state.retention_days = 89;
         let report = evaluate_framework(&cis_controls_v8(), &state);
-        let retention_finding = report.findings.iter()
-            .find(|f| f.control_id == "CIS-8.9").unwrap();
+        let retention_finding = report
+            .findings
+            .iter()
+            .find(|f| f.control_id == "CIS-8.9")
+            .unwrap();
         assert_eq!(retention_finding.status, FindingStatus::Fail);
 
         state.retention_days = 90;
         let report = evaluate_framework(&cis_controls_v8(), &state);
-        let retention_finding = report.findings.iter()
-            .find(|f| f.control_id == "CIS-8.9").unwrap();
+        let retention_finding = report
+            .findings
+            .iter()
+            .find(|f| f.control_id == "CIS-8.9")
+            .unwrap();
         assert_eq!(retention_finding.status, FindingStatus::Pass);
     }
 
@@ -608,8 +990,11 @@ mod tests {
         let mut state = full_state();
         state.agent_coverage_percent = 50.0;
         let report = evaluate_framework(&nist_csf_v2(), &state);
-        let coverage = report.findings.iter()
-            .find(|f| f.control_id == "ID.AM-1").unwrap();
+        let coverage = report
+            .findings
+            .iter()
+            .find(|f| f.control_id == "ID.AM-1")
+            .unwrap();
         assert_eq!(coverage.status, FindingStatus::Fail);
     }
 
@@ -617,8 +1002,12 @@ mod tests {
     fn controls_have_mappings() {
         for fw in all_frameworks() {
             for ctrl in &fw.controls {
-                assert!(!ctrl.wardex_mapping.is_empty(),
-                    "{}:{} has no wardex_mapping", fw.id, ctrl.control_id);
+                assert!(
+                    !ctrl.wardex_mapping.is_empty(),
+                    "{}:{} has no wardex_mapping",
+                    fw.id,
+                    ctrl.control_id
+                );
             }
         }
     }

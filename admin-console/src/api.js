@@ -292,6 +292,7 @@ export const processTree = () => get('/api/process-tree');
 export const deepChains = () => get('/api/process-tree/deep-chains');
 export const processesLive = () => get('/api/processes/live');
 export const processesAnalysis = () => get('/api/processes/analysis');
+export const processDetail = (pid) => get(`/api/processes/detail?pid=${encodeURIComponent(pid)}`);
 
 // ── Host Info & Inventory ────────────────────────────────────
 export const hostApps = () => get('/api/host/apps');

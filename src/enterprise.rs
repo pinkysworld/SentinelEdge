@@ -6,7 +6,7 @@ use crate::incident::Incident;
 use crate::ocsf;
 use crate::rbac::User;
 use crate::response::{ApprovalStatus, ResponseAction, ResponseAuditEntry, ResponseRequest};
-use crate::sigma::{builtin_rules, AttackMapping, RuleStatus, SigmaEngine, SigmaRule};
+use crate::sigma::{AttackMapping, RuleStatus, SigmaEngine, SigmaRule, builtin_rules};
 use crate::telemetry::MitreAttack;
 use crate::threat_intel::{IoC, IoCType};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,9 @@ fn now_rfc3339() -> String {
 }
 
 fn contains_ci(haystack: &str, needle: &str) -> bool {
-    haystack.to_ascii_lowercase().contains(&needle.to_ascii_lowercase())
+    haystack
+        .to_ascii_lowercase()
+        .contains(&needle.to_ascii_lowercase())
 }
 
 fn parse_time(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -60,8 +62,12 @@ fn response_action_label(action: &ResponseAction) -> String {
     match action {
         ResponseAction::Alert => "Alert".to_string(),
         ResponseAction::Isolate => "Isolate host".to_string(),
-        ResponseAction::Throttle { rate_limit_kbps } => format!("Throttle to {rate_limit_kbps} kbps"),
-        ResponseAction::KillProcess { pid, process_name } => format!("Kill process {process_name} (PID {pid})"),
+        ResponseAction::Throttle { rate_limit_kbps } => {
+            format!("Throttle to {rate_limit_kbps} kbps")
+        }
+        ResponseAction::KillProcess { pid, process_name } => {
+            format!("Kill process {process_name} (PID {pid})")
+        }
         ResponseAction::QuarantineFile { path } => format!("Quarantine file {path}"),
         ResponseAction::BlockIp { ip } => format!("Block IP {ip}"),
         ResponseAction::DisableAccount { username } => format!("Disable account {username}"),
@@ -76,12 +82,36 @@ fn response_status_label(status: &ApprovalStatus) -> String {
 
 fn default_pack_list() -> Vec<ContentPack> {
     vec![
-        ContentPack::new("identity-attacks", "Identity Attacks", "Credential abuse, brute force, and Kerberos misuse."),
-        ContentPack::new("lateral-movement", "Lateral Movement", "Remote execution, propagation, and cross-host movement."),
-        ContentPack::new("cloud-audit", "Cloud Audit", "Cloud control plane and SaaS audit detections."),
-        ContentPack::new("insider-risk", "Insider Risk", "Sensitive data access, exfiltration, and policy bypass."),
-        ContentPack::new("ransomware", "Ransomware", "Mass encryption, backup tampering, and impact patterns."),
-        ContentPack::new("admin-abuse", "Admin Abuse", "Suspicious admin tooling, persistence, and privileged misuse."),
+        ContentPack::new(
+            "identity-attacks",
+            "Identity Attacks",
+            "Credential abuse, brute force, and Kerberos misuse.",
+        ),
+        ContentPack::new(
+            "lateral-movement",
+            "Lateral Movement",
+            "Remote execution, propagation, and cross-host movement.",
+        ),
+        ContentPack::new(
+            "cloud-audit",
+            "Cloud Audit",
+            "Cloud control plane and SaaS audit detections.",
+        ),
+        ContentPack::new(
+            "insider-risk",
+            "Insider Risk",
+            "Sensitive data access, exfiltration, and policy bypass.",
+        ),
+        ContentPack::new(
+            "ransomware",
+            "Ransomware",
+            "Mass encryption, backup tampering, and impact patterns.",
+        ),
+        ContentPack::new(
+            "admin-abuse",
+            "Admin Abuse",
+            "Suspicious admin tooling, persistence, and privileged misuse.",
+        ),
     ]
 }
 
@@ -151,25 +181,30 @@ fn default_pack_ids_for_rule(rule: &SigmaRule) -> Vec<String> {
 
 fn search_query_matches_event(event: &StoredEvent, query: &SearchQuery) -> bool {
     if let Some(hostname) = &query.hostname
-        && !contains_ci(&event.alert.hostname, hostname) {
-            return false;
-        }
+        && !contains_ci(&event.alert.hostname, hostname)
+    {
+        return false;
+    }
     if let Some(level) = &query.level
-        && !event.alert.level.eq_ignore_ascii_case(level) {
-            return false;
-        }
+        && !event.alert.level.eq_ignore_ascii_case(level)
+    {
+        return false;
+    }
     if let Some(agent_id) = &query.agent_id
-        && event.agent_id != *agent_id {
-            return false;
-        }
+        && event.agent_id != *agent_id
+    {
+        return false;
+    }
     if let Some(from_ts) = &query.from_ts
-        && event.alert.timestamp < *from_ts {
-            return false;
-        }
+        && event.alert.timestamp < *from_ts
+    {
+        return false;
+    }
     if let Some(to_ts) = &query.to_ts
-        && event.alert.timestamp > *to_ts {
-            return false;
-        }
+        && event.alert.timestamp > *to_ts
+    {
+        return false;
+    }
     if let Some(text) = &query.text {
         let in_reasons = event
             .alert
@@ -178,11 +213,9 @@ fn search_query_matches_event(event: &StoredEvent, query: &SearchQuery) -> bool 
             .any(|reason| contains_ci(reason, text));
         let in_host = contains_ci(&event.alert.hostname, text);
         let in_action = contains_ci(&event.alert.action, text);
-        let in_mitre = event
-            .alert
-            .mitre
-            .iter()
-            .any(|attack| contains_ci(&attack.technique_id, text) || contains_ci(&attack.technique_name, text));
+        let in_mitre = event.alert.mitre.iter().any(|attack| {
+            contains_ci(&attack.technique_id, text) || contains_ci(&attack.technique_name, text)
+        });
         if !in_reasons && !in_host && !in_action && !in_mitre {
             return false;
         }
@@ -333,9 +366,15 @@ pub enum HuntResponseAction {
     /// Send a notification via configured channels.
     Notify { channel: String, min_level: String },
     /// Create an incident automatically.
-    CreateIncident { severity: String, title_template: String },
+    CreateIncident {
+        severity: String,
+        title_template: String,
+    },
     /// Suppress the matching rule for a duration.
-    AutoSuppress { duration_secs: u64, justification: String },
+    AutoSuppress {
+        duration_secs: u64,
+        justification: String,
+    },
     /// Isolate the affected agent from the network.
     IsolateAgent,
 }
@@ -485,25 +524,30 @@ impl AlertSuppression {
             return false;
         }
         if let Some(expected) = &self.rule_id
-            && Some(expected.as_str()) != rule_id {
-                return false;
-            }
+            && Some(expected.as_str()) != rule_id
+        {
+            return false;
+        }
         if let Some(expected) = &self.hunt_id
-            && Some(expected.as_str()) != hunt_id {
-                return false;
-            }
+            && Some(expected.as_str()) != hunt_id
+        {
+            return false;
+        }
         if let Some(hostname) = &self.hostname
-            && !contains_ci(&event.alert.hostname, hostname) {
-                return false;
-            }
+            && !contains_ci(&event.alert.hostname, hostname)
+        {
+            return false;
+        }
         if let Some(agent_id) = &self.agent_id
-            && event.agent_id != *agent_id {
-                return false;
-            }
+            && event.agent_id != *agent_id
+        {
+            return false;
+        }
         if let Some(severity) = &self.severity
-            && !event.alert.level.eq_ignore_ascii_case(severity) {
-                return false;
-            }
+            && !event.alert.level.eq_ignore_ascii_case(severity)
+        {
+            return false;
+        }
         if let Some(text) = &self.text {
             let reasons = event.alert.reasons.join(" ");
             if !contains_ci(&event.alert.hostname, text)
@@ -667,9 +711,10 @@ impl EnterpriseStore {
             return;
         }
         if let Ok(content) = std::fs::read_to_string(path)
-            && let Ok(snapshot) = serde_json::from_str::<EnterpriseSnapshot>(&content) {
-                self.snapshot = snapshot;
-            }
+            && let Ok(snapshot) = serde_json::from_str::<EnterpriseSnapshot>(&content)
+        {
+            self.snapshot = snapshot;
+        }
     }
 
     fn persist(&self) {
@@ -690,11 +735,23 @@ impl EnterpriseStore {
     fn ensure_default_connectors(&mut self) {
         let defaults = [
             ("asset-inventory", "asset_inventory", "Asset Inventory"),
-            ("vuln-scanner", "vulnerability_scanner", "Vulnerability Scanner"),
-            ("identity-directory", "identity_directory", "Identity Directory"),
+            (
+                "vuln-scanner",
+                "vulnerability_scanner",
+                "Vulnerability Scanner",
+            ),
+            (
+                "identity-directory",
+                "identity_directory",
+                "Identity Directory",
+            ),
             ("geoip", "geoip", "GeoIP"),
             ("whois", "whois", "WHOIS"),
-            ("threat-reputation", "threat_reputation", "Threat Reputation"),
+            (
+                "threat-reputation",
+                "threat_reputation",
+                "Threat Reputation",
+            ),
             ("aws-cloudtrail", "aws_cloudtrail", "AWS CloudTrail"),
             ("azure-activity", "azure_activity", "Azure Activity Log"),
             ("gcp-audit", "gcp_audit", "GCP Audit Logs"),
@@ -713,8 +770,14 @@ impl EnterpriseStore {
                 display_name: display.to_string(),
                 endpoint: None,
                 auth_mode: None,
-                enabled: matches!(kind, "asset_inventory" | "threat_reputation" | "geoip" | "whois"),
-                status: if matches!(kind, "asset_inventory" | "threat_reputation" | "geoip" | "whois") {
+                enabled: matches!(
+                    kind,
+                    "asset_inventory" | "threat_reputation" | "geoip" | "whois"
+                ),
+                status: if matches!(
+                    kind,
+                    "asset_inventory" | "threat_reputation" | "geoip" | "whois"
+                ) {
                     "ready".to_string()
                 } else {
                     "disabled".to_string()
@@ -731,7 +794,12 @@ impl EnterpriseStore {
         let rules = builtin_rules();
         let mut changed = false;
         for rule in &rules {
-            if self.snapshot.builtin_rules.iter().any(|meta| meta.id == rule.id) {
+            if self
+                .snapshot
+                .builtin_rules
+                .iter()
+                .any(|meta| meta.id == rule.id)
+            {
                 continue;
             }
             self.snapshot
@@ -748,7 +816,12 @@ impl EnterpriseStore {
         }
         for meta in &self.snapshot.builtin_rules {
             for pack_id in &meta.pack_ids {
-                if let Some(pack) = self.snapshot.packs.iter_mut().find(|pack| pack.id == *pack_id) {
+                if let Some(pack) = self
+                    .snapshot
+                    .packs
+                    .iter_mut()
+                    .find(|pack| pack.id == *pack_id)
+                {
                     if !pack.rule_ids.contains(&meta.id) {
                         pack.rule_ids.push(meta.id.clone());
                     }
@@ -758,7 +831,12 @@ impl EnterpriseStore {
         }
         for rule in &self.snapshot.native_rules {
             for pack_id in &rule.metadata.pack_ids {
-                if let Some(pack) = self.snapshot.packs.iter_mut().find(|pack| pack.id == *pack_id) {
+                if let Some(pack) = self
+                    .snapshot
+                    .packs
+                    .iter_mut()
+                    .find(|pack| pack.id == *pack_id)
+                {
                     if !pack.rule_ids.contains(&rule.metadata.id) {
                         pack.rule_ids.push(rule.metadata.id.clone());
                     }
@@ -774,17 +852,26 @@ impl EnterpriseStore {
     pub fn effective_sigma_rules(&self) -> Vec<SigmaRule> {
         let mut rules = builtin_rules();
         for rule in &mut rules {
-            if let Some(meta) = self.snapshot.builtin_rules.iter().find(|meta| meta.id == rule.id) {
+            if let Some(meta) = self
+                .snapshot
+                .builtin_rules
+                .iter()
+                .find(|meta| meta.id == rule.id)
+            {
                 rule.enabled = meta.enabled
                     && matches!(
                         meta.lifecycle,
-                        ContentLifecycle::Active | ContentLifecycle::Canary | ContentLifecycle::Test
+                        ContentLifecycle::Active
+                            | ContentLifecycle::Canary
+                            | ContentLifecycle::Test
                     );
                 rule.status = match meta.lifecycle {
                     ContentLifecycle::Draft => RuleStatus::Experimental,
                     ContentLifecycle::Test => RuleStatus::Test,
                     ContentLifecycle::Canary | ContentLifecycle::Active => RuleStatus::Stable,
-                    ContentLifecycle::Deprecated | ContentLifecycle::RolledBack => RuleStatus::Deprecated,
+                    ContentLifecycle::Deprecated | ContentLifecycle::RolledBack => {
+                        RuleStatus::Deprecated
+                    }
                 };
             }
         }
@@ -969,22 +1056,27 @@ impl EnterpriseStore {
         query: SearchQuery,
     ) -> SavedHunt {
         if let Some(existing_id) = id
-            && let Some(index) = self.snapshot.hunts.iter().position(|hunt| hunt.id == existing_id) {
-                let updated = {
-                    let hunt = &mut self.snapshot.hunts[index];
-                    hunt.name = name;
-                    hunt.owner = owner;
-                    hunt.severity = severity;
-                    hunt.threshold = threshold;
-                    hunt.suppression_window_secs = suppression_window_secs;
-                    hunt.schedule_interval_secs = schedule_interval_secs;
-                    hunt.query = query;
-                    hunt.updated_at = now_rfc3339();
-                    hunt.clone()
-                };
-                self.persist();
-                return updated;
-            }
+            && let Some(index) = self
+                .snapshot
+                .hunts
+                .iter()
+                .position(|hunt| hunt.id == existing_id)
+        {
+            let updated = {
+                let hunt = &mut self.snapshot.hunts[index];
+                hunt.name = name;
+                hunt.owner = owner;
+                hunt.severity = severity;
+                hunt.threshold = threshold;
+                hunt.suppression_window_secs = suppression_window_secs;
+                hunt.schedule_interval_secs = schedule_interval_secs;
+                hunt.query = query;
+                hunt.updated_at = now_rfc3339();
+                hunt.clone()
+            };
+            self.persist();
+            return updated;
+        }
         let created_at = now_rfc3339();
         let hunt = SavedHunt {
             id: self.next_id("hunt"),
@@ -1065,7 +1157,11 @@ impl EnterpriseStore {
                 .collect::<std::collections::HashSet<_>>()
                 .into_iter()
                 .collect(),
-            sample_event_ids: visible_matches.iter().take(10).map(|event| event.id).collect(),
+            sample_event_ids: visible_matches
+                .iter()
+                .take(10)
+                .map(|event| event.id)
+                .collect(),
             summary: format!(
                 "{} matched {} event(s){}",
                 hunt.name,
@@ -1107,24 +1203,24 @@ impl EnterpriseStore {
                 .native_rules
                 .iter()
                 .position(|rule| rule.metadata.id == existing_id)
-            {
-                let updated = {
-                    let rule = &mut self.snapshot.native_rules[index];
-                    rule.metadata.title = title;
-                    rule.metadata.description = description;
-                    rule.metadata.owner = owner;
-                    rule.metadata.pack_ids = pack_ids;
-                    rule.metadata.attack = attack;
-                    rule.metadata.updated_at = now_rfc3339();
-                    rule.severity_mapping = severity_mapping;
-                    rule.rationale = rationale;
-                    rule.query = query;
-                    rule.clone()
-                };
-                self.bootstrap_builtin_sigma();
-                self.persist();
-                return updated;
-            }
+        {
+            let updated = {
+                let rule = &mut self.snapshot.native_rules[index];
+                rule.metadata.title = title;
+                rule.metadata.description = description;
+                rule.metadata.owner = owner;
+                rule.metadata.pack_ids = pack_ids;
+                rule.metadata.attack = attack;
+                rule.metadata.updated_at = now_rfc3339();
+                rule.severity_mapping = severity_mapping;
+                rule.rationale = rationale;
+                rule.query = query;
+                rule.clone()
+            };
+            self.bootstrap_builtin_sigma();
+            self.persist();
+            return updated;
+        }
         let created_at = now_rfc3339();
         let rule = NativeContentRule {
             metadata: ManagedRuleMetadata {
@@ -1197,7 +1293,13 @@ impl EnterpriseStore {
             .iter()
             .find(|rule| rule.id == id)
             .cloned()
-            .or_else(|| self.snapshot.native_rules.iter().find(|rule| rule.metadata.id == id).map(|rule| rule.metadata.clone()))
+            .or_else(|| {
+                self.snapshot
+                    .native_rules
+                    .iter()
+                    .find(|rule| rule.metadata.id == id)
+                    .map(|rule| rule.metadata.clone())
+            })
     }
 
     pub fn promote_rule(
@@ -1207,7 +1309,12 @@ impl EnterpriseStore {
         actor: &str,
         reason: &str,
     ) -> Result<ManagedRuleMetadata, String> {
-        if let Some(rule) = self.snapshot.builtin_rules.iter_mut().find(|rule| rule.id == rule_id) {
+        if let Some(rule) = self
+            .snapshot
+            .builtin_rules
+            .iter_mut()
+            .find(|rule| rule.id == rule_id)
+        {
             let previous = rule.lifecycle.clone();
             rule.previous_lifecycle = Some(previous.clone());
             rule.lifecycle = target.clone();
@@ -1225,7 +1332,12 @@ impl EnterpriseStore {
             self.persist();
             return Ok(updated);
         }
-        if let Some(rule) = self.snapshot.native_rules.iter_mut().find(|rule| rule.metadata.id == rule_id) {
+        if let Some(rule) = self
+            .snapshot
+            .native_rules
+            .iter_mut()
+            .find(|rule| rule.metadata.id == rule_id)
+        {
             let previous = rule.metadata.lifecycle.clone();
             rule.metadata.previous_lifecycle = Some(previous.clone());
             rule.metadata.lifecycle = target.clone();
@@ -1246,9 +1358,21 @@ impl EnterpriseStore {
         Err("content rule not found".to_string())
     }
 
-    pub fn rollback_rule(&mut self, rule_id: &str, actor: &str) -> Result<ManagedRuleMetadata, String> {
-        if let Some(rule) = self.snapshot.builtin_rules.iter_mut().find(|rule| rule.id == rule_id) {
-            let target = rule.previous_lifecycle.clone().unwrap_or(ContentLifecycle::Test);
+    pub fn rollback_rule(
+        &mut self,
+        rule_id: &str,
+        actor: &str,
+    ) -> Result<ManagedRuleMetadata, String> {
+        if let Some(rule) = self
+            .snapshot
+            .builtin_rules
+            .iter_mut()
+            .find(|rule| rule.id == rule_id)
+        {
+            let target = rule
+                .previous_lifecycle
+                .clone()
+                .unwrap_or(ContentLifecycle::Test);
             let current = rule.lifecycle.clone();
             rule.lifecycle = target.clone();
             rule.previous_lifecycle = Some(current.clone());
@@ -1264,7 +1388,12 @@ impl EnterpriseStore {
             self.persist();
             return Ok(updated);
         }
-        if let Some(rule) = self.snapshot.native_rules.iter_mut().find(|rule| rule.metadata.id == rule_id) {
+        if let Some(rule) = self
+            .snapshot
+            .native_rules
+            .iter_mut()
+            .find(|rule| rule.metadata.id == rule_id)
+        {
             let target = rule
                 .metadata
                 .previous_lifecycle
@@ -1288,7 +1417,11 @@ impl EnterpriseStore {
         Err("content rule not found".to_string())
     }
 
-    pub fn test_rule(&mut self, rule_id: &str, events: &[StoredEvent]) -> Result<RuleTestResult, String> {
+    pub fn test_rule(
+        &mut self,
+        rule_id: &str,
+        events: &[StoredEvent],
+    ) -> Result<RuleTestResult, String> {
         let previous = self
             .snapshot
             .rule_tests
@@ -1297,7 +1430,12 @@ impl EnterpriseStore {
             .max_by(|a, b| a.tested_at.cmp(&b.tested_at))
             .cloned();
 
-        let (match_ids, suppressed_ids) = if self.snapshot.builtin_rules.iter().any(|rule| rule.id == rule_id) {
+        let (match_ids, suppressed_ids) = if self
+            .snapshot
+            .builtin_rules
+            .iter()
+            .any(|rule| rule.id == rule_id)
+        {
             let rules = builtin_rules();
             let sigma_rule = rules
                 .into_iter()
@@ -1351,7 +1489,8 @@ impl EnterpriseStore {
         // Use only the truncated sample set for diff so both sides are comparable
         let current_sample: HashSet<u64> = match_ids.iter().copied().take(25).collect();
         let new_match_ids: Vec<u64> = current_sample.difference(&previous_ids).copied().collect();
-        let cleared_match_ids: Vec<u64> = previous_ids.difference(&current_sample).copied().collect();
+        let cleared_match_ids: Vec<u64> =
+            previous_ids.difference(&current_sample).copied().collect();
 
         let result = RuleTestResult {
             id: self.next_id("rtest"),
@@ -1374,11 +1513,21 @@ impl EnterpriseStore {
             ),
         };
         self.snapshot.rule_tests.push(result.clone());
-        if let Some(rule) = self.snapshot.builtin_rules.iter_mut().find(|rule| rule.id == rule_id) {
+        if let Some(rule) = self
+            .snapshot
+            .builtin_rules
+            .iter_mut()
+            .find(|rule| rule.id == rule_id)
+        {
             rule.last_test_at = Some(result.tested_at.clone());
             rule.last_test_match_count = result.match_count;
         }
-        if let Some(rule) = self.snapshot.native_rules.iter_mut().find(|rule| rule.metadata.id == rule_id) {
+        if let Some(rule) = self
+            .snapshot
+            .native_rules
+            .iter_mut()
+            .find(|rule| rule.metadata.id == rule_id)
+        {
             rule.metadata.last_test_at = Some(result.tested_at.clone());
             rule.metadata.last_test_match_count = result.match_count;
         }
@@ -1395,30 +1544,33 @@ impl EnterpriseStore {
         rule_ids: Vec<String>,
     ) -> ContentPack {
         if let Some(id) = id
-            && let Some(index) = self.snapshot.packs.iter().position(|pack| pack.id == id) {
-                let pack_id = self.snapshot.packs[index].id.clone();
-                let updated = {
-                    let pack = &mut self.snapshot.packs[index];
-                    pack.name = name;
-                    pack.description = description;
-                    pack.enabled = enabled;
-                    pack.rule_ids = rule_ids.clone();
-                    pack.updated_at = now_rfc3339();
-                    pack.clone()
-                };
-                for rule in &mut self.snapshot.builtin_rules {
-                    if rule_ids.contains(&rule.id) && !rule.pack_ids.contains(&pack_id) {
-                        rule.pack_ids.push(pack_id.clone());
-                    }
+            && let Some(index) = self.snapshot.packs.iter().position(|pack| pack.id == id)
+        {
+            let pack_id = self.snapshot.packs[index].id.clone();
+            let updated = {
+                let pack = &mut self.snapshot.packs[index];
+                pack.name = name;
+                pack.description = description;
+                pack.enabled = enabled;
+                pack.rule_ids = rule_ids.clone();
+                pack.updated_at = now_rfc3339();
+                pack.clone()
+            };
+            for rule in &mut self.snapshot.builtin_rules {
+                if rule_ids.contains(&rule.id) && !rule.pack_ids.contains(&pack_id) {
+                    rule.pack_ids.push(pack_id.clone());
                 }
-                for rule in &mut self.snapshot.native_rules {
-                    if rule_ids.contains(&rule.metadata.id) && !rule.metadata.pack_ids.contains(&pack_id) {
-                        rule.metadata.pack_ids.push(pack_id.clone());
-                    }
-                }
-                self.persist();
-                return updated;
             }
+            for rule in &mut self.snapshot.native_rules {
+                if rule_ids.contains(&rule.metadata.id)
+                    && !rule.metadata.pack_ids.contains(&pack_id)
+                {
+                    rule.metadata.pack_ids.push(pack_id.clone());
+                }
+            }
+            self.persist();
+            return updated;
+        }
         let pack = ContentPack {
             id: id.unwrap_or(&self.next_id("pack")).to_string(),
             name,
@@ -1454,30 +1606,30 @@ impl EnterpriseStore {
                 .suppressions
                 .iter()
                 .position(|suppression| suppression.id == existing_id)
-            {
-                let updated = {
-                    let suppression = &mut self.snapshot.suppressions[index];
-                    suppression.name = name;
-                    suppression.rule_id = rule_id;
-                    suppression.hunt_id = hunt_id;
-                    suppression.hostname = hostname;
-                    suppression.agent_id = agent_id;
-                    suppression.severity = severity;
-                    suppression.text = text;
-                    suppression.expires_at = expires_at;
-                    suppression.justification = justification.clone();
-                    suppression.active = active;
-                    suppression.audit.push(AlertSuppressionAuditEntry {
-                        timestamp: now_rfc3339(),
-                        actor,
-                        action: if active { "updated" } else { "disabled" }.to_string(),
-                        reason: justification,
-                    });
-                    suppression.clone()
-                };
-                self.persist();
-                return updated;
-            }
+        {
+            let updated = {
+                let suppression = &mut self.snapshot.suppressions[index];
+                suppression.name = name;
+                suppression.rule_id = rule_id;
+                suppression.hunt_id = hunt_id;
+                suppression.hostname = hostname;
+                suppression.agent_id = agent_id;
+                suppression.severity = severity;
+                suppression.text = text;
+                suppression.expires_at = expires_at;
+                suppression.justification = justification.clone();
+                suppression.active = active;
+                suppression.audit.push(AlertSuppressionAuditEntry {
+                    timestamp: now_rfc3339(),
+                    actor,
+                    action: if active { "updated" } else { "disabled" }.to_string(),
+                    reason: justification,
+                });
+                suppression.clone()
+            };
+            self.persist();
+            return updated;
+        }
         let suppression = AlertSuppression {
             id: self.next_id("supp"),
             name,
@@ -1516,23 +1668,32 @@ impl EnterpriseStore {
         metadata: HashMap<String, String>,
     ) -> EnrichmentConnector {
         if let Some(id) = id
-            && let Some(index) = self.snapshot.connectors.iter().position(|connector| connector.id == id) {
-                let updated = {
-                    let connector = &mut self.snapshot.connectors[index];
-                    connector.kind = kind;
-                    connector.display_name = display_name;
-                    connector.endpoint = endpoint;
-                    connector.auth_mode = auth_mode;
-                    connector.enabled = enabled;
-                    connector.timeout_secs = timeout_secs;
-                    connector.metadata = metadata;
-                    connector.status = if enabled { "ready".to_string() } else { "disabled".to_string() };
-                    connector.last_error = None;
-                    connector.clone()
+            && let Some(index) = self
+                .snapshot
+                .connectors
+                .iter()
+                .position(|connector| connector.id == id)
+        {
+            let updated = {
+                let connector = &mut self.snapshot.connectors[index];
+                connector.kind = kind;
+                connector.display_name = display_name;
+                connector.endpoint = endpoint;
+                connector.auth_mode = auth_mode;
+                connector.enabled = enabled;
+                connector.timeout_secs = timeout_secs;
+                connector.metadata = metadata;
+                connector.status = if enabled {
+                    "ready".to_string()
+                } else {
+                    "disabled".to_string()
                 };
-                self.persist();
-                return updated;
-            }
+                connector.last_error = None;
+                connector.clone()
+            };
+            self.persist();
+            return updated;
+        }
         let connector = EnrichmentConnector {
             id: self.next_id("conn"),
             kind,
@@ -1540,7 +1701,11 @@ impl EnterpriseStore {
             endpoint,
             auth_mode,
             enabled,
-            status: if enabled { "ready".to_string() } else { "disabled".to_string() },
+            status: if enabled {
+                "ready".to_string()
+            } else {
+                "disabled".to_string()
+            },
             timeout_secs,
             last_sync_at: None,
             last_error: None,
@@ -1560,12 +1725,11 @@ impl EnterpriseStore {
         summary: String,
         synced_by: String,
     ) -> TicketSyncRecord {
-        if let Some(index) = self
-            .snapshot
-            .ticket_syncs
-            .iter()
-            .position(|sync| sync.provider == provider && sync.object_kind == object_kind && sync.object_id == object_id)
-        {
+        if let Some(index) = self.snapshot.ticket_syncs.iter().position(|sync| {
+            sync.provider == provider
+                && sync.object_kind == object_kind
+                && sync.object_id == object_id
+        }) {
             let updated = {
                 let existing = &mut self.snapshot.ticket_syncs[index];
                 existing.sync_count += 1;
@@ -1614,24 +1778,33 @@ impl EnterpriseStore {
         group_role_mappings: HashMap<String, String>,
     ) -> IdentityProviderConfig {
         if let Some(id) = id
-            && let Some(index) = self.snapshot.idp_providers.iter().position(|provider| provider.id == id) {
-                let updated = {
-                    let provider = &mut self.snapshot.idp_providers[index];
-                    provider.kind = kind;
-                    provider.display_name = display_name;
-                    provider.issuer_url = issuer_url;
-                    provider.sso_url = sso_url;
-                    provider.client_id = client_id;
-                    provider.entity_id = entity_id;
-                    provider.enabled = enabled;
-                    provider.group_role_mappings = group_role_mappings;
-                    provider.status = if enabled { "configured".to_string() } else { "disabled".to_string() };
-                    provider.updated_at = now_rfc3339();
-                    provider.clone()
+            && let Some(index) = self
+                .snapshot
+                .idp_providers
+                .iter()
+                .position(|provider| provider.id == id)
+        {
+            let updated = {
+                let provider = &mut self.snapshot.idp_providers[index];
+                provider.kind = kind;
+                provider.display_name = display_name;
+                provider.issuer_url = issuer_url;
+                provider.sso_url = sso_url;
+                provider.client_id = client_id;
+                provider.entity_id = entity_id;
+                provider.enabled = enabled;
+                provider.group_role_mappings = group_role_mappings;
+                provider.status = if enabled {
+                    "configured".to_string()
+                } else {
+                    "disabled".to_string()
                 };
-                self.persist();
-                return updated;
-            }
+                provider.updated_at = now_rfc3339();
+                provider.clone()
+            };
+            self.persist();
+            return updated;
+        }
         let provider = IdentityProviderConfig {
             id: self.next_id("idp"),
             kind,
@@ -1641,7 +1814,11 @@ impl EnterpriseStore {
             client_id,
             entity_id,
             enabled,
-            status: if enabled { "configured".to_string() } else { "disabled".to_string() },
+            status: if enabled {
+                "configured".to_string()
+            } else {
+                "disabled".to_string()
+            },
             group_role_mappings,
             updated_at: now_rfc3339(),
         };
@@ -1731,36 +1908,42 @@ pub fn build_content_rules_view(store: &EnterpriseStore) -> Vec<serde_json::Valu
     items
 }
 
-pub fn build_mitre_coverage(
-    store: &EnterpriseStore,
-    incidents: &[Incident],
-) -> serde_json::Value {
+pub fn build_mitre_coverage(store: &EnterpriseStore, incidents: &[Incident]) -> serde_json::Value {
     let mut technique_map: HashMap<String, serde_json::Value> = HashMap::new();
     for rule in store.builtin_rules() {
         for attack in &rule.attack {
-            let entry = technique_map.entry(attack.technique_id.clone()).or_insert_with(|| {
-                serde_json::json!({
-                    "technique_id": attack.technique_id,
-                    "technique_name": attack.technique_name,
-                    "tactic": attack.tactic,
-                    "enabled_rules": 0usize,
-                    "disabled_rules": 0usize,
-                    "packs": Vec::<String>::new(),
-                    "incident_count": 0usize,
-                    "enabled": false,
-                })
-            });
-            if matches!(rule.lifecycle, ContentLifecycle::Active | ContentLifecycle::Canary | ContentLifecycle::Test)
-                && rule.enabled
+            let entry = technique_map
+                .entry(attack.technique_id.clone())
+                .or_insert_with(|| {
+                    serde_json::json!({
+                        "technique_id": attack.technique_id,
+                        "technique_name": attack.technique_name,
+                        "tactic": attack.tactic,
+                        "enabled_rules": 0usize,
+                        "disabled_rules": 0usize,
+                        "packs": Vec::<String>::new(),
+                        "incident_count": 0usize,
+                        "enabled": false,
+                    })
+                });
+            if matches!(
+                rule.lifecycle,
+                ContentLifecycle::Active | ContentLifecycle::Canary | ContentLifecycle::Test
+            ) && rule.enabled
             {
-                entry["enabled_rules"] = serde_json::json!(entry["enabled_rules"].as_u64().unwrap_or(0) + 1);
+                entry["enabled_rules"] =
+                    serde_json::json!(entry["enabled_rules"].as_u64().unwrap_or(0) + 1);
                 entry["enabled"] = serde_json::json!(true);
             } else {
-                entry["disabled_rules"] = serde_json::json!(entry["disabled_rules"].as_u64().unwrap_or(0) + 1);
+                entry["disabled_rules"] =
+                    serde_json::json!(entry["disabled_rules"].as_u64().unwrap_or(0) + 1);
             }
             let mut packs = entry["packs"].as_array().cloned().unwrap_or_default();
             for pack_id in &rule.pack_ids {
-                if !packs.iter().any(|value| value.as_str() == Some(pack_id.as_str())) {
+                if !packs
+                    .iter()
+                    .any(|value| value.as_str() == Some(pack_id.as_str()))
+                {
                     packs.push(serde_json::json!(pack_id));
                 }
             }
@@ -1769,43 +1952,52 @@ pub fn build_mitre_coverage(
     }
     for rule in store.native_rules() {
         for attack in &rule.metadata.attack {
-            let entry = technique_map.entry(attack.technique_id.clone()).or_insert_with(|| {
-                serde_json::json!({
-                    "technique_id": attack.technique_id,
-                    "technique_name": attack.technique_name,
-                    "tactic": attack.tactic,
-                    "enabled_rules": 0usize,
-                    "disabled_rules": 0usize,
-                    "packs": Vec::<String>::new(),
-                    "incident_count": 0usize,
-                    "enabled": false,
-                })
-            });
-            if matches!(rule.metadata.lifecycle, ContentLifecycle::Active | ContentLifecycle::Canary | ContentLifecycle::Test)
-                && rule.metadata.enabled
+            let entry = technique_map
+                .entry(attack.technique_id.clone())
+                .or_insert_with(|| {
+                    serde_json::json!({
+                        "technique_id": attack.technique_id,
+                        "technique_name": attack.technique_name,
+                        "tactic": attack.tactic,
+                        "enabled_rules": 0usize,
+                        "disabled_rules": 0usize,
+                        "packs": Vec::<String>::new(),
+                        "incident_count": 0usize,
+                        "enabled": false,
+                    })
+                });
+            if matches!(
+                rule.metadata.lifecycle,
+                ContentLifecycle::Active | ContentLifecycle::Canary | ContentLifecycle::Test
+            ) && rule.metadata.enabled
             {
-                entry["enabled_rules"] = serde_json::json!(entry["enabled_rules"].as_u64().unwrap_or(0) + 1);
+                entry["enabled_rules"] =
+                    serde_json::json!(entry["enabled_rules"].as_u64().unwrap_or(0) + 1);
                 entry["enabled"] = serde_json::json!(true);
             } else {
-                entry["disabled_rules"] = serde_json::json!(entry["disabled_rules"].as_u64().unwrap_or(0) + 1);
+                entry["disabled_rules"] =
+                    serde_json::json!(entry["disabled_rules"].as_u64().unwrap_or(0) + 1);
             }
         }
     }
     for incident in incidents {
         for attack in &incident.mitre_techniques {
-            let entry = technique_map.entry(attack.technique_id.clone()).or_insert_with(|| {
-                serde_json::json!({
-                    "technique_id": attack.technique_id,
-                    "technique_name": attack.technique_name,
-                    "tactic": attack.tactic,
-                    "enabled_rules": 0usize,
-                    "disabled_rules": 0usize,
-                    "packs": Vec::<String>::new(),
-                    "incident_count": 0usize,
-                    "enabled": false,
-                })
-            });
-            entry["incident_count"] = serde_json::json!(entry["incident_count"].as_u64().unwrap_or(0) + 1);
+            let entry = technique_map
+                .entry(attack.technique_id.clone())
+                .or_insert_with(|| {
+                    serde_json::json!({
+                        "technique_id": attack.technique_id,
+                        "technique_name": attack.technique_name,
+                        "tactic": attack.tactic,
+                        "enabled_rules": 0usize,
+                        "disabled_rules": 0usize,
+                        "packs": Vec::<String>::new(),
+                        "incident_count": 0usize,
+                        "enabled": false,
+                    })
+                });
+            entry["incident_count"] =
+                serde_json::json!(entry["incident_count"].as_u64().unwrap_or(0) + 1);
         }
     }
 
@@ -1815,7 +2007,12 @@ pub fn build_mitre_coverage(
             .as_u64()
             .unwrap_or(0)
             .cmp(&a["incident_count"].as_u64().unwrap_or(0))
-            .then_with(|| a["technique_id"].as_str().unwrap_or("").cmp(b["technique_id"].as_str().unwrap_or("")))
+            .then_with(|| {
+                a["technique_id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(b["technique_id"].as_str().unwrap_or(""))
+            })
     });
 
     let coverage_gap: Vec<serde_json::Value> = techniques
@@ -1859,9 +2056,22 @@ pub fn build_entity_profile(
     for event in events {
         let matched = match normalized.as_str() {
             "host" => event.alert.hostname.eq_ignore_ascii_case(id),
-            "process" => event.alert.reasons.iter().any(|reason| contains_ci(reason, id)),
-            "ip" | "domain" | "hash" => event.alert.reasons.iter().any(|reason| contains_ci(reason, id)),
-            "user" | "account" => event.triage.assignee.as_deref().map(|assignee| assignee.eq_ignore_ascii_case(id)).unwrap_or(false),
+            "process" => event
+                .alert
+                .reasons
+                .iter()
+                .any(|reason| contains_ci(reason, id)),
+            "ip" | "domain" | "hash" => event
+                .alert
+                .reasons
+                .iter()
+                .any(|reason| contains_ci(reason, id)),
+            "user" | "account" => event
+                .triage
+                .assignee
+                .as_deref()
+                .map(|assignee| assignee.eq_ignore_ascii_case(id))
+                .unwrap_or(false),
             _ => false,
         };
         if matched {
@@ -1872,7 +2082,11 @@ pub fn build_entity_profile(
                 "timestamp": event.received_at,
                 "summary": event.alert.reasons.join(", "),
             }));
-            if last_seen.as_deref().map(|ts| ts < event.received_at.as_str()).unwrap_or(true) {
+            if last_seen
+                .as_deref()
+                .map(|ts| ts < event.received_at.as_str())
+                .unwrap_or(true)
+            {
                 last_seen = Some(event.received_at.clone());
             }
         }
@@ -1901,20 +2115,24 @@ pub fn build_entity_profile(
 
     for case in cases {
         let matched = match normalized.as_str() {
-            "host" => case.event_ids.iter().any(|event_id| related_event_ids.contains(event_id)),
+            "host" => case
+                .event_ids
+                .iter()
+                .any(|event_id| related_event_ids.contains(event_id)),
             "user" | "account" => case
                 .assignee
                 .as_deref()
                 .map(|assignee| assignee.eq_ignore_ascii_case(id))
                 .unwrap_or(false),
-            _ => case
-                .title
-                .to_ascii_lowercase()
-                .contains(&id.to_ascii_lowercase())
-                || case
-                    .description
+            _ => {
+                case.title
                     .to_ascii_lowercase()
-                    .contains(&id.to_ascii_lowercase()),
+                    .contains(&id.to_ascii_lowercase())
+                    || case
+                        .description
+                        .to_ascii_lowercase()
+                        .contains(&id.to_ascii_lowercase())
+            }
         };
         if matched {
             related_cases.push(case.id);
@@ -1945,10 +2163,17 @@ pub fn build_entity_profile(
     if matches!(normalized.as_str(), "process" | "host" | "user" | "account") {
         for request in response_requests {
             let matched = match normalized.as_str() {
-                "process" => response_action_label(&request.action).to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+                "process" => response_action_label(&request.action)
+                    .to_ascii_lowercase()
+                    .contains(&id.to_ascii_lowercase()),
                 "host" => request.target.hostname.eq_ignore_ascii_case(id),
-                "user" | "account" => request.requested_by.eq_ignore_ascii_case(id)
-                    || request.approvals.iter().any(|approval| approval.approver.eq_ignore_ascii_case(id)),
+                "user" | "account" => {
+                    request.requested_by.eq_ignore_ascii_case(id)
+                        || request
+                            .approvals
+                            .iter()
+                            .any(|approval| approval.approver.eq_ignore_ascii_case(id))
+                }
                 _ => false,
             };
             if matched {
@@ -1978,26 +2203,36 @@ pub fn build_entity_profile(
     let enrichments: Vec<serde_json::Value> = connectors
         .iter()
         .filter(|connector| connector.enabled)
-        .map(|connector| serde_json::json!({
-            "source": connector.kind,
-            "status": connector.status,
-            "summary": format!("{} enrichment available", connector.display_name),
-        }))
+        .map(|connector| {
+            serde_json::json!({
+                "source": connector.kind,
+                "status": connector.status,
+                "summary": format!("{} enrichment available", connector.display_name),
+            })
+        })
         .collect();
 
     let synced_tickets: Vec<serde_json::Value> = ticket_syncs
         .iter()
         .filter(|sync| match normalized.as_str() {
-            "host" => sync.summary.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+            "host" => sync
+                .summary
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
             "user" | "account" => sync.synced_by.eq_ignore_ascii_case(id),
-            _ => sync.summary.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+            _ => sync
+                .summary
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
         })
-        .map(|sync| serde_json::json!({
-            "provider": sync.provider,
-            "external_key": sync.external_key,
-            "status": sync.status,
-            "synced_at": sync.synced_at,
-        }))
+        .map(|sync| {
+            serde_json::json!({
+                "provider": sync.provider,
+                "external_key": sync.external_key,
+                "status": sync.status,
+                "synced_at": sync.synced_at,
+            })
+        })
         .collect();
 
     let risk = if !related_incidents.is_empty() {
@@ -2047,7 +2282,11 @@ pub fn build_entity_timeline(
                 .as_deref()
                 .map(|assignee| assignee.eq_ignore_ascii_case(id))
                 .unwrap_or(false),
-            _ => event.alert.reasons.iter().any(|reason| contains_ci(reason, id)),
+            _ => event
+                .alert
+                .reasons
+                .iter()
+                .any(|reason| contains_ci(reason, id)),
         };
         if matched {
             items.push(serde_json::json!({
@@ -2061,13 +2300,19 @@ pub fn build_entity_timeline(
 
     for incident in incidents {
         let matched = match normalized.as_str() {
-            "host" => incident.summary.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+            "host" => incident
+                .summary
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
             "user" | "account" => incident
                 .assignee
                 .as_deref()
                 .map(|assignee| assignee.eq_ignore_ascii_case(id))
                 .unwrap_or(false),
-            _ => incident.summary.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+            _ => incident
+                .summary
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
         };
         if matched {
             items.push(serde_json::json!({
@@ -2086,7 +2331,10 @@ pub fn build_entity_timeline(
                 .as_deref()
                 .map(|assignee| assignee.eq_ignore_ascii_case(id))
                 .unwrap_or(false),
-            _ => case.title.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+            _ => case
+                .title
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
         };
         if matched {
             items.push(serde_json::json!({
@@ -2102,10 +2350,13 @@ pub fn build_entity_timeline(
         let matched = match normalized.as_str() {
             "host" => audit.target_hostname.eq_ignore_ascii_case(id),
             "user" | "account" => audit
-                    .approvals
-                    .iter()
-                    .any(|approval| approval.approver.eq_ignore_ascii_case(id)),
-            _ => audit.action.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+                .approvals
+                .iter()
+                .any(|approval| approval.approver.eq_ignore_ascii_case(id)),
+            _ => audit
+                .action
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
         };
         if matched {
             items.push(serde_json::json!({
@@ -2120,7 +2371,10 @@ pub fn build_entity_timeline(
     for sync in ticket_syncs {
         let matched = match normalized.as_str() {
             "user" | "account" => sync.synced_by.eq_ignore_ascii_case(id),
-            _ => sync.summary.to_ascii_lowercase().contains(&id.to_ascii_lowercase()),
+            _ => sync
+                .summary
+                .to_ascii_lowercase()
+                .contains(&id.to_ascii_lowercase()),
         };
         if matched {
             items.push(serde_json::json!({
@@ -2132,7 +2386,12 @@ pub fn build_entity_timeline(
         }
     }
 
-    items.sort_by(|a, b| b["timestamp"].as_str().unwrap_or("").cmp(a["timestamp"].as_str().unwrap_or("")));
+    items.sort_by(|a, b| {
+        b["timestamp"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(a["timestamp"].as_str().unwrap_or(""))
+    });
     items
 }
 
@@ -2171,24 +2430,26 @@ pub fn build_incident_storyline(
     let linked_cases: Vec<serde_json::Value> = cases
         .iter()
         .filter(|case| case.incident_ids.contains(&incident.id))
-        .map(|case| serde_json::json!({
-            "id": case.id,
-            "title": case.title,
-            "status": format!("{:?}", case.status),
-            "assignee": case.assignee,
-        }))
+        .map(|case| {
+            serde_json::json!({
+                "id": case.id,
+                "title": case.title,
+                "status": format!("{:?}", case.status),
+                "assignee": case.assignee,
+            })
+        })
         .collect();
     let response_actions: Vec<serde_json::Value> = response_requests
         .iter()
-        .filter(|request| {
-            hosts.contains(&request.target.hostname)
+        .filter(|request| hosts.contains(&request.target.hostname))
+        .map(|request| {
+            serde_json::json!({
+                "id": request.id,
+                "status": response_status_label(&request.status),
+                "action": response_action_label(&request.action),
+                "requested_by": request.requested_by,
+            })
         })
-        .map(|request| serde_json::json!({
-            "id": request.id,
-            "status": response_status_label(&request.status),
-            "action": response_action_label(&request.action),
-            "requested_by": request.requested_by,
-        }))
         .collect();
     let approval_history: Vec<serde_json::Value> = response_audit
         .iter()
@@ -2205,15 +2466,22 @@ pub fn build_incident_storyline(
     let synced_tickets: Vec<serde_json::Value> = ticket_syncs
         .iter()
         .filter(|sync| sync.object_kind == "incident" && sync.object_id == incident.id.to_string())
-        .map(|sync| serde_json::json!({
-            "provider": sync.provider,
-            "external_key": sync.external_key,
-            "status": sync.status,
-            "synced_at": sync.synced_at,
-        }))
+        .map(|sync| {
+            serde_json::json!({
+                "provider": sync.provider,
+                "external_key": sync.external_key,
+                "status": sync.status,
+                "synced_at": sync.synced_at,
+            })
+        })
         .collect();
 
-    timeline.sort_by(|a, b| a["timestamp"].as_str().unwrap_or("").cmp(b["timestamp"].as_str().unwrap_or("")));
+    timeline.sort_by(|a, b| {
+        a["timestamp"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["timestamp"].as_str().unwrap_or(""))
+    });
 
     let narrative = format!(
         "Incident '{}' tracks {} event(s) across {} agent(s) and {} host(s). Primary findings: {}. ATT&CK coverage: {}.",
@@ -2304,7 +2572,10 @@ mod tests {
 
     #[test]
     fn builtin_rules_bootstrap_and_hunt_run() {
-        let path = format!("/tmp/wardex_enterprise_test_{}.json", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
+        let path = format!(
+            "/tmp/wardex_enterprise_test_{}.json",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        );
         let mut store = EnterpriseStore::new(&path);
         assert!(!store.builtin_rules().is_empty());
         let hunt = store.create_or_update_hunt(
@@ -2326,7 +2597,15 @@ mod tests {
             },
         );
         let run = store
-            .run_hunt(&hunt.id, &[sample_event(1, "web-01", "Critical", &["credential_access"])])
+            .run_hunt(
+                &hunt.id,
+                &[sample_event(
+                    1,
+                    "web-01",
+                    "Critical",
+                    &["credential_access"],
+                )],
+            )
             .expect("hunt run");
         assert_eq!(run.match_count, 1);
     }
@@ -2345,8 +2624,13 @@ mod tests {
             last_run_at: None,
             next_run_at: None,
             query: SearchQuery {
-                text: None, hostname: None, level: None,
-                agent_id: None, from_ts: None, to_ts: None, limit: None,
+                text: None,
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: None,
             },
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),
@@ -2399,8 +2683,13 @@ mod tests {
             last_run_at: None,
             next_run_at: None,
             query: SearchQuery {
-                text: None, hostname: None, level: None,
-                agent_id: None, from_ts: None, to_ts: None, limit: None,
+                text: None,
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: None,
             },
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),
@@ -2441,8 +2730,13 @@ mod tests {
             last_run_at: None,
             next_run_at: None,
             query: SearchQuery {
-                text: None, hostname: None, level: None,
-                agent_id: None, from_ts: None, to_ts: None, limit: None,
+                text: None,
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: None,
             },
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),

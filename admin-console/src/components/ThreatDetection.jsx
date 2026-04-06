@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 export default function ThreatDetection() {
   const toast = useToast();
@@ -76,15 +77,21 @@ export default function ThreatDetection() {
           <div className="card-grid">
             <div className="card">
               <div className="card-title">Enforcement</div>
-              <div className="json-block" style={{ marginTop: 12 }}>{JSON.stringify(enforcement, null, 2)}</div>
+              <div style={{ marginTop: 12 }}>
+                <SummaryGrid data={enforcement} limit={8} />
+              </div>
             </div>
             <div className="card">
               <div className="card-title">Side Channel</div>
-              <div className="json-block" style={{ marginTop: 12 }}>{JSON.stringify(sideChannel, null, 2)}</div>
+              <div style={{ marginTop: 12 }}>
+                <SummaryGrid data={sideChannel} limit={8} />
+              </div>
             </div>
             <div className="card">
               <div className="card-title">Deception Engine</div>
-              <div className="json-block" style={{ marginTop: 12 }}>{JSON.stringify(deception, null, 2)}</div>
+              <div style={{ marginTop: 12 }}>
+                <SummaryGrid data={deception} limit={8} />
+              </div>
             </div>
           </div>
 
@@ -102,7 +109,7 @@ export default function ThreatDetection() {
           {summary && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Detection Summary</div>
-              <div className="json-block">{JSON.stringify(summary, null, 2)}</div>
+              <SummaryGrid data={summary} limit={12} />
             </div>
           )}
         </>
@@ -117,20 +124,99 @@ export default function ThreatDetection() {
           </div>
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Sigma Rules</div>
-            {!sigma ? <div className="empty">No rules loaded</div> : (
-              <div className="json-block">{JSON.stringify(sigma, null, 2)}</div>
-            )}
+            {(() => {
+              const rules = sigma?.rules || (Array.isArray(sigma) ? sigma : []);
+              if (!sigma) return <div className="empty">No rules loaded</div>;
+              return rules.length > 0 ? (
+                <>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Title</th><th>Level</th><th>Status</th><th>ID</th></tr></thead>
+                      <tbody>
+                        {rules.slice(0, 50).map((rule, index) => (
+                          <tr key={rule.id || index}>
+                            <td>{rule.title || 'Untitled rule'}</td>
+                            <td>{rule.level || '—'}</td>
+                            <td><span className={`badge ${rule.status === 'enabled' || rule.status === 'active' ? 'badge-ok' : 'badge-warn'}`}>{rule.status || 'unknown'}</span></td>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{rule.id || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <JsonDetails data={sigma} />
+                </>
+              ) : (
+                <>
+                  <SummaryGrid data={sigma} limit={10} />
+                  <JsonDetails data={sigma} />
+                </>
+              );
+            })()}
           </div>
           {contentRulesData && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Content Rules</div>
-              <div className="json-block">{JSON.stringify(contentRulesData, null, 2)}</div>
+              {(() => {
+                const rules = contentRulesData?.rules || [];
+                return rules.length > 0 ? (
+                  <>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Title</th><th>Kind</th><th>Owner</th><th>Enabled</th></tr></thead>
+                        <tbody>
+                          {rules.slice(0, 25).map((rule, index) => (
+                            <tr key={rule.id || index}>
+                              <td>{rule.title || rule.name || 'Untitled'}</td>
+                              <td>{rule.kind || 'native'}</td>
+                              <td>{rule.owner || '—'}</td>
+                              <td><span className={`badge ${rule.enabled !== false ? 'badge-ok' : 'badge-warn'}`}>{rule.enabled !== false ? 'Yes' : 'No'}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <JsonDetails data={contentRulesData} />
+                  </>
+                ) : (
+                  <>
+                    <SummaryGrid data={contentRulesData} limit={10} />
+                    <JsonDetails data={contentRulesData} />
+                  </>
+                );
+              })()}
             </div>
           )}
           {packsData && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Content Packs</div>
-              <div className="json-block">{JSON.stringify(packsData, null, 2)}</div>
+              {(() => {
+                const packs = packsData?.packs || [];
+                return packs.length > 0 ? (
+                  <>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Pack</th><th>Rules</th><th>Status</th></tr></thead>
+                        <tbody>
+                          {packs.slice(0, 25).map((pack, index) => (
+                            <tr key={pack.id || pack.name || index}>
+                              <td>{pack.name || pack.id || 'Untitled pack'}</td>
+                              <td>{Array.isArray(pack.rule_ids) ? pack.rule_ids.length : pack.rule_count ?? '—'}</td>
+                              <td><span className={`badge ${pack.enabled !== false ? 'badge-ok' : 'badge-warn'}`}>{pack.enabled !== false ? 'Enabled' : 'Disabled'}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <JsonDetails data={packsData} />
+                  </>
+                ) : (
+                  <>
+                    <SummaryGrid data={packsData} limit={10} />
+                    <JsonDetails data={packsData} />
+                  </>
+                );
+              })()}
             </div>
           )}
           {suppressList && (
@@ -212,11 +298,13 @@ export default function ThreatDetection() {
           <div className="card-grid">
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Threat Intel Status</div>
-              <div className="json-block">{JSON.stringify(tiStatus, null, 2)}</div>
+              <SummaryGrid data={tiStatus} limit={10} />
+              <JsonDetails data={tiStatus} />
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Enrichment Stats</div>
-              <div className="json-block">{JSON.stringify(tiStats, null, 2)}</div>
+              <SummaryGrid data={tiStats} limit={10} />
+              <JsonDetails data={tiStats} />
             </div>
           </div>
           <div className="card" style={{ marginTop: 16 }}>
@@ -393,7 +481,8 @@ export default function ThreatDetection() {
           {weights && (
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Detection Weights</div>
-              <div className="json-block">{JSON.stringify(weights, null, 2)}</div>
+              <SummaryGrid data={weights} limit={12} />
+              <JsonDetails data={weights} />
             </div>
           )}
           {fpStats && (
@@ -416,13 +505,19 @@ export default function ThreatDetection() {
                     </tbody>
                   </table>
                 </div>
-              ) : <div className="json-block">{JSON.stringify(fpStats, null, 2)}</div>}
+              ) : (
+                <>
+                  <SummaryGrid data={fpStats} limit={10} />
+                  <JsonDetails data={fpStats} />
+                </>
+              )}
             </div>
           )}
           {checks && (
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Checkpoints</div>
-              <div className="json-block">{JSON.stringify(checks, null, 2)}</div>
+              <SummaryGrid data={checks} exclude={['timestamps', 'device_states']} limit={10} />
+              <JsonDetails data={checks} />
             </div>
           )}
         </>

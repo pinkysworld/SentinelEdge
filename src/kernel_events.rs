@@ -21,7 +21,11 @@ pub struct MitreTechnique {
 
 impl MitreTechnique {
     pub fn new(tactic: &str, id: &str, name: &str) -> Self {
-        Self { tactic: tactic.into(), technique_id: id.into(), technique_name: name.into() }
+        Self {
+            tactic: tactic.into(),
+            technique_id: id.into(),
+            technique_name: name.into(),
+        }
     }
 }
 
@@ -48,7 +52,11 @@ pub fn T1070_INDICATOR_REMOVAL() -> MitreTechnique {
     MitreTechnique::new("Defense Evasion", "T1070", "Indicator Removal")
 }
 pub fn T1027_OBFUSCATED_FILES() -> MitreTechnique {
-    MitreTechnique::new("Defense Evasion", "T1027", "Obfuscated Files or Information")
+    MitreTechnique::new(
+        "Defense Evasion",
+        "T1027",
+        "Obfuscated Files or Information",
+    )
 }
 pub fn T1082_SYSTEM_INFO_DISCOVERY() -> MitreTechnique {
     MitreTechnique::new("Discovery", "T1082", "System Information Discovery")
@@ -454,7 +462,10 @@ pub fn suggest_mitre(kind: &KernelEventKind) -> Vec<MitreTechnique> {
         KernelEventKind::RegistryMutate { key, .. } => {
             let mut v = vec![T1112_MODIFY_REGISTRY()];
             let k = key.to_lowercase();
-            if k.contains("\\run\\") || k.contains("\\runonce\\") || k.contains("\\currentversion\\run") {
+            if k.contains("\\run\\")
+                || k.contains("\\runonce\\")
+                || k.contains("\\currentversion\\run")
+            {
                 v.push(T1547_BOOT_AUTOSTART());
             }
             v
@@ -555,8 +566,12 @@ mod tests {
             hostname: "h".into(),
             agent_uid: None,
             kind: KernelEventKind::ProcessExec {
-                pid: 1, ppid: 0, uid: 0,
-                exe: "/bin/test".into(), args: vec![], cwd: "/".into(),
+                pid: 1,
+                ppid: 0,
+                uid: 0,
+                exe: "/bin/test".into(),
+                args: vec![],
+                cwd: "/".into(),
                 container_id: None,
             },
             severity: KernelEventSeverity::Info,
@@ -569,8 +584,10 @@ mod tests {
             hostname: "h".into(),
             agent_uid: None,
             kind: KernelEventKind::DnsQuery {
-                pid: 1, domain: "example.com".into(),
-                query_type: "A".into(), response_addrs: vec![],
+                pid: 1,
+                domain: "example.com".into(),
+                query_type: "A".into(),
+                response_addrs: vec![],
             },
             severity: KernelEventSeverity::Info,
             mitre_techniques: vec![],
@@ -589,7 +606,10 @@ mod tests {
                 source: EventSource::EbpfLinux,
                 hostname: "h".into(),
                 agent_uid: None,
-                kind: KernelEventKind::ProcessExit { pid: 1, exit_code: 0 },
+                kind: KernelEventKind::ProcessExit {
+                    pid: 1,
+                    exit_code: 0,
+                },
                 severity: KernelEventSeverity::Info,
                 mitre_techniques: vec![],
             });
@@ -601,7 +621,9 @@ mod tests {
     #[test]
     fn suggest_mitre_exec_powershell() {
         let kind = KernelEventKind::ProcessExec {
-            pid: 1, ppid: 0, uid: 0,
+            pid: 1,
+            ppid: 0,
+            uid: 0,
             exe: "C:\\Windows\\System32\\powershell.exe".into(),
             args: vec!["-EncodedCommand".into(), "abc".into()],
             cwd: "C:\\".into(),
@@ -651,8 +673,10 @@ mod tests {
     fn suggest_mitre_rdp_connect() {
         let kind = KernelEventKind::NetworkConnect {
             pid: 1,
-            src_addr: "10.0.0.1".into(), src_port: 12345,
-            dst_addr: "10.0.0.2".into(), dst_port: 3389,
+            src_addr: "10.0.0.1".into(),
+            src_port: 12345,
+            dst_addr: "10.0.0.2".into(),
+            dst_port: 3389,
             protocol: "tcp".into(),
         };
         let techs = suggest_mitre(&kind);
@@ -673,9 +697,21 @@ mod tests {
 
     #[test]
     fn kernel_event_kind_name_coverage() {
-        assert_eq!(kernel_event_kind_name(&KernelEventKind::ProcessExit { pid: 1, exit_code: 0 }), "exit");
-        assert_eq!(kernel_event_kind_name(&KernelEventKind::DnsQuery {
-            pid: 1, domain: "x".into(), query_type: "A".into(), response_addrs: vec![],
-        }), "dns");
+        assert_eq!(
+            kernel_event_kind_name(&KernelEventKind::ProcessExit {
+                pid: 1,
+                exit_code: 0
+            }),
+            "exit"
+        );
+        assert_eq!(
+            kernel_event_kind_name(&KernelEventKind::DnsQuery {
+                pid: 1,
+                domain: "x".into(),
+                query_type: "A".into(),
+                response_addrs: vec![],
+            }),
+            "dns"
+        );
     }
 }

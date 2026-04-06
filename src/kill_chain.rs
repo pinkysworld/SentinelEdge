@@ -122,9 +122,9 @@ pub struct KillChainStage {
 fn technique_to_phase(technique_id: &str) -> KillChainPhase {
     match technique_id {
         // Reconnaissance
-        "T1595" | "T1592" | "T1589" | "T1590" | "T1591" | "T1596" | "T1593" | "T1594"
-        | "T1082" | "T1016" | "T1018" | "T1049" | "T1033" | "T1007" | "T1069" | "T1087"
-        | "T1135" | "T1046" => KillChainPhase::Reconnaissance,
+        "T1595" | "T1592" | "T1589" | "T1590" | "T1591" | "T1596" | "T1593" | "T1594" | "T1082"
+        | "T1016" | "T1018" | "T1049" | "T1033" | "T1007" | "T1069" | "T1087" | "T1135"
+        | "T1046" => KillChainPhase::Reconnaissance,
 
         // Delivery
         "T1566" | "T1091" | "T1195" | "T1189" => KillChainPhase::Delivery,
@@ -135,16 +135,16 @@ fn technique_to_phase(technique_id: &str) -> KillChainPhase {
         }
 
         // Installation / Persistence
-        "T1053" | "T1547" | "T1543" | "T1546" | "T1136" | "T1098" | "T1078" | "T1556"
-        | "T1112" | "T1055" | "T1574" => KillChainPhase::Installation,
+        "T1053" | "T1547" | "T1543" | "T1546" | "T1136" | "T1098" | "T1078" | "T1556" | "T1112"
+        | "T1055" | "T1574" => KillChainPhase::Installation,
 
         // C2
-        "T1071" | "T1573" | "T1095" | "T1572" | "T1090" | "T1105" | "T1132" | "T1001"
-        | "T1568" | "T1219" => KillChainPhase::CommandAndControl,
+        "T1071" | "T1573" | "T1095" | "T1572" | "T1090" | "T1105" | "T1132" | "T1001" | "T1568"
+        | "T1219" => KillChainPhase::CommandAndControl,
 
         // Actions on Objectives
-        "T1041" | "T1048" | "T1567" | "T1029" | "T1565" | "T1496" | "T1486" | "T1491"
-        | "T1485" | "T1499" | "T1498" | "T1561" => KillChainPhase::ActionsOnObjectives,
+        "T1041" | "T1048" | "T1567" | "T1029" | "T1565" | "T1496" | "T1486" | "T1491" | "T1485"
+        | "T1499" | "T1498" | "T1561" => KillChainPhase::ActionsOnObjectives,
 
         // Defense Evasion / Execution — maps to Exploitation/Installation
         "T1059" | "T1569" | "T1106" => KillChainPhase::Exploitation,
@@ -156,9 +156,7 @@ fn technique_to_phase(technique_id: &str) -> KillChainPhase {
         "T1021" | "T1570" | "T1534" | "T1080" => KillChainPhase::Installation,
 
         // Credential Access
-        "T1003" | "T1558" | "T1552" | "T1539" | "T1528" | "T1649" => {
-            KillChainPhase::Exploitation
-        }
+        "T1003" | "T1558" | "T1552" | "T1539" | "T1528" | "T1649" => KillChainPhase::Exploitation,
 
         // Default: treat as exploitation for unknown techniques
         _ => KillChainPhase::Exploitation,
@@ -172,20 +170,30 @@ fn reason_to_phase(reason: &str) -> Option<KillChainPhase> {
         Some(KillChainPhase::Reconnaissance)
     } else if r.contains("phish") || r.contains("deliver") || r.contains("dropper") {
         Some(KillChainPhase::Delivery)
-    } else if r.contains("exploit") || r.contains("brute") || r.contains("credential")
+    } else if r.contains("exploit")
+        || r.contains("brute")
+        || r.contains("credential")
         || r.contains("auth fail")
     {
         Some(KillChainPhase::Exploitation)
-    } else if r.contains("persist") || r.contains("install") || r.contains("launch_agent")
-        || r.contains("systemd") || r.contains("registry")
+    } else if r.contains("persist")
+        || r.contains("install")
+        || r.contains("launch_agent")
+        || r.contains("systemd")
+        || r.contains("registry")
     {
         Some(KillChainPhase::Installation)
-    } else if r.contains("c2") || r.contains("beacon") || r.contains("callback")
+    } else if r.contains("c2")
+        || r.contains("beacon")
+        || r.contains("callback")
         || r.contains("command and control")
     {
         Some(KillChainPhase::CommandAndControl)
-    } else if r.contains("exfil") || r.contains("data_transfer") || r.contains("encrypt")
-        || r.contains("ransom") || r.contains("lateral")
+    } else if r.contains("exfil")
+        || r.contains("data_transfer")
+        || r.contains("encrypt")
+        || r.contains("ransom")
+        || r.contains("lateral")
     {
         Some(KillChainPhase::ActionsOnObjectives)
     } else if r.contains("network") {
@@ -223,10 +231,7 @@ impl KillChainAnalyzer {
             if let Some(tid) = event.mitre_technique_ids.first() {
                 let phase = technique_to_phase(tid);
                 stage_map.entry(phase).or_default().push(event.clone());
-                technique_map
-                    .entry(phase)
-                    .or_default()
-                    .push(tid.clone());
+                technique_map.entry(phase).or_default().push(tid.clone());
                 // Also record remaining techniques without duplicating the event
                 for extra_tid in event.mitre_technique_ids.iter().skip(1) {
                     technique_map
@@ -277,23 +282,18 @@ impl KillChainAnalyzer {
                     .max()
                     .unwrap_or(0);
 
-                let mut techs: Vec<String> = technique_map
-                    .get(phase)
-                    .cloned()
-                    .unwrap_or_default();
+                let mut techs: Vec<String> = technique_map.get(phase).cloned().unwrap_or_default();
                 techs.sort();
                 techs.dedup();
 
                 // Confidence: based on evidence count and score magnitude
-                let avg_score: f32 = phase_events.iter().map(|e| e.score).sum::<f32>()
-                    / phase_events.len() as f32;
-                let evidence_factor =
-                    (phase_events.len() as f32 / 3.0).min(1.0); // 3+ events → full
+                let avg_score: f32 =
+                    phase_events.iter().map(|e| e.score).sum::<f32>() / phase_events.len() as f32;
+                let evidence_factor = (phase_events.len() as f32 / 3.0).min(1.0); // 3+ events → full
                 let score_factor = (avg_score / 5.0).min(1.0);
                 let technique_factor = if techs.is_empty() { 0.3 } else { 0.7 };
                 let confidence =
-                    (evidence_factor * 0.4 + score_factor * 0.3 + technique_factor * 0.3)
-                        .min(1.0);
+                    (evidence_factor * 0.4 + score_factor * 0.3 + technique_factor * 0.3).min(1.0);
 
                 stages.push(KillChainStage {
                     phase: *phase,
@@ -332,7 +332,13 @@ impl KillChainAnalyzer {
 mod tests {
     use super::*;
 
-    fn make_event(id: &str, ts: u64, techniques: &[&str], reasons: &[&str], score: f32) -> KillChainEvent {
+    fn make_event(
+        id: &str,
+        ts: u64,
+        techniques: &[&str],
+        reasons: &[&str],
+        score: f32,
+    ) -> KillChainEvent {
         KillChainEvent {
             event_id: id.into(),
             timestamp_ms: ts,
@@ -350,12 +356,12 @@ mod tests {
     #[test]
     fn reconstruction_maps_techniques_to_phases() {
         let events = vec![
-            make_event("e1", 1000, &["T1046"], &[], 3.0),       // Recon
-            make_event("e2", 2000, &["T1566"], &[], 4.0),       // Delivery
-            make_event("e3", 3000, &["T1203"], &[], 6.0),       // Exploitation
-            make_event("e4", 4000, &["T1053"], &[], 5.0),       // Installation
-            make_event("e5", 5000, &["T1071"], &[], 7.0),       // C2
-            make_event("e6", 6000, &["T1041"], &[], 8.0),       // Actions
+            make_event("e1", 1000, &["T1046"], &[], 3.0), // Recon
+            make_event("e2", 2000, &["T1566"], &[], 4.0), // Delivery
+            make_event("e3", 3000, &["T1203"], &[], 6.0), // Exploitation
+            make_event("e4", 4000, &["T1053"], &[], 5.0), // Installation
+            make_event("e5", 5000, &["T1071"], &[], 7.0), // C2
+            make_event("e6", 6000, &["T1041"], &[], 8.0), // Actions
         ];
         let chain = KillChainAnalyzer::new().reconstruct("inc-1", &events);
         assert_eq!(chain.stages.len(), 6);
@@ -417,7 +423,12 @@ mod tests {
             file_path: None,
         }];
         let chain = KillChainAnalyzer::new().reconstruct("inc-6", &events);
-        assert!(chain.stages.iter().any(|s| s.phase == KillChainPhase::CommandAndControl));
+        assert!(
+            chain
+                .stages
+                .iter()
+                .any(|s| s.phase == KillChainPhase::CommandAndControl)
+        );
     }
 
     #[test]
@@ -426,8 +437,14 @@ mod tests {
         assert_eq!(technique_to_phase("T1566"), KillChainPhase::Delivery);
         assert_eq!(technique_to_phase("T1203"), KillChainPhase::Exploitation);
         assert_eq!(technique_to_phase("T1053"), KillChainPhase::Installation);
-        assert_eq!(technique_to_phase("T1071"), KillChainPhase::CommandAndControl);
-        assert_eq!(technique_to_phase("T1041"), KillChainPhase::ActionsOnObjectives);
+        assert_eq!(
+            technique_to_phase("T1071"),
+            KillChainPhase::CommandAndControl
+        );
+        assert_eq!(
+            technique_to_phase("T1041"),
+            KillChainPhase::ActionsOnObjectives
+        );
         assert_eq!(technique_to_phase("T1021"), KillChainPhase::Installation);
     }
 
@@ -444,7 +461,13 @@ mod tests {
     #[test]
     fn phase_labels() {
         assert_eq!(KillChainPhase::Reconnaissance.label(), "Reconnaissance");
-        assert_eq!(KillChainPhase::CommandAndControl.label(), "Command & Control");
-        assert_eq!(KillChainPhase::ActionsOnObjectives.label(), "Actions on Objectives");
+        assert_eq!(
+            KillChainPhase::CommandAndControl.label(),
+            "Command & Control"
+        );
+        assert_eq!(
+            KillChainPhase::ActionsOnObjectives.label(),
+            "Actions on Objectives"
+        );
     }
 }

@@ -111,8 +111,7 @@ impl ServiceManager {
         );
 
         let unit_path = format!("/etc/systemd/system/{}.service", self.service_name);
-        std::fs::write(&unit_path, &unit)
-            .map_err(|e| format!("failed to write unit file: {e}"))?;
+        std::fs::write(&unit_path, &unit).map_err(|e| format!("failed to write unit file: {e}"))?;
 
         run_command("systemctl", &["daemon-reload"])?;
         run_command("systemctl", &["enable", &self.service_name])?;
@@ -128,8 +127,7 @@ impl ServiceManager {
 
         let unit_path = format!("/etc/systemd/system/{}.service", self.service_name);
         if Path::new(&unit_path).exists() {
-            std::fs::remove_file(&unit_path)
-                .map_err(|e| format!("failed to remove unit: {e}"))?;
+            std::fs::remove_file(&unit_path).map_err(|e| format!("failed to remove unit: {e}"))?;
         }
         let _ = run_command("systemctl", &["daemon-reload"]);
 
@@ -172,8 +170,7 @@ impl ServiceManager {
         );
 
         let plist_path = format!("/Library/LaunchDaemons/{label}.plist");
-        std::fs::write(&plist_path, &plist)
-            .map_err(|e| format!("failed to write plist: {e}"))?;
+        std::fs::write(&plist_path, &plist).map_err(|e| format!("failed to write plist: {e}"))?;
 
         run_command("launchctl", &["load", &plist_path])?;
 
@@ -210,11 +207,7 @@ impl ServiceManager {
                 }
             })
             .collect();
-        let binary_with_args = format!(
-            "\"{}\" {}",
-            self.binary_path,
-            quoted_args.join(" ")
-        );
+        let binary_with_args = format!("\"{}\" {}", self.binary_path, quoted_args.join(" "));
 
         run_command(
             "sc.exe",

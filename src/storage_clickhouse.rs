@@ -181,14 +181,16 @@ GROUP BY tenant_id, hour, severity"#,
 
     /// Total events inserted since start.
     pub fn total_inserted(&self) -> u64 {
-        self.total_inserted.load(std::sync::atomic::Ordering::Relaxed)
+        self.total_inserted
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Flush the buffer (in production this would POST to ClickHouse HTTP API).
     pub fn flush(&self) -> Result<usize, String> {
         let mut buf = self.buffer.lock().map_err(|e| e.to_string())?;
         let count = buf.len();
-        self.total_inserted.fetch_add(count as u64, std::sync::atomic::Ordering::Relaxed);
+        self.total_inserted
+            .fetch_add(count as u64, std::sync::atomic::Ordering::Relaxed);
         buf.clear();
         Ok(count)
     }
@@ -211,16 +213,49 @@ impl EventStore for ClickHouseStorage {
         let buf = self.buffer.lock().map_err(|e| e.to_string())?;
         let limit = filter.limit.unwrap_or(100) as usize;
         let offset = filter.offset.unwrap_or(0) as usize;
-        let results: Vec<StoredEvent> = buf.iter()
+        let results: Vec<StoredEvent> = buf
+            .iter()
             .filter(|e| {
-                if let Some(ref t) = filter.tenant_id { if e.tenant_id != *t { return false; } }
-                if let Some(ref from) = filter.from { if e.timestamp < *from { return false; } }
-                if let Some(ref to) = filter.to { if e.timestamp > *to { return false; } }
-                if let Some(sev) = filter.severity_min { if e.severity < sev { return false; } }
-                if let Some(cls) = filter.event_class { if e.event_class != cls { return false; } }
-                if let Some(ref d) = filter.device_id { if e.device_id != *d { return false; } }
-                if let Some(ref u) = filter.user_name { if e.user_name != *u { return false; } }
-                if let Some(ref ip) = filter.src_ip { if e.src_ip != *ip { return false; } }
+                if let Some(ref t) = filter.tenant_id {
+                    if e.tenant_id != *t {
+                        return false;
+                    }
+                }
+                if let Some(ref from) = filter.from {
+                    if e.timestamp < *from {
+                        return false;
+                    }
+                }
+                if let Some(ref to) = filter.to {
+                    if e.timestamp > *to {
+                        return false;
+                    }
+                }
+                if let Some(sev) = filter.severity_min {
+                    if e.severity < sev {
+                        return false;
+                    }
+                }
+                if let Some(cls) = filter.event_class {
+                    if e.event_class != cls {
+                        return false;
+                    }
+                }
+                if let Some(ref d) = filter.device_id {
+                    if e.device_id != *d {
+                        return false;
+                    }
+                }
+                if let Some(ref u) = filter.user_name {
+                    if e.user_name != *u {
+                        return false;
+                    }
+                }
+                if let Some(ref ip) = filter.src_ip {
+                    if e.src_ip != *ip {
+                        return false;
+                    }
+                }
                 true
             })
             .skip(offset)
@@ -231,12 +266,18 @@ impl EventStore for ClickHouseStorage {
     }
 
     fn count_events(&self, filter: &EventFilter) -> Result<u64, String> {
-        let results = self.query_events(&EventFilter { limit: Some(u32::MAX), ..(filter.clone()) })?;
+        let results = self.query_events(&EventFilter {
+            limit: Some(u32::MAX),
+            ..(filter.clone())
+        })?;
         Ok(results.len() as u64)
     }
 
     fn aggregate(&self, query: &AggregationQuery) -> Result<AggregationResult, String> {
-        let events = self.query_events(&EventFilter { limit: Some(u32::MAX), ..(query.filter.clone()) })?;
+        let events = self.query_events(&EventFilter {
+            limit: Some(u32::MAX),
+            ..(query.filter.clone())
+        })?;
         let mut groups: HashMap<String, u64> = HashMap::new();
         for ev in &events {
             let key = match query.group_by.as_str() {
@@ -249,7 +290,8 @@ impl EventStore for ClickHouseStorage {
             *groups.entry(key).or_insert(0) += 1;
         }
         let total = events.len() as u64;
-        let mut buckets: Vec<AggBucket> = groups.into_iter()
+        let mut buckets: Vec<AggBucket> = groups
+            .into_iter()
             .map(|(key, count)| AggBucket { key, count })
             .collect();
         buckets.sort_by(|a, b| b.count.cmp(&a.count));
@@ -273,7 +315,9 @@ pub struct InMemoryEventStore {
 
 impl InMemoryEventStore {
     pub fn new() -> Self {
-        Self { events: std::sync::Mutex::new(Vec::new()) }
+        Self {
+            events: std::sync::Mutex::new(Vec::new()),
+        }
     }
 }
 
@@ -287,16 +331,49 @@ impl EventStore for InMemoryEventStore {
         let store = self.events.lock().map_err(|e| e.to_string())?;
         let limit = filter.limit.unwrap_or(100) as usize;
         let offset = filter.offset.unwrap_or(0) as usize;
-        let filtered: Vec<StoredEvent> = store.iter()
+        let filtered: Vec<StoredEvent> = store
+            .iter()
             .filter(|e| {
-                if let Some(ref tid) = filter.tenant_id { if e.tenant_id != *tid { return false; } }
-                if let Some(ref from) = filter.from { if e.timestamp < *from { return false; } }
-                if let Some(ref to) = filter.to { if e.timestamp > *to { return false; } }
-                if let Some(sev) = filter.severity_min { if e.severity < sev { return false; } }
-                if let Some(cls) = filter.event_class { if e.event_class != cls { return false; } }
-                if let Some(ref did) = filter.device_id { if e.device_id != *did { return false; } }
-                if let Some(ref un) = filter.user_name { if e.user_name != *un { return false; } }
-                if let Some(ref ip) = filter.src_ip { if e.src_ip != *ip { return false; } }
+                if let Some(ref tid) = filter.tenant_id {
+                    if e.tenant_id != *tid {
+                        return false;
+                    }
+                }
+                if let Some(ref from) = filter.from {
+                    if e.timestamp < *from {
+                        return false;
+                    }
+                }
+                if let Some(ref to) = filter.to {
+                    if e.timestamp > *to {
+                        return false;
+                    }
+                }
+                if let Some(sev) = filter.severity_min {
+                    if e.severity < sev {
+                        return false;
+                    }
+                }
+                if let Some(cls) = filter.event_class {
+                    if e.event_class != cls {
+                        return false;
+                    }
+                }
+                if let Some(ref did) = filter.device_id {
+                    if e.device_id != *did {
+                        return false;
+                    }
+                }
+                if let Some(ref un) = filter.user_name {
+                    if e.user_name != *un {
+                        return false;
+                    }
+                }
+                if let Some(ref ip) = filter.src_ip {
+                    if e.src_ip != *ip {
+                        return false;
+                    }
+                }
                 true
             })
             .skip(offset)
@@ -307,23 +384,59 @@ impl EventStore for InMemoryEventStore {
     }
     fn count_events(&self, filter: &EventFilter) -> Result<u64, String> {
         let store = self.events.lock().map_err(|e| e.to_string())?;
-        let count = store.iter()
+        let count = store
+            .iter()
             .filter(|e| {
-                if let Some(ref tid) = filter.tenant_id { if e.tenant_id != *tid { return false; } }
-                if let Some(ref from) = filter.from { if e.timestamp < *from { return false; } }
-                if let Some(ref to) = filter.to { if e.timestamp > *to { return false; } }
-                if let Some(sev) = filter.severity_min { if e.severity < sev { return false; } }
-                if let Some(cls) = filter.event_class { if e.event_class != cls { return false; } }
-                if let Some(ref did) = filter.device_id { if e.device_id != *did { return false; } }
-                if let Some(ref un) = filter.user_name { if e.user_name != *un { return false; } }
-                if let Some(ref ip) = filter.src_ip { if e.src_ip != *ip { return false; } }
+                if let Some(ref tid) = filter.tenant_id {
+                    if e.tenant_id != *tid {
+                        return false;
+                    }
+                }
+                if let Some(ref from) = filter.from {
+                    if e.timestamp < *from {
+                        return false;
+                    }
+                }
+                if let Some(ref to) = filter.to {
+                    if e.timestamp > *to {
+                        return false;
+                    }
+                }
+                if let Some(sev) = filter.severity_min {
+                    if e.severity < sev {
+                        return false;
+                    }
+                }
+                if let Some(cls) = filter.event_class {
+                    if e.event_class != cls {
+                        return false;
+                    }
+                }
+                if let Some(ref did) = filter.device_id {
+                    if e.device_id != *did {
+                        return false;
+                    }
+                }
+                if let Some(ref un) = filter.user_name {
+                    if e.user_name != *un {
+                        return false;
+                    }
+                }
+                if let Some(ref ip) = filter.src_ip {
+                    if e.src_ip != *ip {
+                        return false;
+                    }
+                }
                 true
             })
             .count();
         Ok(count as u64)
     }
     fn aggregate(&self, _query: &AggregationQuery) -> Result<AggregationResult, String> {
-        Ok(AggregationResult { buckets: vec![], total: 0 })
+        Ok(AggregationResult {
+            buckets: vec![],
+            total: 0,
+        })
     }
     fn purge_before(&self, timestamp: &DateTime<Utc>) -> Result<u64, String> {
         let mut store = self.events.lock().map_err(|e| e.to_string())?;
@@ -381,7 +494,10 @@ mod tests {
 
     #[test]
     fn insert_and_query_events() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
         let events = vec![
             sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
             sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
@@ -397,42 +513,62 @@ mod tests {
 
     #[test]
     fn query_with_filter() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
-        store.insert_events(&[
-            sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
-            sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
-            sample_event("2026-04-05T12:00:00Z", 1, "dev1"),
-        ]).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[
+                sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
+                sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
+                sample_event("2026-04-05T12:00:00Z", 1, "dev1"),
+            ])
+            .unwrap();
 
-        let filter = EventFilter { device_id: Some("dev1".into()), ..Default::default() };
+        let filter = EventFilter {
+            device_id: Some("dev1".into()),
+            ..Default::default()
+        };
         let results = store.query_events(&filter).unwrap();
         assert_eq!(results.len(), 2);
     }
 
     #[test]
     fn count_events() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
-        store.insert_events(&[
-            sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
-            sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
-        ]).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[
+                sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
+                sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
+            ])
+            .unwrap();
         let count = store.count_events(&EventFilter::default()).unwrap();
         assert_eq!(count, 2);
     }
 
     #[test]
     fn aggregate_by_device() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
-        store.insert_events(&[
-            sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
-            sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
-            sample_event("2026-04-05T12:00:00Z", 1, "dev1"),
-        ]).unwrap();
-        let result = store.aggregate(&AggregationQuery {
-            group_by: "device_id".into(),
-            metric: AggregationMetric::Count,
-            filter: EventFilter::default(),
-        }).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[
+                sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
+                sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
+                sample_event("2026-04-05T12:00:00Z", 1, "dev1"),
+            ])
+            .unwrap();
+        let result = store
+            .aggregate(&AggregationQuery {
+                group_by: "device_id".into(),
+                metric: AggregationMetric::Count,
+                filter: EventFilter::default(),
+            })
+            .unwrap();
         assert_eq!(result.total, 3);
         assert_eq!(result.buckets.len(), 2);
         assert_eq!(result.buckets[0].key, "dev1"); // sorted by count desc
@@ -441,8 +577,13 @@ mod tests {
 
     #[test]
     fn flush_clears_buffer() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
-        store.insert_events(&[sample_event("2026-04-05T10:00:00Z", 3, "dev1")]).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[sample_event("2026-04-05T10:00:00Z", 3, "dev1")])
+            .unwrap();
         assert_eq!(store.buffer_len(), 1);
         let flushed = store.flush().unwrap();
         assert_eq!(flushed, 1);
@@ -452,11 +593,16 @@ mod tests {
 
     #[test]
     fn auto_flush_on_batch_size() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 2, ..Default::default() });
-        store.insert_events(&[
-            sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
-            sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
-        ]).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 2,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[
+                sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
+                sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
+            ])
+            .unwrap();
         // Buffer should have been flushed (batch_size = 2)
         assert_eq!(store.buffer_len(), 0);
         assert_eq!(store.total_inserted(), 2);
@@ -464,11 +610,16 @@ mod tests {
 
     #[test]
     fn purge_old_events() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
-        store.insert_events(&[
-            sample_event("2026-04-01T10:00:00Z", 3, "dev1"),
-            sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
-        ]).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[
+                sample_event("2026-04-01T10:00:00Z", 3, "dev1"),
+                sample_event("2026-04-05T11:00:00Z", 5, "dev2"),
+            ])
+            .unwrap();
         let cutoff = "2026-04-03T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
         let purged = store.purge_before(&cutoff).unwrap();
         assert_eq!(purged, 1);
@@ -478,23 +629,34 @@ mod tests {
     #[test]
     fn in_memory_store_basic() {
         let store = InMemoryEventStore::new();
-        store.insert_events(&[
-            sample_event("2026-04-05T10:00:00Z", 3, "dev1"),
-        ]).unwrap();
+        store
+            .insert_events(&[sample_event("2026-04-05T10:00:00Z", 3, "dev1")])
+            .unwrap();
         let count = store.count_events(&EventFilter::default()).unwrap();
         assert_eq!(count, 1);
     }
 
     #[test]
     fn pagination_works() {
-        let store = ClickHouseStorage::new(ClickHouseConfig { batch_size: 10000, ..Default::default() });
-        store.insert_events(&[
-            sample_event("2026-04-05T10:00:00Z", 1, "a"),
-            sample_event("2026-04-05T11:00:00Z", 2, "b"),
-            sample_event("2026-04-05T12:00:00Z", 3, "c"),
-            sample_event("2026-04-05T13:00:00Z", 4, "d"),
-        ]).unwrap();
-        let page = store.query_events(&EventFilter { limit: Some(2), offset: Some(1), ..Default::default() }).unwrap();
+        let store = ClickHouseStorage::new(ClickHouseConfig {
+            batch_size: 10000,
+            ..Default::default()
+        });
+        store
+            .insert_events(&[
+                sample_event("2026-04-05T10:00:00Z", 1, "a"),
+                sample_event("2026-04-05T11:00:00Z", 2, "b"),
+                sample_event("2026-04-05T12:00:00Z", 3, "c"),
+                sample_event("2026-04-05T13:00:00Z", 4, "d"),
+            ])
+            .unwrap();
+        let page = store
+            .query_events(&EventFilter {
+                limit: Some(2),
+                offset: Some(1),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(page.len(), 2);
         assert_eq!(page[0].device_id, "b");
         assert_eq!(page[1].device_id, "c");

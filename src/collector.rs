@@ -15,8 +15,8 @@ use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // ── Platform Detection ───────────────────────────────────────────────
@@ -128,7 +128,11 @@ fn get_os_version() -> String {
                 content
                     .lines()
                     .find(|l| l.starts_with("PRETTY_NAME="))
-                    .map(|l| l.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string())
+                    .map(|l| {
+                        l.trim_start_matches("PRETTY_NAME=")
+                            .trim_matches('"')
+                            .to_string()
+                    })
             })
             .unwrap_or_else(|| "Linux".into())
     }
@@ -168,7 +172,10 @@ pub struct CollectorState {
 }
 
 /// Collect a single telemetry sample from the host OS.
-pub fn collect_sample(state: &mut CollectorState, fim: Option<&FileIntegrityMonitor>) -> TelemetrySample {
+pub fn collect_sample(
+    state: &mut CollectorState,
+    fim: Option<&FileIntegrityMonitor>,
+) -> TelemetrySample {
     collect_sample_scoped(state, fim, None, &MonitorScopeSettings::default())
 }
 
@@ -197,19 +204,54 @@ pub fn collect_sample_scoped(
 
     TelemetrySample {
         timestamp_ms,
-        cpu_load_pct: if scope.cpu_load { collect_cpu(state) } else { 0.0 },
-        memory_load_pct: if scope.memory_pressure { collect_memory() } else { 0.0 },
-        temperature_c: if scope.thermal_state { collect_temperature() } else { 0.0 },
-        network_kbps: if scope.network_activity { collect_network(state) } else { 0.0 },
-        auth_failures: if scope.auth_events { collect_auth_failures() } else { 0 },
-        battery_pct: if scope.battery_state { collect_battery() } else { 100.0 },
+        cpu_load_pct: if scope.cpu_load {
+            collect_cpu(state)
+        } else {
+            0.0
+        },
+        memory_load_pct: if scope.memory_pressure {
+            collect_memory()
+        } else {
+            0.0
+        },
+        temperature_c: if scope.thermal_state {
+            collect_temperature()
+        } else {
+            0.0
+        },
+        network_kbps: if scope.network_activity {
+            collect_network(state)
+        } else {
+            0.0
+        },
+        auth_failures: if scope.auth_events {
+            collect_auth_failures()
+        } else {
+            0
+        },
+        battery_pct: if scope.battery_state {
+            collect_battery()
+        } else {
+            100.0
+        },
         integrity_drift: file_integrity_drift.max(persistence_drift),
-        process_count: if scope.process_activity { collect_process_count() } else { 0 },
-        disk_pressure_pct: if scope.disk_pressure { collect_disk_pressure() } else { 0.0 },
+        process_count: if scope.process_activity {
+            collect_process_count()
+        } else {
+            0
+        },
+        disk_pressure_pct: if scope.disk_pressure {
+            collect_disk_pressure()
+        } else {
+            0.0
+        },
     }
 }
 
-pub fn persistence_watch_paths(platform: HostPlatform, scope: &MonitorScopeSettings) -> Vec<String> {
+pub fn persistence_watch_paths(
+    platform: HostPlatform,
+    scope: &MonitorScopeSettings,
+) -> Vec<String> {
     if !scope.service_persistence {
         return Vec::new();
     }
@@ -357,9 +399,19 @@ fn collect_memory() -> f32 {
     let mut available: u64 = 0;
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("MemTotal:") {
-            total = rest.trim().split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0);
+            total = rest
+                .trim()
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
         } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
-            available = rest.trim().split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0);
+            available = rest
+                .trim()
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
         }
     }
     if total == 0 {
@@ -413,7 +465,12 @@ fn collect_memory() -> f32 {
 #[cfg(target_os = "windows")]
 fn collect_memory() -> f32 {
     let Ok(output) = std::process::Command::new("wmic")
-        .args(["OS", "get", "FreePhysicalMemory,TotalVisibleMemorySize", "/value"])
+        .args([
+            "OS",
+            "get",
+            "FreePhysicalMemory,TotalVisibleMemorySize",
+            "/value",
+        ])
         .output()
     else {
         return 0.0;
@@ -456,17 +513,29 @@ fn collect_temperature() -> f32 {
 fn collect_temperature() -> f32 {
     // Try powermetrics first (requires root but gives accurate CPU die temp)
     if let Ok(output) = std::process::Command::new("sudo")
-        .args(["-n", "powermetrics", "--samplers", "smc", "-i", "1", "-n", "1"])
+        .args([
+            "-n",
+            "powermetrics",
+            "--samplers",
+            "smc",
+            "-i",
+            "1",
+            "-n",
+            "1",
+        ])
         .output()
     {
         let text = String::from_utf8_lossy(&output.stdout);
         for line in text.lines() {
             if (line.contains("CPU die temperature") || line.contains("die temp"))
-                && let Some(temp) = line.split_whitespace()
+                && let Some(temp) = line
+                    .split_whitespace()
                     .find_map(|w| w.trim_end_matches(" C").parse::<f32>().ok())
-                    && temp > 0.0 && temp < 150.0 {
-                        return temp;
-                    }
+                && temp > 0.0
+                && temp < 150.0
+            {
+                return temp;
+            }
         }
     }
     // Fallback: sysctl thermal level (0-127 scale, approximate to celsius)
@@ -541,10 +610,7 @@ fn collect_network(state: &mut CollectorState) -> f32 {
 
 #[cfg(target_os = "macos")]
 fn collect_network(state: &mut CollectorState) -> f32 {
-    let Ok(output) = std::process::Command::new("netstat")
-        .args(["-ib"])
-        .output()
-    else {
+    let Ok(output) = std::process::Command::new("netstat").args(["-ib"]).output() else {
         return 0.0;
     };
     let text = String::from_utf8_lossy(&output.stdout);
@@ -578,10 +644,7 @@ fn collect_network(state: &mut CollectorState) -> f32 {
 
 #[cfg(target_os = "windows")]
 fn collect_network(state: &mut CollectorState) -> f32 {
-    let Ok(output) = std::process::Command::new("netstat")
-        .args(["-e"])
-        .output()
-    else {
+    let Ok(output) = std::process::Command::new("netstat").args(["-e"]).output() else {
         return 0.0;
     };
     let text = String::from_utf8_lossy(&output.stdout);
@@ -589,8 +652,7 @@ fn collect_network(state: &mut CollectorState) -> f32 {
     let mut total_bytes: u64 = 0;
     for line in text.lines() {
         let lower = line.to_lowercase();
-        if lower.contains("bytes") && !lower.contains("unicast") && !lower.contains("non-unicast")
-        {
+        if lower.contains("bytes") && !lower.contains("unicast") && !lower.contains("non-unicast") {
             let nums: Vec<u64> = line
                 .split_whitespace()
                 .filter_map(|v| v.parse().ok())
@@ -673,7 +735,9 @@ fn collect_auth_failures() -> u32 {
         return 0;
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    text.lines().filter(|l| !l.is_empty() && !l.starts_with("Filtering")).count() as u32
+    text.lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("Filtering"))
+        .count() as u32
 }
 
 #[cfg(target_os = "windows")]
@@ -692,9 +756,7 @@ fn collect_auth_failures() -> u32 {
         return 0;
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    text.lines()
-        .filter(|l| l.contains("Event["))
-        .count() as u32
+    text.lines().filter(|l| l.contains("Event[")).count() as u32
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -727,7 +789,12 @@ fn collect_battery() -> f32 {
         .find_map(|l| {
             l.split_whitespace()
                 .find(|w| w.ends_with("%;") || w.ends_with('%'))
-                .and_then(|w| w.trim_end_matches("%;").trim_end_matches('%').parse::<f32>().ok())
+                .and_then(|w| {
+                    w.trim_end_matches("%;")
+                        .trim_end_matches('%')
+                        .parse::<f32>()
+                        .ok()
+                })
         })
         .unwrap_or(100.0)
         .clamp(0.0, 100.0)
@@ -809,10 +876,7 @@ fn collect_process_count() -> u32 {
 #[cfg(unix)]
 fn collect_disk_pressure() -> f32 {
     // Use df command as a portable approach for Unix
-    let Ok(output) = std::process::Command::new("df")
-        .args(["-k", "/"])
-        .output()
-    else {
+    let Ok(output) = std::process::Command::new("df").args(["-k", "/"]).output() else {
         return 0.0;
     };
     let text = String::from_utf8_lossy(&output.stdout);
@@ -822,7 +886,8 @@ fn collect_disk_pressure() -> f32 {
         .and_then(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
             // The "Use%" column is typically at index 4
-            parts.iter()
+            parts
+                .iter()
                 .find_map(|p| p.trim_end_matches('%').parse::<f32>().ok())
                 .or_else(|| {
                     // Fallback: compute from blocks and available
@@ -842,7 +907,14 @@ fn collect_disk_pressure() -> f32 {
 #[cfg(windows)]
 fn collect_disk_pressure() -> f32 {
     let Ok(output) = std::process::Command::new("wmic")
-        .args(["logicaldisk", "where", "DeviceID='C:'", "get", "Size,FreeSpace", "/value"])
+        .args([
+            "logicaldisk",
+            "where",
+            "DeviceID='C:'",
+            "get",
+            "Size,FreeSpace",
+            "/value",
+        ])
         .output()
     else {
         return 0.0;
@@ -947,7 +1019,9 @@ fn collect_dir_hashes_bounded(dir: &Path, out: &mut HashMap<PathBuf, String>, de
     for entry in entries.flatten() {
         let path = entry.path();
         // Use symlink_metadata to avoid following symlinks into cycles
-        let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
         if meta.is_file() {
             if let Some((p, hash)) = hash_file(&path) {
                 out.insert(p, hash);
@@ -1062,7 +1136,12 @@ pub fn run_monitor(
 
     // Print startup banner
     log::info!("Wardex XDR Monitor");
-    log::info!("  Platform: {} ({} {})", host.platform, host.os_version, host.arch);
+    log::info!(
+        "  Platform: {} ({} {})",
+        host.platform,
+        host.os_version,
+        host.arch
+    );
     log::info!("  Hostname: {}", host.hostname);
     log::info!("  Interval: {}s", mon.interval_secs);
     log::info!("  Threshold: {:.1}", mon.alert_threshold);
@@ -1096,7 +1175,10 @@ pub fn run_monitor(
             None
         } else {
             let monitor = FileIntegrityMonitor::new(&paths);
-            log::info!("  Persistence scope: {} files baselined", monitor.file_count());
+            log::info!(
+                "  Persistence scope: {} files baselined",
+                monitor.file_count()
+            );
             Some(monitor)
         }
     };
@@ -1170,9 +1252,9 @@ pub fn run_monitor(
                     .create(true)
                     .append(true)
                     .open(&mon.alert_log)
-                {
-                    let _ = writeln!(f, "{json}");
-                }
+            {
+                let _ = writeln!(f, "{json}");
+            }
 
             // Structured output
             if mon.syslog {
@@ -1189,7 +1271,9 @@ pub fn run_monitor(
 
             log::warn!(
                 "  ** ALERT: score={:.2} level={} action={} **",
-                alert.score, alert.level, alert.action,
+                alert.score,
+                alert.level,
+                alert.action,
             );
         }
 
@@ -1202,7 +1286,9 @@ pub fn run_monitor(
     log::info!("Monitor stopped after {:.0}s", elapsed.as_secs_f32());
     log::info!(
         "  Samples: {} | Alerts: {} | Critical: {}",
-        summary.samples, summary.alerts, summary.critical,
+        summary.samples,
+        summary.alerts,
+        summary.critical,
     );
 
     summary.duration_secs = elapsed.as_secs();
@@ -1459,7 +1545,14 @@ fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
         if text.contains("Current Cache Size") {
             // resolvectl works — try query log from journal
             if let Ok(journal) = std::process::Command::new("journalctl")
-                .args(["-u", "systemd-resolved", "--since", "1 min ago", "--no-pager", "-q"])
+                .args([
+                    "-u",
+                    "systemd-resolved",
+                    "--since",
+                    "1 min ago",
+                    "--no-pager",
+                    "-q",
+                ])
                 .output()
             {
                 let jtext = String::from_utf8_lossy(&journal.stdout);
@@ -1488,7 +1581,8 @@ fn parse_resolved_journal(text: &str, timestamp_ms: u64) -> Vec<DnsEvent> {
         .filter(|l| l.contains("Positive cache") || l.contains("Lookup"))
         .filter_map(|l| {
             // Extract domain from log line
-            let domain = l.split_whitespace()
+            let domain = l
+                .split_whitespace()
                 .find(|w| w.contains('.') && !w.starts_with('/') && w.len() > 3)?;
             Some(DnsEvent {
                 timestamp_ms,
@@ -1507,11 +1601,7 @@ fn parse_syslog_dns_line(line: &str, timestamp_ms: u64) -> Option<DnsEvent> {
     if let Some(pos) = line.find("query[") {
         let rest = &line[pos + 6..];
         let rtype = rest.split(']').next().unwrap_or("A");
-        let domain = rest.split(']')
-            .nth(1)?
-            .trim()
-            .split_whitespace()
-            .next()?;
+        let domain = rest.split(']').nth(1)?.trim().split_whitespace().next()?;
         return Some(DnsEvent {
             timestamp_ms,
             domain: domain.to_string(),
@@ -1526,8 +1616,16 @@ fn parse_syslog_dns_line(line: &str, timestamp_ms: u64) -> Option<DnsEvent> {
 fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
     // Use log show to capture recent DNS resolution from mDNSResponder
     if let Ok(output) = std::process::Command::new("log")
-        .args(["show", "--predicate", "subsystem == \"com.apple.dnssd\"",
-               "--last", "1m", "--style", "compact", "--info"])
+        .args([
+            "show",
+            "--predicate",
+            "subsystem == \"com.apple.dnssd\"",
+            "--last",
+            "1m",
+            "--style",
+            "compact",
+            "--info",
+        ])
         .output()
     {
         let text = String::from_utf8_lossy(&output.stdout);
@@ -1537,7 +1635,8 @@ fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
             .filter_map(|l| {
                 // Extract domain name from DNS log entry
                 let words: Vec<&str> = l.split_whitespace().collect();
-                let domain = words.iter()
+                let domain = words
+                    .iter()
                     .find(|w| w.contains('.') && !w.starts_with('[') && w.len() > 3)?;
                 Some(DnsEvent {
                     timestamp_ms,
@@ -1577,7 +1676,9 @@ fn collect_dns_platform(timestamp_ms: u64) -> Vec<DnsEvent> {
         }
         if let Some(rest) = trimmed.strip_prefix("Record Type") {
             if let Some(ref domain) = current_domain {
-                let rtype = rest.split(':').nth(1)
+                let rtype = rest
+                    .split(':')
+                    .nth(1)
                     .map(|t| t.trim().to_string())
                     .unwrap_or_else(|| "A".into());
                 events.push(DnsEvent {
@@ -1761,12 +1862,18 @@ mod tests {
     #[test]
     fn parse_monitor_args_full() {
         let mut args = vec![
-            "--interval", "2",
-            "--threshold", "4.0",
-            "--webhook", "https://example.com/hook",
-            "--alert-log", "/tmp/alerts.jsonl",
-            "--watch", "/etc,/usr/bin",
-            "--duration", "60",
+            "--interval",
+            "2",
+            "--threshold",
+            "4.0",
+            "--webhook",
+            "https://example.com/hook",
+            "--alert-log",
+            "/tmp/alerts.jsonl",
+            "--watch",
+            "/etc,/usr/bin",
+            "--duration",
+            "60",
             "--dry-run",
             "--syslog",
             "--cef",
@@ -1776,7 +1883,10 @@ mod tests {
         let config = parse_monitor_args(&mut args);
         assert_eq!(config.interval_secs, 2);
         assert!((config.alert_threshold - 4.0).abs() < 0.01);
-        assert_eq!(config.webhook_url.as_deref(), Some("https://example.com/hook"));
+        assert_eq!(
+            config.webhook_url.as_deref(),
+            Some("https://example.com/hook")
+        );
         assert_eq!(config.alert_log, "/tmp/alerts.jsonl");
         assert_eq!(config.watch_paths, vec!["/etc", "/usr/bin"]);
         assert_eq!(config.duration_secs, 60);

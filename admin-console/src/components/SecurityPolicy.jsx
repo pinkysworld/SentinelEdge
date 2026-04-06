@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 export default function SecurityPolicy() {
   const toast = useToast();
@@ -29,15 +30,18 @@ export default function SecurityPolicy() {
         <div className="card-grid">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Compliance Status</div>
-            <div className="json-block">{JSON.stringify(compliance, null, 2)}</div>
+            <SummaryGrid data={compliance} limit={10} />
+            <JsonDetails data={compliance} />
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Attestation</div>
-            <div className="json-block">{JSON.stringify(attestation, null, 2)}</div>
+            <SummaryGrid data={attestation} limit={10} />
+            <JsonDetails data={attestation} />
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Privacy Budget</div>
-            <div className="json-block">{JSON.stringify(privacy, null, 2)}</div>
+            <SummaryGrid data={privacy} limit={10} />
+            <JsonDetails data={privacy} />
           </div>
         </div>
       )}
@@ -55,12 +59,14 @@ export default function SecurityPolicy() {
                 } catch { toast('Compose failed', 'error'); }
               }}>Compose & Preview</button>
             </div>
-            <div className="json-block">{JSON.stringify(policy, null, 2)}</div>
+            <SummaryGrid data={policy} limit={12} />
+            <JsonDetails data={policy} />
           </div>
           {composeResult && (
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Composed Policy Preview</div>
-              <div className="json-block">{JSON.stringify(composeResult, null, 2)}</div>
+              <SummaryGrid data={composeResult} limit={12} />
+              <JsonDetails data={composeResult} />
             </div>
           )}
         </>
@@ -74,7 +80,8 @@ export default function SecurityPolicy() {
               try { await api.quantumRotate(); toast('Key rotated', 'success'); } catch { toast('Rotation failed', 'error'); }
             }}>Rotate Keys</button>
           </div>
-          <div className="json-block">{JSON.stringify(quantum, null, 2)}</div>
+          <SummaryGrid data={quantum} limit={10} />
+          <JsonDetails data={quantum} />
         </div>
       )}
 
@@ -90,11 +97,13 @@ export default function SecurityPolicy() {
               } catch { toast('Simulation failed', 'error'); }
             }}>Run Simulation</button>
           </div>
-          <div className="json-block" style={{ marginBottom: 16 }}>{JSON.stringify(twin, null, 2)}</div>
+          <SummaryGrid data={twin} limit={10} />
+          <JsonDetails data={twin} />
           {simResult && (
             <>
               <div className="card-title" style={{ marginBottom: 8 }}>Simulation Results</div>
-              <div className="json-block">{JSON.stringify(simResult, null, 2)}</div>
+              <SummaryGrid data={simResult} limit={10} />
+              <JsonDetails data={simResult} />
             </>
           )}
         </div>
@@ -113,7 +122,10 @@ export default function SecurityPolicy() {
             }}>Run Harness</button>
           </div>
           {harnessResult ? (
-            <div className="json-block">{JSON.stringify(harnessResult, null, 2)}</div>
+            <>
+              <SummaryGrid data={harnessResult} limit={10} />
+              <JsonDetails data={harnessResult} />
+            </>
           ) : (
             <div className="empty">Run the adversarial harness to test detection coverage</div>
           )}

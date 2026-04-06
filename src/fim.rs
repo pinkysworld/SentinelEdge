@@ -215,13 +215,23 @@ impl FimEngine {
     pub fn default_critical_paths(platform: &str) -> Vec<String> {
         match platform {
             "linux" => vec![
-                "/etc/passwd", "/etc/shadow", "/etc/sudoers", "/etc/ssh/sshd_config",
-                "/etc/pam.d/", "/etc/crontab", "/etc/hosts", "/etc/resolv.conf",
-                "/usr/bin/sudo", "/usr/bin/ssh",
+                "/etc/passwd",
+                "/etc/shadow",
+                "/etc/sudoers",
+                "/etc/ssh/sshd_config",
+                "/etc/pam.d/",
+                "/etc/crontab",
+                "/etc/hosts",
+                "/etc/resolv.conf",
+                "/usr/bin/sudo",
+                "/usr/bin/ssh",
             ],
             "macos" => vec![
-                "/etc/hosts", "/etc/sudoers", "/etc/ssh/sshd_config",
-                "/Library/LaunchDaemons/", "/Library/LaunchAgents/",
+                "/etc/hosts",
+                "/etc/sudoers",
+                "/etc/ssh/sshd_config",
+                "/Library/LaunchDaemons/",
+                "/Library/LaunchAgents/",
                 "/System/Library/LaunchDaemons/",
             ],
             "windows" => vec![

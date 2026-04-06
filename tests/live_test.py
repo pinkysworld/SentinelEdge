@@ -256,7 +256,7 @@ req("GET", "/api/nonexistent", expect=404)
 # ── Static site ──
 print("\n--- Static Site ---")
 req("GET", "/", auth=False)
-req("GET", "/admin.html", auth=False)
+req("GET", "/admin/", auth=False)
 
 # ── Summary ──
 print("\n" + "=" * 60)

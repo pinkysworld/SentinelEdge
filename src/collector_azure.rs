@@ -130,7 +130,11 @@ fn score_azure_event(operation: &str, result: &str, category: &str) -> (f32, Vec
         (1.0, vec![])
     };
 
-    let score: f32 = if is_failure { (base_score + 1.5_f32).min(10.0) } else { base_score };
+    let score: f32 = if is_failure {
+        (base_score + 1.5_f32).min(10.0)
+    } else {
+        base_score
+    };
     (score, techniques)
 }
 
@@ -258,7 +262,8 @@ impl AzureActivityCollector {
 
         let mut events = Vec::new();
         for raw in raw_events {
-            let category = raw.get("category")
+            let category = raw
+                .get("category")
                 .and_then(|c| c.get("value"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
@@ -271,32 +276,57 @@ impl AzureActivityCollector {
                 continue;
             }
 
-            let operation_name = raw.get("operationName")
+            let operation_name = raw
+                .get("operationName")
                 .and_then(|o| o.get("value"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let result_type = raw.get("status")
+            let result_type = raw
+                .get("status")
                 .and_then(|s| s.get("value"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let (risk_score, mitre_techniques) = score_azure_event(&operation_name, &result_type, &category);
+            let (risk_score, mitre_techniques) =
+                score_azure_event(&operation_name, &result_type, &category);
 
             let event = AzureActivityEvent {
-                event_id: raw.get("correlationId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                event_id: raw
+                    .get("correlationId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 operation_name,
                 category,
                 result_type,
-                caller: raw.get("caller").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                timestamp: raw.get("eventTimestamp").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                resource_id: raw.get("resourceId").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                resource_group: raw.get("resourceGroupName").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                level: raw.get("level").and_then(|v| v.as_str()).unwrap_or("Informational").to_string(),
+                caller: raw
+                    .get("caller")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                timestamp: raw
+                    .get("eventTimestamp")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                resource_id: raw
+                    .get("resourceId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                resource_group: raw
+                    .get("resourceGroupName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                level: raw
+                    .get("level")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Informational")
+                    .to_string(),
                 subscription_id: self.config.subscription_id.clone(),
-                source_ip: raw.get("claims")
+                source_ip: raw
+                    .get("claims")
                     .and_then(|c| c.get("ipaddr"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
@@ -339,8 +369,14 @@ impl AzureActivityCollector {
     }
 
     /// Get high-risk events.
-    pub fn high_risk_events(events: &[AzureActivityEvent], threshold: f32) -> Vec<&AzureActivityEvent> {
-        events.iter().filter(|e| e.risk_score >= threshold).collect()
+    pub fn high_risk_events(
+        events: &[AzureActivityEvent],
+        threshold: f32,
+    ) -> Vec<&AzureActivityEvent> {
+        events
+            .iter()
+            .filter(|e| e.risk_score >= threshold)
+            .collect()
     }
 }
 
@@ -399,7 +435,11 @@ mod tests {
 
         // Deleting diagnostic settings is defence evasion
         assert!(result.events[1].risk_score >= 9.0);
-        assert!(result.events[1].mitre_techniques.contains(&"T1562.008".into()));
+        assert!(
+            result.events[1]
+                .mitre_techniques
+                .contains(&"T1562.008".into())
+        );
     }
 
     #[test]

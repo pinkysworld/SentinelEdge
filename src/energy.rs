@@ -98,10 +98,7 @@ pub struct ScheduleResult {
 }
 
 /// Schedule tasks respecting energy constraints.
-pub fn energy_aware_schedule(
-    tasks: &[ScheduledTask],
-    budget: &EnergyBudget,
-) -> ScheduleResult {
+pub fn energy_aware_schedule(tasks: &[ScheduledTask], budget: &EnergyBudget) -> ScheduleResult {
     let mut sorted = tasks.to_vec();
     sorted.sort_by(|a, b| a.priority.cmp(&b.priority));
 
@@ -179,7 +176,13 @@ impl HarvestManager {
             timestamp: chrono::Utc::now().to_rfc3339(),
         });
         // Sum all latest readings for total harvest rate
-        let total: f64 = self.readings.iter().rev().take(10).map(|r| r.power_mw).sum::<f64>()
+        let total: f64 = self
+            .readings
+            .iter()
+            .rev()
+            .take(10)
+            .map(|r| r.power_mw)
+            .sum::<f64>()
             / self.readings.len().min(10) as f64;
         self.budget.harvest_rate_mw = total;
     }
@@ -205,25 +208,18 @@ pub struct QuantizedModel {
     pub original_params: usize,
     pub quantized_params: usize,
     pub bit_width: u8,
-    pub weights: Vec<i8>,          // quantized weights
-    pub scale: f64,                // dequantization scale
+    pub weights: Vec<i8>, // quantized weights
+    pub scale: f64,       // dequantization scale
     pub zero_point: i8,
     pub accuracy_loss_pct: f64,
     pub compression_ratio: f64,
 }
 
 /// Quantize a float model to int8 representation.
-pub fn quantize_model(
-    name: &str,
-    weights: &[f64],
-    bit_width: u8,
-) -> QuantizedModel {
+pub fn quantize_model(name: &str, weights: &[f64], bit_width: u8) -> QuantizedModel {
     assert!((2..=8).contains(&bit_width), "bit_width must be 2..=8");
 
-    let abs_max = weights
-        .iter()
-        .cloned()
-        .fold(0.0_f64, |a, w| a.max(w.abs()));
+    let abs_max = weights.iter().cloned().fold(0.0_f64, |a, w| a.max(w.abs()));
 
     let half_range = (1i32 << (bit_width - 1)) as f64; // 128 for 8-bit
     let scale = if abs_max > 0.0 {
@@ -273,10 +269,7 @@ pub fn quantize_model(
 
 /// Generate a proof that quantization preserved model semantics:
 /// returns (hash of original, hash of quantized, max error bound).
-pub fn quantization_proof(
-    original: &[f64],
-    quantized: &QuantizedModel,
-) -> QuantizationProof {
+pub fn quantization_proof(original: &[f64], quantized: &QuantizedModel) -> QuantizationProof {
     use sha2::{Digest, Sha256};
 
     let mut hasher_orig = Sha256::new();
@@ -367,8 +360,18 @@ mod tests {
     fn energy_aware_schedule_normal() {
         let budget = EnergyBudget::new(100.0);
         let tasks = vec![
-            ScheduledTask { name: "scan".into(), cost_mwh: 5.0, priority: 1, deferrable: false },
-            ScheduledTask { name: "report".into(), cost_mwh: 2.0, priority: 2, deferrable: true },
+            ScheduledTask {
+                name: "scan".into(),
+                cost_mwh: 5.0,
+                priority: 1,
+                deferrable: false,
+            },
+            ScheduledTask {
+                name: "report".into(),
+                cost_mwh: 2.0,
+                priority: 2,
+                deferrable: true,
+            },
         ];
         let result = energy_aware_schedule(&tasks, &budget);
         assert_eq!(result.executed.len(), 2);
@@ -381,8 +384,18 @@ mod tests {
         budget.current_mwh = 10.0;
         budget.state = PowerState::LowPower;
         let tasks = vec![
-            ScheduledTask { name: "critical".into(), cost_mwh: 5.0, priority: 0, deferrable: false },
-            ScheduledTask { name: "optional".into(), cost_mwh: 2.0, priority: 1, deferrable: true },
+            ScheduledTask {
+                name: "critical".into(),
+                cost_mwh: 5.0,
+                priority: 0,
+                deferrable: false,
+            },
+            ScheduledTask {
+                name: "optional".into(),
+                cost_mwh: 2.0,
+                priority: 1,
+                deferrable: true,
+            },
         ];
         let result = energy_aware_schedule(&tasks, &budget);
         assert!(result.executed.contains(&"critical".to_string()));

@@ -1071,7 +1071,7 @@ ul { list-style: none; margin: 0; padding: 0; }
   transform: rotate(180deg);
 }
 
-/* Admin console styles moved to admin.css */
+/* Admin console is served from the embedded React build at /admin/ */
 
 .track-badge.nominal {
   color: var(--ink-3);

@@ -174,15 +174,12 @@ impl LateralMovementDetector {
         let mut adjacency: HashMap<&str, Vec<(&str, Option<&str>, u64, &RemoteProtocol)>> =
             HashMap::new();
         for conn in &successful {
-            adjacency
-                .entry(&conn.src_host)
-                .or_default()
-                .push((
-                    &conn.dst_host,
-                    conn.credential.as_deref(),
-                    conn.timestamp_ms,
-                    &conn.protocol,
-                ));
+            adjacency.entry(&conn.src_host).or_default().push((
+                &conn.dst_host,
+                conn.credential.as_deref(),
+                conn.timestamp_ms,
+                &conn.protocol,
+            ));
         }
 
         // Detect credential reuse across hosts
@@ -238,18 +235,16 @@ impl LateralMovementDetector {
                             // Credential reuse
                             for c in &cred_set {
                                 if let Some(hosts) = credential_hosts.get(c.as_str())
-                                    && hosts.len() >= self.config.credential_reuse_threshold {
-                                        patterns.push(LateralPattern::CredentialReuse);
-                                        break;
-                                    }
+                                    && hosts.len() >= self.config.credential_reuse_threshold
+                                {
+                                    patterns.push(LateralPattern::CredentialReuse);
+                                    break;
+                                }
                             }
 
                             // Admin tool abuse
                             if new_hops.iter().any(|h| {
-                                matches!(
-                                    h.protocol,
-                                    RemoteProtocol::PsExec | RemoteProtocol::Wmi
-                                )
+                                matches!(h.protocol, RemoteProtocol::PsExec | RemoteProtocol::Wmi)
                             }) {
                                 patterns.push(LateralPattern::AdminToolAbuse);
                             }
@@ -279,14 +274,12 @@ impl LateralMovementDetector {
                             let duration = if timestamps.is_empty() {
                                 0
                             } else {
-                                timestamps.iter().max().unwrap()
-                                    - timestamps.iter().min().unwrap()
+                                timestamps.iter().max().unwrap() - timestamps.iter().min().unwrap()
                             };
 
                             let base_risk = new_hops.len() as f32 * 15.0;
                             let pattern_bonus = patterns.len() as f32 * 10.0;
-                            let risk_score =
-                                (base_risk + pattern_bonus).min(100.0);
+                            let risk_score = (base_risk + pattern_bonus).min(100.0);
 
                             let mut mitre = vec!["T1021".to_string()]; // Remote Services
                             if patterns.contains(&LateralPattern::PassTheHash) {
@@ -315,7 +308,11 @@ impl LateralMovementDetector {
         }
 
         // Sort paths by risk descending
-        paths.sort_by(|a, b| b.risk_score.partial_cmp(&a.risk_score).unwrap_or(std::cmp::Ordering::Equal));
+        paths.sort_by(|a, b| {
+            b.risk_score
+                .partial_cmp(&a.risk_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let unique_creds: HashSet<_> = successful
             .iter()

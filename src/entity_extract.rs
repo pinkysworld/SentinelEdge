@@ -56,37 +56,42 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
     let bytes = text.as_bytes();
     while i < bytes.len() {
         if bytes[i].is_ascii_digit()
-            && let Some((ip, end)) = try_parse_ipv4(text, i) {
-                results.push(ExtractedEntity {
-                    entity_type: EntityType::IpAddress,
-                    value: ip,
-                    start: i,
-                    end,
-                });
-                i = end;
-                continue;
-            }
+            && let Some((ip, end)) = try_parse_ipv4(text, i)
+        {
+            results.push(ExtractedEntity {
+                entity_type: EntityType::IpAddress,
+                value: ip,
+                start: i,
+                end,
+            });
+            i = end;
+            continue;
+        }
         i += 1;
     }
 
     // File paths (Unix and Windows)
     for (start, _) in text.match_indices('/') {
         if (start == 0 || !text.as_bytes()[start - 1].is_ascii_alphanumeric())
-            && let Some(end) = find_path_end(text, start) {
-                let path = &text[start..end];
-                if path.len() > 2 && path.contains('/') {
-                    results.push(ExtractedEntity {
-                        entity_type: EntityType::FilePath,
-                        value: path.to_string(),
-                        start,
-                        end,
-                    });
-                }
+            && let Some(end) = find_path_end(text, start)
+        {
+            let path = &text[start..end];
+            if path.len() > 2 && path.contains('/') {
+                results.push(ExtractedEntity {
+                    entity_type: EntityType::FilePath,
+                    value: path.to_string(),
+                    start,
+                    end,
+                });
             }
+        }
     }
     // Windows paths like C:\...
     for (start, _) in text.match_indices('\\') {
-        if start >= 2 && text.as_bytes()[start - 1] == b':' && text.as_bytes()[start - 2].is_ascii_alphabetic() {
+        if start >= 2
+            && text.as_bytes()[start - 1] == b':'
+            && text.as_bytes()[start - 2].is_ascii_alphabetic()
+        {
             let path_start = start - 2;
             if let Some(end) = find_path_end(text, path_start) {
                 let path = &text[path_start..end];
@@ -138,16 +143,17 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
     let mut idx = 0;
     while idx < text.len().saturating_sub(4) {
         if text[idx..].starts_with('T')
-            && let Some(end) = try_parse_mitre(text, idx) {
-                results.push(ExtractedEntity {
-                    entity_type: EntityType::MitreTechnique,
-                    value: text[idx..end].to_string(),
-                    start: idx,
-                    end,
-                });
-                idx = end;
-                continue;
-            }
+            && let Some(end) = try_parse_mitre(text, idx)
+        {
+            results.push(ExtractedEntity {
+                entity_type: EntityType::MitreTechnique,
+                value: text[idx..end].to_string(),
+                start: idx,
+                end,
+            });
+            idx = end;
+            continue;
+        }
         idx += 1;
     }
 
@@ -161,23 +167,30 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
                 .unwrap_or(text.len());
             if num_end > after
                 && let Ok(port) = text[after..num_end].parse::<u16>()
-                    && port > 0 {
-                        results.push(ExtractedEntity {
-                            entity_type: EntityType::Port,
-                            value: port.to_string(),
-                            start: after,
-                            end: num_end,
-                        });
-                    }
+                && port > 0
+            {
+                results.push(ExtractedEntity {
+                    entity_type: EntityType::Port,
+                    value: port.to_string(),
+                    start: after,
+                    end: num_end,
+                });
+            }
         }
     }
 
     // Domain names (simple heuristic: word.tld patterns)
     let mut domain_search_from = 0;
-    for word in text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '"' || c == '\'') {
-        if word.is_empty() { continue; }
-        let word_start = text[domain_search_from..].find(word)
-            .map(|p| p + domain_search_from).unwrap_or(domain_search_from);
+    for word in
+        text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '"' || c == '\'')
+    {
+        if word.is_empty() {
+            continue;
+        }
+        let word_start = text[domain_search_from..]
+            .find(word)
+            .map(|p| p + domain_search_from)
+            .unwrap_or(domain_search_from);
         domain_search_from = word_start + word.len();
         let w = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-');
         if looks_like_domain(w) {
@@ -194,10 +207,29 @@ fn extract_from_text(text: &str) -> Vec<ExtractedEntity> {
 
     // Process names (known suspicious)
     let known_procs = [
-        "powershell", "cmd.exe", "bash", "sh", "python", "python3", "perl",
-        "ruby", "nc", "ncat", "netcat", "wget", "curl", "certutil",
-        "mshta", "wscript", "cscript", "regsvr32", "rundll32", "bitsadmin",
-        "psexec", "mimikatz", "procdump",
+        "powershell",
+        "cmd.exe",
+        "bash",
+        "sh",
+        "python",
+        "python3",
+        "perl",
+        "ruby",
+        "nc",
+        "ncat",
+        "netcat",
+        "wget",
+        "curl",
+        "certutil",
+        "mshta",
+        "wscript",
+        "cscript",
+        "regsvr32",
+        "rundll32",
+        "bitsadmin",
+        "psexec",
+        "mimikatz",
+        "procdump",
     ];
     let lower = text.to_lowercase();
     for proc in &known_procs {
@@ -278,16 +310,19 @@ fn try_parse_mitre(text: &str, start: usize) -> Option<usize> {
 fn find_path_end(text: &str, start: usize) -> Option<usize> {
     let mut end = start;
     for (i, c) in text[start..].char_indices() {
-        if c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ';' || c == ')' || c == '>' {
+        if c.is_whitespace()
+            || c == '"'
+            || c == '\''
+            || c == ','
+            || c == ';'
+            || c == ')'
+            || c == '>'
+        {
             break;
         }
         end = start + i + c.len_utf8();
     }
-    if end > start {
-        Some(end)
-    } else {
-        None
-    }
+    if end > start { Some(end) } else { None }
 }
 
 fn looks_like_domain(s: &str) -> bool {
@@ -298,20 +333,19 @@ fn looks_like_domain(s: &str) -> bool {
     if parts.len() < 2 {
         return false;
     }
-    let Some(tld) = parts.last() else { return false };
+    let Some(tld) = parts.last() else {
+        return false;
+    };
     let known_tlds = [
-        "com", "net", "org", "io", "co", "uk", "de", "fr", "ru", "cn", "jp",
-        "info", "biz", "xyz", "top", "site", "online", "club", "app", "dev",
-        "onion", "local", "internal", "example",
+        "com", "net", "org", "io", "co", "uk", "de", "fr", "ru", "cn", "jp", "info", "biz", "xyz",
+        "top", "site", "online", "club", "app", "dev", "onion", "local", "internal", "example",
     ];
     if !known_tlds.contains(tld) {
         return false;
     }
-    parts.iter().all(|p| {
-        !p.is_empty()
-            && p.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    })
+    parts
+        .iter()
+        .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -324,26 +358,35 @@ mod tests {
     fn extracts_ipv4() {
         let reasons = vec!["connection from 10.0.0.99 flagged".into()];
         let ents = extract_entities(&reasons);
-        assert!(ents.iter().any(|e| e.entity_type == EntityType::IpAddress && e.value == "10.0.0.99"));
+        assert!(
+            ents.iter()
+                .any(|e| e.entity_type == EntityType::IpAddress && e.value == "10.0.0.99")
+        );
     }
 
     #[test]
     fn extracts_file_path() {
         let reasons = vec!["suspicious write to /tmp/evil.sh detected".into()];
         let ents = extract_entities(&reasons);
-        assert!(ents.iter().any(|e| e.entity_type == EntityType::FilePath && e.value == "/tmp/evil.sh"));
+        assert!(
+            ents.iter()
+                .any(|e| e.entity_type == EntityType::FilePath && e.value == "/tmp/evil.sh")
+        );
     }
 
     #[test]
     fn extracts_mitre_technique() {
         let reasons = vec!["matches T1059.001 command interpreter".into()];
         let ents = extract_entities(&reasons);
-        assert!(ents.iter().any(|e| e.entity_type == EntityType::MitreTechnique && e.value == "T1059.001"));
+        assert!(
+            ents.iter()
+                .any(|e| e.entity_type == EntityType::MitreTechnique && e.value == "T1059.001")
+        );
     }
 
     #[test]
     fn extracts_sha256() {
-        let hash = "a" .repeat(64);
+        let hash = "a".repeat(64);
         let reasons = vec![format!("hash {} flagged", hash)];
         let ents = extract_entities(&reasons);
         assert!(ents.iter().any(|e| e.entity_type == EntityType::HashSha256));
@@ -353,14 +396,20 @@ mod tests {
     fn extracts_domain() {
         let reasons = vec!["DNS query to evil.example.com blocked".into()];
         let ents = extract_entities(&reasons);
-        assert!(ents.iter().any(|e| e.entity_type == EntityType::Domain && e.value == "evil.example.com"));
+        assert!(
+            ents.iter()
+                .any(|e| e.entity_type == EntityType::Domain && e.value == "evil.example.com")
+        );
     }
 
     #[test]
     fn extracts_process() {
         let reasons = vec!["powershell executed suspicious command".into()];
         let ents = extract_entities(&reasons);
-        assert!(ents.iter().any(|e| e.entity_type == EntityType::ProcessName && e.value == "powershell"));
+        assert!(
+            ents.iter()
+                .any(|e| e.entity_type == EntityType::ProcessName && e.value == "powershell")
+        );
     }
 
     #[test]
@@ -370,7 +419,10 @@ mod tests {
             "second alert from 10.0.0.1".into(),
         ];
         let ents = extract_entities(&reasons);
-        let ip_count = ents.iter().filter(|e| e.entity_type == EntityType::IpAddress && e.value == "10.0.0.1").count();
+        let ip_count = ents
+            .iter()
+            .filter(|e| e.entity_type == EntityType::IpAddress && e.value == "10.0.0.1")
+            .count();
         assert_eq!(ip_count, 1);
     }
 
@@ -385,7 +437,11 @@ mod tests {
         // Single label — not a domain
         let reasons = vec!["host localhost".into()];
         let ents = extract_entities(&reasons);
-        assert!(!ents.iter().any(|e| e.entity_type == EntityType::Domain && e.value == "localhost"));
+        assert!(
+            !ents
+                .iter()
+                .any(|e| e.entity_type == EntityType::Domain && e.value == "localhost")
+        );
 
         // Two-char string with dot — too short
         let reasons2 = vec!["x.y".into()];
@@ -395,7 +451,11 @@ mod tests {
         // Unknown TLD should not match
         let reasons3 = vec!["host test.zzzzz queried".into()];
         let ents3 = extract_entities(&reasons3);
-        assert!(!ents3.iter().any(|e| e.entity_type == EntityType::Domain && e.value == "test.zzzzz"));
+        assert!(
+            !ents3
+                .iter()
+                .any(|e| e.entity_type == EntityType::Domain && e.value == "test.zzzzz")
+        );
     }
 
     #[test]

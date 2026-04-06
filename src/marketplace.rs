@@ -77,26 +77,76 @@ impl MarketplaceManager {
 
     fn seed_builtin_packs(&self) {
         let packs = vec![
-            ("mitre-attack-rules", "MITRE ATT&CK Detection Rules", PackCategory::DetectionRules,
-             "Complete Sigma-based detection rules mapped to MITRE ATT&CK techniques", "Wardex Team"),
-            ("ransomware-response", "Ransomware Response Playbook", PackCategory::ResponsePlaybooks,
-             "Automated containment and recovery playbook for ransomware incidents", "Wardex Team"),
-            ("soc-dashboard", "SOC Operations Dashboard", PackCategory::DashboardTemplates,
-             "Pre-built dashboard for SOC analysts with KPI tracking", "Wardex Team"),
-            ("aws-cloudtrail", "AWS CloudTrail Connector", PackCategory::IntegrationConnectors,
-             "Ingest and normalize AWS CloudTrail events", "Wardex Team"),
-            ("azure-sentinel", "Azure Sentinel Bridge", PackCategory::IntegrationConnectors,
-             "Bi-directional sync with Microsoft Sentinel", "Wardex Team"),
-            ("crowdstrike-feed", "CrowdStrike Threat Intel", PackCategory::ThreatIntelFeeds,
-             "Automated IOC import from CrowdStrike Falcon", "Wardex Team"),
-            ("pci-dss", "PCI-DSS Compliance Pack", PackCategory::ComplianceTemplates,
-             "Pre-built rules and reports for PCI-DSS compliance", "Wardex Team"),
-            ("hipaa-compliance", "HIPAA Compliance Pack", PackCategory::ComplianceTemplates,
-             "Healthcare compliance monitoring with audit trails", "Wardex Team"),
-            ("zero-trust", "Zero Trust Detection Pack", PackCategory::DetectionRules,
-             "Rules for zero-trust architecture violations and lateral movement", "Community"),
-            ("k8s-security", "Kubernetes Security Pack", PackCategory::DetectionRules,
-             "Detection rules for container escapes, privilege escalation, and pod security", "Community"),
+            (
+                "mitre-attack-rules",
+                "MITRE ATT&CK Detection Rules",
+                PackCategory::DetectionRules,
+                "Complete Sigma-based detection rules mapped to MITRE ATT&CK techniques",
+                "Wardex Team",
+            ),
+            (
+                "ransomware-response",
+                "Ransomware Response Playbook",
+                PackCategory::ResponsePlaybooks,
+                "Automated containment and recovery playbook for ransomware incidents",
+                "Wardex Team",
+            ),
+            (
+                "soc-dashboard",
+                "SOC Operations Dashboard",
+                PackCategory::DashboardTemplates,
+                "Pre-built dashboard for SOC analysts with KPI tracking",
+                "Wardex Team",
+            ),
+            (
+                "aws-cloudtrail",
+                "AWS CloudTrail Connector",
+                PackCategory::IntegrationConnectors,
+                "Ingest and normalize AWS CloudTrail events",
+                "Wardex Team",
+            ),
+            (
+                "azure-sentinel",
+                "Azure Sentinel Bridge",
+                PackCategory::IntegrationConnectors,
+                "Bi-directional sync with Microsoft Sentinel",
+                "Wardex Team",
+            ),
+            (
+                "crowdstrike-feed",
+                "CrowdStrike Threat Intel",
+                PackCategory::ThreatIntelFeeds,
+                "Automated IOC import from CrowdStrike Falcon",
+                "Wardex Team",
+            ),
+            (
+                "pci-dss",
+                "PCI-DSS Compliance Pack",
+                PackCategory::ComplianceTemplates,
+                "Pre-built rules and reports for PCI-DSS compliance",
+                "Wardex Team",
+            ),
+            (
+                "hipaa-compliance",
+                "HIPAA Compliance Pack",
+                PackCategory::ComplianceTemplates,
+                "Healthcare compliance monitoring with audit trails",
+                "Wardex Team",
+            ),
+            (
+                "zero-trust",
+                "Zero Trust Detection Pack",
+                PackCategory::DetectionRules,
+                "Rules for zero-trust architecture violations and lateral movement",
+                "Community",
+            ),
+            (
+                "k8s-security",
+                "Kubernetes Security Pack",
+                PackCategory::DetectionRules,
+                "Detection rules for container escapes, privilege escalation, and pod security",
+                "Community",
+            ),
         ];
 
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
@@ -136,7 +186,11 @@ impl MarketplaceManager {
     }
 
     pub fn get_pack(&self, pack_id: &str) -> Option<ContentPack> {
-        self.registry.lock().unwrap_or_else(|e| e.into_inner()).get(pack_id).cloned()
+        self.registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(pack_id)
+            .cloned()
     }
 
     pub fn search_packs(&self, query: &str) -> Vec<ContentPack> {
@@ -161,7 +215,10 @@ impl MarketplaceManager {
         let deps = pack.dependencies.clone();
         for dep in &deps {
             let installed = self.installations.lock().unwrap_or_else(|e| e.into_inner());
-            if !installed.iter().any(|i| i.pack_id == *dep && i.tenant_id == tenant_id) {
+            if !installed
+                .iter()
+                .any(|i| i.pack_id == *dep && i.tenant_id == tenant_id)
+            {
                 return Err(format!("Missing dependency: {dep}"));
             }
         }
@@ -176,7 +233,10 @@ impl MarketplaceManager {
             auto_update: true,
         };
         drop(registry);
-        self.installations.lock().unwrap_or_else(|e| e.into_inner()).push(installation.clone());
+        self.installations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(installation.clone());
         Ok(installation)
     }
 
@@ -242,7 +302,11 @@ mod tests {
         let mgr = MarketplaceManager::new();
         let rules = mgr.list_packs(Some(PackCategory::DetectionRules));
         assert!(rules.len() >= 2);
-        assert!(rules.iter().all(|p| p.category == PackCategory::DetectionRules));
+        assert!(
+            rules
+                .iter()
+                .all(|p| p.category == PackCategory::DetectionRules)
+        );
     }
 
     #[test]

@@ -2,17 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-use crate::runtime::{RunResult, RunSummary};
-use crate::incident::{Incident, IncidentStore};
 use crate::event_forward::EventStore;
+use crate::incident::{Incident, IncidentStore};
+use crate::runtime::{RunResult, RunSummary};
 use crate::telemetry::MitreAttack;
 
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
-     .replace('\'', "&#x27;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +103,8 @@ impl JsonReport {
     }
 
     pub fn to_html(&self) -> String {
-        let mut html = String::from(r#"<!DOCTYPE html>
+        let mut html = String::from(
+            r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Wardex Report</title>
 <style>
 body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;margin:2rem;}
@@ -114,13 +115,29 @@ th{background:#1e293b;color:#93c5fd;}
 .card{background:#1e293b;border-radius:8px;padding:1rem;margin:0.5rem;display:inline-block;min-width:150px;}
 .card h3{margin:0;color:#94a3b8;font-size:0.8rem;}.card p{margin:0.3rem 0 0;font-size:1.5rem;color:#60a5fa;}
 </style></head><body>
-"#);
-        html.push_str(&format!("<h1>Wardex Security Report</h1><p>Generated: {}</p>", self.generated_at));
+"#,
+        );
+        html.push_str(&format!(
+            "<h1>Wardex Security Report</h1><p>Generated: {}</p>",
+            self.generated_at
+        ));
         html.push_str("<div>");
-        html.push_str(&format!("<div class='card'><h3>Total Samples</h3><p>{}</p></div>", self.summary.total_samples));
-        html.push_str(&format!("<div class='card'><h3>Alerts</h3><p>{}</p></div>", self.summary.alert_count));
-        html.push_str(&format!("<div class='card'><h3>Critical</h3><p class='critical'>{}</p></div>", self.summary.critical_count));
-        html.push_str(&format!("<div class='card'><h3>Max Score</h3><p>{:.2}</p></div>", self.summary.max_score));
+        html.push_str(&format!(
+            "<div class='card'><h3>Total Samples</h3><p>{}</p></div>",
+            self.summary.total_samples
+        ));
+        html.push_str(&format!(
+            "<div class='card'><h3>Alerts</h3><p>{}</p></div>",
+            self.summary.alert_count
+        ));
+        html.push_str(&format!(
+            "<div class='card'><h3>Critical</h3><p class='critical'>{}</p></div>",
+            self.summary.critical_count
+        ));
+        html.push_str(&format!(
+            "<div class='card'><h3>Max Score</h3><p>{:.2}</p></div>",
+            self.summary.max_score
+        ));
         html.push_str("</div>");
 
         if !self.samples.is_empty() {
@@ -174,10 +191,11 @@ impl ReportStore {
         let path = Path::new(&self.store_path);
         if path.exists()
             && let Ok(content) = fs::read_to_string(path)
-                && let Ok(reports) = serde_json::from_str::<Vec<StoredReport>>(&content) {
-                    self.next_id = reports.iter().map(|r| r.id).max().unwrap_or(0) + 1;
-                    self.reports = reports;
-                }
+            && let Ok(reports) = serde_json::from_str::<Vec<StoredReport>>(&content)
+        {
+            self.next_id = reports.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+            self.reports = reports;
+        }
     }
 
     fn persist(&self) {
@@ -209,16 +227,19 @@ impl ReportStore {
     }
 
     pub fn list(&self) -> Vec<serde_json::Value> {
-        self.reports.iter().map(|r| {
-            serde_json::json!({
-                "id": r.id,
-                "generated_at": r.generated_at,
-                "report_type": r.report_type,
-                "total_samples": r.report.summary.total_samples,
-                "alert_count": r.report.summary.alert_count,
-                "critical_count": r.report.summary.critical_count,
+        self.reports
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id,
+                    "generated_at": r.generated_at,
+                    "report_type": r.report_type,
+                    "total_samples": r.report.summary.total_samples,
+                    "alert_count": r.report.summary.alert_count,
+                    "critical_count": r.report.summary.critical_count,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     pub fn get(&self, id: u64) -> Option<&StoredReport> {
@@ -238,12 +259,30 @@ impl ReportStore {
 
     pub fn executive_summary(&self, incident_store: &IncidentStore) -> serde_json::Value {
         let total_reports = self.reports.len();
-        let total_events: usize = self.reports.iter().map(|r| r.report.summary.total_samples).sum();
-        let total_alerts: usize = self.reports.iter().map(|r| r.report.summary.alert_count).sum();
-        let total_critical: usize = self.reports.iter().map(|r| r.report.summary.critical_count).sum();
-        let max_score = self.reports.iter().map(|r| r.report.summary.max_score).fold(0.0f32, f32::max);
+        let total_events: usize = self
+            .reports
+            .iter()
+            .map(|r| r.report.summary.total_samples)
+            .sum();
+        let total_alerts: usize = self
+            .reports
+            .iter()
+            .map(|r| r.report.summary.alert_count)
+            .sum();
+        let total_critical: usize = self
+            .reports
+            .iter()
+            .map(|r| r.report.summary.critical_count)
+            .sum();
+        let max_score = self
+            .reports
+            .iter()
+            .map(|r| r.report.summary.max_score)
+            .fold(0.0f32, f32::max);
         let avg_score: Option<f32> = if total_events > 0 {
-            let weighted_sum: f32 = self.reports.iter()
+            let weighted_sum: f32 = self
+                .reports
+                .iter()
                 .map(|r| r.report.summary.average_score * r.report.summary.total_samples as f32)
                 .sum();
             Some(weighted_sum / total_events as f32)
@@ -252,14 +291,24 @@ impl ReportStore {
         };
 
         let incidents = incident_store.list();
-        let open_incidents = incidents.iter().filter(|i| {
-            matches!(i.status, crate::incident::IncidentStatus::Open | crate::incident::IncidentStatus::Investigating)
-        }).count();
+        let open_incidents = incidents
+            .iter()
+            .filter(|i| {
+                matches!(
+                    i.status,
+                    crate::incident::IncidentStatus::Open
+                        | crate::incident::IncidentStatus::Investigating
+                )
+            })
+            .count();
 
-        let mut technique_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut technique_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for inc in incidents {
             for tech in &inc.mitre_techniques {
-                *technique_counts.entry(format!("{} - {}", tech.technique_id, tech.technique_name)).or_insert(0) += 1;
+                *technique_counts
+                    .entry(format!("{} - {}", tech.technique_id, tech.technique_name))
+                    .or_insert(0) += 1;
             }
         }
         let mut top_techniques: Vec<_> = technique_counts.into_iter().collect();
@@ -267,7 +316,8 @@ impl ReportStore {
         top_techniques.truncate(5);
 
         // Aggregate detection reasons across all report samples
-        let mut reason_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut reason_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for stored in &self.reports {
             for sample in &stored.report.samples {
                 for reason in &sample.reasons {
@@ -348,17 +398,27 @@ impl IncidentReport {
                 "T1110" => "Enforce multi-factor authentication and account lockout policies.",
                 "T1496" => "Audit CPU/GPU usage and block unauthorized mining software.",
                 "T1565" => "Enable file integrity monitoring and verify backup routines.",
-                "T1071" => "Inspect encrypted traffic at network boundaries and block C2 addresses.",
+                "T1071" => {
+                    "Inspect encrypted traffic at network boundaries and block C2 addresses."
+                }
                 "T1055" => "Deploy process injection detection and restrict process memory access.",
                 "T1059" => "Limit script execution policies and audit command-line activity.",
-                "T1041" => "Monitor outbound data volumes and inspect traffic to uncommon destinations.",
-                "T1053" => "Audit scheduled tasks/cron jobs and restrict creation to authorized accounts.",
+                "T1041" => {
+                    "Monitor outbound data volumes and inspect traffic to uncommon destinations."
+                }
+                "T1053" => {
+                    "Audit scheduled tasks/cron jobs and restrict creation to authorized accounts."
+                }
                 _ => "Investigate this technique and review related activity logs.",
             };
-            recommendations.push(format!("{} ({}): {}", tech.technique_name, tech.technique_id, rec));
+            recommendations.push(format!(
+                "{} ({}): {}",
+                tech.technique_name, tech.technique_id, rec
+            ));
         }
         if recommendations.is_empty() {
-            recommendations.push("Review correlated events and identify potential lateral movement.".into());
+            recommendations
+                .push("Review correlated events and identify potential lateral movement.".into());
         }
 
         IncidentReport {

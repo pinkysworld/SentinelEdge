@@ -271,10 +271,7 @@ impl SecureAggregator {
         let mask: Vec<f64> = (0..self.dimension)
             .map(|_| rng.r#gen::<f64>() * 2.0 - 1.0)
             .collect();
-        let mask_bytes: Vec<u8> = mask
-            .iter()
-            .flat_map(|&v| v.to_le_bytes())
-            .collect();
+        let mask_bytes: Vec<u8> = mask.iter().flat_map(|&v| v.to_le_bytes()).collect();
         let commitment = sha256_hex(&mask_bytes);
         (mask, commitment)
     }
@@ -349,7 +346,10 @@ pub fn redact_forensic_bundle(
                     s = ip_pattern;
                     // Redact paths like /home/user/...
                     while let Some(idx) = s.find("/home/") {
-                        let end = s[idx..].find(|c: char| c.is_whitespace()).map(|e| idx + e).unwrap_or(s.len());
+                        let end = s[idx..]
+                            .find(|c: char| c.is_whitespace())
+                            .map(|e| idx + e)
+                            .unwrap_or(s.len());
                         s.replace_range(idx..end, "[REDACTED_PATH]");
                     }
                     s
@@ -374,7 +374,11 @@ pub fn redact_forensic_bundle(
         .collect();
 
     // Generate a proof-of-inclusion: hash of all record hashes
-    let all_hashes: String = redacted.iter().map(|r| r.hash.as_str()).collect::<Vec<_>>().join(":");
+    let all_hashes: String = redacted
+        .iter()
+        .map(|r| r.hash.as_str())
+        .collect::<Vec<_>>()
+        .join(":");
     let chain_hash = sha256_hex(all_hashes.as_bytes());
     let proof = sha256_hex(format!("inclusion:{case_id}:{chain_hash}").as_bytes());
 
@@ -577,8 +581,18 @@ mod tests {
     #[test]
     fn forensic_redaction_standard() {
         let records = vec![
-            (1, "detect".into(), "score=3.2 from 192.168.1.100".into(), "aabb".into()),
-            (2, "respond".into(), "quarantine applied".into(), "ccdd".into()),
+            (
+                1,
+                "detect".into(),
+                "score=3.2 from 192.168.1.100".into(),
+                "aabb".into(),
+            ),
+            (
+                2,
+                "respond".into(),
+                "quarantine applied".into(),
+                "ccdd".into(),
+            ),
         ];
         let bundle = redact_forensic_bundle("case-001", &records, RedactionLevel::Standard);
         assert_eq!(bundle.redacted_records.len(), 2);
@@ -601,7 +615,11 @@ mod tests {
             "hash1".into(),
         )];
         let bundle = redact_forensic_bundle("case-002", &records, RedactionLevel::Minimal);
-        assert!(bundle.redacted_records[0].summary_redacted.contains("[ALERT]"));
+        assert!(
+            bundle.redacted_records[0]
+                .summary_redacted
+                .contains("[ALERT]")
+        );
         assert!(!bundle.redacted_records[0].summary_redacted.contains("root"));
     }
 
@@ -609,10 +627,7 @@ mod tests {
     fn forensic_redaction_zk() {
         let records = vec![(1, "detect".into(), "secret data".into(), "h1".into())];
         let bundle = redact_forensic_bundle("case-003", &records, RedactionLevel::ZeroKnowledge);
-        assert_eq!(
-            bundle.redacted_records[0].summary_redacted,
-            "[REDACTED]"
-        );
+        assert_eq!(bundle.redacted_records[0].summary_redacted, "[REDACTED]");
         assert!(!bundle.zk_proof_of_inclusion.is_empty());
     }
 
@@ -636,14 +651,22 @@ mod tests {
                 ModelUpdate {
                     device_id: "d1".into(),
                     round: _round,
-                    weights: target.iter().zip(current).map(|(t, c)| c + (t - c) * 0.5).collect(),
+                    weights: target
+                        .iter()
+                        .zip(current)
+                        .map(|(t, c)| c + (t - c) * 0.5)
+                        .collect(),
                     sample_count: 100,
                     loss: 0.1,
                 },
                 ModelUpdate {
                     device_id: "d2".into(),
                     round: _round,
-                    weights: target.iter().zip(current).map(|(t, c)| c + (t - c) * 0.5).collect(),
+                    weights: target
+                        .iter()
+                        .zip(current)
+                        .map(|(t, c)| c + (t - c) * 0.5)
+                        .collect(),
                     sample_count: 100,
                     loss: 0.1,
                 },
@@ -651,6 +674,9 @@ mod tests {
         });
         assert!(!history.is_empty());
         let last = history.last().unwrap();
-        assert!(last.convergence_delta < 0.1, "should converge toward target");
+        assert!(
+            last.convergence_delta < 0.1,
+            "should converge toward target"
+        );
     }
 }

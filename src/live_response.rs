@@ -282,7 +282,11 @@ impl LiveResponseEngine {
         let matched_cmd = allowed.iter().find(|a| a.name == command).unwrap();
         if !matched_cmd.allowed_args.is_empty() {
             for arg in &args {
-                if !matched_cmd.allowed_args.iter().any(|allowed_arg| arg == allowed_arg) {
+                if !matched_cmd
+                    .allowed_args
+                    .iter()
+                    .any(|allowed_arg| arg == allowed_arg)
+                {
                     let bad_arg = arg.clone();
                     let cmd_id = format!("cmd-{}", self.next_cmd_id);
                     self.next_cmd_id += 1;
@@ -296,7 +300,10 @@ impl LiveResponseEngine {
                         submitted_at: now_ms,
                         completed_at: Some(now_ms),
                     });
-                    return Err(format!("Argument '{}' not allowed for '{}'", bad_arg, command));
+                    return Err(format!(
+                        "Argument '{}' not allowed for '{}'",
+                        bad_arg, command
+                    ));
                 }
             }
         }
@@ -329,7 +336,11 @@ impl LiveResponseEngine {
         error: Option<String>,
         now_ms: u64,
     ) -> bool {
-        let session = match self.sessions.iter_mut().find(|s| s.session_id == session_id) {
+        let session = match self
+            .sessions
+            .iter_mut()
+            .find(|s| s.session_id == session_id)
+        {
             Some(s) => s,
             None => return false,
         };
@@ -360,7 +371,11 @@ impl LiveResponseEngine {
         sha256: &str,
         now_ms: u64,
     ) -> bool {
-        let session = match self.sessions.iter_mut().find(|s| s.session_id == session_id) {
+        let session = match self
+            .sessions
+            .iter_mut()
+            .find(|s| s.session_id == session_id)
+        {
             Some(s) => s,
             None => return false,
         };
@@ -378,7 +393,11 @@ impl LiveResponseEngine {
 
     /// Close a session.
     pub fn close_session(&mut self, session_id: &str, reason: SessionStatus) -> bool {
-        if let Some(s) = self.sessions.iter_mut().find(|s| s.session_id == session_id) {
+        if let Some(s) = self
+            .sessions
+            .iter_mut()
+            .find(|s| s.session_id == session_id)
+        {
             s.status = reason;
             true
         } else {
@@ -447,15 +466,14 @@ mod tests {
         let cmd_id = engine
             .submit_command(&sid, "ps", vec!["-ef".into()], 2000)
             .unwrap();
-        assert!(engine
-            .complete_command(
-                &sid,
-                &cmd_id,
-                CommandStatus::Completed,
-                Some("PID TTY ...".into()),
-                None,
-                3000,
-            ));
+        assert!(engine.complete_command(
+            &sid,
+            &cmd_id,
+            CommandStatus::Completed,
+            Some("PID TTY ...".into()),
+            None,
+            3000,
+        ));
         let session = engine.get_session(&sid).unwrap();
         assert_eq!(session.commands.len(), 1);
         assert_eq!(session.commands[0].status, CommandStatus::Completed);
@@ -565,7 +583,9 @@ mod tests {
             1000,
         );
         engine.submit_command(&sid, "ps", vec![], 2000).unwrap();
-        engine.submit_command(&sid, "ls", vec!["-la".into()], 3000).unwrap();
+        engine
+            .submit_command(&sid, "ls", vec!["-la".into()], 3000)
+            .unwrap();
         let _ = engine.submit_command(&sid, "rm", vec![], 4000); // denied
         assert_eq!(engine.audit_log().len(), 3);
     }

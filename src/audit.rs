@@ -216,7 +216,9 @@ impl AuditLog {
         }
         // Update previous_hash to the last remaining record's hash so the
         // next appended record chains correctly from the current tail.
-        self.previous_hash = self.records.last()
+        self.previous_hash = self
+            .records
+            .last()
             .map(|r| r.current_hash.clone())
             .unwrap_or_else(|| "0".repeat(64));
         trim

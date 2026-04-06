@@ -64,7 +64,7 @@ impl UpdateManager {
         release_notes: &str,
         mandatory: bool,
     ) -> Result<Release, String> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let sha256 = hex::encode(Sha256::digest(binary));
         let file_name = format!("wardex-{}-{}", version, platform);
 
@@ -101,7 +101,10 @@ impl UpdateManager {
             .max_by(|a, b| version_cmp(&a.version, &b.version));
 
         match latest {
-            Some(release) if version_cmp(&release.version, current_version) == std::cmp::Ordering::Greater => {
+            Some(release)
+                if version_cmp(&release.version, current_version)
+                    == std::cmp::Ordering::Greater =>
+            {
                 UpdateCheckResponse {
                     update_available: true,
                     version: Some(release.version.clone()),
@@ -130,8 +133,7 @@ impl UpdateManager {
         }
 
         let file_path = format!("{}/releases/{}", self.store_dir, file_name);
-        fs::read(&file_path)
-            .map_err(|e| format!("release not found: {e}"))
+        fs::read(&file_path).map_err(|e| format!("release not found: {e}"))
     }
 
     /// List all published releases.
@@ -141,7 +143,8 @@ impl UpdateManager {
 
     pub fn get_release(&self, version: &str, platform: &str) -> Option<&Release> {
         self.releases.iter().find(|release| {
-            release.version == version && (release.platform == platform || release.platform == "universal")
+            release.version == version
+                && (release.platform == platform || release.platform == "universal")
         })
     }
 
@@ -156,19 +159,16 @@ impl UpdateManager {
     fn load(&mut self) {
         let index_path = format!("{}/releases.json", self.store_dir);
         if let Ok(raw) = fs::read_to_string(Path::new(&index_path))
-            && let Ok(releases) = serde_json::from_str(&raw) {
-                self.releases = releases;
-            }
+            && let Ok(releases) = serde_json::from_str(&raw)
+        {
+            self.releases = releases;
+        }
     }
 }
 
 /// Simple semver comparison (major.minor.patch).
 fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    let parse = |v: &str| -> Vec<u32> {
-        v.split('.')
-            .map(|s| s.parse().unwrap_or(0))
-            .collect()
-    };
+    let parse = |v: &str| -> Vec<u32> { v.split('.').map(|s| s.parse().unwrap_or(0)).collect() };
     let va = parse(a);
     let vb = parse(b);
     va.cmp(&vb)
@@ -250,7 +250,7 @@ impl AtomicUpdater {
         expected_sha: &str,
         current_binary_path: &str,
     ) -> Result<(), String> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let started = chrono::Utc::now().to_rfc3339();
         let staged_path = format!("{}/staged-{}", self.staging_dir, new_version);
@@ -277,9 +277,8 @@ impl AtomicUpdater {
         // 3. Back up current binary.
         self.state = UpdateState::BackingUp;
         if Path::new(current_binary_path).exists() {
-            fs::copy(current_binary_path, &backup_path).map_err(|e| {
-                self.fail(&started, new_version, format!("backup: {e}"), false)
-            })?;
+            fs::copy(current_binary_path, &backup_path)
+                .map_err(|e| self.fail(&started, new_version, format!("backup: {e}"), false))?;
         }
 
         // 4. Swap staged → current.
@@ -303,18 +302,17 @@ impl AtomicUpdater {
                 return Err(self.fail(
                     &started,
                     new_version,
-                    format!("validation: size mismatch ({} vs {})", m.len(), binary.len()),
+                    format!(
+                        "validation: size mismatch ({} vs {})",
+                        m.len(),
+                        binary.len()
+                    ),
                     true,
                 ));
             }
             Err(e) => {
                 self.rollback(current_binary_path, &backup_path);
-                return Err(self.fail(
-                    &started,
-                    new_version,
-                    format!("validation: {e}"),
-                    true,
-                ));
+                return Err(self.fail(&started, new_version, format!("validation: {e}"), true));
             }
         }
 
@@ -354,7 +352,13 @@ impl AtomicUpdater {
         }
     }
 
-    fn fail(&mut self, started_at: &str, to_version: &str, reason: String, rolled_back: bool) -> String {
+    fn fail(
+        &mut self,
+        started_at: &str,
+        to_version: &str,
+        reason: String,
+        rolled_back: bool,
+    ) -> String {
         self.state = UpdateState::Failed {
             reason: reason.clone(),
         };
@@ -469,7 +473,7 @@ mod tests {
 
     #[test]
     fn atomic_update_success() {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let dir = std::env::temp_dir().join("wardex_test_atomic");
         let _ = fs::create_dir_all(&dir);
@@ -479,10 +483,7 @@ mod tests {
         let new_binary = b"new binary v2";
         let expected_sha = hex::encode(Sha256::digest(new_binary));
 
-        let mut updater = AtomicUpdater::new(
-            dir.join("staging").to_str().unwrap(),
-            "1.0.0",
-        );
+        let mut updater = AtomicUpdater::new(dir.join("staging").to_str().unwrap(), "1.0.0");
 
         let result = updater.apply_update(
             "2.0.0",
@@ -505,10 +506,7 @@ mod tests {
         let dir = std::env::temp_dir().join("wardex_test_sha_fail");
         let _ = fs::create_dir_all(&dir);
 
-        let mut updater = AtomicUpdater::new(
-            dir.join("staging").to_str().unwrap(),
-            "1.0.0",
-        );
+        let mut updater = AtomicUpdater::new(dir.join("staging").to_str().unwrap(), "1.0.0");
 
         let result = updater.apply_update("2.0.0", b"data", "wrong-sha", "/tmp/nonexistent");
         assert!(result.is_err());
@@ -519,7 +517,7 @@ mod tests {
 
     #[test]
     fn atomic_update_rollback() {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let dir = std::env::temp_dir().join("wardex_test_rollback");
         let _ = fs::create_dir_all(&dir);
@@ -530,13 +528,12 @@ mod tests {
         let new_binary = b"version-2-content";
         let sha = hex::encode(Sha256::digest(new_binary));
 
-        let mut updater = AtomicUpdater::new(
-            dir.join("staging").to_str().unwrap(),
-            "1.0.0",
-        );
+        let mut updater = AtomicUpdater::new(dir.join("staging").to_str().unwrap(), "1.0.0");
 
         // First, apply successfully.
-        updater.apply_update("2.0.0", new_binary, &sha, bin_path.to_str().unwrap()).unwrap();
+        updater
+            .apply_update("2.0.0", new_binary, &sha, bin_path.to_str().unwrap())
+            .unwrap();
 
         // Then rollback.
         let rb = updater.rollback_to_previous(bin_path.to_str().unwrap());
@@ -551,15 +548,15 @@ mod tests {
         let dir = std::env::temp_dir().join("wardex_test_history");
         let _ = fs::create_dir_all(&dir);
 
-        let mut updater = AtomicUpdater::new(
-            dir.join("staging").to_str().unwrap(),
-            "1.0.0",
-        );
+        let mut updater = AtomicUpdater::new(dir.join("staging").to_str().unwrap(), "1.0.0");
 
         // A failed attempt.
         let _ = updater.apply_update("2.0.0", b"x", "bad-sha", "/tmp/nope");
         assert_eq!(updater.history().len(), 1);
-        assert!(matches!(updater.history()[0].state, UpdateState::Failed { .. }));
+        assert!(matches!(
+            updater.history()[0].state,
+            UpdateState::Failed { .. }
+        ));
 
         let _ = fs::remove_dir_all(&dir);
     }

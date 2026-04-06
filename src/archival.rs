@@ -62,10 +62,10 @@ pub enum RecordType {
 impl std::fmt::Display for RecordType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Alert     => write!(f, "alert"),
-            Self::Incident  => write!(f, "incident"),
+            Self::Alert => write!(f, "alert"),
+            Self::Incident => write!(f, "incident"),
             Self::Telemetry => write!(f, "telemetry"),
-            Self::AuditLog  => write!(f, "audit_log"),
+            Self::AuditLog => write!(f, "audit_log"),
         }
     }
 }
@@ -199,11 +199,7 @@ impl ArchivalEngine {
         std::fs::create_dir_all(dir).map_err(|e| format!("mkdir: {}", e))?;
 
         let now = Utc::now();
-        let filename = format!(
-            "{}-{}.csv",
-            record_type,
-            now.format("%Y%m%dT%H%M%SZ")
-        );
+        let filename = format!("{}-{}.csv", record_type, now.format("%Y%m%dT%H%M%SZ"));
         let path = dir.join(&filename);
 
         // Collect all unique keys from data fields
@@ -236,9 +232,10 @@ impl ArchivalEngine {
             for k in &keys {
                 csv.push(',');
                 if let serde_json::Value::Object(map) = &rec.data
-                    && let Some(v) = map.get(k) {
-                        csv.push_str(&csv_escape(&value_to_csv(v)));
-                    }
+                    && let Some(v) = map.get(k)
+                {
+                    csv.push_str(&csv_escape(&value_to_csv(v)));
+                }
             }
             csv.push('\n');
         }
@@ -256,7 +253,8 @@ impl ArchivalEngine {
             manifests.retain(|m| {
                 if m.date_range_end < cutoff {
                     let _ = std::fs::remove_file(dir.join(&m.filename));
-                    let _ = std::fs::remove_file(dir.join(format!("{}.manifest.json", &m.filename)));
+                    let _ =
+                        std::fs::remove_file(dir.join(format!("{}.manifest.json", &m.filename)));
                     removed += 1;
                     false
                 } else {
@@ -289,20 +287,24 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 fn compress_gzip(data: &[u8]) -> Result<Vec<u8>, String> {
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use std::io::Write;
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(data).map_err(|e| format!("gzip write: {e}"))?;
+    encoder
+        .write_all(data)
+        .map_err(|e| format!("gzip write: {e}"))?;
     encoder.finish().map_err(|e| format!("gzip finish: {e}"))
 }
-
 
 fn csv_escape(s: &str) -> String {
     // Guard against CSV formula injection (DDE attacks).
     // Don't flag valid negative numbers (e.g. "-3.5") — only non-numeric strings.
-    let needs_prefix = (s.starts_with('=') || s.starts_with('+')
-        || s.starts_with('@') || s.starts_with('\t') || s.starts_with('\r'))
+    let needs_prefix = (s.starts_with('=')
+        || s.starts_with('+')
+        || s.starts_with('@')
+        || s.starts_with('\t')
+        || s.starts_with('\r'))
         || (s.starts_with('-') && s.parse::<f64>().is_err());
     let s = if needs_prefix {
         format!("'{}", s)
@@ -310,7 +312,7 @@ fn csv_escape(s: &str) -> String {
         s.to_string()
     };
     if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\""  , s.replace('"', "\"\""))
+        format!("\"{}\"", s.replace('"', "\"\""))
     } else {
         s
     }
@@ -335,7 +337,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("wardex-archive-test-{}", rand::random::<u32>()));
+        let dir =
+            std::env::temp_dir().join(format!("wardex-archive-test-{}", rand::random::<u32>()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -382,7 +385,9 @@ mod tests {
         };
         let engine = ArchivalEngine::new(config);
         let records = sample_records(10);
-        let manifest = engine.archive_records(RecordType::Telemetry, &records).unwrap();
+        let manifest = engine
+            .archive_records(RecordType::Telemetry, &records)
+            .unwrap();
         assert!(manifest.compressed);
         assert!(manifest.filename.ends_with(".gz"));
         fs::remove_dir_all(&dir).ok();
@@ -421,12 +426,19 @@ mod tests {
             ..Default::default()
         };
         let engine = ArchivalEngine::new(config);
-        engine.archive_records(RecordType::Alert, &sample_records(2)).unwrap();
-        engine.archive_records(RecordType::Incident, &[ArchiveRecord {
-            timestamp: "2025-06-01T00:00:00Z".into(),
-            record_type: RecordType::Incident,
-            data: serde_json::json!({"id": "inc-1"}),
-        }]).unwrap();
+        engine
+            .archive_records(RecordType::Alert, &sample_records(2))
+            .unwrap();
+        engine
+            .archive_records(
+                RecordType::Incident,
+                &[ArchiveRecord {
+                    timestamp: "2025-06-01T00:00:00Z".into(),
+                    record_type: RecordType::Incident,
+                    data: serde_json::json!({"id": "inc-1"}),
+                }],
+            )
+            .unwrap();
         assert_eq!(engine.list_archives().len(), 2);
         fs::remove_dir_all(&dir).ok();
     }
@@ -440,7 +452,9 @@ mod tests {
             ..Default::default()
         };
         let engine = ArchivalEngine::new(config);
-        engine.archive_records(RecordType::Alert, &sample_records(5)).unwrap();
+        engine
+            .archive_records(RecordType::Alert, &sample_records(5))
+            .unwrap();
         assert!(engine.total_archive_size() > 0);
         fs::remove_dir_all(&dir).ok();
     }
@@ -448,7 +462,10 @@ mod tests {
     #[test]
     fn sha256_hex_correct() {
         let hash = sha256_hex(b"hello");
-        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
     }
 
     #[test]

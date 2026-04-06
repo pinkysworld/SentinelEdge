@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.41.3` delivers the current enterprise control-plane slice:
+`v0.41.4` delivers the current enterprise control-plane slice:
 
 - SOC Workbench for queue, cases, investigation, and response
 - detection engineering with hunts, rule lifecycle, suppressions, and MITRE coverage
@@ -40,9 +40,9 @@
 
 ## Success criteria
 
-| Metric | Current (`v0.41.3`) | Target |
+| Metric | Current (`v0.41.4`) | Target |
 |---|---|---|
-| Automated tests | 1251 | 1,250+ |
+| Automated tests | 1258 | 1,250+ |
 | OpenAPI paths | 119 | maintained on every release |
 | Release targets | Linux, macOS, Windows | maintained on every tagged release |
 | Control-plane posture | single-node private-cloud | HA-ready enterprise deployment |

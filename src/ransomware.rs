@@ -38,9 +38,9 @@ pub struct RansomwareConfig {
 impl Default for RansomwareConfig {
     fn default() -> Self {
         Self {
-            velocity_threshold: 50.0,   // 50+ file changes/sec is suspicious
+            velocity_threshold: 50.0,       // 50+ file changes/sec is suspicious
             extension_change_threshold: 10, // 10+ extension changes in window
-            window_ms: 30_000,          // 30-second sliding window
+            window_ms: 30_000,              // 30-second sliding window
             alert_threshold: 5.0,
             velocity_weight: 2.5,
             extension_weight: 3.0,
@@ -108,11 +108,20 @@ impl ExtensionTracker {
         Self {
             changes: VecDeque::new(),
             known_ransom_extensions: vec![
-                ".encrypted".into(), ".locked".into(), ".crypto".into(),
-                ".crypt".into(), ".enc".into(), ".ransom".into(),
-                ".pay".into(), ".locky".into(), ".wncry".into(),
-                ".cerber".into(), ".zepto".into(), ".zzzzz".into(),
-                ".micro".into(), ".aaa".into(),
+                ".encrypted".into(),
+                ".locked".into(),
+                ".crypto".into(),
+                ".crypt".into(),
+                ".enc".into(),
+                ".ransom".into(),
+                ".pay".into(),
+                ".locky".into(),
+                ".wncry".into(),
+                ".cerber".into(),
+                ".zepto".into(),
+                ".zzzzz".into(),
+                ".micro".into(),
+                ".aaa".into(),
             ],
         }
     }
@@ -148,7 +157,9 @@ impl ExtensionTracker {
 
     fn has_known_ransom_extension(&self) -> bool {
         self.changes.iter().any(|(_, _, ext)| {
-            self.known_ransom_extensions.iter().any(|r| ext.eq_ignore_ascii_case(r))
+            self.known_ransom_extensions
+                .iter()
+                .any(|r| ext.eq_ignore_ascii_case(r))
         })
     }
 
@@ -283,13 +294,18 @@ impl RansomwareDetector {
         let window_start = cutoff.saturating_sub(self.config.window_ms);
 
         // Prune old timestamps
-        while self.event_timestamps.front().is_some_and(|ts| *ts < window_start) {
+        while self
+            .event_timestamps
+            .front()
+            .is_some_and(|ts| *ts < window_start)
+        {
             self.event_timestamps.pop_front();
         }
 
         for event in events {
             self.event_timestamps.push_back(event.timestamp_ms);
-            self.extension_tracker.record_change(&event.path, event.kind, self.config.window_ms);
+            self.extension_tracker
+                .record_change(&event.path, event.kind, self.config.window_ms);
         }
     }
 
@@ -326,7 +342,8 @@ impl RansomwareDetector {
         total_score += velocity_score;
 
         // 2. Extension change signal
-        let ext_ratio = (ext_changes as f32 / self.config.extension_change_threshold as f32).min(3.0);
+        let ext_ratio =
+            (ext_changes as f32 / self.config.extension_change_threshold as f32).min(3.0);
         let mut ext_score = ext_ratio * self.config.extension_weight;
         // Boost if known ransomware extensions detected
         if has_known_ext {
@@ -473,7 +490,8 @@ mod tests {
 
     #[test]
     fn canary_deployment() {
-        let tmp = std::env::temp_dir().join(format!("wardex_canary_test_{}", rand::random::<u32>()));
+        let tmp =
+            std::env::temp_dir().join(format!("wardex_canary_test_{}", rand::random::<u32>()));
         std::fs::create_dir_all(&tmp).unwrap();
         let dir_str = tmp.to_str().unwrap();
 

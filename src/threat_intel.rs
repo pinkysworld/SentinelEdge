@@ -113,7 +113,10 @@ impl ThreatIntelStore {
             // Fuzzy matching only for behavioral IoC types where substring
             // matching is meaningful. Structured types (IPs, hashes, domains)
             // require exact matches to avoid false positives.
-            let partial = if matches!(ioc_type, IoCType::BehaviorPattern | IoCType::NetworkSignature) {
+            let partial = if matches!(
+                ioc_type,
+                IoCType::BehaviorPattern | IoCType::NetworkSignature
+            ) {
                 self.iocs.values().find(|ioc| {
                     ioc.ioc_type == *ioc_type
                         && (value.contains(&ioc.value) || ioc.value.contains(value))
@@ -142,10 +145,7 @@ impl ThreatIntelStore {
     }
 
     /// Correlate telemetry signals with known IoCs.
-    pub fn correlate_signals(
-        &mut self,
-        signals: &[(String, f64)],
-    ) -> Vec<MatchResult> {
+    pub fn correlate_signals(&mut self, signals: &[(String, f64)]) -> Vec<MatchResult> {
         let mut results = Vec::new();
         for (signal_name, value) in signals {
             // Check if signal pattern matches a behavior IoC
@@ -222,7 +222,11 @@ impl ThreatIntelStore {
                 None => continue,
             };
             let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            let confidence = obj.get("confidence").and_then(|c| c.as_f64()).unwrap_or(50.0) as f32 / 100.0;
+            let confidence = obj
+                .get("confidence")
+                .and_then(|c| c.as_f64())
+                .unwrap_or(50.0) as f32
+                / 100.0;
             let now = chrono::Utc::now().to_rfc3339();
             let ioc = IoC {
                 ioc_type,
@@ -230,11 +234,24 @@ impl ThreatIntelStore {
                 confidence,
                 severity: if confidence > 0.7 { "high" } else { "medium" }.into(),
                 source: feed_id.to_string(),
-                first_seen: obj.get("created").and_then(|c| c.as_str()).unwrap_or(&now).to_string(),
-                last_seen: obj.get("modified").and_then(|m| m.as_str()).unwrap_or(&now).to_string(),
-                tags: obj.get("labels")
+                first_seen: obj
+                    .get("created")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or(&now)
+                    .to_string(),
+                last_seen: obj
+                    .get("modified")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or(&now)
+                    .to_string(),
+                tags: obj
+                    .get("labels")
                     .and_then(|l| l.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 related_iocs: vec![],
             };
@@ -253,7 +270,8 @@ impl ThreatIntelStore {
     /// Batch-check multiple values against the IoC store.
     /// Returns only matches (filters out non-matches).
     pub fn batch_check(&mut self, checks: &[(IoCType, String)]) -> Vec<MatchResult> {
-        checks.iter()
+        checks
+            .iter()
             .map(|(ioc_type, value)| self.check(ioc_type, value))
             .filter(|r| r.matched)
             .collect()
@@ -264,7 +282,8 @@ impl ThreatIntelStore {
         let before_ts = chrono::DateTime::parse_from_rfc3339(before)
             .ok()
             .map(|ts| ts.with_timezone(&chrono::Utc));
-        self.iocs.values()
+        self.iocs
+            .values()
             .filter(|ioc| {
                 match (
                     before_ts.as_ref(),
@@ -318,7 +337,11 @@ impl ThreatIntelStore {
             by_type,
             by_severity,
             by_source,
-            avg_confidence: if total > 0 { total_confidence / total as f32 } else { 0.0 },
+            avg_confidence: if total > 0 {
+                total_confidence / total as f32
+            } else {
+                0.0
+            },
             active_feeds: self.feeds.iter().filter(|f| f.active).count(),
             total_feeds: self.feeds.len(),
             match_history_size: self.match_history.len(),
@@ -333,7 +356,11 @@ fn parse_stix_pattern(pattern: &str) -> Option<(IoCType, String)> {
     let inner = pattern.trim().trim_start_matches('[').trim_end_matches(']');
     let (obj_path, value_part) = inner.split_once('=')?;
     let obj_path = obj_path.trim();
-    let value = value_part.trim().trim_matches('\'').trim_matches('"').to_string();
+    let value = value_part
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"')
+        .to_string();
     if value.is_empty() {
         return None;
     }
@@ -433,8 +460,7 @@ impl DeceptionEngine {
         let id = sha256_hex(format!("{name}:{:?}:{}", decoy_type, self.decoys.len()).as_bytes())
             [..16]
             .to_string();
-        let fingerprint =
-            sha256_hex(format!("decoy:{id}:{name}").as_bytes())[..32].to_string();
+        let fingerprint = sha256_hex(format!("decoy:{id}:{name}").as_bytes())[..32].to_string();
         self.decoys.push(Decoy {
             id: id.clone(),
             decoy_type,
@@ -477,7 +503,8 @@ impl DeceptionEngine {
         self.decoys[decoy_idx].interactions.push(interaction);
 
         // Track attacker (deduplicate decoy indices)
-        let entry = self.attacker_map
+        let entry = self
+            .attacker_map
             .entry(source_info.to_string())
             .or_default();
         if !entry.contains(&decoy_idx) {
@@ -491,8 +518,7 @@ impl DeceptionEngine {
     pub fn report(&self) -> DeceptionReport {
         let total = self.decoys.len();
         let active = self.decoys.iter().filter(|d| d.deployed).count();
-        let total_interactions: usize =
-            self.decoys.iter().map(|d| d.interactions.len()).sum();
+        let total_interactions: usize = self.decoys.iter().map(|d| d.interactions.len()).sum();
         let high_threat = self
             .decoys
             .iter()
@@ -511,7 +537,11 @@ impl DeceptionEngine {
                 let interactions: Vec<&DecoyInteraction> = indices
                     .iter()
                     .filter_map(|&i| self.decoys.get(i))
-                    .flat_map(|d| d.interactions.iter().filter(|int| int.source_info == *source))
+                    .flat_map(|d| {
+                        d.interactions
+                            .iter()
+                            .filter(|int| int.source_info == *source)
+                    })
                     .collect();
                 let max_score = interactions
                     .iter()
@@ -565,13 +595,36 @@ impl DeceptionEngine {
         let mut rng = rand::thread_rng();
         let suffix: u32 = rng.r#gen::<u32>() % 10000;
         let configs = [
-            (DecoyType::Honeypot, format!("ssh-{suffix}"), "Auto-deployed SSH honeypot".to_string()),
-            (DecoyType::HoneyFile, format!("credentials-{suffix}.txt"), "Auto-deployed honey file".to_string()),
-            (DecoyType::HoneyCredential, format!("api-key-{suffix}"), "Auto-deployed honey credential".to_string()),
-            (DecoyType::HoneyService, format!("svc-internal-{suffix}"), "Auto-deployed honey service".to_string()),
-            (DecoyType::Canary, format!("canary-token-{suffix}"), "Auto-deployed canary token".to_string()),
+            (
+                DecoyType::Honeypot,
+                format!("ssh-{suffix}"),
+                "Auto-deployed SSH honeypot".to_string(),
+            ),
+            (
+                DecoyType::HoneyFile,
+                format!("credentials-{suffix}.txt"),
+                "Auto-deployed honey file".to_string(),
+            ),
+            (
+                DecoyType::HoneyCredential,
+                format!("api-key-{suffix}"),
+                "Auto-deployed honey credential".to_string(),
+            ),
+            (
+                DecoyType::HoneyService,
+                format!("svc-internal-{suffix}"),
+                "Auto-deployed honey service".to_string(),
+            ),
+            (
+                DecoyType::Canary,
+                format!("canary-token-{suffix}"),
+                "Auto-deployed canary token".to_string(),
+            ),
         ];
-        configs.into_iter().map(|(dt, name, desc)| self.deploy(dt, &name, &desc)).collect()
+        configs
+            .into_iter()
+            .map(|(dt, name, desc)| self.deploy(dt, &name, &desc))
+            .collect()
     }
 
     /// Build an attacker behavior profile from interaction history,
@@ -581,7 +634,11 @@ impl DeceptionEngine {
         let interactions: Vec<&DecoyInteraction> = indices
             .iter()
             .filter_map(|&i| self.decoys.get(i))
-            .flat_map(|d| d.interactions.iter().filter(|int| int.source_info == source_id))
+            .flat_map(|d| {
+                d.interactions
+                    .iter()
+                    .filter(|int| int.source_info == source_id)
+            })
             .collect();
         if interactions.is_empty() {
             return None;
@@ -598,8 +655,14 @@ impl DeceptionEngine {
             source_id: source_id.to_string(),
             interaction_count: interactions.len(),
             decoys_touched,
-            first_seen: interactions.first().map(|i| i.timestamp.clone()).unwrap_or_default(),
-            last_seen: interactions.last().map(|i| i.timestamp.clone()).unwrap_or_default(),
+            first_seen: interactions
+                .first()
+                .map(|i| i.timestamp.clone())
+                .unwrap_or_default(),
+            last_seen: interactions
+                .last()
+                .map(|i| i.timestamp.clone())
+                .unwrap_or_default(),
             threat_score: max_score,
         })
     }
@@ -676,11 +739,7 @@ mod tests {
     #[test]
     fn deception_engine_deploy_and_interact() {
         let mut engine = DeceptionEngine::new();
-        let id = engine.deploy(
-            DecoyType::Honeypot,
-            "fake-ssh",
-            "SSH honeypot on port 2222",
-        );
+        let id = engine.deploy(DecoyType::Honeypot, "fake-ssh", "SSH honeypot on port 2222");
         assert!(!id.is_empty());
         assert_eq!(engine.decoys().len(), 1);
 
@@ -721,11 +780,7 @@ mod tests {
     #[test]
     fn honey_credential_high_threat() {
         let mut engine = DeceptionEngine::new();
-        let id = engine.deploy(
-            DecoyType::HoneyCredential,
-            "admin-token",
-            "Fake API token",
-        );
+        let id = engine.deploy(DecoyType::HoneyCredential, "admin-token", "Fake API token");
         let score = engine
             .record_interaction(&id, "insider", "use", "API call with fake token")
             .unwrap();
@@ -878,14 +933,30 @@ mod tests {
     #[test]
     fn stix_pattern_parsing() {
         let cases = vec![
-            ("[ipv4-addr:value = '1.2.3.4']", IoCType::IpAddress, "1.2.3.4"),
-            ("[domain-name:value = 'test.com']", IoCType::Domain, "test.com"),
-            ("[file:hashes.'SHA-256' = 'abc123']", IoCType::FileHash, "abc123"),
-            ("[process:name = 'evil.exe']", IoCType::ProcessName, "evil.exe"),
+            (
+                "[ipv4-addr:value = '1.2.3.4']",
+                IoCType::IpAddress,
+                "1.2.3.4",
+            ),
+            (
+                "[domain-name:value = 'test.com']",
+                IoCType::Domain,
+                "test.com",
+            ),
+            (
+                "[file:hashes.'SHA-256' = 'abc123']",
+                IoCType::FileHash,
+                "abc123",
+            ),
+            (
+                "[process:name = 'evil.exe']",
+                IoCType::ProcessName,
+                "evil.exe",
+            ),
         ];
         for (pattern, expected_type, expected_value) in cases {
-            let (ioc_type, value) = parse_stix_pattern(pattern)
-                .unwrap_or_else(|| panic!("failed to parse: {pattern}"));
+            let (ioc_type, value) =
+                parse_stix_pattern(pattern).unwrap_or_else(|| panic!("failed to parse: {pattern}"));
             assert_eq!(ioc_type, expected_type);
             assert_eq!(value, expected_value);
         }
@@ -897,10 +968,13 @@ mod tests {
         store.add_ioc(IoC {
             ioc_type: IoCType::IpAddress,
             value: "10.0.0.1".into(),
-            confidence: 0.9, severity: "high".into(),
+            confidence: 0.9,
+            severity: "high".into(),
             source: "test".into(),
-            first_seen: "t0".into(), last_seen: "t1".into(),
-            tags: vec![], related_iocs: vec![],
+            first_seen: "t0".into(),
+            last_seen: "t1".into(),
+            tags: vec![],
+            related_iocs: vec![],
         });
 
         let checks = vec![
@@ -929,7 +1003,11 @@ mod tests {
         });
 
         let expiring = store.expiring_iocs("2026-04-03T23:30:00Z");
-        assert_eq!(expiring.len(), 1, "offset-aware comparison should treat 01:00+02:00 as earlier than 23:30Z");
+        assert_eq!(
+            expiring.len(),
+            1,
+            "offset-aware comparison should treat 01:00+02:00 as earlier than 23:30Z"
+        );
     }
 
     #[test]
@@ -948,7 +1026,10 @@ mod tests {
         });
 
         let expiring = store.expiring_iocs("2026-04-03T23:30:00Z");
-        assert!(expiring.is_empty(), "invalid IoC timestamps should not be expired by mixed-mode fallback when cutoff is RFC3339");
+        assert!(
+            expiring.is_empty(),
+            "invalid IoC timestamps should not be expired by mixed-mode fallback when cutoff is RFC3339"
+        );
     }
 
     #[test]
@@ -957,20 +1038,24 @@ mod tests {
         store.add_ioc(IoC {
             ioc_type: IoCType::IpAddress,
             value: "10.0.0.1".into(),
-            confidence: 0.9, severity: "high".into(),
+            confidence: 0.9,
+            severity: "high".into(),
             source: "test".into(),
             first_seen: "2026-01-01T00:00:00Z".into(),
             last_seen: "2026-01-01T00:00:00Z".into(),
-            tags: vec![], related_iocs: vec![],
+            tags: vec![],
+            related_iocs: vec![],
         });
         store.add_ioc(IoC {
             ioc_type: IoCType::IpAddress,
             value: "10.0.0.2".into(),
-            confidence: 0.9, severity: "high".into(),
+            confidence: 0.9,
+            severity: "high".into(),
             source: "test".into(),
             first_seen: "2026-04-01T00:00:00Z".into(),
             last_seen: "2026-04-01T00:00:00Z".into(),
-            tags: vec![], related_iocs: vec![],
+            tags: vec![],
+            related_iocs: vec![],
         });
         assert_eq!(store.ioc_count(), 2);
         let purged = store.purge_expired("2026-04-05T00:00:00Z", 30);
@@ -984,18 +1069,24 @@ mod tests {
         store.add_ioc(IoC {
             ioc_type: IoCType::IpAddress,
             value: "10.0.0.1".into(),
-            confidence: 0.9, severity: "high".into(),
+            confidence: 0.9,
+            severity: "high".into(),
             source: "feed-a".into(),
-            first_seen: "t0".into(), last_seen: "t1".into(),
-            tags: vec![], related_iocs: vec![],
+            first_seen: "t0".into(),
+            last_seen: "t1".into(),
+            tags: vec![],
+            related_iocs: vec![],
         });
         store.add_ioc(IoC {
             ioc_type: IoCType::Domain,
             value: "evil.com".into(),
-            confidence: 0.7, severity: "medium".into(),
+            confidence: 0.7,
+            severity: "medium".into(),
             source: "feed-b".into(),
-            first_seen: "t0".into(), last_seen: "t1".into(),
-            tags: vec![], related_iocs: vec![],
+            first_seen: "t0".into(),
+            last_seen: "t1".into(),
+            tags: vec![],
+            related_iocs: vec![],
         });
         let stats = store.enrichment_stats();
         assert_eq!(stats.total_iocs, 2);

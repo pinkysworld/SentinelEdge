@@ -50,8 +50,8 @@ pub struct LinuxCapabilities {
 impl LinuxCapabilities {
     /// Detect capabilities of the current Linux host.
     pub fn detect() -> Self {
-        let kernel_version = read_file_trimmed("/proc/version")
-            .unwrap_or_else(|| "Linux (unknown)".into());
+        let kernel_version =
+            read_file_trimmed("/proc/version").unwrap_or_else(|| "Linux (unknown)".into());
         let distro = detect_distro();
         Self {
             has_ebpf: detect_ebpf_support(&kernel_version),
@@ -245,9 +245,17 @@ pub fn collect_processes() -> Vec<LinuxProcessEvent> {
             } else if let Some(val) = line.strip_prefix("PPid:\t") {
                 ppid = val.trim().parse().unwrap_or(0);
             } else if let Some(val) = line.strip_prefix("Uid:\t") {
-                uid = val.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                uid = val
+                    .split_whitespace()
+                    .next()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
             } else if let Some(val) = line.strip_prefix("Gid:\t") {
-                gid = val.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                gid = val
+                    .split_whitespace()
+                    .next()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
             } else if let Some(val) = line.strip_prefix("NSpid:\t") {
                 // Last NSpid token is the pid inside the innermost namespace
                 ns_pid = val.split_whitespace().last().and_then(|s| s.parse().ok());
@@ -450,9 +458,10 @@ fn build_inode_to_pid_map() -> HashMap<u64, u32> {
                 if let Some(inode_str) = link_str
                     .strip_prefix("socket:[")
                     .and_then(|s| s.strip_suffix(']'))
-                    && let Ok(inode) = inode_str.parse::<u64>() {
-                        map.insert(inode, pid);
-                    }
+                    && let Ok(inode) = inode_str.parse::<u64>()
+                {
+                    map.insert(inode, pid);
+                }
             }
         }
     }
@@ -553,16 +562,17 @@ pub fn collect_dns_info() -> Vec<LinuxDnsEvent> {
     if let Ok(output) = std::process::Command::new("resolvectl")
         .arg("statistics")
         .output()
-        && output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            events.push(LinuxDnsEvent {
-                timestamp: now.clone(),
-                query_name: text.trim().to_string(),
-                query_type: "resolved_stats".into(),
-                source: "systemd-resolved".into(),
-                ocsf_class_id: OCSF_DNS_ACTIVITY,
-            });
-        }
+        && output.status.success()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        events.push(LinuxDnsEvent {
+            timestamp: now.clone(),
+            query_name: text.trim().to_string(),
+            query_type: "resolved_stats".into(),
+            source: "systemd-resolved".into(),
+            ocsf_class_id: OCSF_DNS_ACTIVITY,
+        });
+    }
 
     events
 }
@@ -911,12 +921,21 @@ impl LinuxSnapshot {
 /// Supported Linux distributions and their capabilities.
 pub fn supported_distros() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("Ubuntu 20.04+",   "Full telemetry: /proc, /sys, AppArmor, cgroup v2, eBPF"),
-        ("Debian 11+",      "Full telemetry: /proc, /sys, AppArmor"),
-        ("RHEL/Rocky 8+",   "Full telemetry: /proc, /sys, SELinux, cgroup v2"),
-        ("Fedora 36+",      "Full telemetry with latest kernel features"),
-        ("Alpine 3.16+",    "Reduced: musl libc, no systemd, limited /proc"),
-        ("Amazon Linux 2",  "Full telemetry: /proc, /sys, SELinux"),
+        (
+            "Ubuntu 20.04+",
+            "Full telemetry: /proc, /sys, AppArmor, cgroup v2, eBPF",
+        ),
+        ("Debian 11+", "Full telemetry: /proc, /sys, AppArmor"),
+        (
+            "RHEL/Rocky 8+",
+            "Full telemetry: /proc, /sys, SELinux, cgroup v2",
+        ),
+        ("Fedora 36+", "Full telemetry with latest kernel features"),
+        (
+            "Alpine 3.16+",
+            "Reduced: musl libc, no systemd, limited /proc",
+        ),
+        ("Amazon Linux 2", "Full telemetry: /proc, /sys, SELinux"),
     ]
 }
 
@@ -952,32 +971,106 @@ const SUSPICIOUS_NAMES: &[(&str, &str)] = &[
     ("minerd", "Crypto-miner (minerd)"),
     ("cpuminer", "Crypto-miner (cpuminer)"),
     ("kworker", "Potential rootkit masquerading as kernel worker"),
-    ("kdevtmpfs", "Potential rootkit masquerading as kernel thread"),
+    (
+        "kdevtmpfs",
+        "Potential rootkit masquerading as kernel thread",
+    ),
     (".hidden", "Hidden process (dotfile name)"),
-    ("nc ", "Netcat — potential reverse shell"),
-    ("ncat", "Ncat — potential reverse shell"),
-    ("socat", "Socat — potential reverse shell or tunnel"),
-    ("./", "Process run from relative path — unusual for services"),
     ("/tmp/", "Process running from /tmp — suspicious location"),
-    ("/dev/shm", "Process running from shared memory — malware pattern"),
-    ("base64", "Base64 decode — potential obfuscated payload execution"),
+    (
+        "/dev/shm",
+        "Process running from shared memory — malware pattern",
+    ),
+    (
+        "base64",
+        "Base64 decode — potential obfuscated payload execution",
+    ),
     ("curl|sh", "Pipe-to-shell — remote code execution pattern"),
     ("wget|sh", "Pipe-to-shell — remote code execution pattern"),
-    ("python -c", "Inline Python execution — potential obfuscated payload"),
-    ("perl -e", "Inline Perl execution — potential obfuscated payload"),
-    ("ruby -e", "Inline Ruby execution — potential obfuscated payload"),
+    (
+        "python -c",
+        "Inline Python execution — potential obfuscated payload",
+    ),
+    (
+        "perl -e",
+        "Inline Perl execution — potential obfuscated payload",
+    ),
+    (
+        "ruby -e",
+        "Inline Ruby execution — potential obfuscated payload",
+    ),
 ];
 
+fn process_basename(value: &str) -> &str {
+    value.rsplit('/').next().unwrap_or(value)
+}
+
+fn contains_process_token(text: &str, token: &str) -> bool {
+    text.split(|c: char| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '/' | '\\' | '|' | ';' | ':' | ',' | '(' | ')' | '[' | ']' | '=' | '"'
+            )
+    })
+    .filter(|part| !part.is_empty())
+    .any(|part| part == token)
+}
+
+fn is_relative_process_launch(name: &str, cmd: &str) -> bool {
+    name.trim_start().starts_with("./") || cmd.trim_start().starts_with("./")
+}
+
 const LINUX_SYSTEM_PROCS: &[&str] = &[
-    "systemd", "kthreadd", "rcu_gp", "rcu_par_gp", "kworker",
-    "ksoftirqd", "migration", "cpuhp", "watchdog", "kdevtmpfsi",
-    "netns", "kauditd", "khungtaskd", "oom_reaper", "writeback",
-    "kcompactd", "kblockd", "blkcg_punt", "ata_sff", "edac-poller",
-    "devfreq_wq", "kswapd", "ecryptfs", "kthrotld", "irq/", "scsi_",
-    "ext4-rsv-conver", "jbd2/", "loop", "zswap", "cryptd",
-    "journald", "udevd", "dbus-daemon", "polkitd", "NetworkManager",
-    "sshd", "crond", "atd", "rsyslogd", "auditd", "firewalld",
-    "containerd", "dockerd", "snapd", "thermald", "acpid",
+    "systemd",
+    "kthreadd",
+    "rcu_gp",
+    "rcu_par_gp",
+    "kworker",
+    "ksoftirqd",
+    "migration",
+    "cpuhp",
+    "watchdog",
+    "kdevtmpfsi",
+    "netns",
+    "kauditd",
+    "khungtaskd",
+    "oom_reaper",
+    "writeback",
+    "kcompactd",
+    "kblockd",
+    "blkcg_punt",
+    "ata_sff",
+    "edac-poller",
+    "devfreq_wq",
+    "kswapd",
+    "ecryptfs",
+    "kthrotld",
+    "irq/",
+    "scsi_",
+    "ext4-rsv-conver",
+    "jbd2/",
+    "loop",
+    "zswap",
+    "cryptd",
+    "journald",
+    "udevd",
+    "dbus-daemon",
+    "polkitd",
+    "NetworkManager",
+    "sshd",
+    "crond",
+    "atd",
+    "rsyslogd",
+    "auditd",
+    "firewalld",
+    "containerd",
+    "dockerd",
+    "snapd",
+    "thermald",
+    "acpid",
+    "login",
+    "ps",
 ];
 
 /// Analyse running Linux processes for suspicious behaviour.
@@ -991,16 +1084,83 @@ pub fn analyze_processes(procs: &[LinuxProcessEvent]) -> Vec<ProcessFinding> {
         let name_lower = p.name.to_lowercase();
         let cmd_lower = p.cmd_line.to_lowercase();
         let exe_lower = p.exe_path.to_lowercase();
+        let base_lower = process_basename(&name_lower);
         let (cpu, mem) = usage.get(&p.pid).copied().unwrap_or((0.0, 0.0));
+
+        if contains_process_token(&name_lower, "nc")
+            || contains_process_token(&cmd_lower, "nc")
+            || contains_process_token(&exe_lower, "nc")
+        {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: uid_to_name(p.uid),
+                risk_level: "critical",
+                reason: "Netcat — potential reverse shell".to_string(),
+                cpu_percent: cpu,
+                mem_percent: mem,
+            });
+        }
+
+        if contains_process_token(base_lower, "ncat")
+            || contains_process_token(&name_lower, "ncat")
+            || contains_process_token(&cmd_lower, "ncat")
+            || contains_process_token(&exe_lower, "ncat")
+        {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: uid_to_name(p.uid),
+                risk_level: "critical",
+                reason: "Ncat — potential reverse shell".to_string(),
+                cpu_percent: cpu,
+                mem_percent: mem,
+            });
+        }
+
+        if contains_process_token(base_lower, "socat")
+            || contains_process_token(&name_lower, "socat")
+            || contains_process_token(&cmd_lower, "socat")
+            || contains_process_token(&exe_lower, "socat")
+        {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: uid_to_name(p.uid),
+                risk_level: "critical",
+                reason: "Socat — potential reverse shell or tunnel".to_string(),
+                cpu_percent: cpu,
+                mem_percent: mem,
+            });
+        }
+
+        if is_relative_process_launch(&name_lower, &cmd_lower) {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: uid_to_name(p.uid),
+                risk_level: "elevated",
+                reason: "Process launched from relative path — investigate execution context"
+                    .to_string(),
+                cpu_percent: cpu,
+                mem_percent: mem,
+            });
+        }
 
         // Suspicious name/command patterns
         for &(pattern, desc) in SUSPICIOUS_NAMES {
-            if name_lower.contains(pattern) || cmd_lower.contains(pattern) || exe_lower.contains(pattern) {
+            if name_lower.contains(pattern)
+                || cmd_lower.contains(pattern)
+                || exe_lower.contains(pattern)
+            {
                 findings.push(ProcessFinding {
-                    pid: p.pid, name: p.name.clone(),
+                    pid: p.pid,
+                    name: p.name.clone(),
                     user: uid_to_name(p.uid),
-                    risk_level: "critical", reason: desc.to_string(),
-                    cpu_percent: cpu, mem_percent: mem,
+                    risk_level: "critical",
+                    reason: desc.to_string(),
+                    cpu_percent: cpu,
+                    mem_percent: mem,
                 });
             }
         }
@@ -1008,44 +1168,58 @@ pub fn analyze_processes(procs: &[LinuxProcessEvent]) -> Vec<ProcessFinding> {
         // High CPU (>80%)
         if cpu > 80.0 && p.pid > 1 {
             findings.push(ProcessFinding {
-                pid: p.pid, name: p.name.clone(),
+                pid: p.pid,
+                name: p.name.clone(),
                 user: uid_to_name(p.uid),
                 risk_level: "elevated",
-                reason: format!("High CPU usage: {:.1}% — possible crypto-miner or resource abuse", cpu),
-                cpu_percent: cpu, mem_percent: mem,
+                reason: format!(
+                    "High CPU usage: {:.1}% — possible crypto-miner or resource abuse",
+                    cpu
+                ),
+                cpu_percent: cpu,
+                mem_percent: mem,
             });
         }
 
         // High memory (>50%)
         if mem > 50.0 && p.pid > 1 {
             findings.push(ProcessFinding {
-                pid: p.pid, name: p.name.clone(),
+                pid: p.pid,
+                name: p.name.clone(),
                 user: uid_to_name(p.uid),
                 risk_level: "elevated",
-                reason: format!("High memory usage: {:.1}% — possible memory-resident malware or DoS", mem),
-                cpu_percent: cpu, mem_percent: mem,
+                reason: format!(
+                    "High memory usage: {:.1}% — possible memory-resident malware or DoS",
+                    mem
+                ),
+                cpu_percent: cpu,
+                mem_percent: mem,
             });
         }
 
         // Root non-system processes
-        if p.uid == 0 && p.ppid > 1 && !is_known_linux_system_process(&name_lower) {
+        if p.uid == 0 && p.ppid > 1 && !is_known_linux_system_process(base_lower) {
             findings.push(ProcessFinding {
-                pid: p.pid, name: p.name.clone(),
+                pid: p.pid,
+                name: p.name.clone(),
                 user: "root".into(),
                 risk_level: "severe",
                 reason: "Non-system process running as root".to_string(),
-                cpu_percent: cpu, mem_percent: mem,
+                cpu_percent: cpu,
+                mem_percent: mem,
             });
         }
 
         // Deleted executable (common malware pattern on Linux)
         if p.exe_path.contains("(deleted)") {
             findings.push(ProcessFinding {
-                pid: p.pid, name: p.name.clone(),
+                pid: p.pid,
+                name: p.name.clone(),
                 user: uid_to_name(p.uid),
                 risk_level: "critical",
                 reason: "Running from deleted executable — possible fileless malware".to_string(),
-                cpu_percent: cpu, mem_percent: mem,
+                cpu_percent: cpu,
+                mem_percent: mem,
             });
         }
     }
@@ -1071,7 +1245,10 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
                 if fields.len() >= 2 {
                     let name = fields[0].to_string();
                     let version = fields[1].to_string();
-                    let size_kb: f64 = fields.get(2).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
+                    let size_kb: f64 = fields
+                        .get(2)
+                        .and_then(|s| s.trim().parse().ok())
+                        .unwrap_or(0.0);
                     apps.push(InstalledApp {
                         name: name.clone(),
                         path: format!("/usr/bin/{name}"),
@@ -1088,7 +1265,11 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
     // Fallback to rpm if dpkg returned nothing
     if apps.is_empty() {
         if let Ok(output) = std::process::Command::new("rpm")
-            .args(["-qa", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\n"])
+            .args([
+                "-qa",
+                "--queryformat",
+                "%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\n",
+            ])
             .output()
         {
             if output.status.success() {
@@ -1098,7 +1279,10 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
                     if fields.len() >= 2 {
                         let name = fields[0].to_string();
                         let version = fields[1].to_string();
-                        let size_bytes: f64 = fields.get(2).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
+                        let size_bytes: f64 = fields
+                            .get(2)
+                            .and_then(|s| s.trim().parse().ok())
+                            .unwrap_or(0.0);
                         apps.push(InstalledApp {
                             name: name.clone(),
                             path: format!("/usr/bin/{name}"),
@@ -1142,14 +1326,18 @@ fn collect_process_usage() -> HashMap<u32, (f32, f32)> {
 }
 
 fn uid_to_name(uid: u32) -> String {
-    if uid == 0 { return "root".into(); }
+    if uid == 0 {
+        return "root".into();
+    }
     // Try to resolve from /etc/passwd
     if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
         for line in passwd.lines() {
             let fields: Vec<&str> = line.split(':').collect();
             if fields.len() >= 3 {
                 if let Ok(u) = fields[2].parse::<u32>() {
-                    if u == uid { return fields[0].to_string(); }
+                    if u == uid {
+                        return fields[0].to_string();
+                    }
                 }
             }
         }
@@ -1158,7 +1346,9 @@ fn uid_to_name(uid: u32) -> String {
 }
 
 fn is_known_linux_system_process(name: &str) -> bool {
-    LINUX_SYSTEM_PROCS.iter().any(|sp| name.contains(&sp.to_lowercase()))
+    LINUX_SYSTEM_PROCS
+        .iter()
+        .any(|sp| name.contains(&sp.to_lowercase()))
 }
 
 fn risk_ord(level: &str) -> u8 {
@@ -1216,19 +1406,27 @@ mod tests {
     fn test_kernel_version_parsing() {
         assert!(kernel_version_at_least(
             "Linux version 5.15.0-91-generic (gcc 11.4.0)",
-            5, 15, 0,
+            5,
+            15,
+            0,
         ));
         assert!(kernel_version_at_least(
             "Linux version 5.15.0-91-generic",
-            4, 1, 0,
+            4,
+            1,
+            0,
         ));
         assert!(!kernel_version_at_least(
             "Linux version 3.10.0-1160.el7",
-            4, 1, 0,
+            4,
+            1,
+            0,
         ));
         assert!(kernel_version_at_least(
             "Linux version 6.1.0-rpi4-rpi-v8",
-            5, 0, 0,
+            5,
+            0,
+            0,
         ));
     }
 
@@ -1290,7 +1488,8 @@ mod tests {
 
     #[test]
     fn test_container_detection_docker() {
-        let cgroup = "12:memory:/docker/abc123def456789012345678901234567890123456789012345678901234";
+        let cgroup =
+            "12:memory:/docker/abc123def456789012345678901234567890123456789012345678901234";
         let (is_container, runtime, id) = parse_container_from_cgroup(cgroup);
         assert!(is_container);
         assert_eq!(runtime.as_deref(), Some("docker"));
@@ -1424,5 +1623,49 @@ mod tests {
         let id_str = id.unwrap();
         assert!(id_str.len() >= 12);
         assert!(id_str.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn linux_process_analysis_matches_netcat_as_token_only() {
+        let procs = vec![LinuxProcessEvent {
+            timestamp: "t".into(),
+            event_type: LinuxProcessEventType::Snapshot,
+            pid: 42,
+            ppid: 1,
+            name: "sync-service".into(),
+            exe_path: "/usr/bin/sync-service".into(),
+            cmd_line: "/usr/bin/sync-service --mode daemon".into(),
+            uid: 1000,
+            gid: 1000,
+            cgroup: String::new(),
+            ns_pid: None,
+            ocsf_class_id: OCSF_PROCESS_ACTIVITY,
+        }];
+
+        let findings = analyze_processes(&procs);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn linux_process_analysis_marks_relative_launch_as_elevated() {
+        let procs = vec![LinuxProcessEvent {
+            timestamp: "t".into(),
+            event_type: LinuxProcessEventType::Snapshot,
+            pid: 84,
+            ppid: 1,
+            name: "./wardex".into(),
+            exe_path: String::new(),
+            cmd_line: "./wardex".into(),
+            uid: 1000,
+            gid: 1000,
+            cgroup: String::new(),
+            ns_pid: None,
+            ocsf_class_id: OCSF_PROCESS_ACTIVITY,
+        }];
+
+        let findings = analyze_processes(&procs);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].risk_level, "elevated");
+        assert!(findings[0].reason.contains("relative path"));
     }
 }

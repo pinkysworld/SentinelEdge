@@ -22,8 +22,8 @@ impl BillingPlan {
     pub fn monthly_price_cents(&self) -> u64 {
         match self {
             BillingPlan::Community => 0,
-            BillingPlan::Professional => 9900,     // $99/mo
-            BillingPlan::Enterprise => 49900,       // $499/mo
+            BillingPlan::Professional => 9900, // $99/mo
+            BillingPlan::Enterprise => 49900,  // $499/mo
             BillingPlan::Custom { monthly_cents, .. } => *monthly_cents,
         }
     }
@@ -156,7 +156,11 @@ impl BillingManager {
     }
 
     pub fn get_subscription(&self, tenant_id: &str) -> Option<Subscription> {
-        self.subscriptions.lock().unwrap_or_else(|e| e.into_inner()).get(tenant_id).cloned()
+        self.subscriptions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(tenant_id)
+            .cloned()
     }
 
     pub fn cancel_subscription(&self, tenant_id: &str, immediate: bool) -> Result<(), String> {
@@ -202,13 +206,19 @@ impl BillingManager {
             }],
         };
         drop(subs);
-        self.invoices.lock().unwrap_or_else(|e| e.into_inner()).push(invoice.clone());
+        self.invoices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(invoice.clone());
         Ok(invoice)
     }
 
     pub fn mark_invoice_paid(&self, invoice_id: &str) -> Result<(), String> {
         let mut invoices = self.invoices.lock().unwrap_or_else(|e| e.into_inner());
-        let inv = invoices.iter_mut().find(|i| i.id == invoice_id).ok_or("Invoice not found")?;
+        let inv = invoices
+            .iter_mut()
+            .find(|i| i.id == invoice_id)
+            .ok_or("Invoice not found")?;
         inv.status = InvoiceStatus::Paid;
         inv.paid_at = Some(Utc::now());
         Ok(())
@@ -224,7 +234,11 @@ impl BillingManager {
             .collect()
     }
 
-    pub fn process_webhook(&self, event_type: &str, payload: serde_json::Value) -> Result<(), String> {
+    pub fn process_webhook(
+        &self,
+        event_type: &str,
+        payload: serde_json::Value,
+    ) -> Result<(), String> {
         let event = WebhookEvent {
             id: self.gen_id("evt"),
             event_type: event_type.to_string(),
@@ -232,15 +246,26 @@ impl BillingManager {
             payload,
             processed: true,
         };
-        self.webhook_events.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+        self.webhook_events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(event);
         Ok(())
     }
 
     pub fn revenue_summary(&self) -> HashMap<String, u64> {
         let invoices = self.invoices.lock().unwrap_or_else(|e| e.into_inner());
         let mut summary = HashMap::new();
-        let paid_total: u64 = invoices.iter().filter(|i| i.status == InvoiceStatus::Paid).map(|i| i.amount_cents).sum();
-        let pending_total: u64 = invoices.iter().filter(|i| i.status == InvoiceStatus::Open).map(|i| i.amount_cents).sum();
+        let paid_total: u64 = invoices
+            .iter()
+            .filter(|i| i.status == InvoiceStatus::Paid)
+            .map(|i| i.amount_cents)
+            .sum();
+        let pending_total: u64 = invoices
+            .iter()
+            .filter(|i| i.status == InvoiceStatus::Open)
+            .map(|i| i.amount_cents)
+            .sum();
         summary.insert("paid_cents".into(), paid_total);
         summary.insert("pending_cents".into(), pending_total);
         summary.insert("total_invoices".into(), invoices.len() as u64);
@@ -334,7 +359,8 @@ mod tests {
     #[test]
     fn test_webhook_processing() {
         let mgr = BillingManager::new();
-        mgr.process_webhook("invoice.paid", serde_json::json!({"id": "inv_123"})).unwrap();
+        mgr.process_webhook("invoice.paid", serde_json::json!({"id": "inv_123"}))
+            .unwrap();
     }
 
     #[test]
@@ -342,7 +368,10 @@ mod tests {
         assert_eq!(BillingPlan::Community.monthly_price_cents(), 0);
         assert_eq!(BillingPlan::Professional.monthly_price_cents(), 9900);
         assert_eq!(BillingPlan::Enterprise.monthly_price_cents(), 49900);
-        let custom = BillingPlan::Custom { name: "Startup".into(), monthly_cents: 2900 };
+        let custom = BillingPlan::Custom {
+            name: "Startup".into(),
+            monthly_cents: 2900,
+        };
         assert_eq!(custom.monthly_price_cents(), 2900);
     }
 }

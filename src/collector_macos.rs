@@ -174,13 +174,13 @@ fn detect_security_tools() -> Vec<String> {
         ("com.microsoft.wdav", "Microsoft Defender"),
         ("com.sophos.endpoint", "Sophos"),
         ("com.malwarebytes.agent", "Malwarebytes"),
-        ("com.paloaltonetworks.GlobalProtect", "Palo Alto GlobalProtect"),
+        (
+            "com.paloaltonetworks.GlobalProtect",
+            "Palo Alto GlobalProtect",
+        ),
     ];
     // Check LaunchDaemons and LaunchAgents for known security products
-    let search_dirs = [
-        "/Library/LaunchDaemons",
-        "/Library/LaunchAgents",
-    ];
+    let search_dirs = ["/Library/LaunchDaemons", "/Library/LaunchAgents"];
     for dir in &search_dirs {
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
@@ -454,7 +454,10 @@ fn parse_lsof_endpoint(s: &str) -> (String, u16) {
     if let Some(idx) = s.rfind(':') {
         let addr = &s[..idx];
         let port: u16 = s[idx + 1..].parse().unwrap_or(0);
-        (addr.trim_matches(|c| c == '[' || c == ']').to_string(), port)
+        (
+            addr.trim_matches(|c| c == '[' || c == ']').to_string(),
+            port,
+        )
     } else {
         (s.to_string(), 0)
     }
@@ -566,7 +569,8 @@ pub fn parse_last_line(line: &str) -> Option<MacosLoginEvent> {
         }
     };
     let terminal = fields.get(1).unwrap_or(&"").to_string();
-    let source = if fields.len() > 2 && !fields[2].starts_with("Mon")
+    let source = if fields.len() > 2
+        && !fields[2].starts_with("Mon")
         && !fields[2].starts_with("Tue")
         && !fields[2].starts_with("Wed")
         && !fields[2].starts_with("Thu")
@@ -652,7 +656,10 @@ const PERSISTENCE_DIRS: &[(&str, PersistenceType)] = &[
     ("/Library/LaunchAgents", PersistenceType::LaunchAgent),
     ("/Library/LaunchDaemons", PersistenceType::LaunchDaemon),
     ("/System/Library/LaunchAgents", PersistenceType::LaunchAgent),
-    ("/System/Library/LaunchDaemons", PersistenceType::LaunchDaemon),
+    (
+        "/System/Library/LaunchDaemons",
+        PersistenceType::LaunchDaemon,
+    ),
 ];
 
 /// Enumerate LaunchAgents, LaunchDaemons, and cron jobs.
@@ -668,7 +675,8 @@ pub fn collect_persistence_items() -> Vec<MacosPersistenceItem> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let name = path.file_name()
+            let name = path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if !name.ends_with(".plist") {
@@ -695,7 +703,8 @@ pub fn collect_persistence_items() -> Vec<MacosPersistenceItem> {
         if let Ok(entries) = fs::read_dir(&user_agents) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = path.file_name()
+                let name = path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 if !name.ends_with(".plist") {
@@ -740,18 +749,20 @@ fn extract_plist_program(path: &str) -> String {
         }
         if found_program_key {
             if let Some(val) = trimmed.strip_prefix("<string>")
-                && let Some(val) = val.strip_suffix("</string>") {
-                    return val.to_string();
-                }
+                && let Some(val) = val.strip_suffix("</string>")
+            {
+                return val.to_string();
+            }
             // In the ProgramArguments array, the first <string> is the binary
             if trimmed == "<array>" {
                 continue;
             }
             if trimmed.starts_with("<string>")
                 && let Some(val) = trimmed.strip_prefix("<string>")
-                    && let Some(val) = val.strip_suffix("</string>") {
-                        return val.to_string();
-                    }
+                && let Some(val) = val.strip_suffix("</string>")
+            {
+                return val.to_string();
+            }
             // Stop looking if we hit another key or end of array
             if trimmed.starts_with("<key>") || trimmed == "</array>" || trimmed == "</dict>" {
                 found_program_key = false;
@@ -763,10 +774,7 @@ fn extract_plist_program(path: &str) -> String {
 
 /// Collect cron jobs for the current user.
 fn collect_cron_jobs(now: &str) -> Vec<MacosPersistenceItem> {
-    let output = match std::process::Command::new("crontab")
-        .arg("-l")
-        .output()
-    {
+    let output = match std::process::Command::new("crontab").arg("-l").output() {
         Ok(o) if o.status.success() => o,
         _ => return Vec::new(),
     };
@@ -819,7 +827,8 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let name = path.file_name()
+            let name = path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if !name.ends_with(".app") {
@@ -827,7 +836,8 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
             }
             let display_name = name.trim_end_matches(".app").to_string();
             let size_mb = dir_size_mb(&path);
-            let last_modified = entry.metadata()
+            let last_modified = entry
+                .metadata()
                 .and_then(|m| m.modified())
                 .map(|t| {
                     let dt: chrono::DateTime<chrono::Utc> = t.into();
@@ -874,15 +884,19 @@ fn read_app_plist(path: &Path) -> (String, String) {
             continue;
         }
         if next_is_version {
-            if let Some(val) = trimmed.strip_prefix("<string>")
-                .and_then(|s| s.strip_suffix("</string>")) {
+            if let Some(val) = trimmed
+                .strip_prefix("<string>")
+                .and_then(|s| s.strip_suffix("</string>"))
+            {
                 version = val.to_string();
             }
             next_is_version = false;
         }
         if next_is_bundle {
-            if let Some(val) = trimmed.strip_prefix("<string>")
-                .and_then(|s| s.strip_suffix("</string>")) {
+            if let Some(val) = trimmed
+                .strip_prefix("<string>")
+                .and_then(|s| s.strip_suffix("</string>"))
+            {
                 bundle_id = val.to_string();
             }
             next_is_bundle = false;
@@ -903,7 +917,9 @@ fn dir_size_mb(path: &Path) -> f64 {
                     if let Ok(sub) = fs::read_dir(entry.path()) {
                         for se in sub.flatten() {
                             if let Ok(sm) = se.metadata() {
-                                if sm.is_file() { total += sm.len(); }
+                                if sm.is_file() {
+                                    total += sm.len();
+                                }
                             }
                         }
                     }
@@ -934,21 +950,64 @@ const SUSPICIOUS_NAMES: &[(&str, &str)] = &[
     ("minerd", "Crypto-miner (minerd)"),
     ("cpuminer", "Crypto-miner (cpuminer)"),
     ("kworker", "Potential rootkit masquerading as kernel worker"),
-    ("kdevtmpfs", "Potential rootkit masquerading as kernel thread"),
+    (
+        "kdevtmpfs",
+        "Potential rootkit masquerading as kernel thread",
+    ),
     (".hidden", "Hidden process (dotfile name)"),
-    ("nc ", "Netcat — potential reverse shell"),
-    ("ncat", "Ncat — potential reverse shell"),
-    ("socat", "Socat — potential reverse shell or tunnel"),
-    ("./", "Process run from relative path — unusual for services"),
     ("/tmp/", "Process running from /tmp — suspicious location"),
-    ("/dev/shm", "Process running from shared memory — malware pattern"),
-    ("base64", "Base64 decode — potential obfuscated payload execution"),
+    (
+        "/dev/shm",
+        "Process running from shared memory — malware pattern",
+    ),
+    (
+        "base64",
+        "Base64 decode — potential obfuscated payload execution",
+    ),
     ("curl|sh", "Pipe-to-shell — remote code execution pattern"),
     ("wget|sh", "Pipe-to-shell — remote code execution pattern"),
-    ("python -c", "Inline Python execution — potential obfuscated payload"),
-    ("perl -e", "Inline Perl execution — potential obfuscated payload"),
-    ("ruby -e", "Inline Ruby execution — potential obfuscated payload"),
+    (
+        "python -c",
+        "Inline Python execution — potential obfuscated payload",
+    ),
+    (
+        "perl -e",
+        "Inline Perl execution — potential obfuscated payload",
+    ),
+    (
+        "ruby -e",
+        "Inline Ruby execution — potential obfuscated payload",
+    ),
 ];
+
+fn process_basename(value: &str) -> &str {
+    value.rsplit('/').next().unwrap_or(value)
+}
+
+fn contains_process_token(text: &str, token: &str) -> bool {
+    text.split(|c: char| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '/' | '\\' | '|' | ';' | ':' | ',' | '(' | ')' | '[' | ']' | '=' | '"'
+            )
+    })
+    .filter(|part| !part.is_empty())
+    .any(|part| part == token)
+}
+
+fn is_relative_process_launch(name: &str, cmd: &str) -> bool {
+    name.trim_start().starts_with("./") || cmd.trim_start().starts_with("./")
+}
+
+fn is_current_wardex_process(proc: &MacosProcessEvent) -> bool {
+    proc.pid == std::process::id() && process_basename(&proc.name).eq_ignore_ascii_case("wardex")
+}
+
+fn looks_like_app_bundle_process(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("/applications/") && lower.contains(".app/contents/macos/")
+}
 
 /// Analyse running processes for suspicious behaviour.
 pub fn analyze_processes(procs: &[MacosProcessEvent]) -> Vec<ProcessFinding> {
@@ -957,6 +1016,63 @@ pub fn analyze_processes(procs: &[MacosProcessEvent]) -> Vec<ProcessFinding> {
     for p in procs {
         let name_lower = p.name.to_lowercase();
         let cmd_lower = p.cmd_line.to_lowercase();
+        let base_lower = process_basename(&name_lower);
+        let is_self_wardex = is_current_wardex_process(p);
+
+        if contains_process_token(&name_lower, "nc") || contains_process_token(&cmd_lower, "nc") {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: p.user.clone(),
+                risk_level: "critical",
+                reason: "Netcat — potential reverse shell".to_string(),
+                cpu_percent: p.cpu_percent,
+                mem_percent: p.mem_percent,
+            });
+        }
+
+        if contains_process_token(base_lower, "ncat")
+            || contains_process_token(&name_lower, "ncat")
+            || contains_process_token(&cmd_lower, "ncat")
+        {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: p.user.clone(),
+                risk_level: "critical",
+                reason: "Ncat — potential reverse shell".to_string(),
+                cpu_percent: p.cpu_percent,
+                mem_percent: p.mem_percent,
+            });
+        }
+
+        if contains_process_token(base_lower, "socat")
+            || contains_process_token(&name_lower, "socat")
+            || contains_process_token(&cmd_lower, "socat")
+        {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: p.user.clone(),
+                risk_level: "critical",
+                reason: "Socat — potential reverse shell or tunnel".to_string(),
+                cpu_percent: p.cpu_percent,
+                mem_percent: p.mem_percent,
+            });
+        }
+
+        if !is_self_wardex && is_relative_process_launch(&name_lower, &cmd_lower) {
+            findings.push(ProcessFinding {
+                pid: p.pid,
+                name: p.name.clone(),
+                user: p.user.clone(),
+                risk_level: "elevated",
+                reason: "Process launched from relative path — investigate execution context"
+                    .to_string(),
+                cpu_percent: p.cpu_percent,
+                mem_percent: p.mem_percent,
+            });
+        }
 
         // Check against known-bad patterns
         for &(pattern, desc) in SUSPICIOUS_NAMES {
@@ -980,7 +1096,10 @@ pub fn analyze_processes(procs: &[MacosProcessEvent]) -> Vec<ProcessFinding> {
                 name: p.name.clone(),
                 user: p.user.clone(),
                 risk_level: "elevated",
-                reason: format!("High CPU usage: {:.1}% — possible crypto-miner or resource abuse", p.cpu_percent),
+                reason: format!(
+                    "High CPU usage: {:.1}% — possible crypto-miner or resource abuse",
+                    p.cpu_percent
+                ),
                 cpu_percent: p.cpu_percent,
                 mem_percent: p.mem_percent,
             });
@@ -993,14 +1112,21 @@ pub fn analyze_processes(procs: &[MacosProcessEvent]) -> Vec<ProcessFinding> {
                 name: p.name.clone(),
                 user: p.user.clone(),
                 risk_level: "elevated",
-                reason: format!("High memory usage: {:.1}% — possible memory-resident malware or DoS", p.mem_percent),
+                reason: format!(
+                    "High memory usage: {:.1}% — possible memory-resident malware or DoS",
+                    p.mem_percent
+                ),
                 cpu_percent: p.cpu_percent,
                 mem_percent: p.mem_percent,
             });
         }
 
         // Root processes that aren't system daemons
-        if p.user == "root" && p.ppid > 1 && !is_known_system_process(&name_lower) {
+        if p.user == "root"
+            && p.ppid > 1
+            && !is_known_system_process(base_lower)
+            && !looks_like_app_bundle_process(&name_lower)
+        {
             findings.push(ProcessFinding {
                 pid: p.pid,
                 name: p.name.clone(),
@@ -1031,18 +1157,56 @@ fn risk_ord(level: &str) -> u8 {
 
 fn is_known_system_process(name: &str) -> bool {
     const SYSTEM_PROCS: &[&str] = &[
-        "launchd", "kernel_task", "mds", "mdworker", "opendirectoryd",
-        "configd", "syslogd", "securityd", "distnoted", "logd",
-        "coreservicesd", "coreauthd", "WindowServer", "bluetoothd",
-        "airportd", "wifid", "symptomsd", "trustd", "powerd",
-        "diskarbitrationd", "fseventsd", "notifyd", "sandboxd",
-        "cloudd", "networkserviceproxy", "loginwindow", "systemstats",
-        "UserEventAgent", "cfprefsd", "apsd", "nsurlsessiond",
-        "containermanagerd", "lsd", "ReportCrash", "mds_stores",
-        "usermanagerd", "timed", "reversetemplated", "thermalmonitord",
-        "sysmond", "biomed", "locationd", "coreduetd", "rapportd",
+        "launchd",
+        "kernel_task",
+        "mds",
+        "mdworker",
+        "opendirectoryd",
+        "configd",
+        "syslogd",
+        "securityd",
+        "distnoted",
+        "login",
+        "ps",
+        "logd",
+        "coreservicesd",
+        "coreauthd",
+        "WindowServer",
+        "bluetoothd",
+        "airportd",
+        "wifid",
+        "symptomsd",
+        "trustd",
+        "powerd",
+        "diskarbitrationd",
+        "fseventsd",
+        "notifyd",
+        "sandboxd",
+        "cloudd",
+        "networkserviceproxy",
+        "loginwindow",
+        "systemstats",
+        "UserEventAgent",
+        "cfprefsd",
+        "apsd",
+        "nsurlsessiond",
+        "containermanagerd",
+        "lsd",
+        "ReportCrash",
+        "mds_stores",
+        "usermanagerd",
+        "timed",
+        "reversetemplated",
+        "thermalmonitord",
+        "sysmond",
+        "biomed",
+        "locationd",
+        "coreduetd",
+        "rapportd",
     ];
-    SYSTEM_PROCS.iter().any(|sp| name.contains(&sp.to_lowercase()))
+    SYSTEM_PROCS
+        .iter()
+        .any(|sp| name.contains(&sp.to_lowercase()))
 }
 
 // ── Composite Snapshot ──────────────────────────────────────────────
@@ -1095,21 +1259,48 @@ impl MacosSnapshot {
 /// Supported macOS versions with their capabilities.
 pub fn supported_versions() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("macOS 12 Monterey",  "Baseline: SIP, TCC, Gatekeeper, ps/lsof/mount collection"),
-        ("macOS 13 Ventura",   "Login Items API changes, Rapid Security Response updates"),
-        ("macOS 14 Sonoma",    "Improved Endpoint Security framework, stricter TCC enforcement"),
-        ("macOS 15 Sequoia",   "Enhanced code-signing verification, new privacy controls"),
+        (
+            "macOS 12 Monterey",
+            "Baseline: SIP, TCC, Gatekeeper, ps/lsof/mount collection",
+        ),
+        (
+            "macOS 13 Ventura",
+            "Login Items API changes, Rapid Security Response updates",
+        ),
+        (
+            "macOS 14 Sonoma",
+            "Improved Endpoint Security framework, stricter TCC enforcement",
+        ),
+        (
+            "macOS 15 Sequoia",
+            "Enhanced code-signing verification, new privacy controls",
+        ),
     ]
 }
 
 /// Entitlement requirements for full telemetry collection.
 pub fn entitlement_requirements() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("Full Disk Access",      "Required for reading LaunchDaemons, cron tabs, TCC.db"),
-        ("Endpoint Security",     "Optional: real-time process/file event monitoring"),
-        ("Network Extensions",    "Optional: packet-level network inspection"),
-        ("Accessibility",         "Optional: UI event monitoring for screen lock detection"),
-        ("SystemExtensions",      "Optional: load system extensions for deep monitoring"),
+        (
+            "Full Disk Access",
+            "Required for reading LaunchDaemons, cron tabs, TCC.db",
+        ),
+        (
+            "Endpoint Security",
+            "Optional: real-time process/file event monitoring",
+        ),
+        (
+            "Network Extensions",
+            "Optional: packet-level network inspection",
+        ),
+        (
+            "Accessibility",
+            "Optional: UI event monitoring for screen lock detection",
+        ),
+        (
+            "SystemExtensions",
+            "Optional: load system extensions for deep monitoring",
+        ),
     ]
 }
 
@@ -1209,10 +1400,7 @@ mod tests {
             classify_persistence_path("~/Library/LaunchAgents/com.example.plist"),
             Some(PersistenceType::LaunchAgent)
         );
-        assert_eq!(
-            classify_persistence_path("/usr/local/bin/tool"),
-            None
-        );
+        assert_eq!(classify_persistence_path("/usr/local/bin/tool"), None);
     }
 
     #[test]
@@ -1322,5 +1510,47 @@ mod tests {
         let (addr, port) = parse_lsof_endpoint("[::1]:8080");
         assert_eq!(addr, "::1");
         assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn process_analysis_does_not_flag_onedrive_sync_service_as_netcat() {
+        let procs = vec![MacosProcessEvent {
+            timestamp: "t".into(),
+            pid: 19927,
+            ppid: 1,
+            name: "/Applications/OneDrive.app/Contents/OneDrive Sync Service.app/Contents/MacOS/OneDrive Sync Service".into(),
+            user: "michelpicker".into(),
+            group: "staff".into(),
+            cpu_percent: 0.0,
+            mem_percent: 0.1,
+            code_signed: CodeSignStatus::Valid,
+            cmd_line: "/Applications/OneDrive.app/Contents/OneDrive Sync Service.app/Contents/MacOS/OneDrive Sync Service /silentConfig".into(),
+            ocsf_class_id: OCSF_PROCESS_ACTIVITY,
+        }];
+
+        let findings = analyze_processes(&procs);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn process_analysis_flags_relative_path_launch_as_elevated_not_critical() {
+        let procs = vec![MacosProcessEvent {
+            timestamp: "t".into(),
+            pid: 27445,
+            ppid: 73302,
+            name: "./release/v0.41.3/wardex-macos-aarch64/wardex".into(),
+            user: "michelpicker".into(),
+            group: "staff".into(),
+            cpu_percent: 0.0,
+            mem_percent: 0.1,
+            code_signed: CodeSignStatus::Unknown,
+            cmd_line: "./release/v0.41.3/wardex-macos-aarch64/wardex".into(),
+            ocsf_class_id: OCSF_PROCESS_ACTIVITY,
+        }];
+
+        let findings = analyze_processes(&procs);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].risk_level, "elevated");
+        assert!(findings[0].reason.contains("relative path"));
     }
 }

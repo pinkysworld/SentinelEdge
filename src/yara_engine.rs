@@ -151,8 +151,7 @@ impl YaraEngine {
 
     /// Scan a file by path.
     pub fn scan_file(&self, path: &str) -> Result<ScanReport, String> {
-        let data =
-            std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+        let data = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
         Ok(self.scan(&data))
     }
 
@@ -175,15 +174,16 @@ impl YaraEngine {
 
         // Size check for AllOfWithMaxSize.
         if let RuleCondition::AllOfWithMaxSize(max) = &rule.condition
-            && data.len() as u64 > *max {
-                return ScanResult {
-                    rule_name: rule.name.clone(),
-                    matched: false,
-                    severity: rule.meta.severity.clone(),
-                    locations: Vec::new(),
-                    scan_time_us: start.elapsed().as_micros() as u64,
-                };
-            }
+            && data.len() as u64 > *max
+        {
+            return ScanResult {
+                rule_name: rule.name.clone(),
+                matched: false,
+                severity: rule.meta.severity.clone(),
+                locations: Vec::new(),
+                scan_time_us: start.elapsed().as_micros() as u64,
+            };
+        }
 
         let mut all_locations: HashMap<String, Vec<MatchLocation>> = HashMap::new();
 
@@ -203,8 +203,7 @@ impl YaraEngine {
             RuleCondition::AtLeast(n) => matched_count >= *n,
         };
 
-        let locations: Vec<MatchLocation> =
-            all_locations.into_values().flatten().collect();
+        let locations: Vec<MatchLocation> = all_locations.into_values().flatten().collect();
 
         ScanResult {
             rule_name: rule.name.clone(),
@@ -217,25 +216,13 @@ impl YaraEngine {
 
     fn find_pattern(&self, rs: &RuleString, data: &[u8]) -> Vec<MatchLocation> {
         match &rs.pattern {
-            StringPattern::Text(text) => {
-                self.find_text(data, text.as_bytes(), &rs.id, rs.nocase)
-            }
-            StringPattern::Hex(bytes) => {
-                self.find_bytes(data, bytes, &rs.id)
-            }
-            StringPattern::Glob(pattern) => {
-                self.find_glob(data, pattern, &rs.id, rs.nocase)
-            }
+            StringPattern::Text(text) => self.find_text(data, text.as_bytes(), &rs.id, rs.nocase),
+            StringPattern::Hex(bytes) => self.find_bytes(data, bytes, &rs.id),
+            StringPattern::Glob(pattern) => self.find_glob(data, pattern, &rs.id, rs.nocase),
         }
     }
 
-    fn find_text(
-        &self,
-        data: &[u8],
-        needle: &[u8],
-        id: &str,
-        nocase: bool,
-    ) -> Vec<MatchLocation> {
+    fn find_text(&self, data: &[u8], needle: &[u8], id: &str, nocase: bool) -> Vec<MatchLocation> {
         if needle.is_empty() {
             return Vec::new();
         }
@@ -267,22 +254,11 @@ impl YaraEngine {
         results
     }
 
-    fn find_bytes(
-        &self,
-        data: &[u8],
-        needle: &[u8],
-        id: &str,
-    ) -> Vec<MatchLocation> {
+    fn find_bytes(&self, data: &[u8], needle: &[u8], id: &str) -> Vec<MatchLocation> {
         self.find_text(data, needle, id, false)
     }
 
-    fn find_glob(
-        &self,
-        data: &[u8],
-        pattern: &str,
-        id: &str,
-        nocase: bool,
-    ) -> Vec<MatchLocation> {
+    fn find_glob(&self, data: &[u8], pattern: &str, id: &str, nocase: bool) -> Vec<MatchLocation> {
         // Split data into lines and match each line against the glob.
         let text = String::from_utf8_lossy(data);
         let mut results = Vec::new();
@@ -598,9 +574,21 @@ mod tests {
                 created: "2026-01-01".into(),
             },
             strings: vec![
-                RuleString { id: "$a".into(), pattern: StringPattern::Text("one".into()), nocase: false },
-                RuleString { id: "$b".into(), pattern: StringPattern::Text("two".into()), nocase: false },
-                RuleString { id: "$c".into(), pattern: StringPattern::Text("three".into()), nocase: false },
+                RuleString {
+                    id: "$a".into(),
+                    pattern: StringPattern::Text("one".into()),
+                    nocase: false,
+                },
+                RuleString {
+                    id: "$b".into(),
+                    pattern: StringPattern::Text("two".into()),
+                    nocase: false,
+                },
+                RuleString {
+                    id: "$c".into(),
+                    pattern: StringPattern::Text("three".into()),
+                    nocase: false,
+                },
             ],
             condition: RuleCondition::AtLeast(2),
             enabled: true,
@@ -682,7 +670,10 @@ mod tests {
 
         let php = b"<?php eval($_POST['cmd']); ?>";
         let report = engine.scan(php);
-        let ws = report.results.iter().find(|r| r.rule_name == "webshell_php");
+        let ws = report
+            .results
+            .iter()
+            .find(|r| r.rule_name == "webshell_php");
         assert!(ws.unwrap().matched);
     }
 
@@ -695,12 +686,18 @@ mod tests {
 
         // Only one keyword → should not match (requires AtLeast(2))
         let report = engine.scan(b"send bitcoin please");
-        let rr = report.results.iter().find(|r| r.rule_name == "ransomware_note");
+        let rr = report
+            .results
+            .iter()
+            .find(|r| r.rule_name == "ransomware_note");
         assert!(!rr.unwrap().matched);
 
         // Two keywords → match
         let report = engine.scan(b"send bitcoin to decrypt your files");
-        let rr = report.results.iter().find(|r| r.rule_name == "ransomware_note");
+        let rr = report
+            .results
+            .iter()
+            .find(|r| r.rule_name == "ransomware_note");
         assert!(rr.unwrap().matched);
     }
 

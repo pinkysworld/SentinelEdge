@@ -143,18 +143,20 @@ impl MemoryForensics {
 
             // User-flagged suspicious regions
             if region.suspicious
-                && let Some(reason) = &region.reason {
-                    findings.push(MemoryFinding {
-                        pid: region.pid,
-                        process_name: region.process_name.clone(),
-                        finding_type: FindingType::InjectedCode,
-                        description: reason.clone(),
-                        severity: "severe".into(),
-                        evidence: HashMap::from([
-                            ("address".into(), format!("0x{:x}", region.base_address)),
-                        ]),
-                    });
-                }
+                && let Some(reason) = &region.reason
+            {
+                findings.push(MemoryFinding {
+                    pid: region.pid,
+                    process_name: region.process_name.clone(),
+                    finding_type: FindingType::InjectedCode,
+                    description: reason.clone(),
+                    severity: "severe".into(),
+                    evidence: HashMap::from([(
+                        "address".into(),
+                        format!("0x{:x}", region.base_address),
+                    )]),
+                });
+            }
         }
 
         self.findings.extend(findings.clone());
@@ -285,7 +287,8 @@ impl MemoryForensics {
                 MemoryArtifact {
                     name: "Unsigned modules".into(),
                     description: "Detect unsigned loaded modules".into(),
-                    command: "Get-Process | ForEach-Object { Get-AuthenticodeSignature $_.Path }".into(),
+                    command: "Get-Process | ForEach-Object { Get-AuthenticodeSignature $_.Path }"
+                        .into(),
                     volatile: false,
                 },
                 MemoryArtifact {
@@ -335,7 +338,11 @@ mod tests {
             reason: None,
         }];
         let findings = mf.analyze_regions(&regions);
-        assert!(findings.iter().any(|f| f.finding_type == FindingType::RwxRegion));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.finding_type == FindingType::RwxRegion)
+        );
     }
 
     #[test]
@@ -353,7 +360,11 @@ mod tests {
             reason: None,
         }];
         let findings = mf.analyze_regions(&regions);
-        assert!(findings.iter().any(|f| f.finding_type == FindingType::UnbackedExecutable));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.finding_type == FindingType::UnbackedExecutable)
+        );
     }
 
     #[test]
@@ -382,14 +393,26 @@ mod tests {
         let mut mf = MemoryForensics::new();
         mf.analyze_regions(&[
             MemoryRegion {
-                pid: 1, process_name: "p".into(), base_address: 0, size_bytes: 1,
-                permissions: "rwx".into(), region_type: RegionType::Anonymous,
-                file_backed: None, suspicious: false, reason: None,
+                pid: 1,
+                process_name: "p".into(),
+                base_address: 0,
+                size_bytes: 1,
+                permissions: "rwx".into(),
+                region_type: RegionType::Anonymous,
+                file_backed: None,
+                suspicious: false,
+                reason: None,
             },
             MemoryRegion {
-                pid: 2, process_name: "q".into(), base_address: 0, size_bytes: 1,
-                permissions: "r-x".into(), region_type: RegionType::Anonymous,
-                file_backed: None, suspicious: false, reason: None,
+                pid: 2,
+                process_name: "q".into(),
+                base_address: 0,
+                size_bytes: 1,
+                permissions: "r-x".into(),
+                region_type: RegionType::Anonymous,
+                file_backed: None,
+                suspicious: false,
+                reason: None,
             },
         ]);
         let counts = mf.severity_counts();

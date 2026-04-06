@@ -225,8 +225,7 @@ impl UebaEngine {
 
         // Apply time-based risk decay
         if profile.last_seen_ms > 0 && obs.timestamp_ms > profile.last_seen_ms {
-            let hours_elapsed =
-                (obs.timestamp_ms - profile.last_seen_ms) as f64 / 3_600_000.0;
+            let hours_elapsed = (obs.timestamp_ms - profile.last_seen_ms) as f64 / 3_600_000.0;
             if hours_elapsed >= 1.0 {
                 let decay = (self.config.risk_decay_per_hour as f64).powf(hours_elapsed.floor());
                 profile.risk_score *= decay as f32;
@@ -239,76 +238,77 @@ impl UebaEngine {
 
         // ── Login time anomaly ───────────────────────────────
         if let Some(hour) = obs.hour_of_day
-            && hour < 24 {
-                if is_warm {
-                    let baseline_freq = profile.hour_histogram[hour as usize];
-                    let total: f32 = profile.hour_histogram.iter().sum();
-                    if total > 0.0 && baseline_freq / total < 0.02 {
-                        let score = 25.0 * (1.0 - baseline_freq / total);
-                        detected.push(UebaAnomaly {
-                            anomaly_type: UebaAnomalyType::UnusualLoginTime,
-                            entity_kind: obs.entity_kind.clone(),
-                            entity_id: obs.entity_id.clone(),
-                            score,
-                            description: format!(
-                                "Login at hour {hour} is unusual (baseline frequency {:.1}%)",
-                                baseline_freq / total * 100.0
-                            ),
-                            timestamp_ms: obs.timestamp_ms,
-                            evidence: vec![format!("hour={hour}")],
-                            mitre_technique: Some("T1078".into()),
-                        });
-                    }
-                }
-                // Update histogram
-                profile.hour_histogram[hour as usize] =
-                    blend_f32(profile.hour_histogram[hour as usize], 1.0, alpha);
-                for h in 0..24 {
-                    if h != hour as usize {
-                        profile.hour_histogram[h] *= 1.0 - alpha * 0.1;
-                    }
+            && hour < 24
+        {
+            if is_warm {
+                let baseline_freq = profile.hour_histogram[hour as usize];
+                let total: f32 = profile.hour_histogram.iter().sum();
+                if total > 0.0 && baseline_freq / total < 0.02 {
+                    let score = 25.0 * (1.0 - baseline_freq / total);
+                    detected.push(UebaAnomaly {
+                        anomaly_type: UebaAnomalyType::UnusualLoginTime,
+                        entity_kind: obs.entity_kind.clone(),
+                        entity_id: obs.entity_id.clone(),
+                        score,
+                        description: format!(
+                            "Login at hour {hour} is unusual (baseline frequency {:.1}%)",
+                            baseline_freq / total * 100.0
+                        ),
+                        timestamp_ms: obs.timestamp_ms,
+                        evidence: vec![format!("hour={hour}")],
+                        mitre_technique: Some("T1078".into()),
+                    });
                 }
             }
+            // Update histogram
+            profile.hour_histogram[hour as usize] =
+                blend_f32(profile.hour_histogram[hour as usize], 1.0, alpha);
+            for h in 0..24 {
+                if h != hour as usize {
+                    profile.hour_histogram[h] *= 1.0 - alpha * 0.1;
+                }
+            }
+        }
 
         // ── Impossible travel ────────────────────────────────
         if let (Some(lat), Some(lon)) = (obs.geo_lat, obs.geo_lon) {
             if let Some((prev_lat, prev_lon)) = profile.last_geo
-                && profile.last_seen_ms > 0 {
-                    let dist_km = haversine(prev_lat, prev_lon, lat, lon);
-                    let hours =
-                        (obs.timestamp_ms - profile.last_seen_ms) as f64 / 3_600_000.0;
-                    // Treat near-zero time with large distance as automatic impossible travel
-                    let (speed_kmh, is_impossible) = if hours < 0.001 && dist_km > 100.0 {
-                        (f64::INFINITY, true)
-                    } else if hours > 0.0 {
-                        let s = dist_km / hours;
-                        (s, s > 900.0 && dist_km > 100.0)
+                && profile.last_seen_ms > 0
+            {
+                let dist_km = haversine(prev_lat, prev_lon, lat, lon);
+                let hours = (obs.timestamp_ms - profile.last_seen_ms) as f64 / 3_600_000.0;
+                // Treat near-zero time with large distance as automatic impossible travel
+                let (speed_kmh, is_impossible) = if hours < 0.001 && dist_km > 100.0 {
+                    (f64::INFINITY, true)
+                } else if hours > 0.0 {
+                    let s = dist_km / hours;
+                    (s, s > 900.0 && dist_km > 100.0)
+                } else {
+                    (0.0, false)
+                };
+                if is_impossible {
+                    let score = if speed_kmh.is_infinite() {
+                        50.0
                     } else {
-                        (0.0, false)
+                        (speed_kmh / 900.0 * 30.0).min(50.0) as f32
                     };
-                    if is_impossible {
-                        let score = if speed_kmh.is_infinite() {
-                            50.0
-                        } else {
-                            (speed_kmh / 900.0 * 30.0).min(50.0) as f32
-                        };
-                        detected.push(UebaAnomaly {
-                            anomaly_type: UebaAnomalyType::ImpossibleTravel,
-                            entity_kind: obs.entity_kind.clone(),
-                            entity_id: obs.entity_id.clone(),
-                            score,
-                            description: format!(
-                                "Travel of {dist_km:.0} km in {hours:.1}h ({speed_kmh:.0} km/h)"
-                            ),
-                            timestamp_ms: obs.timestamp_ms,
-                            evidence: vec![
-                                format!("from=({prev_lat:.2},{prev_lon:.2})"),
-                                format!("to=({lat:.2},{lon:.2})"),
-                            ],
-                            mitre_technique: Some("T1078".into()),
-                        });
-                    }
+                    detected.push(UebaAnomaly {
+                        anomaly_type: UebaAnomalyType::ImpossibleTravel,
+                        entity_kind: obs.entity_kind.clone(),
+                        entity_id: obs.entity_id.clone(),
+                        score,
+                        description: format!(
+                            "Travel of {dist_km:.0} km in {hours:.1}h ({speed_kmh:.0} km/h)"
+                        ),
+                        timestamp_ms: obs.timestamp_ms,
+                        evidence: vec![
+                            format!("from=({prev_lat:.2},{prev_lon:.2})"),
+                            format!("to=({lat:.2},{lon:.2})"),
+                        ],
+                        mitre_technique: Some("T1078".into()),
+                    });
                 }
+            }
             profile.last_geo = Some((lat, lon));
         }
 
@@ -326,10 +326,9 @@ impl UebaEngine {
                     mitre_technique: None,
                 });
             }
-            if !profile.known_resources.contains(resource)
-                && profile.known_resources.len() < 500 {
-                    profile.known_resources.push(resource.clone());
-                }
+            if !profile.known_resources.contains(resource) && profile.known_resources.len() < 500 {
+                profile.known_resources.push(resource.clone());
+            }
         }
 
         // ── Anomalous process ────────────────────────────────
@@ -346,10 +345,9 @@ impl UebaEngine {
                     mitre_technique: Some("T1059".into()),
                 });
             }
-            if !profile.known_processes.contains(process)
-                && profile.known_processes.len() < 500 {
-                    profile.known_processes.push(process.clone());
-                }
+            if !profile.known_processes.contains(process) && profile.known_processes.len() < 500 {
+                profile.known_processes.push(process.clone());
+            }
         }
 
         // ── Data volume anomaly ──────────────────────────────
@@ -374,8 +372,7 @@ impl UebaEngine {
                     });
                 }
             }
-            profile.avg_data_bytes =
-                blend_f64(profile.avg_data_bytes, vol, alpha as f64);
+            profile.avg_data_bytes = blend_f64(profile.avg_data_bytes, vol, alpha as f64);
         }
 
         // ── Service / port anomaly ───────────────────────────
@@ -392,10 +389,9 @@ impl UebaEngine {
                     mitre_technique: None,
                 });
             }
-            if !profile.known_ports.contains(&port)
-                && profile.known_ports.len() < 200 {
-                    profile.known_ports.push(port);
-                }
+            if !profile.known_ports.contains(&port) && profile.known_ports.len() < 200 {
+                profile.known_ports.push(port);
+            }
         }
 
         // ── Update risk score ────────────────────────────────
@@ -450,9 +446,7 @@ impl UebaEngine {
                 anomaly_count: self
                     .anomalies
                     .iter()
-                    .filter(|a| {
-                        a.entity_kind == p.entity_kind && a.entity_id == p.entity_id
-                    })
+                    .filter(|a| a.entity_kind == p.entity_kind && a.entity_id == p.entity_id)
                     .count(),
                 peer_group: p.peer_group.clone(),
             })
@@ -487,9 +481,11 @@ impl UebaEngine {
                 risk_score: p.risk_score,
                 observation_count: p.observation_count,
                 last_seen_ms: p.last_seen_ms,
-                anomaly_count: self.anomalies.iter().filter(|a| {
-                    a.entity_kind == p.entity_kind && a.entity_id == p.entity_id
-                }).count(),
+                anomaly_count: self
+                    .anomalies
+                    .iter()
+                    .filter(|a| a.entity_kind == p.entity_kind && a.entity_id == p.entity_id)
+                    .count(),
                 peer_group: p.peer_group.clone(),
             })
             .collect()
@@ -497,7 +493,8 @@ impl UebaEngine {
 
     /// Compute the peer-group baseline for a given group label.
     pub fn peer_group_baseline(&self, group: &str) -> Option<PeerGroupBaseline> {
-        let peers: Vec<&EntityProfile> = self.profiles
+        let peers: Vec<&EntityProfile> = self
+            .profiles
             .values()
             .filter(|p| p.peer_group.as_deref() == Some(group) && p.observation_count > 0)
             .collect();
@@ -528,7 +525,11 @@ impl UebaEngine {
     /// Check whether an entity deviates significantly from its peer group.
     /// Returns anomalies only if the entity's metrics are outliers vs peers.
     /// The entity itself is excluded from the peer group baseline.
-    pub fn peer_deviation_check(&self, entity_kind: &EntityKind, entity_id: &str) -> Vec<UebaAnomaly> {
+    pub fn peer_deviation_check(
+        &self,
+        entity_kind: &EntityKind,
+        entity_id: &str,
+    ) -> Vec<UebaAnomaly> {
         let key = Self::profile_key(entity_kind, entity_id);
         let profile = match self.profiles.get(&key) {
             Some(p) => p,
@@ -541,11 +542,14 @@ impl UebaEngine {
         };
 
         // Compute baseline excluding this entity
-        let peers: Vec<&EntityProfile> = self.profiles
+        let peers: Vec<&EntityProfile> = self
+            .profiles
             .values()
-            .filter(|p| p.peer_group.as_deref() == Some(&group)
-                && p.observation_count > 0
-                && !(p.entity_kind == *entity_kind && p.entity_id == entity_id))
+            .filter(|p| {
+                p.peer_group.as_deref() == Some(&group)
+                    && p.observation_count > 0
+                    && !(p.entity_kind == *entity_kind && p.entity_id == entity_id)
+            })
             .collect();
         if peers.len() < 3 {
             return vec![];
@@ -571,7 +575,10 @@ impl UebaEngine {
                     peer_avg_risk
                 ),
                 timestamp_ms: profile.last_seen_ms,
-                evidence: vec![format!("peer_group={group}"), format!("peer_avg_risk={peer_avg_risk:.1}")],
+                evidence: vec![
+                    format!("peer_group={group}"),
+                    format!("peer_avg_risk={peer_avg_risk:.1}"),
+                ],
                 mitre_technique: None,
             });
         }
@@ -589,7 +596,10 @@ impl UebaEngine {
                     profile.avg_data_bytes, ratio, group, peer_avg_data
                 ),
                 timestamp_ms: profile.last_seen_ms,
-                evidence: vec![format!("peer_group={group}"), format!("peer_avg_bytes={peer_avg_data:.0}")],
+                evidence: vec![
+                    format!("peer_group={group}"),
+                    format!("peer_avg_bytes={peer_avg_data:.0}"),
+                ],
                 mitre_technique: Some("T1041".into()),
             });
         }
@@ -625,8 +635,7 @@ fn haversine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let d_lon = (lon2 - lon1).to_radians();
     let lat1_r = lat1.to_radians();
     let lat2_r = lat2.to_radians();
-    let a = (d_lat / 2.0).sin().powi(2)
-        + lat1_r.cos() * lat2_r.cos() * (d_lon / 2.0).sin().powi(2);
+    let a = (d_lat / 2.0).sin().powi(2) + lat1_r.cos() * lat2_r.cos() * (d_lon / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
     r * c
 }
@@ -657,7 +666,9 @@ impl Default for GeoIpResolver {
 
 impl GeoIpResolver {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Load GeoIP entries from a JSON string (array of GeoIpEntry).
@@ -751,7 +762,10 @@ mod tests {
         obs.timestamp_ms = 2000;
         obs.resource = Some("server-NEW".into());
         let res = engine.observe(&obs);
-        assert!(res.iter().any(|a| a.anomaly_type == UebaAnomalyType::AnomalousAccess));
+        assert!(
+            res.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::AnomalousAccess)
+        );
     }
 
     #[test]
@@ -767,7 +781,10 @@ mod tests {
         obs.geo_lat = Some(35.6762);
         obs.geo_lon = Some(139.6503);
         let res = engine.observe(&obs);
-        assert!(res.iter().any(|a| a.anomaly_type == UebaAnomalyType::ImpossibleTravel));
+        assert!(
+            res.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::ImpossibleTravel)
+        );
     }
 
     #[test]
@@ -786,7 +803,10 @@ mod tests {
         let mut obs = make_obs("carol", 100_000_000);
         obs.hour_of_day = Some(3);
         let res = engine.observe(&obs);
-        assert!(res.iter().any(|a| a.anomaly_type == UebaAnomalyType::UnusualLoginTime));
+        assert!(
+            res.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::UnusualLoginTime)
+        );
     }
 
     #[test]
@@ -805,7 +825,10 @@ mod tests {
         let mut obs = make_obs("dave", 2_000_000);
         obs.data_bytes = Some(50_000);
         let res = engine.observe(&obs);
-        assert!(res.iter().any(|a| a.anomaly_type == UebaAnomalyType::DataVolumeAnomaly));
+        assert!(
+            res.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::DataVolumeAnomaly)
+        );
     }
 
     #[test]
@@ -822,14 +845,20 @@ mod tests {
         obs.timestamp_ms = 1;
         obs.resource = Some("new-resource".into());
         engine.observe(&obs);
-        let risk_before = engine.entity_risk(&EntityKind::User, "eve").unwrap().risk_score;
+        let risk_before = engine
+            .entity_risk(&EntityKind::User, "eve")
+            .unwrap()
+            .risk_score;
         assert!(risk_before > 0.0);
 
         // 2 hours later, empty observation
         obs.timestamp_ms = 1 + 2 * 3_600_000;
         obs.resource = None;
         engine.observe(&obs);
-        let risk_after = engine.entity_risk(&EntityKind::User, "eve").unwrap().risk_score;
+        let risk_after = engine
+            .entity_risk(&EntityKind::User, "eve")
+            .unwrap()
+            .risk_score;
         assert!(risk_after < risk_before);
     }
 
@@ -849,7 +878,10 @@ mod tests {
         obs.entity_kind = EntityKind::Host;
         obs.process = Some("mimikatz.exe".into());
         let res = engine.observe(&obs);
-        assert!(res.iter().any(|a| a.anomaly_type == UebaAnomalyType::AnomalousProcess));
+        assert!(
+            res.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::AnomalousProcess)
+        );
     }
 
     #[test]
@@ -868,7 +900,10 @@ mod tests {
         obs.entity_kind = EntityKind::Host;
         obs.port = Some(4444); // Meterpreter default
         let res = engine.observe(&obs);
-        assert!(res.iter().any(|a| a.anomaly_type == UebaAnomalyType::ServiceAnomaly));
+        assert!(
+            res.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::ServiceAnomaly)
+        );
     }
 
     #[test]
@@ -905,7 +940,8 @@ mod tests {
         let devs = engine.peer_deviation_check(&EntityKind::User, "eng-outlier");
         // Should detect data volume deviation
         assert!(
-            devs.iter().any(|a| a.anomaly_type == UebaAnomalyType::DataExfiltrationPattern),
+            devs.iter()
+                .any(|a| a.anomaly_type == UebaAnomalyType::DataExfiltrationPattern),
             "should detect data volume deviation from peer group, baseline avg={:.0}, outlier profile present",
             baseline.avg_data_bytes,
         );
@@ -957,7 +993,10 @@ mod tests {
         obs.timestamp_ms = 1;
         obs.resource = Some("new".into());
         engine.observe(&obs);
-        let risk_after_anomaly = engine.entity_risk(&EntityKind::User, "rapid-user").unwrap().risk_score;
+        let risk_after_anomaly = engine
+            .entity_risk(&EntityKind::User, "rapid-user")
+            .unwrap()
+            .risk_score;
         assert!(risk_after_anomaly > 0.0);
 
         // Many rapid observations 1 second apart — risk must NOT decay
@@ -966,7 +1005,10 @@ mod tests {
             obs.resource = Some("a".into());
             engine.observe(&obs);
         }
-        let risk_after_rapid = engine.entity_risk(&EntityKind::User, "rapid-user").unwrap().risk_score;
+        let risk_after_rapid = engine
+            .entity_risk(&EntityKind::User, "rapid-user")
+            .unwrap()
+            .risk_score;
         // Risk should be preserved (no sub-hour decay)
         assert!(
             risk_after_rapid >= risk_after_anomaly * 0.99,
@@ -977,7 +1019,10 @@ mod tests {
     #[test]
     fn haversine_distance() {
         let d = haversine(48.8566, 2.3522, 35.6762, 139.6503);
-        assert!(d > 9000.0 && d < 10000.0, "Paris to Tokyo ≈ 9700 km, got {d}");
+        assert!(
+            d > 9000.0 && d < 10000.0,
+            "Paris to Tokyo ≈ 9700 km, got {d}"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use wardex::detector::AnomalyDetector;
 use wardex::policy::PolicyEngine;
 use wardex::runtime::{demo_samples, execute};

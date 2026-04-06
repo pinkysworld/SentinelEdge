@@ -90,95 +90,131 @@ impl MitreCoverageTracker {
     /// Load the ATT&CK Enterprise matrix (subset of most common techniques).
     fn load_matrix(&mut self) {
         let tactics: &[(&str, &[(&str, &str)])] = &[
-            ("initial-access", &[
-                ("T1190", "Exploit Public-Facing Application"),
-                ("T1133", "External Remote Services"),
-                ("T1566", "Phishing"),
-                ("T1078", "Valid Accounts"),
-                ("T1195", "Supply Chain Compromise"),
-                ("T1199", "Trusted Relationship"),
-            ]),
-            ("execution", &[
-                ("T1059", "Command and Scripting Interpreter"),
-                ("T1053", "Scheduled Task/Job"),
-                ("T1047", "Windows Management Instrumentation"),
-                ("T1204", "User Execution"),
-                ("T1569", "System Services"),
-                ("T1106", "Native API"),
-            ]),
-            ("persistence", &[
-                ("T1547", "Boot or Logon Autostart Execution"),
-                ("T1053", "Scheduled Task/Job"),
-                ("T1136", "Create Account"),
-                ("T1543", "Create or Modify System Process"),
-                ("T1546", "Event Triggered Execution"),
-                ("T1556", "Modify Authentication Process"),
-            ]),
-            ("privilege-escalation", &[
-                ("T1548", "Abuse Elevation Control Mechanism"),
-                ("T1134", "Access Token Manipulation"),
-                ("T1068", "Exploitation for Privilege Escalation"),
-                ("T1055", "Process Injection"),
-                ("T1078", "Valid Accounts"),
-            ]),
-            ("defense-evasion", &[
-                ("T1070", "Indicator Removal"),
-                ("T1036", "Masquerading"),
-                ("T1027", "Obfuscated Files or Information"),
-                ("T1055", "Process Injection"),
-                ("T1218", "System Binary Proxy Execution"),
-                ("T1562", "Impair Defenses"),
-                ("T1112", "Modify Registry"),
-            ]),
-            ("credential-access", &[
-                ("T1110", "Brute Force"),
-                ("T1003", "OS Credential Dumping"),
-                ("T1555", "Credentials from Password Stores"),
-                ("T1558", "Steal or Forge Kerberos Tickets"),
-                ("T1552", "Unsecured Credentials"),
-            ]),
-            ("discovery", &[
-                ("T1087", "Account Discovery"),
-                ("T1082", "System Information Discovery"),
-                ("T1083", "File and Directory Discovery"),
-                ("T1046", "Network Service Discovery"),
-                ("T1057", "Process Discovery"),
-                ("T1049", "System Network Connections Discovery"),
-            ]),
-            ("lateral-movement", &[
-                ("T1021", "Remote Services"),
-                ("T1080", "Taint Shared Content"),
-                ("T1550", "Use Alternate Authentication Material"),
-                ("T1570", "Lateral Tool Transfer"),
-            ]),
-            ("collection", &[
-                ("T1560", "Archive Collected Data"),
-                ("T1119", "Automated Collection"),
-                ("T1005", "Data from Local System"),
-                ("T1039", "Data from Network Shared Drive"),
-                ("T1074", "Data Staged"),
-            ]),
-            ("command-and-control", &[
-                ("T1071", "Application Layer Protocol"),
-                ("T1132", "Data Encoding"),
-                ("T1568", "Dynamic Resolution"),
-                ("T1573", "Encrypted Channel"),
-                ("T1105", "Ingress Tool Transfer"),
-                ("T1572", "Protocol Tunneling"),
-            ]),
-            ("exfiltration", &[
-                ("T1048", "Exfiltration Over Alternative Protocol"),
-                ("T1041", "Exfiltration Over C2 Channel"),
-                ("T1567", "Exfiltration Over Web Service"),
-                ("T1029", "Scheduled Transfer"),
-            ]),
-            ("impact", &[
-                ("T1486", "Data Encrypted for Impact"),
-                ("T1485", "Data Destruction"),
-                ("T1489", "Service Stop"),
-                ("T1498", "Network Denial of Service"),
-                ("T1496", "Resource Hijacking"),
-            ]),
+            (
+                "initial-access",
+                &[
+                    ("T1190", "Exploit Public-Facing Application"),
+                    ("T1133", "External Remote Services"),
+                    ("T1566", "Phishing"),
+                    ("T1078", "Valid Accounts"),
+                    ("T1195", "Supply Chain Compromise"),
+                    ("T1199", "Trusted Relationship"),
+                ],
+            ),
+            (
+                "execution",
+                &[
+                    ("T1059", "Command and Scripting Interpreter"),
+                    ("T1053", "Scheduled Task/Job"),
+                    ("T1047", "Windows Management Instrumentation"),
+                    ("T1204", "User Execution"),
+                    ("T1569", "System Services"),
+                    ("T1106", "Native API"),
+                ],
+            ),
+            (
+                "persistence",
+                &[
+                    ("T1547", "Boot or Logon Autostart Execution"),
+                    ("T1053", "Scheduled Task/Job"),
+                    ("T1136", "Create Account"),
+                    ("T1543", "Create or Modify System Process"),
+                    ("T1546", "Event Triggered Execution"),
+                    ("T1556", "Modify Authentication Process"),
+                ],
+            ),
+            (
+                "privilege-escalation",
+                &[
+                    ("T1548", "Abuse Elevation Control Mechanism"),
+                    ("T1134", "Access Token Manipulation"),
+                    ("T1068", "Exploitation for Privilege Escalation"),
+                    ("T1055", "Process Injection"),
+                    ("T1078", "Valid Accounts"),
+                ],
+            ),
+            (
+                "defense-evasion",
+                &[
+                    ("T1070", "Indicator Removal"),
+                    ("T1036", "Masquerading"),
+                    ("T1027", "Obfuscated Files or Information"),
+                    ("T1055", "Process Injection"),
+                    ("T1218", "System Binary Proxy Execution"),
+                    ("T1562", "Impair Defenses"),
+                    ("T1112", "Modify Registry"),
+                ],
+            ),
+            (
+                "credential-access",
+                &[
+                    ("T1110", "Brute Force"),
+                    ("T1003", "OS Credential Dumping"),
+                    ("T1555", "Credentials from Password Stores"),
+                    ("T1558", "Steal or Forge Kerberos Tickets"),
+                    ("T1552", "Unsecured Credentials"),
+                ],
+            ),
+            (
+                "discovery",
+                &[
+                    ("T1087", "Account Discovery"),
+                    ("T1082", "System Information Discovery"),
+                    ("T1083", "File and Directory Discovery"),
+                    ("T1046", "Network Service Discovery"),
+                    ("T1057", "Process Discovery"),
+                    ("T1049", "System Network Connections Discovery"),
+                ],
+            ),
+            (
+                "lateral-movement",
+                &[
+                    ("T1021", "Remote Services"),
+                    ("T1080", "Taint Shared Content"),
+                    ("T1550", "Use Alternate Authentication Material"),
+                    ("T1570", "Lateral Tool Transfer"),
+                ],
+            ),
+            (
+                "collection",
+                &[
+                    ("T1560", "Archive Collected Data"),
+                    ("T1119", "Automated Collection"),
+                    ("T1005", "Data from Local System"),
+                    ("T1039", "Data from Network Shared Drive"),
+                    ("T1074", "Data Staged"),
+                ],
+            ),
+            (
+                "command-and-control",
+                &[
+                    ("T1071", "Application Layer Protocol"),
+                    ("T1132", "Data Encoding"),
+                    ("T1568", "Dynamic Resolution"),
+                    ("T1573", "Encrypted Channel"),
+                    ("T1105", "Ingress Tool Transfer"),
+                    ("T1572", "Protocol Tunneling"),
+                ],
+            ),
+            (
+                "exfiltration",
+                &[
+                    ("T1048", "Exfiltration Over Alternative Protocol"),
+                    ("T1041", "Exfiltration Over C2 Channel"),
+                    ("T1567", "Exfiltration Over Web Service"),
+                    ("T1029", "Scheduled Transfer"),
+                ],
+            ),
+            (
+                "impact",
+                &[
+                    ("T1486", "Data Encrypted for Impact"),
+                    ("T1485", "Data Destruction"),
+                    ("T1489", "Service Stop"),
+                    ("T1498", "Network Denial of Service"),
+                    ("T1496", "Resource Hijacking"),
+                ],
+            ),
         ];
 
         for (tactic, techniques) in tactics {
@@ -197,36 +233,190 @@ impl MitreCoverageTracker {
     fn load_builtin_mappings(&mut self) {
         let builtin: &[(&str, &str, &str, &str, CoverageConfidence)] = &[
             // Detector modules
-            ("T1110", "Brute Force", "credential-access", "detector.rs (auth_failures signal)", CoverageConfidence::High),
-            ("T1078", "Valid Accounts", "initial-access", "ueba.rs (anomalous login)", CoverageConfidence::Medium),
-            ("T1486", "Data Encrypted for Impact", "impact", "ransomware.rs (velocity + extension)", CoverageConfidence::High),
-            ("T1496", "Resource Hijacking", "impact", "detector.rs (CPU + entropy low)", CoverageConfidence::Medium),
-            ("T1071", "Application Layer Protocol", "command-and-control", "beacon.rs (periodicity)", CoverageConfidence::High),
-            ("T1568", "Dynamic Resolution", "command-and-control", "beacon.rs (DGA entropy)", CoverageConfidence::High),
-            ("T1572", "Protocol Tunneling", "command-and-control", "beacon.rs (DNS tunneling)", CoverageConfidence::High),
-            ("T1021", "Remote Services", "lateral-movement", "lateral.rs (fan-out)", CoverageConfidence::Medium),
-            ("T1570", "Lateral Tool Transfer", "lateral-movement", "lateral.rs (hop-chain)", CoverageConfidence::Medium),
-            ("T1055", "Process Injection", "privilege-escalation", "memory_forensics.rs (RWX regions)", CoverageConfidence::Medium),
-            ("T1055", "Process Injection", "defense-evasion", "memory_forensics.rs (RWX regions)", CoverageConfidence::Medium),
-            ("T1083", "File and Directory Discovery", "discovery", "fim.rs (file access monitoring)", CoverageConfidence::Low),
-            ("T1005", "Data from Local System", "collection", "fim.rs (file change tracking)", CoverageConfidence::Low),
-            ("T1082", "System Information Discovery", "discovery", "collector.rs (system profiling)", CoverageConfidence::Low),
-            ("T1057", "Process Discovery", "discovery", "process_tree.rs (deep chains)", CoverageConfidence::Medium),
-            ("T1543", "Create or Modify System Process", "persistence", "fim.rs + kernel_events.rs", CoverageConfidence::Medium),
-            ("T1195", "Supply Chain Compromise", "initial-access", "sbom.rs (dependency tracking)", CoverageConfidence::Low),
-            ("T1498", "Network Denial of Service", "impact", "detector.rs (network burst signal)", CoverageConfidence::Medium),
-
+            (
+                "T1110",
+                "Brute Force",
+                "credential-access",
+                "detector.rs (auth_failures signal)",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1078",
+                "Valid Accounts",
+                "initial-access",
+                "ueba.rs (anomalous login)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1486",
+                "Data Encrypted for Impact",
+                "impact",
+                "ransomware.rs (velocity + extension)",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1496",
+                "Resource Hijacking",
+                "impact",
+                "detector.rs (CPU + entropy low)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1071",
+                "Application Layer Protocol",
+                "command-and-control",
+                "beacon.rs (periodicity)",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1568",
+                "Dynamic Resolution",
+                "command-and-control",
+                "beacon.rs (DGA entropy)",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1572",
+                "Protocol Tunneling",
+                "command-and-control",
+                "beacon.rs (DNS tunneling)",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1021",
+                "Remote Services",
+                "lateral-movement",
+                "lateral.rs (fan-out)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1570",
+                "Lateral Tool Transfer",
+                "lateral-movement",
+                "lateral.rs (hop-chain)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1055",
+                "Process Injection",
+                "privilege-escalation",
+                "memory_forensics.rs (RWX regions)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1055",
+                "Process Injection",
+                "defense-evasion",
+                "memory_forensics.rs (RWX regions)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1083",
+                "File and Directory Discovery",
+                "discovery",
+                "fim.rs (file access monitoring)",
+                CoverageConfidence::Low,
+            ),
+            (
+                "T1005",
+                "Data from Local System",
+                "collection",
+                "fim.rs (file change tracking)",
+                CoverageConfidence::Low,
+            ),
+            (
+                "T1082",
+                "System Information Discovery",
+                "discovery",
+                "collector.rs (system profiling)",
+                CoverageConfidence::Low,
+            ),
+            (
+                "T1057",
+                "Process Discovery",
+                "discovery",
+                "process_tree.rs (deep chains)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1543",
+                "Create or Modify System Process",
+                "persistence",
+                "fim.rs + kernel_events.rs",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1195",
+                "Supply Chain Compromise",
+                "initial-access",
+                "sbom.rs (dependency tracking)",
+                CoverageConfidence::Low,
+            ),
+            (
+                "T1498",
+                "Network Denial of Service",
+                "impact",
+                "detector.rs (network burst signal)",
+                CoverageConfidence::Medium,
+            ),
             // Sigma rule coverage
-            ("T1110", "Brute Force", "credential-access", "sigma/authentication.yml", CoverageConfidence::High),
-            ("T1059", "Command and Scripting Interpreter", "execution", "sigma/endpoint.yml (LOLBins)", CoverageConfidence::Medium),
-            ("T1068", "Exploitation for Privilege Escalation", "privilege-escalation", "sigma/endpoint.yml (integrity→SYSTEM)", CoverageConfidence::Medium),
-            ("T1071", "Application Layer Protocol", "command-and-control", "sigma/network.yml (C2 IoC)", CoverageConfidence::Medium),
-            ("T1572", "Protocol Tunneling", "command-and-control", "sigma/network.yml (DNS tunneling)", CoverageConfidence::Medium),
-
+            (
+                "T1110",
+                "Brute Force",
+                "credential-access",
+                "sigma/authentication.yml",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1059",
+                "Command and Scripting Interpreter",
+                "execution",
+                "sigma/endpoint.yml (LOLBins)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1068",
+                "Exploitation for Privilege Escalation",
+                "privilege-escalation",
+                "sigma/endpoint.yml (integrity→SYSTEM)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1071",
+                "Application Layer Protocol",
+                "command-and-control",
+                "sigma/network.yml (C2 IoC)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1572",
+                "Protocol Tunneling",
+                "command-and-control",
+                "sigma/network.yml (DNS tunneling)",
+                CoverageConfidence::Medium,
+            ),
             // UEBA coverage
-            ("T1078", "Valid Accounts", "privilege-escalation", "ueba.rs (impossible travel)", CoverageConfidence::High),
-            ("T1048", "Exfiltration Over Alternative Protocol", "exfiltration", "ueba.rs (data exfil pattern)", CoverageConfidence::Medium),
-            ("T1021", "Remote Services", "lateral-movement", "ueba.rs (lateral movement)", CoverageConfidence::Medium),
+            (
+                "T1078",
+                "Valid Accounts",
+                "privilege-escalation",
+                "ueba.rs (impossible travel)",
+                CoverageConfidence::High,
+            ),
+            (
+                "T1048",
+                "Exfiltration Over Alternative Protocol",
+                "exfiltration",
+                "ueba.rs (data exfil pattern)",
+                CoverageConfidence::Medium,
+            ),
+            (
+                "T1021",
+                "Remote Services",
+                "lateral-movement",
+                "ueba.rs (lateral movement)",
+                CoverageConfidence::Medium,
+            ),
         ];
 
         for (id, name, tactic, source, confidence) in builtin {
@@ -323,9 +513,9 @@ impl MitreCoverageTracker {
             let tactic_covered = techniques
                 .iter()
                 .filter(|t| {
-                    heatmap.iter().any(|c| {
-                        c.tactic == *tactic && c.technique_id == t.id && c.covered
-                    })
+                    heatmap
+                        .iter()
+                        .any(|c| c.tactic == *tactic && c.technique_id == t.id && c.covered)
                 })
                 .count();
             by_tactic.push(TacticCoverage {

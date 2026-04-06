@@ -81,33 +81,34 @@ fn collect_macos_logs(logs: &mut Vec<LogRecord>, since_secs: u64) {
         .args(["show", "--last", &format!("{minutes}m"), "--style", "json"])
         .output();
     if let Ok(out) = output
-        && out.status.success() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&text) {
-                for entry in entries.iter().take(500) {
-                    let msg = entry["eventMessage"].as_str().unwrap_or("").to_string();
-                    let process = entry["processImagePath"].as_str().unwrap_or("");
-                    let source = if process.contains("auth") || process.contains("security") {
-                        LogSource::Auth
-                    } else {
-                        LogSource::System
-                    };
-                    let level = classify_log_level(&msg);
-                    let mut meta = HashMap::new();
-                    if let Some(p) = entry["processImagePath"].as_str() {
-                        meta.insert("process".into(), p.to_string());
-                    }
-                    logs.push(LogRecord {
-                        timestamp: entry["timestamp"].as_str().unwrap_or("").to_string(),
-                        source,
-                        level,
-                        message: msg.chars().take(1024).collect(),
-                        raw: None,
-                        metadata: meta,
-                    });
+        && out.status.success()
+    {
+        let text = String::from_utf8_lossy(&out.stdout);
+        if let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&text) {
+            for entry in entries.iter().take(500) {
+                let msg = entry["eventMessage"].as_str().unwrap_or("").to_string();
+                let process = entry["processImagePath"].as_str().unwrap_or("");
+                let source = if process.contains("auth") || process.contains("security") {
+                    LogSource::Auth
+                } else {
+                    LogSource::System
+                };
+                let level = classify_log_level(&msg);
+                let mut meta = HashMap::new();
+                if let Some(p) = entry["processImagePath"].as_str() {
+                    meta.insert("process".into(), p.to_string());
                 }
+                logs.push(LogRecord {
+                    timestamp: entry["timestamp"].as_str().unwrap_or("").to_string(),
+                    source,
+                    level,
+                    message: msg.chars().take(1024).collect(),
+                    raw: None,
+                    metadata: meta,
+                });
             }
         }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -131,9 +132,15 @@ fn collect_windows_logs(logs: &mut Vec<LogRecord>, _since_secs: u64) {
                         continue;
                     }
                     let level = classify_log_level(block);
-                    let message: String = block.lines()
+                    let message: String = block
+                        .lines()
                         .find(|l| l.trim_start().starts_with("Message"))
-                        .map(|l| l.trim_start_matches("Message").trim_start_matches('=').trim().to_string())
+                        .map(|l| {
+                            l.trim_start_matches("Message")
+                                .trim_start_matches('=')
+                                .trim()
+                                .to_string()
+                        })
                         .unwrap_or_else(|| block.lines().next().unwrap_or("").to_string());
                     logs.push(LogRecord {
                         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -176,7 +183,10 @@ mod tests {
 
     #[test]
     fn log_level_classification() {
-        assert_eq!(classify_log_level("Critical error occurred"), LogLevel::Critical);
+        assert_eq!(
+            classify_log_level("Critical error occurred"),
+            LogLevel::Critical
+        );
         assert_eq!(classify_log_level("error: disk full"), LogLevel::Error);
         assert_eq!(classify_log_level("warning: low space"), LogLevel::Warning);
         assert_eq!(classify_log_level("debug: entering foo"), LogLevel::Debug);

@@ -129,7 +129,11 @@ impl SigmaBackend {
         // so the verifier can recover the commitment.
         let n_bytes = hex::decode(&nonce_hash).unwrap_or_default();
         let c_bytes = hex::decode(&challenge_hash).unwrap_or_default();
-        let xored: Vec<u8> = n_bytes.iter().zip(c_bytes.iter()).map(|(a, b)| a ^ b).collect();
+        let xored: Vec<u8> = n_bytes
+            .iter()
+            .zip(c_bytes.iter())
+            .map(|(a, b)| a ^ b)
+            .collect();
         hex::encode(xored)
     }
 
@@ -148,7 +152,11 @@ impl SigmaBackend {
         if r_bytes.len() != 32 || c_bytes.len() != 32 {
             return false;
         }
-        let recovered: Vec<u8> = r_bytes.iter().zip(c_bytes.iter()).map(|(a, b)| a ^ b).collect();
+        let recovered: Vec<u8> = r_bytes
+            .iter()
+            .zip(c_bytes.iter())
+            .map(|(a, b)| a ^ b)
+            .collect();
         let recovered_commitment = hex::encode(recovered);
         recovered_commitment == commitment
     }

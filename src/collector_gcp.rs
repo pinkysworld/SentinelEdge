@@ -126,7 +126,11 @@ fn score_gcp_event(method: &str, status_code: i32) -> (f32, Vec<String>) {
         (1.0, vec![])
     };
 
-    let score: f32 = if is_error { (base_score + 1.0_f32).min(10.0) } else { base_score };
+    let score: f32 = if is_error {
+        (base_score + 1.0_f32).min(10.0)
+    } else {
+        base_score
+    };
     (score, techniques)
 }
 
@@ -228,7 +232,8 @@ impl GcpAuditCollector {
             }
         };
 
-        let next_page_token = root.get("nextPageToken")
+        let next_page_token = root
+            .get("nextPageToken")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
@@ -277,19 +282,29 @@ impl GcpAuditCollector {
             let (risk_score, mitre_techniques) = score_gcp_event(&method_name, status_code);
 
             let event = GcpAuditEvent {
-                insert_id: entry.get("insertId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                insert_id: entry
+                    .get("insertId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 method_name,
                 service_name,
-                resource_name: entry.get("resource")
+                resource_name: entry
+                    .get("resource")
                     .and_then(|r| r.get("labels"))
                     .and_then(|l| l.get("instance_id").or(l.get("bucket_name")))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                resource_type: entry.get("resource")
+                resource_type: entry
+                    .get("resource")
                     .and_then(|r| r.get("type"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                timestamp: entry.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                timestamp: entry
+                    .get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 caller_ip: proto
                     .and_then(|p| p.get("requestMetadata"))
                     .and_then(|r| r.get("callerIp"))
@@ -300,7 +315,11 @@ impl GcpAuditCollector {
                     .and_then(|a| a.get("principalEmail"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                severity: entry.get("severity").and_then(|v| v.as_str()).unwrap_or("DEFAULT").to_string(),
+                severity: entry
+                    .get("severity")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("DEFAULT")
+                    .to_string(),
                 status_code,
                 status_message,
                 project_id: self.config.project_id.clone(),
@@ -346,7 +365,10 @@ impl GcpAuditCollector {
 
     /// Get high-risk events.
     pub fn high_risk_events(events: &[GcpAuditEvent], threshold: f32) -> Vec<&GcpAuditEvent> {
-        events.iter().filter(|e| e.risk_score >= threshold).collect()
+        events
+            .iter()
+            .filter(|e| e.risk_score >= threshold)
+            .collect()
     }
 
     /// Summarise events by service.
@@ -423,12 +445,17 @@ mod tests {
 
         // DeleteSink: very high risk (defence evasion)
         assert!(result.events[1].risk_score >= 9.0);
-        assert!(result.events[1].mitre_techniques.contains(&"T1562.008".into()));
+        assert!(
+            result.events[1]
+                .mitre_techniques
+                .contains(&"T1562.008".into())
+        );
     }
 
     #[test]
     fn risk_scoring() {
-        let (score, techniques) = score_gcp_event("google.logging.v2.ConfigServiceV2.DeleteSink", 0);
+        let (score, techniques) =
+            score_gcp_event("google.logging.v2.ConfigServiceV2.DeleteSink", 0);
         assert!(score >= 9.0);
         assert!(techniques.contains(&"T1562.008".to_string()));
 

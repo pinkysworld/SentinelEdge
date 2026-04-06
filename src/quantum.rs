@@ -75,7 +75,10 @@ impl LamportPrivateKey {
 
     /// Sign a message (the key should only be used once).
     pub fn sign(&mut self, message: &[u8]) -> LamportSignature {
-        assert!(!self.used, "Lamport key must not be reused — one-time signature only");
+        assert!(
+            !self.used,
+            "Lamport key must not be reused — one-time signature only"
+        );
         self.used = true;
         let msg_hash = sha256_hex(message);
         let hash_bytes = hex::decode(&msg_hash).unwrap_or_else(|_| vec![0u8; 32]);
@@ -177,8 +180,7 @@ impl KeyRotationManager {
         }
 
         let now = chrono::Utc::now();
-        let expires = now
-            + chrono::Duration::seconds(self.rotation_interval_secs as i64);
+        let expires = now + chrono::Duration::seconds(self.rotation_interval_secs as i64);
 
         self.epochs.push(KeyEpoch {
             epoch: self.current_epoch,
@@ -195,11 +197,7 @@ impl KeyRotationManager {
     }
 
     /// Verify a signature using any active or retiring key.
-    pub fn verify_with_any(
-        &self,
-        message: &[u8],
-        signature: &LamportSignature,
-    ) -> bool {
+    pub fn verify_with_any(&self, message: &[u8], signature: &LamportSignature) -> bool {
         if let Some(pubkey) = self.active_keys.get(&signature.key_id) {
             pubkey.verify(message, signature)
         } else {
@@ -223,10 +221,11 @@ impl KeyRotationManager {
         for epoch in &mut self.epochs {
             if epoch.status == "retiring"
                 && let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&epoch.expires_at)
-                    && now > expires {
-                        epoch.status = "expired".into();
-                        self.active_keys.remove(&epoch.key_id);
-                    }
+                && now > expires
+            {
+                epoch.status = "expired".into();
+                self.active_keys.remove(&epoch.key_id);
+            }
         }
     }
 }
@@ -369,11 +368,7 @@ impl QuantumWalkEngine {
         QwStepResult {
             step: 0, // caller tracks step count
             node_states: self.nodes.clone(),
-            total_probability: self
-                .nodes
-                .iter()
-                .map(|n| n.threat_level)
-                .sum(),
+            total_probability: self.nodes.iter().map(|n| n.threat_level).sum(),
             max_threat_node: self
                 .nodes
                 .get(max_idx)
@@ -549,10 +544,10 @@ impl HybridKeyPair {
         let lamport_private = LamportPrivateKey::generate();
         let lamport_public = lamport_private.public_key();
         let mldsa = MlDsaKeyPair::generate();
-        let key_id = sha256_hex(
-            format!("hybrid:{}:{}", lamport_public.key_id, mldsa.key_id).as_bytes(),
-        )[..16]
-            .to_string();
+        let key_id =
+            sha256_hex(format!("hybrid:{}:{}", lamport_public.key_id, mldsa.key_id).as_bytes())
+                [..16]
+                .to_string();
         Self {
             lamport_private,
             lamport_public,
@@ -609,10 +604,7 @@ pub struct PqHybridCheckpoint {
 }
 
 /// Verify a PQ-hybrid-signed checkpoint.
-pub fn verify_checkpoint_hybrid(
-    checkpoint: &PqHybridCheckpoint,
-    keypair: &HybridKeyPair,
-) -> bool {
+pub fn verify_checkpoint_hybrid(checkpoint: &PqHybridCheckpoint, keypair: &HybridKeyPair) -> bool {
     let message = format!(
         "{}:{}:{}",
         checkpoint.sequence, checkpoint.cumulative_hash, checkpoint.epoch
@@ -717,7 +709,10 @@ mod tests {
             .iter()
             .filter(|n| n.threat_level > 0.01)
             .count();
-        assert!(non_zero_threats > 1, "threat should propagate to multiple nodes");
+        assert!(
+            non_zero_threats > 1,
+            "threat should propagate to multiple nodes"
+        );
     }
 
     #[test]

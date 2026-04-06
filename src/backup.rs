@@ -78,8 +78,7 @@ impl BackupManager {
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("failed to create dir {}: {e}", parent.display()))?;
             }
-            fs::copy(&src, &dst)
-                .map_err(|e| format!("failed to copy {}: {e}", rel))?;
+            fs::copy(&src, &dst).map_err(|e| format!("failed to copy {}: {e}", rel))?;
         }
 
         // Write data.json with serialized state
@@ -96,8 +95,8 @@ impl BackupManager {
             .map_err(|e| format!("failed to write data.json: {e}"))?;
 
         // Compute SHA-256 of data.json
-        let checksum = sha256_file(&data_json_path)
-            .map_err(|e| format!("failed to compute checksum: {e}"))?;
+        let checksum =
+            sha256_file(&data_json_path).map_err(|e| format!("failed to compute checksum: {e}"))?;
 
         let size_bytes = dir_size(&backup_dir).unwrap_or(0);
 
@@ -156,8 +155,8 @@ impl BackupManager {
             return Err(format!("data.json missing for backup: {name}"));
         }
 
-        let current_checksum = sha256_file(&data_json_path)
-            .map_err(|e| format!("failed to compute checksum: {e}"))?;
+        let current_checksum =
+            sha256_file(&data_json_path).map_err(|e| format!("failed to compute checksum: {e}"))?;
 
         Ok(current_checksum == record.checksum)
     }
@@ -180,11 +179,7 @@ impl BackupManager {
     }
 }
 
-fn collect_files(
-    base: &Path,
-    dir: &Path,
-    out: &mut Vec<String>,
-) -> Result<(), std::io::Error> {
+fn collect_files(base: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), std::io::Error> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -294,8 +289,7 @@ mod tests {
             let _rec = mgr.create_backup(source.path()).unwrap();
             // Mutate the last record's timestamp to force ordering
             let idx = mgr.records.len() - 1;
-            mgr.records[idx].timestamp =
-                format!("2025-01-0{}T02:00:00+00:00", i + 1);
+            mgr.records[idx].timestamp = format!("2025-01-0{}T02:00:00+00:00", i + 1);
             mgr.records[idx].name = format!("wardex-backup-{}", i);
         }
 
@@ -343,9 +337,7 @@ mod tests {
         let rec = mgr.create_backup(source.path()).unwrap();
 
         // Tamper with data.json
-        let data_path = Path::new(&config.path)
-            .join(&rec.name)
-            .join("data.json");
+        let data_path = Path::new(&config.path).join(&rec.name).join("data.json");
         fs::write(&data_path, b"tampered content").unwrap();
 
         let valid = mgr.verify_backup(&rec.name).unwrap();

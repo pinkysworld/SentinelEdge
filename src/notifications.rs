@@ -324,7 +324,11 @@ impl NotificationEngine {
                         channel_kind: channel.kind.clone(),
                         success,
                         status_code: Some(status),
-                        error: if success { None } else { Some(format!("HTTP {status}")) },
+                        error: if success {
+                            None
+                        } else {
+                            Some(format!("HTTP {status}"))
+                        },
                         attempts,
                         duration_ms: start.elapsed().as_millis() as u64,
                     };
@@ -332,9 +336,7 @@ impl NotificationEngine {
                 Err(e) => {
                     last_err = Some(e);
                     // Exponential back-off: 100ms, 400ms, 1600ms
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        100 * 4_u64.pow(attempt),
-                    ));
+                    std::thread::sleep(std::time::Duration::from_millis(100 * 4_u64.pow(attempt)));
                 }
             }
         }
@@ -352,8 +354,7 @@ impl NotificationEngine {
 
     /// HTTP POST with optional bearer token.
     fn http_post(&self, url: &str, body: &str, token: Option<&str>) -> Result<u16, String> {
-        let mut req = ureq::post(url)
-            .set("Content-Type", "application/json");
+        let mut req = ureq::post(url).set("Content-Type", "application/json");
         if let Some(t) = token {
             req = req.set("Authorization", &format!("Bearer {t}"));
         }
@@ -394,9 +395,7 @@ pub fn build_notification(
     reasons: &[String],
     score: f64,
 ) -> Notification {
-    let title = format!(
-        "{level} alert on {device_id} (score {score:.1})"
-    );
+    let title = format!("{level} alert on {device_id} (score {score:.1})");
     let body = if reasons.is_empty() {
         "No additional details.".to_string()
     } else {
@@ -432,7 +431,9 @@ fn smtp_send(cfg: &SmtpConfig, message: &str) -> Result<(), String> {
 
     fn read_reply(reader: &mut BufReader<TcpStream>, expect_code: &str) -> Result<(), String> {
         let mut line = String::new();
-        reader.read_line(&mut line).map_err(|e| format!("smtp read: {e}"))?;
+        reader
+            .read_line(&mut line)
+            .map_err(|e| format!("smtp read: {e}"))?;
         if !line.starts_with(expect_code) {
             return Err(format!("smtp expected {expect_code}, got: {}", line.trim()));
         }
@@ -447,9 +448,15 @@ fn smtp_send(cfg: &SmtpConfig, message: &str) -> Result<(), String> {
     // Read multi-line EHLO response
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line).map_err(|e| format!("smtp read ehlo: {e}"))?;
-        if line.len() < 4 { break; }
-        if line.as_bytes()[3] == b' ' { break; }
+        reader
+            .read_line(&mut line)
+            .map_err(|e| format!("smtp read ehlo: {e}"))?;
+        if line.len() < 4 {
+            break;
+        }
+        if line.as_bytes()[3] == b' ' {
+            break;
+        }
     }
 
     write!(writer, "MAIL FROM:<{}>\r\n", cfg.from).map_err(|e| format!("smtp write: {e}"))?;
@@ -489,7 +496,13 @@ mod tests {
     use super::*;
 
     fn test_notification(level: &str) -> Notification {
-        build_notification("A-001", level, "sensor-42", &["network burst".into(), "brute force".into()], 4.5)
+        build_notification(
+            "A-001",
+            level,
+            "sensor-42",
+            &["network burst".into(), "brute force".into()],
+            4.5,
+        )
     }
 
     #[test]
@@ -653,7 +666,10 @@ mod tests {
         let text = format_email(&n);
         // CR/LF stripped: injected header cannot appear on its own line
         assert!(!text.contains("\r\nBcc:"), "CRLF injection must be blocked");
-        assert!(!text.contains("\r\nX-Injected:"), "CRLF injection must be blocked");
+        assert!(
+            !text.contains("\r\nX-Injected:"),
+            "CRLF injection must be blocked"
+        );
         // The sanitised text should still include the subject line
         assert!(text.starts_with("Subject: [Wardex Critical]"));
     }

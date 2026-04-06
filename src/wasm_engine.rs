@@ -32,8 +32,8 @@ pub enum Opcode {
     Or,
     Not,
     /// Control flow
-    JumpIf(usize),     // jump to instruction index if top is truthy
-    Jump(usize),       // unconditional jump
+    JumpIf(usize), // jump to instruction index if top is truthy
+    Jump(usize), // unconditional jump
     /// Output: pop and store as named result
     StoreResult(String),
     /// Halt execution
@@ -142,28 +142,48 @@ impl PolicyVm {
                 }
                 Opcode::Add => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Add".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Add".into()),
+                        };
                     };
                     stack.push(a + b);
                     pc += 1;
                 }
                 Opcode::Sub => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Sub".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Sub".into()),
+                        };
                     };
                     stack.push(a - b);
                     pc += 1;
                 }
                 Opcode::Mul => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Mul".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Mul".into()),
+                        };
                     };
                     stack.push(a * b);
                     pc += 1;
                 }
                 Opcode::Div => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Div".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Div".into()),
+                        };
                     };
                     if b == 0.0 {
                         return VmResult {
@@ -178,67 +198,121 @@ impl PolicyVm {
                 }
                 Opcode::CmpGt => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpGt".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in CmpGt".into()),
+                        };
                     };
                     stack.push(if a > b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpLt => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpLt".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in CmpLt".into()),
+                        };
                     };
                     stack.push(if a < b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpGe => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpGe".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in CmpGe".into()),
+                        };
                     };
                     stack.push(if a >= b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpLe => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpLe".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in CmpLe".into()),
+                        };
                     };
                     stack.push(if a <= b { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::CmpEq => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in CmpEq".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in CmpEq".into()),
+                        };
                     };
-                    stack.push(if (a - b).abs() < f64::EPSILON { 1.0 } else { 0.0 });
+                    stack.push(if (a - b).abs() < f64::EPSILON {
+                        1.0
+                    } else {
+                        0.0
+                    });
                     pc += 1;
                 }
                 Opcode::And => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in And".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in And".into()),
+                        };
                     };
                     stack.push(if a > 0.5 && b > 0.5 { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::Or => {
                     let (Some(b), Some(a)) = (stack.pop(), stack.pop()) else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Or".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Or".into()),
+                        };
                     };
                     stack.push(if a > 0.5 || b > 0.5 { 1.0 } else { 0.0 });
                     pc += 1;
                 }
                 Opcode::Not => {
                     let Some(a) = stack.pop() else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Not".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Not".into()),
+                        };
                     };
                     stack.push(if a > 0.5 { 0.0 } else { 1.0 });
                     pc += 1;
                 }
                 Opcode::JumpIf(target) => {
                     let Some(cond) = stack.pop() else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in JumpIf".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in JumpIf".into()),
+                        };
                     };
                     if cond > 0.5 {
                         if *target >= program.instructions.len() {
-                            return VmResult { success: false, outputs, steps_executed: steps, error: Some("JumpIf target out of bounds".into()) };
+                            return VmResult {
+                                success: false,
+                                outputs,
+                                steps_executed: steps,
+                                error: Some("JumpIf target out of bounds".into()),
+                            };
                         }
                         pc = *target;
                     } else {
@@ -247,7 +321,12 @@ impl PolicyVm {
                 }
                 Opcode::Jump(target) => {
                     if *target >= program.instructions.len() {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("Jump target out of bounds".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("Jump target out of bounds".into()),
+                        };
                     }
                     pc = *target;
                 }
@@ -260,14 +339,24 @@ impl PolicyVm {
                 Opcode::Halt => break,
                 Opcode::Dup => {
                     let Some(&top) = stack.last() else {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Dup".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Dup".into()),
+                        };
                     };
                     stack.push(top);
                     pc += 1;
                 }
                 Opcode::Pop => {
                     if stack.pop().is_none() {
-                        return VmResult { success: false, outputs, steps_executed: steps, error: Some("stack underflow in Pop".into()) };
+                        return VmResult {
+                            success: false,
+                            outputs,
+                            steps_executed: steps,
+                            error: Some("stack underflow in Pop".into()),
+                        };
                     }
                     pc += 1;
                 }
@@ -324,10 +413,22 @@ fn tokenize(expr: &str) -> Result<Vec<Token>, String> {
     while i < chars.len() {
         match chars[i] {
             ' ' | '\t' | '\n' => i += 1,
-            '+' => { tokens.push(Token::Op('+')); i += 1; }
-            '-' => { tokens.push(Token::Op('-')); i += 1; }
-            '*' => { tokens.push(Token::Op('*')); i += 1; }
-            '/' => { tokens.push(Token::Op('/')); i += 1; }
+            '+' => {
+                tokens.push(Token::Op('+'));
+                i += 1;
+            }
+            '-' => {
+                tokens.push(Token::Op('-'));
+                i += 1;
+            }
+            '*' => {
+                tokens.push(Token::Op('*'));
+                i += 1;
+            }
+            '/' => {
+                tokens.push(Token::Op('/'));
+                i += 1;
+            }
             '>' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
                     tokens.push(Token::Ge);
@@ -400,7 +501,18 @@ fn precedence(tok: &Token) -> u8 {
 }
 
 fn is_operator(tok: &Token) -> bool {
-    matches!(tok, Token::Op(_) | Token::Gt | Token::Lt | Token::Ge | Token::Le | Token::Eq | Token::And | Token::Or | Token::Not)
+    matches!(
+        tok,
+        Token::Op(_)
+            | Token::Gt
+            | Token::Lt
+            | Token::Ge
+            | Token::Le
+            | Token::Eq
+            | Token::And
+            | Token::Or
+            | Token::Not
+    )
 }
 
 fn token_to_opcode(tok: &Token) -> Opcode {
@@ -649,12 +761,12 @@ mod tests {
         let program = PolicyProgram::new(
             "jump_test",
             vec![
-                Opcode::PushConst(1.0),    // 0: push true
-                Opcode::JumpIf(3),          // 1: if true, jump to 3
-                Opcode::PushConst(99.0),    // 2: should be skipped
-                Opcode::PushConst(42.0),    // 3: landing
+                Opcode::PushConst(1.0),            // 0: push true
+                Opcode::JumpIf(3),                 // 1: if true, jump to 3
+                Opcode::PushConst(99.0),           // 2: should be skipped
+                Opcode::PushConst(42.0),           // 3: landing
                 Opcode::StoreResult("val".into()), // 4
-                Opcode::Halt,              // 5
+                Opcode::Halt,                      // 5
             ],
         );
         let vm = PolicyVm::default();

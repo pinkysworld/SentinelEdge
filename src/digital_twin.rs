@@ -56,14 +56,39 @@ impl TwinSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SimEvent {
-    CpuSpike { target: String, load: f64 },
-    MemoryExhaust { target: String, mb: f64 },
-    NetworkFlood { target: String, kbps: f64 },
-    MalwareInject { target: String, score: f64 },
-    ProcessSpawn { target: String, count: u32 },
-    ConnectionBurst { target: String, count: u32 },
-    StateChange { target: String, new_state: DeviceState },
-    CustomMetric { target: String, key: String, value: f64 },
+    CpuSpike {
+        target: String,
+        load: f64,
+    },
+    MemoryExhaust {
+        target: String,
+        mb: f64,
+    },
+    NetworkFlood {
+        target: String,
+        kbps: f64,
+    },
+    MalwareInject {
+        target: String,
+        score: f64,
+    },
+    ProcessSpawn {
+        target: String,
+        count: u32,
+    },
+    ConnectionBurst {
+        target: String,
+        count: u32,
+    },
+    StateChange {
+        target: String,
+        new_state: DeviceState,
+    },
+    CustomMetric {
+        target: String,
+        key: String,
+        value: f64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,12 +187,12 @@ impl DigitalTwinEngine {
         for step in scenario {
             max_tick = max_tick.max(step.tick);
             for event in &step.events {
-                let (device_id, new_alerts, new_transitions) =
-                    self.apply_event(step.tick, event);
+                let (device_id, new_alerts, new_transitions) = self.apply_event(step.tick, event);
                 if let Some(id) = device_id
-                    && let Some(dev) = self.devices.get_mut(&id) {
-                        dev.uptime_secs = step.tick;
-                    }
+                    && let Some(dev) = self.devices.get_mut(&id)
+                {
+                    dev.uptime_secs = step.tick;
+                }
                 alerts.extend(new_alerts);
                 transitions.extend(new_transitions);
             }
@@ -356,10 +381,22 @@ impl DigitalTwinEngine {
         let twin = self.devices.get_mut(device_id)?;
         let diffs = vec![
             ("cpu_load".into(), (twin.cpu_load - real.cpu_load).abs()),
-            ("memory_used_mb".into(), (twin.memory_used_mb - real.memory_used_mb).abs()),
-            ("network_tx_kbps".into(), (twin.network_tx_kbps - real.network_tx_kbps).abs()),
-            ("network_rx_kbps".into(), (twin.network_rx_kbps - real.network_rx_kbps).abs()),
-            ("threat_score".into(), (twin.threat_score - real.threat_score).abs()),
+            (
+                "memory_used_mb".into(),
+                (twin.memory_used_mb - real.memory_used_mb).abs(),
+            ),
+            (
+                "network_tx_kbps".into(),
+                (twin.network_tx_kbps - real.network_tx_kbps).abs(),
+            ),
+            (
+                "network_rx_kbps".into(),
+                (twin.network_rx_kbps - real.network_rx_kbps).abs(),
+            ),
+            (
+                "threat_score".into(),
+                (twin.threat_score - real.threat_score).abs(),
+            ),
         ];
         let max_drift = diffs.iter().map(|(_, d)| *d).fold(0.0_f64, f64::max);
 
@@ -480,11 +517,13 @@ mod tests {
             }],
         }];
         let result = engine.simulate(&scenario);
-        assert_eq!(
-            result.final_states["dev-B"].state,
-            DeviceState::UnderAttack
+        assert_eq!(result.final_states["dev-B"].state, DeviceState::UnderAttack);
+        assert!(
+            result
+                .alerts_generated
+                .iter()
+                .any(|a| a.alert_type == "malware")
         );
-        assert!(result.alerts_generated.iter().any(|a| a.alert_type == "malware"));
     }
 
     #[test]
@@ -500,10 +539,7 @@ mod tests {
         let result = engine.what_if(&scenario);
         assert!(!result.alerts_generated.is_empty());
         // Original engine should be unchanged
-        assert_eq!(
-            engine.snapshot("dev-A").unwrap().state,
-            DeviceState::Normal
-        );
+        assert_eq!(engine.snapshot("dev-A").unwrap().state, DeviceState::Normal);
     }
 
     #[test]
@@ -575,7 +611,12 @@ mod tests {
             }],
         }];
         let result = engine.simulate(&scenario);
-        assert!(result.alerts_generated.iter().any(|a| a.alert_type == "connection_burst"));
+        assert!(
+            result
+                .alerts_generated
+                .iter()
+                .any(|a| a.alert_type == "connection_burst")
+        );
     }
 
     #[test]

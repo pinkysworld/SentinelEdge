@@ -83,13 +83,7 @@ impl SessionStore {
     }
 
     /// Create a new session and return an opaque session ID (random hex).
-    pub fn create_session(
-        &self,
-        user_id: &str,
-        email: &str,
-        role: &str,
-        ttl_hours: i64,
-    ) -> String {
+    pub fn create_session(&self, user_id: &str, email: &str, role: &str, ttl_hours: i64) -> String {
         let mut rng = rand::thread_rng();
         let mut buf = [0u8; 32];
         rng.fill(&mut buf);
@@ -197,8 +191,14 @@ impl AuthManager {
                 match best {
                     None => best = Some(role_str),
                     Some(current) => {
-                        let cur_idx = priority.iter().position(|&p| p == current).unwrap_or(usize::MAX);
-                        let new_idx = priority.iter().position(|&p| p == role_str).unwrap_or(usize::MAX);
+                        let cur_idx = priority
+                            .iter()
+                            .position(|&p| p == current)
+                            .unwrap_or(usize::MAX);
+                        let new_idx = priority
+                            .iter()
+                            .position(|&p| p == role_str)
+                            .unwrap_or(usize::MAX);
                         if new_idx < cur_idx {
                             best = Some(role_str);
                         }
@@ -228,7 +228,12 @@ mod tests {
             client_id: "wardex-console".into(),
             client_secret: "super-secret".into(),
             redirect_uri: "https://wardex.local/callback".into(),
-            scopes: vec!["openid".into(), "profile".into(), "email".into(), "groups".into()],
+            scopes: vec![
+                "openid".into(),
+                "profile".into(),
+                "email".into(),
+                "groups".into(),
+            ],
             group_mapping,
         }
     }
@@ -351,7 +356,9 @@ mod tests {
     #[test]
     fn validate_session_cookie_valid() {
         let mgr = AuthManager::new(test_config());
-        let sid = mgr.sessions.create_session("u5", "u5@example.com", "analyst", 8);
+        let sid = mgr
+            .sessions
+            .create_session("u5", "u5@example.com", "analyst", 8);
         let session = mgr.validate_session_cookie(&sid).expect("should be valid");
         assert_eq!(session.email, "u5@example.com");
     }

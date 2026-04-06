@@ -122,14 +122,18 @@ pub struct SharedIntelCache {
 
 impl SharedIntelCache {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn insert(&mut self, entry: IntelEntry) {
         // Dedup by ioc_type + indicator — update if already present
-        if let Some(existing) = self.entries.iter_mut().find(|e| {
-            e.ioc_type == entry.ioc_type && e.indicator == entry.indicator
-        }) {
+        if let Some(existing) = self
+            .entries
+            .iter_mut()
+            .find(|e| e.ioc_type == entry.ioc_type && e.indicator == entry.indicator)
+        {
             *existing = entry;
         } else {
             self.entries.push(entry);
@@ -145,7 +149,10 @@ impl SharedIntelCache {
     }
 
     pub fn lookup_by_type(&self, ioc_type: &str) -> Vec<&IntelEntry> {
-        self.entries.iter().filter(|e| e.ioc_type == ioc_type).collect()
+        self.entries
+            .iter()
+            .filter(|e| e.ioc_type == ioc_type)
+            .collect()
     }
 
     /// Remove entries whose TTL has expired.
@@ -377,8 +384,11 @@ impl PostureNegotiation {
     /// participants can accept given their constraints.
     pub fn resolve(&mut self) -> Option<String> {
         let levels = ["nominal", "elevated", "severe", "critical"];
-        let priority: HashMap<&str, u8> =
-            levels.iter().enumerate().map(|(i, &l)| (l, i as u8)).collect();
+        let priority: HashMap<&str, u8> = levels
+            .iter()
+            .enumerate()
+            .map(|(i, &l)| (l, i as u8))
+            .collect();
 
         // Start from the highest reported level
         let max_current = self
@@ -393,8 +403,14 @@ impl PostureNegotiation {
 
         // Clamp by constraints
         for constraint in &self.constraints {
-            let min_idx = priority.get(constraint.min_level.as_str()).copied().unwrap_or(0) as usize;
-            let max_idx = priority.get(constraint.max_level.as_str()).copied().unwrap_or(3) as usize;
+            let min_idx = priority
+                .get(constraint.min_level.as_str())
+                .copied()
+                .unwrap_or(0) as usize;
+            let max_idx = priority
+                .get(constraint.max_level.as_str())
+                .copied()
+                .unwrap_or(3) as usize;
             proposed_idx = proposed_idx.clamp(min_idx, max_idx);
         }
 
@@ -595,12 +611,20 @@ pub fn propose_repairs(mesh: &[MeshNode], report: &PartitionReport) -> Vec<Repai
                 .members
                 .iter()
                 .filter_map(|id| mesh.iter().find(|n| n.id == *id))
-                .max_by(|a, b| a.capacity.partial_cmp(&b.capacity).unwrap_or(std::cmp::Ordering::Equal));
+                .max_by(|a, b| {
+                    a.capacity
+                        .partial_cmp(&b.capacity)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             let best_b = p_b
                 .members
                 .iter()
                 .filter_map(|id| mesh.iter().find(|n| n.id == *id))
-                .max_by(|a, b| a.capacity.partial_cmp(&b.capacity).unwrap_or(std::cmp::Ordering::Equal));
+                .max_by(|a, b| {
+                    a.capacity
+                        .partial_cmp(&b.capacity)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
 
             if let (Some(a), Some(b)) = (best_a, best_b) {
                 repairs.push(RepairAction {
@@ -621,17 +645,19 @@ pub fn propose_repairs(mesh: &[MeshNode], report: &PartitionReport) -> Vec<Repai
         if partition.size <= 2 {
             for member_id in &partition.members {
                 if let Some(node) = mesh.iter().find(|n| n.id == *member_id)
-                    && node.role == MeshRole::Leaf && node.capacity > 50.0 {
-                        repairs.push(RepairAction {
-                            action_type: RepairType::PromoteRelay,
-                            from_node: node.id.clone(),
-                            to_node: node.id.clone(),
-                            reason: format!(
-                                "Promote leaf in small partition {} (capacity={:.0}) to relay",
-                                partition.partition_id, node.capacity
-                            ),
-                        });
-                    }
+                    && node.role == MeshRole::Leaf
+                    && node.capacity > 50.0
+                {
+                    repairs.push(RepairAction {
+                        action_type: RepairType::PromoteRelay,
+                        from_node: node.id.clone(),
+                        to_node: node.id.clone(),
+                        reason: format!(
+                            "Promote leaf in small partition {} (capacity={:.0}) to relay",
+                            partition.partition_id, node.capacity
+                        ),
+                    });
+                }
             }
         }
     }
@@ -761,15 +787,22 @@ impl SwarmNode {
 
         // Process payload
         match &msg.payload {
-            GossipPayload::StatusUpdate { threat_level, score, .. } => {
-                self.peer_scores
-                    .insert(msg.sender_id.clone(), *score);
+            GossipPayload::StatusUpdate {
+                threat_level,
+                score,
+                ..
+            } => {
+                self.peer_scores.insert(msg.sender_id.clone(), *score);
                 // If neighbour reports critical, update local awareness
                 if threat_level == "critical" {
                     self.set_device_status(&msg.sender_id, DeviceStatus::Compromised);
                 }
             }
-            GossipPayload::ThreatAlert { severity, indicator, confidence } => {
+            GossipPayload::ThreatAlert {
+                severity,
+                indicator,
+                confidence,
+            } => {
                 // Log threat intelligence from peer
                 let _ = (severity, indicator, confidence);
             }
@@ -780,7 +813,11 @@ impl SwarmNode {
                     self.active_votes.insert(round_id.clone(), round);
                 }
             }
-            GossipPayload::VoteResponse { round_id, vote, reason } => {
+            GossipPayload::VoteResponse {
+                round_id,
+                vote,
+                reason,
+            } => {
                 if let Some(round) = self.active_votes.get_mut(round_id) {
                     round.cast_vote(Vote {
                         voter_id: msg.sender_id.clone(),
@@ -792,7 +829,12 @@ impl SwarmNode {
             }
             GossipPayload::PolicyUpdate { .. } => {}
             GossipPayload::LateralMovementIntel {
-                src_host, dst_host, protocol, pattern, risk_score, mitre_ids,
+                src_host,
+                dst_host,
+                protocol,
+                pattern,
+                risk_score,
+                mitre_ids,
             } => {
                 self.intel_cache.insert(IntelEntry {
                     ioc_type: "lateral_movement".into(),
@@ -811,7 +853,11 @@ impl SwarmNode {
                 });
             }
             GossipPayload::UebaIntel {
-                entity_kind, entity_id, anomaly_type, risk_score, description,
+                entity_kind,
+                entity_id,
+                anomaly_type,
+                risk_score,
+                description,
             } => {
                 self.intel_cache.insert(IntelEntry {
                     ioc_type: "ueba_anomaly".into(),
@@ -829,11 +875,20 @@ impl SwarmNode {
                 });
             }
             GossipPayload::BeaconIntel {
-                target_host, dest_ip, dest_domain, beacon_score, is_dga, mitre_ids,
+                target_host,
+                dest_ip,
+                dest_domain,
+                beacon_score,
+                is_dga,
+                mitre_ids,
             } => {
                 self.intel_cache.insert(IntelEntry {
                     ioc_type: if *is_dga { "dga_domain" } else { "beacon_c2" }.into(),
-                    indicator: if dest_domain.is_empty() { dest_ip.clone() } else { dest_domain.clone() },
+                    indicator: if dest_domain.is_empty() {
+                        dest_ip.clone()
+                    } else {
+                        dest_domain.clone()
+                    },
                     confidence: *beacon_score,
                     source_agent: msg.sender_id.clone(),
                     received_at: chrono::Utc::now().to_rfc3339(),
@@ -848,7 +903,11 @@ impl SwarmNode {
                 });
             }
             GossipPayload::ThreatIntelUpdate {
-                ioc_type, indicator, confidence, source_agent, ttl_hours,
+                ioc_type,
+                indicator,
+                confidence,
+                source_agent,
+                ttl_hours,
             } => {
                 self.intel_cache.insert(IntelEntry {
                     ioc_type: ioc_type.clone(),
@@ -934,13 +993,7 @@ impl SwarmNode {
     }
 
     /// Add a mesh node with neighbours and capacity.
-    pub fn add_mesh_node(
-        &mut self,
-        id: &str,
-        neighbors: Vec<String>,
-        capacity: f32,
-        load: f32,
-    ) {
+    pub fn add_mesh_node(&mut self, id: &str, neighbors: Vec<String>, capacity: f32, load: f32) {
         self.mesh.push(MeshNode {
             id: id.into(),
             role: MeshRole::Leaf,
@@ -972,11 +1025,7 @@ impl SwarmNode {
         }
         let count = self.peer_scores.len();
         let sum: f32 = self.peer_scores.values().sum();
-        let max = self
-            .peer_scores
-            .values()
-            .cloned()
-            .fold(0.0_f32, f32::max);
+        let max = self.peer_scores.values().cloned().fold(0.0_f32, f32::max);
         (sum / count as f32, max, count)
     }
 
@@ -994,18 +1043,21 @@ impl SwarmNode {
         if repair.action_type == RepairType::AddEdge {
             // Add the from→to neighbor link
             if let Some(from_node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node)
-                && !from_node.neighbors.contains(&repair.to_node) {
-                    from_node.neighbors.push(repair.to_node.clone());
-                }
+                && !from_node.neighbors.contains(&repair.to_node)
+            {
+                from_node.neighbors.push(repair.to_node.clone());
+            }
             // Add the to→from neighbor link (undirected)
             if let Some(to_node) = self.mesh.iter_mut().find(|n| n.id == repair.to_node)
-                && !to_node.neighbors.contains(&repair.from_node) {
-                    to_node.neighbors.push(repair.from_node.clone());
-                }
-        } else if repair.action_type == RepairType::PromoteRelay
-            && let Some(node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node) {
-                node.role = MeshRole::Relay;
+                && !to_node.neighbors.contains(&repair.from_node)
+            {
+                to_node.neighbors.push(repair.from_node.clone());
             }
+        } else if repair.action_type == RepairType::PromoteRelay
+            && let Some(node) = self.mesh.iter_mut().find(|n| n.id == repair.from_node)
+        {
+            node.role = MeshRole::Relay;
+        }
     }
 
     /// Compute a BFS spanning tree from the coordinator.
@@ -1118,7 +1170,11 @@ impl MeshTransport {
             state: PeerState::Connected,
         };
         self.peers.insert(peer_id.into(), conn);
-        self.stats.active_peers = self.peers.values().filter(|p| p.state == PeerState::Connected).count();
+        self.stats.active_peers = self
+            .peers
+            .values()
+            .filter(|p| p.state == PeerState::Connected)
+            .count();
     }
 
     /// Disconnect a peer.
@@ -1126,7 +1182,11 @@ impl MeshTransport {
         if let Some(peer) = self.peers.get_mut(peer_id) {
             peer.state = PeerState::Disconnected;
         }
-        self.stats.active_peers = self.peers.values().filter(|p| p.state == PeerState::Connected).count();
+        self.stats.active_peers = self
+            .peers
+            .values()
+            .filter(|p| p.state == PeerState::Connected)
+            .count();
     }
 
     /// Send a frame to a specific peer.
@@ -1155,7 +1215,8 @@ impl MeshTransport {
 
     /// Broadcast a frame to all connected peers.
     pub fn broadcast(&mut self, payload: &[u8], payload_type: MeshPayloadType) -> Vec<MeshFrame> {
-        let peer_ids: Vec<String> = self.peers
+        let peer_ids: Vec<String> = self
+            .peers
             .values()
             .filter(|p| p.state == PeerState::Connected)
             .map(|p| p.peer_id.clone())
@@ -1371,15 +1432,28 @@ mod tests {
     #[test]
     fn mesh_rebalancing() {
         let mut node = SwarmNode::new("coordinator");
-        node.add_mesh_node("gw-1", vec!["s-1".into(), "s-2".into(), "s-3".into()], 200.0, 50.0);
+        node.add_mesh_node(
+            "gw-1",
+            vec!["s-1".into(), "s-2".into(), "s-3".into()],
+            200.0,
+            50.0,
+        );
         node.add_mesh_node("s-1", vec!["gw-1".into()], 50.0, 10.0);
         node.add_mesh_node("overloaded", vec!["gw-1".into()], 30.0, 29.0);
 
         let actions = node.rebalance_mesh();
         // gw-1 should become Gateway (high capacity, 3+ neighbours)
-        assert!(actions.iter().any(|a| a.action == "role_change" && a.node_id == "gw-1"));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a.action == "role_change" && a.node_id == "gw-1")
+        );
         // overloaded should get an offload suggestion
-        assert!(actions.iter().any(|a| a.action == "offload" && a.node_id == "overloaded"));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a.action == "offload" && a.node_id == "overloaded")
+        );
     }
 
     #[test]
@@ -1453,9 +1527,7 @@ mod tests {
 
     #[test]
     fn bfs_spanning_tree_missing_root() {
-        let mesh = vec![
-            make_mesh_node("A", MeshRole::Leaf, &[], 10.0),
-        ];
+        let mesh = vec![make_mesh_node("A", MeshRole::Leaf, &[], 10.0)];
         let tree = bfs_spanning_tree(&mesh, "Z");
         assert_eq!(tree.nodes_reached, 0);
     }
@@ -1508,7 +1580,9 @@ mod tests {
         ];
         let report = detect_partitions(&mesh);
         let repairs = propose_repairs(&mesh, &report);
-        let bridge = repairs.iter().find(|r| r.action_type == RepairType::AddEdge);
+        let bridge = repairs
+            .iter()
+            .find(|r| r.action_type == RepairType::AddEdge);
         assert!(bridge.is_some());
         let b = bridge.unwrap();
         // Highest capacity in partition 0 is A (100), partition 1 is D (60)
@@ -1524,7 +1598,9 @@ mod tests {
         ];
         let report = detect_partitions(&mesh);
         let repairs = propose_repairs(&mesh, &report);
-        let promote = repairs.iter().find(|r| r.action_type == RepairType::PromoteRelay);
+        let promote = repairs
+            .iter()
+            .find(|r| r.action_type == RepairType::PromoteRelay);
         assert!(promote.is_some());
         assert_eq!(promote.unwrap().from_node, "B");
     }

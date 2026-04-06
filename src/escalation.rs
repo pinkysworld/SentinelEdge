@@ -242,13 +242,12 @@ impl EscalationEngine {
     }
 
     /// Acknowledge an escalation (stops further escalation).
-    pub fn acknowledge(
-        &mut self,
-        escalation_id: &str,
-        by: &str,
-        now_ms: u64,
-    ) -> bool {
-        if let Some(esc) = self.active.iter_mut().find(|e| e.escalation_id == escalation_id) {
+    pub fn acknowledge(&mut self, escalation_id: &str, by: &str, now_ms: u64) -> bool {
+        if let Some(esc) = self
+            .active
+            .iter_mut()
+            .find(|e| e.escalation_id == escalation_id)
+        {
             if esc.status != EscalationStatus::Active {
                 return false;
             }
@@ -263,7 +262,11 @@ impl EscalationEngine {
 
     /// Resolve an escalation.
     pub fn resolve(&mut self, escalation_id: &str) -> bool {
-        if let Some(esc) = self.active.iter_mut().find(|e| e.escalation_id == escalation_id) {
+        if let Some(esc) = self
+            .active
+            .iter_mut()
+            .find(|e| e.escalation_id == escalation_id)
+        {
             esc.status = EscalationStatus::Resolved;
             true
         } else {
@@ -298,10 +301,7 @@ impl EscalationEngine {
                 continue;
             }
 
-            let current_idx = match levels
-                .iter()
-                .position(|l| l.level == esc.current_level)
-            {
+            let current_idx = match levels.iter().position(|l| l.level == esc.current_level) {
                 Some(idx) => idx,
                 None => {
                     esc.status = EscalationStatus::Expired;
@@ -434,9 +434,7 @@ mod tests {
         let mut engine = EscalationEngine::new();
         engine.add_policy(sample_policy());
 
-        let eid = engine
-            .start_escalation("pol-1", "alert-999", 1000)
-            .unwrap();
+        let eid = engine.start_escalation("pol-1", "alert-999", 1000).unwrap();
         assert_eq!(engine.active_escalations().len(), 1);
 
         assert!(engine.acknowledge(&eid, "alice", 5000));
@@ -450,9 +448,7 @@ mod tests {
         let mut engine = EscalationEngine::new();
         engine.add_policy(sample_policy());
 
-        let eid = engine
-            .start_escalation("pol-1", "alert-1", 0)
-            .unwrap();
+        let eid = engine.start_escalation("pol-1", "alert-1", 0).unwrap();
 
         // After 301 seconds → should escalate to level 2
         let escalated = engine.check_sla(301_000);
@@ -465,9 +461,7 @@ mod tests {
         let mut engine = EscalationEngine::new();
         engine.add_policy(sample_policy());
 
-        let eid = engine
-            .start_escalation("pol-1", "alert-1", 0)
-            .unwrap();
+        let eid = engine.start_escalation("pol-1", "alert-1", 0).unwrap();
 
         // Escalate level 1 → 2
         engine.check_sla(301_000);
@@ -509,10 +503,7 @@ mod tests {
 
         assert_eq!(schedule.on_call_at(0).unwrap().name, "Alice");
         // One week later
-        assert_eq!(
-            schedule.on_call_at(168 * 3_600_000).unwrap().name,
-            "Bob"
-        );
+        assert_eq!(schedule.on_call_at(168 * 3_600_000).unwrap().name, "Bob");
         // Two weeks later → back to Alice
         assert_eq!(
             schedule.on_call_at(2 * 168 * 3_600_000).unwrap().name,
@@ -525,9 +516,7 @@ mod tests {
         let mut engine = EscalationEngine::new();
         engine.add_policy(sample_policy());
 
-        let eid = engine
-            .start_escalation("pol-1", "alert-1", 1000)
-            .unwrap();
+        let eid = engine.start_escalation("pol-1", "alert-1", 1000).unwrap();
         assert!(engine.resolve(&eid));
         assert_eq!(
             engine.get_escalation(&eid).unwrap().status,

@@ -262,17 +262,57 @@ impl ComplianceManager {
     /// Load default IEC 62443 controls relevant to IoT EDR.
     pub fn load_iec62443_defaults(&mut self) {
         let defaults = [
-            ("SR 1.1", "Human user identification and authentication", ControlStatus::Implemented),
-            ("SR 1.2", "Software process and device identification", ControlStatus::Implemented),
-            ("SR 2.1", "Authorization enforcement", ControlStatus::Implemented),
-            ("SR 3.1", "Communication integrity", ControlStatus::Implemented),
-            ("SR 3.4", "Software and information integrity", ControlStatus::Implemented),
-            ("SR 4.1", "Information confidentiality", ControlStatus::PartiallyImplemented),
+            (
+                "SR 1.1",
+                "Human user identification and authentication",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 1.2",
+                "Software process and device identification",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 2.1",
+                "Authorization enforcement",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 3.1",
+                "Communication integrity",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 3.4",
+                "Software and information integrity",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 4.1",
+                "Information confidentiality",
+                ControlStatus::PartiallyImplemented,
+            ),
             ("SR 5.1", "Network segmentation", ControlStatus::Implemented),
-            ("SR 6.1", "Audit log accessibility", ControlStatus::Implemented),
-            ("SR 6.2", "Continuous monitoring", ControlStatus::Implemented),
-            ("SR 7.1", "Denial of service protection", ControlStatus::PartiallyImplemented),
-            ("SR 7.6", "Network and security configuration settings", ControlStatus::Implemented),
+            (
+                "SR 6.1",
+                "Audit log accessibility",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 6.2",
+                "Continuous monitoring",
+                ControlStatus::Implemented,
+            ),
+            (
+                "SR 7.1",
+                "Denial of service protection",
+                ControlStatus::PartiallyImplemented,
+            ),
+            (
+                "SR 7.6",
+                "Network and security configuration settings",
+                ControlStatus::Implemented,
+            ),
         ];
         let ts = chrono::Utc::now().to_rfc3339();
         for (id, title, status) in defaults {
@@ -488,17 +528,11 @@ impl CausalGraph {
             return 0.5; // no causal info → uncertain
         }
         // FP probability = average of (1 - root_confidence)
-        let root_nodes: Vec<_> = roots
-            .iter()
-            .filter_map(|r| self.nodes.get(r))
-            .collect();
+        let root_nodes: Vec<_> = roots.iter().filter_map(|r| self.nodes.get(r)).collect();
         if root_nodes.is_empty() {
             return 0.5;
         }
-        let fp_sum: f64 = root_nodes
-            .iter()
-            .map(|n| 1.0 - n.confidence)
-            .sum();
+        let fp_sum: f64 = root_nodes.iter().map(|n| 1.0 - n.confidence).sum();
         fp_sum / root_nodes.len() as f64
     }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 function ToggleSwitch({ label, checked, onChange, description }) {
   return (
@@ -148,6 +149,44 @@ export default function Settings() {
     return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
   };
 
+  const configScalars = useMemo(() => {
+    if (!structuredConfig || typeof structuredConfig !== 'object') return null;
+    return Object.fromEntries(
+      Object.entries(structuredConfig).filter(([, value]) => value == null || typeof value !== 'object' || Array.isArray(value))
+    );
+  }, [structuredConfig]);
+
+  const configSections = useMemo(() => {
+    if (!structuredConfig || typeof structuredConfig !== 'object') return [];
+    return Object.entries(structuredConfig).filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value));
+  }, [structuredConfig]);
+
+  const normalizedMonitoringPaths = useMemo(() => {
+    if (Array.isArray(monPaths)) return monPaths;
+    if (Array.isArray(monPaths?.paths)) return monPaths.paths;
+    if (Array.isArray(monPaths?.items)) return monPaths.items;
+    return [];
+  }, [monPaths]);
+
+  const connectorRows = useMemo(() => {
+    if (Array.isArray(enrichConn)) return enrichConn;
+    if (Array.isArray(enrichConn?.items)) return enrichConn.items;
+    if (Array.isArray(enrichConn?.connectors)) return enrichConn.connectors;
+    return [];
+  }, [enrichConn]);
+
+  const idpRows = useMemo(() => {
+    if (Array.isArray(idp)) return idp;
+    if (Array.isArray(idp?.providers)) return idp.providers;
+    if (Array.isArray(idp?.items)) return idp.items;
+    return [];
+  }, [idp]);
+
+  const flagEntries = useMemo(() => {
+    if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return [];
+    return Object.entries(flags);
+  }, [flags]);
+
   // Default config values for reset
   const DEFAULTS = {
     collection_interval_secs: 15,
@@ -290,16 +329,25 @@ export default function Settings() {
               )
             ) : (
               structuredConfig ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, padding: '12px 0' }}>
-                  {Object.entries(structuredConfig).filter(([, v]) => typeof v !== 'object').map(([k, v]) => (
-                    <div key={k} className="stat-box">
-                      <div className="stat-label">{k.replace(/_/g, ' ')}</div>
-                      <div className="stat-value" style={{ fontSize: 14 }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v)}</div>
+                <div style={{ padding: '12px 0' }}>
+                  <SummaryGrid data={configScalars} limit={12} emptyMessage="Configuration is organized into sections below" />
+                  {configSections.length > 0 && (
+                    <div className="card-grid" style={{ marginTop: 16 }}>
+                      {configSections.map(([sectionKey, sectionValue]) => (
+                        <div key={sectionKey} className="card" style={{ padding: 14 }}>
+                          <div className="card-title" style={{ marginBottom: 12 }}>{sectionKey.replace(/_/g, ' ')}</div>
+                          <SummaryGrid data={sectionValue} limit={8} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  <JsonDetails data={structuredConfig} label="Full configuration detail" />
                 </div>
               ) : (
-                <div className="json-block">{typeof config === 'string' ? config : JSON.stringify(config, null, 2)}</div>
+                <>
+                  <div className="empty">Configuration is not yet available in structured form.</div>
+                  <JsonDetails data={config} label="Configuration detail" />
+                </>
               )
             )}
           </div>
@@ -311,28 +359,30 @@ export default function Settings() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Monitoring Scope</div>
             {monOpts && typeof monOpts === 'object' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 0 }}>
-                {Object.entries(monOpts).map(([k, v]) => (
-                  <ToggleSwitch key={k} label={k.replace(/_/g, ' ')} checked={!!v}
-                    onChange={() => toast('Toggle via Edit Config → monitoring section', 'info')}
-                    description={typeof v === 'object' ? JSON.stringify(v) : undefined} />
-                ))}
-              </div>
+              <>
+                <SummaryGrid data={monOpts} limit={12} />
+                <JsonDetails data={monOpts} />
+              </>
             ) : (
-              <div className="json-block">{JSON.stringify(monOpts, null, 2)}</div>
+              <>
+                <div className="empty">No monitoring scope metadata available.</div>
+                <JsonDetails data={monOpts} />
+              </>
             )}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Monitored Paths</div>
-            {Array.isArray(monPaths) ? (
+            {normalizedMonitoringPaths.length > 0 ? (
               <div className="table-wrap">
                 <table>
                   <thead><tr><th>Path</th><th>Type</th></tr></thead>
                   <tbody>
-                    {monPaths.map((p, i) => (
+                    {normalizedMonitoringPaths.map((p, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{typeof p === 'string' ? p : p.path || JSON.stringify(p)}</td>
-                        <td>{typeof p === 'object' ? p.type || '—' : 'file'}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                          {typeof p === 'string' ? p : p.path || p.pattern || p.root || p.name || '—'}
+                        </td>
+                        <td>{typeof p === 'object' ? p.type || p.kind || 'file' : 'file'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -348,7 +398,10 @@ export default function Settings() {
                 ))}
               </div>
             ) : (
-              <div className="json-block">{JSON.stringify(monPaths, null, 2)}</div>
+              <>
+                <SummaryGrid data={monPaths} limit={10} />
+                <JsonDetails data={monPaths} />
+              </>
             )}
           </div>
         </>
@@ -363,16 +416,15 @@ export default function Settings() {
                 <span className={`badge ${siemSt?.connected ? 'badge-ok' : 'badge-warn'}`}>{siemSt?.connected ? 'Connected' : 'Not connected'}</span>
               </div>
               {siemCfg && typeof siemCfg === 'object' ? (
-                <div style={{ padding: '8px 0' }}>
-                  {Object.entries(siemCfg).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{k.replace(/_/g, ' ')}</span>
-                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v ?? '—')}</span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <SummaryGrid data={siemCfg} limit={10} />
+                  <JsonDetails data={siemCfg} />
+                </>
               ) : (
-                <div className="json-block">{JSON.stringify(siemCfg, null, 2)}</div>
+                <>
+                  <div className="empty">No SIEM configuration available.</div>
+                  <JsonDetails data={siemCfg} />
+                </>
               )}
             </div>
             <div className="card">
@@ -386,62 +438,68 @@ export default function Settings() {
                 </div>
               </div>
               {taxiiCfg && typeof taxiiCfg === 'object' ? (
-                <div style={{ padding: '8px 0' }}>
-                  {Object.entries(taxiiCfg).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{k.replace(/_/g, ' ')}</span>
-                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v ?? '—')}</span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <SummaryGrid data={taxiiCfg} limit={10} />
+                  <JsonDetails data={taxiiCfg} />
+                </>
               ) : (
-                <div className="json-block">{JSON.stringify(taxiiCfg, null, 2)}</div>
+                <>
+                  <div className="empty">No TAXII configuration available.</div>
+                  <JsonDetails data={taxiiCfg} />
+                </>
               )}
             </div>
           </div>
           <div className="card-grid" style={{ marginTop: 16 }}>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Enrichment Connectors</div>
-              {Array.isArray(enrichConn) ? (
-                enrichConn.length === 0 ? <div className="empty">No connectors</div> : (
+              {connectorRows.length > 0 ? (
                   <div className="table-wrap">
                     <table>
                       <thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
-                      <tbody>{enrichConn.map((c, i) => (
+                      <tbody>{connectorRows.map((c, i) => (
                         <tr key={i}><td>{c.name || c.id || '—'}</td><td>{c.type || '—'}</td><td><span className={`badge ${c.enabled ? 'badge-ok' : 'badge-warn'}`}>{c.enabled ? 'Active' : 'Inactive'}</span></td></tr>
                       ))}</tbody>
                     </table>
                   </div>
-                )
-              ) : <div className="json-block">{JSON.stringify(enrichConn, null, 2)}</div>}
+              ) : (
+                <>
+                  <SummaryGrid data={enrichConn} limit={10} emptyMessage="No connectors configured" />
+                  <JsonDetails data={enrichConn} />
+                </>
+              )}
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>IdP Providers</div>
-              {Array.isArray(idp) ? (
-                idp.length === 0 ? <div className="empty">No providers</div> : (
+              {idpRows.length > 0 ? (
                   <div className="table-wrap">
                     <table>
                       <thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
-                      <tbody>{idp.map((p, i) => (
+                      <tbody>{idpRows.map((p, i) => (
                         <tr key={i}><td>{p.name || p.id || '—'}</td><td>{p.type || '—'}</td><td>{p.enabled ? '✓' : '✗'}</td></tr>
                       ))}</tbody>
                     </table>
                   </div>
-                )
-              ) : <div className="json-block">{JSON.stringify(idp, null, 2)}</div>}
+              ) : (
+                <>
+                  <SummaryGrid data={idp} limit={10} emptyMessage="No identity providers configured" />
+                  <JsonDetails data={idp} />
+                </>
+              )}
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>SCIM Config</div>
               {scim && typeof scim === 'object' && !Array.isArray(scim) ? (
-                <div style={{ padding: '4px 0' }}>
-                  {Object.entries(scim).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{k.replace(/_/g, ' ')}</span>
-                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{typeof v === 'boolean' ? (v ? '✓' : '✗') : String(v ?? '—')}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : <div className="json-block">{JSON.stringify(scim, null, 2)}</div>}
+                <>
+                  <SummaryGrid data={scim} limit={10} />
+                  <JsonDetails data={scim} />
+                </>
+              ) : (
+                <>
+                  <div className="empty">No SCIM configuration available.</div>
+                  <JsonDetails data={scim} />
+                </>
+              )}
             </div>
           </div>
         </>
@@ -450,12 +508,12 @@ export default function Settings() {
       {tab === 'flags' && (
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>Feature Flags</div>
-          {flags && typeof flags === 'object' ? (
+          {flagEntries.length > 0 ? (
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Flag</th><th>Status</th></tr></thead>
                 <tbody>
-                  {Object.entries(flags).map(([k, v]) => (
+                  {flagEntries.map(([k, v]) => (
                     <tr key={k}>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{k}</td>
                       <td><span className={`badge ${v ? 'badge-ok' : 'badge-warn'}`}>{v ? 'Enabled' : 'Disabled'}</span></td>
@@ -465,7 +523,10 @@ export default function Settings() {
               </table>
             </div>
           ) : (
-            <div className="json-block">{JSON.stringify(flags, null, 2)}</div>
+            <>
+              <div className="empty">No feature flags available.</div>
+              <JsonDetails data={flags} />
+            </>
           )}
         </div>
       )}
@@ -475,15 +536,18 @@ export default function Settings() {
           <div className="card-grid">
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>DB Version</div>
-              <div className="json-block">{JSON.stringify(dbVer, null, 2)}</div>
+              <SummaryGrid data={dbVer} limit={6} />
+              <JsonDetails data={dbVer} />
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Dead Letter Queue</div>
-              <div className="json-block">{JSON.stringify(dlqData, null, 2)}</div>
+              <SummaryGrid data={dlqData} limit={8} />
+              <JsonDetails data={dlqData} />
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>SBOM</div>
-              <div className="json-block">{JSON.stringify(sbomData, null, 2)}</div>
+              <SummaryGrid data={sbomData} limit={8} />
+              <JsonDetails data={sbomData} />
             </div>
           </div>
 

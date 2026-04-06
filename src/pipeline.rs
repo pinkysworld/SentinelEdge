@@ -165,15 +165,27 @@ impl PipelineManager {
     }
 
     pub fn metrics(&self) -> PipelineMetrics {
-        self.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.metrics
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn dlq_entries(&self) -> Vec<DlqEntry> {
-        self.dlq.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
+        self.dlq
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub fn dlq_drain(&self) -> Vec<DlqEntry> {
-        self.dlq.lock().unwrap_or_else(|e| e.into_inner()).drain(..).collect()
+        self.dlq
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect()
     }
 
     pub fn is_running(&self) -> bool {
@@ -181,11 +193,13 @@ impl PipelineManager {
     }
 
     pub fn start(&self) {
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn stop(&self) {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn status(&self) -> serde_json::Value {

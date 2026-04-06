@@ -1,5 +1,5 @@
-use base64::engine::general_purpose::STANDARD as b64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as b64;
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -79,8 +79,8 @@ pub fn validate_license(key: &str, public_key: &[u8]) -> Result<LicenseClaims, S
     let payload_bytes = b64
         .decode(payload_b64)
         .map_err(|e| format!("decode payload: {e}"))?;
-    let claims: LicenseClaims = serde_json::from_slice(&payload_bytes)
-        .map_err(|e| format!("parse claims: {e}"))?;
+    let claims: LicenseClaims =
+        serde_json::from_slice(&payload_bytes).map_err(|e| format!("parse claims: {e}"))?;
 
     let expires = DateTime::parse_from_rfc3339(&claims.expires_at)
         .map_err(|e| format!("parse expires_at: {e}"))?;
@@ -147,8 +147,8 @@ impl LicenseEnforcer {
             .as_slice()
             .try_into()
             .map_err(|_| "public key must be 32 bytes".to_string())?;
-        let verifying_key = VerifyingKey::from_bytes(&pk_bytes)
-            .map_err(|e| format!("invalid public key: {e}"))?;
+        let verifying_key =
+            VerifyingKey::from_bytes(&pk_bytes).map_err(|e| format!("invalid public key: {e}"))?;
 
         let sig_bytes = b64
             .decode(sig_b64)
@@ -165,8 +165,8 @@ impl LicenseEnforcer {
         let payload_bytes = b64
             .decode(payload_b64)
             .map_err(|e| format!("decode payload: {e}"))?;
-        let claims: LicenseClaims = serde_json::from_slice(&payload_bytes)
-            .map_err(|e| format!("parse claims: {e}"))?;
+        let claims: LicenseClaims =
+            serde_json::from_slice(&payload_bytes).map_err(|e| format!("parse claims: {e}"))?;
 
         self.claims = Some(claims);
         Ok(())

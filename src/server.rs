@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
-use axum::http::{HeaderMap, Method as HttpMethod};
+use axum::http::{HeaderMap, Method as HttpMethod, StatusCode};
 use axum::response::Response;
+use include_dir::{Dir, include_dir};
 
 /// Local Method enum preserving tiny_http variant names for match compatibility.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,14 +24,23 @@ pub enum Method {
 
 impl Method {
     fn from_http(m: &HttpMethod) -> Self {
-        if m == HttpMethod::GET { Method::Get }
-        else if m == HttpMethod::POST { Method::Post }
-        else if m == HttpMethod::PUT { Method::Put }
-        else if m == HttpMethod::DELETE { Method::Delete }
-        else if m == HttpMethod::OPTIONS { Method::Options }
-        else if m == HttpMethod::PATCH { Method::Patch }
-        else if m == HttpMethod::HEAD { Method::Head }
-        else { Method::Get }
+        if m == HttpMethod::GET {
+            Method::Get
+        } else if m == HttpMethod::POST {
+            Method::Post
+        } else if m == HttpMethod::PUT {
+            Method::Put
+        } else if m == HttpMethod::DELETE {
+            Method::Delete
+        } else if m == HttpMethod::OPTIONS {
+            Method::Options
+        } else if m == HttpMethod::PATCH {
+            Method::Patch
+        } else if m == HttpMethod::HEAD {
+            Method::Head
+        } else {
+            Method::Get
+        }
     }
 }
 
@@ -38,7 +48,7 @@ use crate::actions::DeviceController;
 use crate::auto_update::UpdateManager;
 use crate::checkpoint::CheckpointStore;
 use crate::collector::{
-    detect_platform, AlertRecord, CollectorState, FileIntegrityMonitor, HostInfo, HostPlatform,
+    AlertRecord, CollectorState, FileIntegrityMonitor, HostInfo, HostPlatform, detect_platform,
 };
 use crate::compliance::{CausalGraph, ComplianceManager};
 use crate::config::Config;
@@ -53,13 +63,13 @@ use crate::energy::EnergyBudget;
 use crate::enforcement::EnforcementEngine;
 use crate::enrollment::{AgentHealth, AgentIdentity, AgentRegistry};
 use crate::enterprise::{
-    build_content_rules_view, build_entity_profile, build_entity_timeline,
-    build_incident_storyline, build_mitre_coverage, ContentLifecycle, EnterpriseStore,
-    HuntResponseAction, HuntRun, ResponseActionResult, SavedHunt,
+    ContentLifecycle, EnterpriseStore, HuntResponseAction, HuntRun, ResponseActionResult,
+    SavedHunt, build_content_rules_view, build_entity_profile, build_entity_timeline,
+    build_incident_storyline, build_mitre_coverage,
 };
 use crate::event_forward::{EventAnalytics, EventStore, StoredEvent};
 use crate::fingerprint::DeviceFingerprint;
-use crate::graphql::{aggregate, AggregateOp, GqlExecutor, GqlRequest, wardex_schema};
+use crate::graphql::{AggregateOp, GqlExecutor, GqlRequest, aggregate, wardex_schema};
 use crate::incident::IncidentStore;
 use crate::monitor::Monitor;
 use crate::multi_tenant::MultiTenantManager;
@@ -87,7 +97,6 @@ use crate::feature_flags::FeatureFlagRegistry;
 use crate::ocsf::{self, DeadLetterQueue, SchemaVersion};
 use crate::process_tree::ProcessTree;
 use crate::rbac::{RbacStore, Role, User};
-use crate::storage::SharedStorage;
 use crate::response::{
     ActionTier, ApprovalDecision as ResponseApprovalDecision,
     ApprovalRecord as ResponseApprovalRecord, ApprovalStatus, ResponseAction, ResponseOrchestrator,
@@ -95,6 +104,7 @@ use crate::response::{
 };
 use crate::sigma::SigmaEngine;
 use crate::spool::EncryptedSpool;
+use crate::storage::SharedStorage;
 use sha2::Digest;
 
 // ── Rate Limiter ────────────────────────────────────────────
@@ -191,12 +201,10 @@ struct AuditLog {
 impl AuditLog {
     fn new(max_entries: usize) -> Self {
         let (syslog_target, syslog_addr) = match std::env::var("WARDEX_SYSLOG_TARGET") {
-            Ok(addr) if !addr.is_empty() => {
-                match std::net::UdpSocket::bind("0.0.0.0:0") {
-                    Ok(sock) => (Some(sock), Some(addr)),
-                    Err(_) => (None, None),
-                }
-            }
+            Ok(addr) if !addr.is_empty() => match std::net::UdpSocket::bind("0.0.0.0:0") {
+                Ok(sock) => (Some(sock), Some(addr)),
+                Err(_) => (None, None),
+            },
             _ => (None, None),
         };
         Self {
@@ -231,7 +239,13 @@ impl AuditLog {
 
         // Forward to syslog (RFC 5424 over UDP)
         if let (Some(sock), Some(addr)) = (&self.syslog_target, &self.syslog_addr) {
-            let severity = if status_code >= 500 { 3 } else if status_code >= 400 { 4 } else { 6 };
+            let severity = if status_code >= 500 {
+                3
+            } else if status_code >= 400 {
+                4
+            } else {
+                6
+            };
             let pri = 8 * 10 + severity; // facility=security(10)
             let msg = format!(
                 "<{pri}>1 {timestamp} wardex wardex-audit - - - method={method} path={path} src={source_ip} status={status_code} auth={auth_used}"
@@ -241,7 +255,14 @@ impl AuditLog {
     }
 
     fn recent(&self, limit: usize) -> Vec<&AuditEntry> {
-        self.entries.iter().rev().take(limit).collect::<Vec<_>>().into_iter().rev().collect()
+        self.entries
+            .iter()
+            .rev()
+            .take(limit)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     }
 }
 
@@ -619,7 +640,9 @@ pub async fn run_server(
     let tls_key = std::env::var("WARDEX_TLS_KEY").ok();
 
     if tls_cert.is_some() || tls_key.is_some() {
-        eprintln!("  NOTE: TLS configured via WARDEX_TLS_CERT/KEY — use a reverse proxy (nginx/caddy) for production TLS");
+        eprintln!(
+            "  NOTE: TLS configured via WARDEX_TLS_CERT/KEY — use a reverse proxy (nginx/caddy) for production TLS"
+        );
     }
 
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -630,7 +653,11 @@ pub async fn run_server(
 
     // Use persistent token from environment if set, otherwise generate a random one
     let token = std::env::var("WARDEX_ADMIN_TOKEN").unwrap_or_else(|_| generate_token());
-    let scheme = if tls_cert.is_some() && tls_key.is_some() && cfg!(feature = "tls") { "https" } else { "http" };
+    let scheme = if tls_cert.is_some() && tls_key.is_some() && cfg!(feature = "tls") {
+        "https"
+    } else {
+        "http"
+    };
     eprintln!("Wardex admin console");
     eprintln!("  Listening on {scheme}://localhost:{port}");
     eprintln!("  Site directory: {}", site_dir.display());
@@ -674,10 +701,13 @@ pub async fn run_server(
         patches: PatchManager::new(),
         causal: CausalGraph::new(),
         listener_mode: if tls_cert.is_some() && tls_key.is_some() && cfg!(feature = "tls") {
-            ListenerMode::Tls { port, config: crate::tls::TlsConfig::new(
-                tls_cert.as_deref().unwrap_or_default(),
-                tls_key.as_deref().unwrap_or_default(),
-            )}
+            ListenerMode::Tls {
+                port,
+                config: crate::tls::TlsConfig::new(
+                    tls_cert.as_deref().unwrap_or_default(),
+                    tls_key.as_deref().unwrap_or_default(),
+                ),
+            }
         } else {
             ListenerMode::Plain { port }
         },
@@ -903,15 +933,17 @@ pub async fn run_server(
     // ── Spawn background alert analysis thread (every 5 minutes) ────
     {
         let analysis_state = Arc::clone(&state);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(std::time::Duration::from_secs(300));
-            let mut s = match analysis_state.lock() {
-                Ok(g) => g,
-                Err(e) => e.into_inner(),
-            };
-            let alerts_vec: Vec<_> = s.alerts.iter().cloned().collect();
-            let analysis = crate::alert_analysis::analyze_alerts(&alerts_vec, 5);
-            s.last_alert_analysis = Some(analysis);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(300));
+                let mut s = match analysis_state.lock() {
+                    Ok(g) => g,
+                    Err(e) => e.into_inner(),
+                };
+                let alerts_vec: Vec<_> = s.alerts.iter().cloned().collect();
+                let analysis = crate::alert_analysis::analyze_alerts(&alerts_vec, 5);
+                s.last_alert_analysis = Some(analysis);
+            }
         });
     }
 
@@ -924,14 +956,12 @@ pub async fn run_server(
 
     use axum::Router;
     use axum::extract::ConnectInfo;
-    let app = Router::new()
-        .fallback(move |
-            method: HttpMethod,
-            uri: axum::http::Uri,
-            headers: HeaderMap,
-            ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-            body: axum::body::Bytes,
-        | {
+    let app = Router::new().fallback(
+        move |method: HttpMethod,
+              uri: axum::http::Uri,
+              headers: HeaderMap,
+              ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+              body: axum::body::Bytes| {
             let state = shared_state.clone();
             let site_dir = shared_site.clone();
             async move {
@@ -969,8 +999,14 @@ pub async fn run_server(
                     return Response::builder()
                         .status(204)
                         .header("Access-Control-Allow-Origin", origin)
-                        .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-                        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                        .header(
+                            "Access-Control-Allow-Methods",
+                            "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                        )
+                        .header(
+                            "Access-Control-Allow-Headers",
+                            "Content-Type, Authorization",
+                        )
                         .header("Access-Control-Max-Age", "86400")
                         .body(Body::empty())
                         .unwrap();
@@ -988,7 +1024,9 @@ pub async fn run_server(
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                             handle_api(m, &u, &hdrs, &body_bytes, &ra, &st)
                         }))
-                    }).await {
+                    })
+                    .await
+                    {
                         Ok(Ok(resp)) => resp,
                         Ok(Err(panic_info)) => {
                             let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
@@ -1013,7 +1051,8 @@ pub async fn run_server(
                     serve_static(&url, &site_dir)
                 }
             }
-        });
+        },
+    );
 
     let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
 
@@ -1117,7 +1156,10 @@ pub fn spawn_test_server() -> (u16, String) {
         response_orchestrator: ResponseOrchestrator::new(),
         feature_flags: FeatureFlagRegistry::new(),
         process_tree: ProcessTree::new("localhost"),
-        spool: EncryptedSpool::new(&sha2::Sha256::digest(format!("spool-key-{token}").as_bytes()), 10_000),
+        spool: EncryptedSpool::new(
+            &sha2::Sha256::digest(format!("spool-key-{token}").as_bytes()),
+            10_000,
+        ),
         rbac: RbacStore::new(),
         case_store: CaseStore::new(&state_root.join("cases.json").to_string_lossy()),
         alert_queue: AlertQueue::new(),
@@ -1166,14 +1208,12 @@ pub fn spawn_test_server() -> (u16, String) {
             use axum::Router;
             use axum::extract::ConnectInfo;
 
-            let app = Router::new()
-                .fallback(move |
-                    method: HttpMethod,
-                    uri: axum::http::Uri,
-                    headers: HeaderMap,
-                    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-                    body: axum::body::Bytes,
-                | {
+            let app = Router::new().fallback(
+                move |method: HttpMethod,
+                      uri: axum::http::Uri,
+                      headers: HeaderMap,
+                      ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+                      body: axum::body::Bytes| {
                     let state = shared_state.clone();
                     let site_dir = shared_site.clone();
                     async move {
@@ -1198,8 +1238,14 @@ pub fn spawn_test_server() -> (u16, String) {
                             return Response::builder()
                                 .status(204)
                                 .header("Access-Control-Allow-Origin", origin)
-                                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-                                .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                                .header(
+                                    "Access-Control-Allow-Methods",
+                                    "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                                )
+                                .header(
+                                    "Access-Control-Allow-Headers",
+                                    "Content-Type, Authorization",
+                                )
                                 .body(Body::empty())
                                 .unwrap();
                         }
@@ -1211,7 +1257,8 @@ pub fn spawn_test_server() -> (u16, String) {
                             serve_static(&url, &site_dir)
                         }
                     }
-                });
+                },
+            );
 
             let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
                 .await
@@ -1237,7 +1284,6 @@ pub fn spawn_test_server() -> (u16, String) {
     std::thread::sleep(std::time::Duration::from_millis(50));
     (port, token)
 }
-
 
 /// Flush in-memory alerts, audit entries, and event store to the SQLite
 /// storage backend so nothing is lost on shutdown.
@@ -1285,15 +1331,21 @@ fn flush_to_storage(state: &Arc<Mutex<AppState>>) {
     let mut audit_stored = 0usize;
     for entry in &audit_entries {
         let action = format!("{} {}", entry.method, entry.path);
-        if storage.with(|store| {
-            store.append_audit(
-                &entry.source_ip,
-                &action,
-                Some(&entry.path),
-                Some(&format!("status={} auth={}", entry.status_code, entry.auth_used)),
-                "default",
-            )
-        }).is_ok() {
+        if storage
+            .with(|store| {
+                store.append_audit(
+                    &entry.source_ip,
+                    &action,
+                    Some(&entry.path),
+                    Some(&format!(
+                        "status={} auth={}",
+                        entry.status_code, entry.auth_used
+                    )),
+                    "default",
+                )
+            })
+            .is_ok()
+        {
             audit_stored += 1;
         }
     }
@@ -1342,7 +1394,9 @@ fn scan_pii(text: &str) -> Vec<String> {
 
     // Email pattern
     let has_email = text.split_whitespace().any(|w| {
-        let w = w.trim_matches(|c: char| !c.is_alphanumeric() && c != '@' && c != '.' && c != '_' && c != '-');
+        let w = w.trim_matches(|c: char| {
+            !c.is_alphanumeric() && c != '@' && c != '.' && c != '_' && c != '-'
+        });
         w.contains('@') && w.contains('.') && w.len() > 5
     });
     if has_email {
@@ -1352,12 +1406,17 @@ fn scan_pii(text: &str) -> Vec<String> {
     // SSN pattern (###-##-####)
     let has_ssn = text.as_bytes().windows(11).any(|w| {
         w.len() == 11
-            && w[0].is_ascii_digit() && w[1].is_ascii_digit() && w[2].is_ascii_digit()
+            && w[0].is_ascii_digit()
+            && w[1].is_ascii_digit()
+            && w[2].is_ascii_digit()
             && w[3] == b'-'
-            && w[4].is_ascii_digit() && w[5].is_ascii_digit()
+            && w[4].is_ascii_digit()
+            && w[5].is_ascii_digit()
             && w[6] == b'-'
-            && w[7].is_ascii_digit() && w[8].is_ascii_digit()
-            && w[9].is_ascii_digit() && w[10].is_ascii_digit()
+            && w[7].is_ascii_digit()
+            && w[8].is_ascii_digit()
+            && w[9].is_ascii_digit()
+            && w[10].is_ascii_digit()
     });
     if has_ssn {
         categories.push("ssn".into());
@@ -1375,7 +1434,9 @@ fn scan_pii(text: &str) -> Vec<String> {
                 let mut n = d as u32;
                 if double {
                     n *= 2;
-                    if n > 9 { n -= 9; }
+                    if n > 9 {
+                        n -= 9;
+                    }
                 }
                 sum += n;
                 double = !double;
@@ -1388,12 +1449,18 @@ fn scan_pii(text: &str) -> Vec<String> {
 
     // IPv4 addresses (not in RFC 1918 private ranges to reduce false positives)
     let has_public_ip = text.split_whitespace().any(|w| {
-        let parts: Vec<&str> = w.trim_matches(|c: char| !c.is_ascii_digit() && c != '.').split('.').collect();
+        let parts: Vec<&str> = w
+            .trim_matches(|c: char| !c.is_ascii_digit() && c != '.')
+            .split('.')
+            .collect();
         if parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok()) {
             let first: u8 = parts[0].parse().unwrap_or(0);
             let second: u8 = parts[1].parse().unwrap_or(0);
             // Skip private ranges
-            !(first == 10 || first == 127 || (first == 172 && (16..=31).contains(&second)) || (first == 192 && second == 168))
+            !(first == 10
+                || first == 127
+                || (first == 172 && (16..=31).contains(&second))
+                || (first == 192 && second == 168))
         } else {
             false
         }
@@ -1626,7 +1693,9 @@ fn respond_api(
         );
     }
     let (mut parts, body) = response.into_parts();
-    parts.headers.insert("X-Request-Id", req_id.parse().unwrap());
+    parts
+        .headers
+        .insert("X-Request-Id", req_id.parse().unwrap());
     Response::from_parts(parts, body)
 }
 
@@ -1744,10 +1813,261 @@ fn url_param(url: &str, key: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+fn process_basename(value: &str) -> &str {
+    value.rsplit('/').next().unwrap_or(value)
+}
+
+fn run_command_text(command: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(command).args(args).output().ok()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn process_lsof_path(pid: u32, descriptor: &str) -> Option<String> {
+    let pid_arg = pid.to_string();
+    let output = run_command_text("lsof", &["-a", "-p", &pid_arg, "-d", descriptor, "-Fn"])?;
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix('n').map(|value| value.trim().to_string()))
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_network_activity_lines(lines: &str) -> Vec<serde_json::Value> {
+    lines.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let protocol = if line.contains(" TCP ") {
+                "TCP"
+            } else if line.contains(" UDP ") {
+                "UDP"
+            } else {
+                return None;
+            };
+            let (_, rest) = line.split_once(&format!(" {protocol} "))?;
+            let trimmed = rest.trim();
+            let (endpoint, state) = match trimmed.rsplit_once(" (") {
+                Some((endpoint, state)) => (
+                    endpoint.trim(),
+                    Some(state.trim_end_matches(')').trim().to_string()),
+                ),
+                None => (trimmed, None),
+            };
+            Some(serde_json::json!({
+                "protocol": protocol,
+                "endpoint": endpoint,
+                "state": state,
+            }))
+        })
+        .collect()
+}
+
+fn code_signature_summary(exe_path: &str) -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(output) = run_command_text("codesign", &["-dv", "--verbose=4", exe_path]) else {
+            return serde_json::json!({
+                "status": "unknown",
+            });
+        };
+        let identifier = output
+            .lines()
+            .find_map(|line| line.strip_prefix("Identifier=").map(str::trim))
+            .unwrap_or("");
+        let team = output
+            .lines()
+            .find_map(|line| line.strip_prefix("TeamIdentifier=").map(str::trim))
+            .unwrap_or("");
+        let authority: Vec<String> = output
+            .lines()
+            .filter_map(|line| line.strip_prefix("Authority=").map(|s| s.trim().to_string()))
+            .collect();
+        serde_json::json!({
+            "status": if authority.is_empty() { "unsigned_or_unknown" } else { "signed" },
+            "identifier": if identifier.is_empty() { serde_json::Value::Null } else { serde_json::json!(identifier) },
+            "team_identifier": if team.is_empty() { serde_json::Value::Null } else { serde_json::json!(team) },
+            "authority": authority,
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = exe_path;
+        serde_json::json!({
+            "status": "unavailable",
+        })
+    }
+}
+
+fn process_recommendations(
+    findings: &[serde_json::Value],
+    network: &[serde_json::Value],
+    is_self: bool,
+) -> Vec<String> {
+    let mut items = Vec::new();
+    if is_self {
+        items.push("Wardex is monitoring its own process; suppress self-findings before escalating."
+            .to_string());
+    }
+    if findings.iter().any(|finding| {
+        finding["reason"]
+            .as_str()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .contains("reverse shell")
+    }) {
+        items.push(
+            "Review the full command line, network peers, and parent process before considering kill or host isolation."
+                .to_string(),
+        );
+    }
+    if network.iter().any(|entry| entry["state"].as_str() == Some("LISTEN")) {
+        items.push(
+            "Validate whether the process should be listening locally or remotely; unexpected listeners are good containment candidates."
+                .to_string(),
+        );
+    }
+    if findings.is_empty() {
+        items.push("No high-confidence behavioural findings matched this process at inspection time."
+            .to_string());
+    }
+    items
+}
+
+fn process_detail_json(pid: u32, hostname: &str) -> Option<serde_json::Value> {
+    #[cfg(target_os = "macos")]
+    {
+        let processes = crate::collector_macos::collect_processes();
+        let process = processes.iter().find(|proc| proc.pid == pid)?;
+        let findings: Vec<serde_json::Value> = crate::collector_macos::analyze_processes(&processes)
+            .into_iter()
+            .filter(|finding| finding.pid == pid)
+            .map(|finding| {
+                serde_json::json!({
+                    "pid": finding.pid,
+                    "name": finding.name,
+                    "user": finding.user,
+                    "risk_level": finding.risk_level,
+                    "reason": finding.reason,
+                    "cpu_percent": finding.cpu_percent,
+                    "mem_percent": finding.mem_percent,
+                })
+            })
+            .collect();
+        let pid_arg = pid.to_string();
+        let cmd_line = run_command_text("ps", &["-p", &pid_arg, "-o", "command="])
+            .unwrap_or_else(|| process.cmd_line.clone());
+        let start_time = run_command_text("ps", &["-p", &pid_arg, "-o", "lstart="]);
+        let elapsed = run_command_text("ps", &["-p", &pid_arg, "-o", "etime="]);
+        let exe_path = process_lsof_path(pid, "txt");
+        let cwd = process_lsof_path(pid, "cwd");
+        let network = run_command_text("lsof", &["-nP", "-a", "-p", &pid_arg, "-i"])
+            .map(|output| parse_network_activity_lines(&output))
+            .unwrap_or_default();
+        let display_name = process_basename(&process.name).to_string();
+        let is_self = pid == std::process::id() && display_name.eq_ignore_ascii_case("wardex");
+        let risk_level = findings
+            .first()
+            .and_then(|finding| finding["risk_level"].as_str())
+            .unwrap_or("nominal");
+        let signature = exe_path
+            .as_deref()
+            .map(code_signature_summary)
+            .unwrap_or_else(|| serde_json::json!({"status": "unknown"}));
+
+        Some(serde_json::json!({
+            "pid": process.pid,
+            "ppid": process.ppid,
+            "name": process.name,
+            "display_name": display_name,
+            "user": process.user,
+            "group": process.group,
+            "cpu_percent": process.cpu_percent,
+            "mem_percent": process.mem_percent,
+            "hostname": hostname,
+            "platform": "macos",
+            "cmd_line": cmd_line,
+            "exe_path": exe_path,
+            "cwd": cwd,
+            "start_time": start_time,
+            "elapsed": elapsed,
+            "risk_level": risk_level,
+            "findings": findings,
+            "network_activity": network,
+            "code_signature": signature,
+            "analysis": {
+                "self_process": is_self,
+                "listener_count": network.iter().filter(|entry| entry["state"].as_str() == Some("LISTEN")).count(),
+                "recommendations": process_recommendations(&findings, &network, is_self),
+            },
+        }))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let processes = crate::collector_linux::collect_processes();
+        let process = processes.iter().find(|proc| proc.pid == pid)?;
+        let findings: Vec<serde_json::Value> = crate::collector_linux::analyze_processes(&processes)
+            .into_iter()
+            .filter(|finding| finding.pid == pid)
+            .map(|finding| {
+                serde_json::json!({
+                    "pid": finding.pid,
+                    "name": finding.name,
+                    "user": finding.user,
+                    "risk_level": finding.risk_level,
+                    "reason": finding.reason,
+                    "cpu_percent": finding.cpu_percent,
+                    "mem_percent": finding.mem_percent,
+                })
+            })
+            .collect();
+        let pid_arg = pid.to_string();
+        let network = run_command_text("lsof", &["-nP", "-a", "-p", &pid_arg, "-i"])
+            .map(|output| parse_network_activity_lines(&output))
+            .unwrap_or_default();
+        Some(serde_json::json!({
+            "pid": process.pid,
+            "ppid": process.ppid,
+            "name": process.name,
+            "display_name": process_basename(&process.name),
+            "user": if process.uid == 0 { "root".to_string() } else { format!("uid:{}", process.uid) },
+            "group": format!("gid:{}", process.gid),
+            "cpu_percent": findings.first().and_then(|finding| finding["cpu_percent"].as_f64()).unwrap_or(0.0),
+            "mem_percent": findings.first().and_then(|finding| finding["mem_percent"].as_f64()).unwrap_or(0.0),
+            "hostname": hostname,
+            "platform": "linux",
+            "cmd_line": process.cmd_line,
+            "exe_path": process.exe_path,
+            "cwd": std::fs::read_link(format!("/proc/{pid}/cwd")).ok().map(|path| path.display().to_string()),
+            "start_time": serde_json::Value::Null,
+            "elapsed": serde_json::Value::Null,
+            "risk_level": findings.first().and_then(|finding| finding["risk_level"].as_str()).unwrap_or("nominal"),
+            "findings": findings,
+            "network_activity": network,
+            "code_signature": serde_json::json!({"status": "unavailable"}),
+            "analysis": {
+                "self_process": false,
+                "listener_count": network.iter().filter(|entry| entry["state"].as_str() == Some("LISTEN")).count(),
+                "recommendations": process_recommendations(&findings, &network, false),
+            },
+        }))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = (pid, hostname);
+        None
+    }
+}
+
 fn parse_numeric_segment<T: FromStr>(segment: &str) -> Option<T> {
-    if segment.is_empty()
-        || segment.contains('/')
-        || !segment.chars().all(|ch| ch.is_ascii_digit())
+    if segment.is_empty() || segment.contains('/') || !segment.chars().all(|ch| ch.is_ascii_digit())
     {
         return None;
     }
@@ -2657,48 +2977,52 @@ fn parse_event_query(url: &str) -> EventQuery {
 
 fn event_matches_query(event: &crate::event_forward::StoredEvent, query: &EventQuery) -> bool {
     if let Some(agent_id) = &query.agent_id
-        && &event.agent_id != agent_id {
-            return false;
-        }
+        && &event.agent_id != agent_id
+    {
+        return false;
+    }
     if let Some(severity) = &query.severity
-        && !event.alert.level.eq_ignore_ascii_case(severity) {
-            return false;
-        }
+        && !event.alert.level.eq_ignore_ascii_case(severity)
+    {
+        return false;
+    }
     if let Some(reason) = &query.reason
         && !event
             .alert
             .reasons
             .iter()
             .any(|candidate| candidate.eq_ignore_ascii_case(reason))
-        {
-            return false;
-        }
+    {
+        return false;
+    }
     if let Some(correlated) = query.correlated
-        && event.correlated != correlated {
-            return false;
-        }
+        && event.correlated != correlated
+    {
+        return false;
+    }
     if let Some(triage_status) = &query.triage_status
-        && !event.triage.status.eq_ignore_ascii_case(triage_status) {
-            return false;
-        }
+        && !event.triage.status.eq_ignore_ascii_case(triage_status)
+    {
+        return false;
+    }
     if let Some(assignee) = &query.assignee
         && !event
             .triage
             .assignee
             .as_deref()
             .is_some_and(|value| value.eq_ignore_ascii_case(assignee))
-        {
-            return false;
-        }
+    {
+        return false;
+    }
     if let Some(tag) = &query.tag
         && !event
             .triage
             .tags
             .iter()
             .any(|candidate| candidate.eq_ignore_ascii_case(tag))
-        {
-            return false;
-        }
+    {
+        return false;
+    }
     true
 }
 
@@ -2836,74 +3160,76 @@ fn sync_enterprise_sigma_engine(state: &mut AppState) {
 
 fn spawn_enterprise_hunt_scheduler(state: &Arc<Mutex<AppState>>) {
     let scheduler_state = Arc::clone(state);
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let mut s = match scheduler_state.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        if s.shutdown.load(Ordering::Relaxed) {
-            break;
-        }
-        let due_hunt_ids = s.enterprise.due_hunt_ids();
-        if due_hunt_ids.is_empty() {
-            continue;
-        }
-        let events = s.event_store.all_events().to_vec();
-        for hunt_id in due_hunt_ids {
-            let started = std::time::Instant::now();
-            if let Ok(run) = s.enterprise.run_hunt(&hunt_id, &events) {
-                let hunt = s
-                    .enterprise
-                    .hunts()
-                    .iter()
-                    .find(|hunt| hunt.id == run.hunt_id)
-                    .cloned();
-                let response_results = if let Some(hunt) = hunt {
-                    let AppState {
-                        incident_store,
-                        enterprise,
-                        response_orchestrator,
-                        ..
-                    } = &mut *s;
-                    let response_orchestrator_value = std::mem::take(response_orchestrator);
-                    let results = execute_hunt_response_actions(
-                        &hunt,
-                        &run,
-                        &events,
-                        incident_store,
-                        enterprise,
-                        &response_orchestrator_value,
-                        "system:scheduler",
-                    );
-                    *response_orchestrator = response_orchestrator_value;
-                    results
-                } else {
-                    Vec::new()
-                };
-                s.enterprise
-                    .record_hunt_metrics(started.elapsed().as_millis() as u64);
-                if run.threshold_exceeded {
-                    let payload = serde_json::json!({
-                        "hunt_id": run.hunt_id,
-                        "run_id": run.id,
-                        "match_count": run.match_count,
-                        "suppressed_count": run.suppressed_count,
-                        "severity": run.severity,
-                        "response_actions": response_results,
-                    });
-                    let payload_text = payload.to_string();
-                    let _ = s.enterprise.record_change(
-                        "hunt",
-                        &run.hunt_id,
-                        &format!(
-                            "Scheduled hunt {} exceeded threshold with {} visible match(es)",
-                            run.hunt_id, run.match_count
-                        ),
-                        "system:scheduler",
-                        Some(run.id.clone()),
-                        Some(&payload_text),
-                    );
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let mut s = match scheduler_state.lock() {
+                Ok(g) => g,
+                Err(e) => e.into_inner(),
+            };
+            if s.shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            let due_hunt_ids = s.enterprise.due_hunt_ids();
+            if due_hunt_ids.is_empty() {
+                continue;
+            }
+            let events = s.event_store.all_events().to_vec();
+            for hunt_id in due_hunt_ids {
+                let started = std::time::Instant::now();
+                if let Ok(run) = s.enterprise.run_hunt(&hunt_id, &events) {
+                    let hunt = s
+                        .enterprise
+                        .hunts()
+                        .iter()
+                        .find(|hunt| hunt.id == run.hunt_id)
+                        .cloned();
+                    let response_results = if let Some(hunt) = hunt {
+                        let AppState {
+                            incident_store,
+                            enterprise,
+                            response_orchestrator,
+                            ..
+                        } = &mut *s;
+                        let response_orchestrator_value = std::mem::take(response_orchestrator);
+                        let results = execute_hunt_response_actions(
+                            &hunt,
+                            &run,
+                            &events,
+                            incident_store,
+                            enterprise,
+                            &response_orchestrator_value,
+                            "system:scheduler",
+                        );
+                        *response_orchestrator = response_orchestrator_value;
+                        results
+                    } else {
+                        Vec::new()
+                    };
+                    s.enterprise
+                        .record_hunt_metrics(started.elapsed().as_millis() as u64);
+                    if run.threshold_exceeded {
+                        let payload = serde_json::json!({
+                            "hunt_id": run.hunt_id,
+                            "run_id": run.id,
+                            "match_count": run.match_count,
+                            "suppressed_count": run.suppressed_count,
+                            "severity": run.severity,
+                            "response_actions": response_results,
+                        });
+                        let payload_text = payload.to_string();
+                        let _ = s.enterprise.record_change(
+                            "hunt",
+                            &run.hunt_id,
+                            &format!(
+                                "Scheduled hunt {} exceeded threshold with {} visible match(es)",
+                                run.hunt_id, run.match_count
+                            ),
+                            "system:scheduler",
+                            Some(run.id.clone()),
+                            Some(&payload_text),
+                        );
+                    }
                 }
             }
         }
@@ -2941,22 +3267,31 @@ fn spawn_retention_purge_scheduler(state: &Arc<Mutex<AppState>>) {
             let mut total_purged = 0usize;
             for &(table, default_days) in defaults {
                 // Try to read configured retention from the policy table
-                let days = storage
-                    .with(|store| {
-                        let d = store.conn().query_row(
+                let days =
+                    storage
+                        .with(|store| {
+                            let d = store.conn().query_row(
                             "SELECT retention_days FROM retention_policy WHERE table_name = ?1",
                             rusqlite::params![table],
                             |row| row.get::<_, u32>(0),
                         ).unwrap_or(default_days);
-                        Ok(d)
-                    })
-                    .unwrap_or(default_days);
+                            Ok(d)
+                        })
+                        .unwrap_or(default_days);
 
                 let purged = match table {
-                    "alerts" => storage.with(|store| store.purge_old_alerts(days)).unwrap_or(0),
-                    "audit_log" => storage.with(|store| store.purge_old_audit(days)).unwrap_or(0),
-                    "metrics" => storage.with(|store| store.purge_old_metrics(days)).unwrap_or(0),
-                    "response_actions" => storage.with(|store| store.purge_old_response_actions(days)).unwrap_or(0),
+                    "alerts" => storage
+                        .with(|store| store.purge_old_alerts(days))
+                        .unwrap_or(0),
+                    "audit_log" => storage
+                        .with(|store| store.purge_old_audit(days))
+                        .unwrap_or(0),
+                    "metrics" => storage
+                        .with(|store| store.purge_old_metrics(days))
+                        .unwrap_or(0),
+                    "response_actions" => storage
+                        .with(|store| store.purge_old_response_actions(days))
+                        .unwrap_or(0),
                     _ => 0,
                 };
                 total_purged += purged;
@@ -3342,29 +3677,35 @@ fn handle_api(
     // Agent endpoints still require a valid enrollment token when
     // WARDEX_AGENT_TOKEN is set. This prevents arbitrary clients from
     // enrolling rogue agents or submitting forged events.
-    if is_agent_endpoint && !route_path.starts_with("/api/updates/download/")
+    if is_agent_endpoint
+        && !route_path.starts_with("/api/updates/download/")
         && route_path != "/api/openapi.json"
-        && let Ok(required_agent_token) = std::env::var("WARDEX_AGENT_TOKEN") {
-            let provided = bearer_token(headers);
-            let valid = provided.as_deref().is_some_and(|t| {
-                let a = t.as_bytes();
-                let b = required_agent_token.as_bytes();
-                if a.len() != b.len() { return false; }
-                let mut diff = 0u8;
-                for (x, y) in a.iter().zip(b.iter()) { diff |= x ^ y; }
-                diff == 0
-            });
-            if !valid {
-                return respond_api(
-                    state,
-                    &method,
-                    &url,
-                    remote_addr,
-                    false,
-                    error_json("agent token required", 401),
-                );
+        && let Ok(required_agent_token) = std::env::var("WARDEX_AGENT_TOKEN")
+    {
+        let provided = bearer_token(headers);
+        let valid = provided.as_deref().is_some_and(|t| {
+            let a = t.as_bytes();
+            let b = required_agent_token.as_bytes();
+            if a.len() != b.len() {
+                return false;
             }
+            let mut diff = 0u8;
+            for (x, y) in a.iter().zip(b.iter()) {
+                diff |= x ^ y;
+            }
+            diff == 0
+        });
+        if !valid {
+            return respond_api(
+                state,
+                &method,
+                &url,
+                remote_addr,
+                false,
+                error_json("agent token required", 401),
+            );
         }
+    }
 
     let needs_auth = !is_agent_endpoint
         && matches!(
@@ -3540,6 +3881,7 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/process-tree/deep-chains")
         || (method == Method::Get && route_path == "/api/processes/live")
         || (method == Method::Get && route_path == "/api/processes/analysis")
+        || (method == Method::Get && route_path == "/api/processes/detail")
         || (method == Method::Get && route_path == "/api/host/apps")
         || (method == Method::Get && route_path == "/api/host/inventory")
         || (method == Method::Get && route_path == "/api/spool/stats")
@@ -3776,15 +4118,14 @@ fn handle_api(
                 )
             }
         }
-        (Method::Post, "/api/graphql") => {
-            match read_body_limited(body, 100_000) {
-                Err(_) => error_json("request too large", 413),
-                Ok(body) => match serde_json::from_str::<GqlRequest>(&body) {
-                    Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
-                    Ok(gql_req) => {
-                        let mut executor = GqlExecutor::new(wardex_schema());
-                        let st = state.clone();
-                        executor.register_resolver("alerts", Box::new({
+        (Method::Post, "/api/graphql") => match read_body_limited(body, 100_000) {
+            Err(_) => error_json("request too large", 413),
+            Ok(body) => match serde_json::from_str::<GqlRequest>(&body) {
+                Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
+                Ok(gql_req) => {
+                    let mut executor = GqlExecutor::new(wardex_schema());
+                    let st = state.clone();
+                    executor.register_resolver("alerts", Box::new({
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -3795,7 +4136,7 @@ fn handle_api(
                                 serde_json::json!(alerts)
                             }
                         }));
-                        executor.register_resolver("agents", Box::new({
+                    executor.register_resolver("agents", Box::new({
                             let st = st.clone();
                             move |_args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -3805,7 +4146,7 @@ fn handle_api(
                                 serde_json::json!(agents)
                             }
                         }));
-                        executor.register_resolver("status", Box::new({
+                    executor.register_resolver("status", Box::new({
                             let st = st.clone();
                             move |_args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -3814,7 +4155,7 @@ fn handle_api(
                                 serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "uptime_secs": s.server_start.elapsed().as_secs_f64(), "agents_online": online, "alerts_total": s.alerts.len(), "incidents_open": open_incidents })
                             }
                         }));
-                        executor.register_resolver("events", Box::new({
+                    executor.register_resolver("events", Box::new({
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -3825,7 +4166,7 @@ fn handle_api(
                                 serde_json::json!(events)
                             }
                         }));
-                        executor.register_resolver("hunts", Box::new({
+                    executor.register_resolver("hunts", Box::new({
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -3836,7 +4177,9 @@ fn handle_api(
                                 serde_json::json!(hunts)
                             }
                         }));
-                        executor.register_resolver("aggregate", Box::new({
+                    executor.register_resolver(
+                        "aggregate",
+                        Box::new({
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -3850,14 +4193,16 @@ fn handle_api(
                                     &s.threat_intel,
                                 )
                             }
-                        }));
-                        let resp = executor.execute(&gql_req);
-                        let result_body = serde_json::to_string(&resp).unwrap_or_else(|_| r#"{"errors":[{"message":"serialization failed"}]}"#.to_string());
-                        json_response(&result_body, 200)
-                    }
+                        }),
+                    );
+                    let resp = executor.execute(&gql_req);
+                    let result_body = serde_json::to_string(&resp).unwrap_or_else(|_| {
+                        r#"{"errors":[{"message":"serialization failed"}]}"#.to_string()
+                    });
+                    json_response(&result_body, 200)
                 }
-            }
-        }
+            },
+        },
         (Method::Post, "/api/analyze") => handle_analyze(body, state),
         (Method::Post, "/api/control/mode") => handle_mode(body, state),
         (Method::Post, "/api/control/reset-baseline") => {
@@ -4006,9 +4351,7 @@ fn handle_api(
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/enforcement/quarantine") => {
-            handle_enforcement_quarantine(body, state)
-        }
+        (Method::Post, "/api/enforcement/quarantine") => handle_enforcement_quarantine(body, state),
 
         // ── Threat Intelligence ───────────────────────────────────
         (Method::Get, "/api/threat-intel/status") => {
@@ -4031,21 +4374,25 @@ fn handle_api(
         }
 
         // ── IoC Purge (TTL-based) ─────────────────────────────────
-        (Method::Post, "/api/threat-intel/purge") => {
-            match read_body_limited(body, 4096) {
-                Err(e) => error_json(&e, 400),
-                Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
-                    Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
-                    Ok(parsed) => {
-                        let ttl_days = parsed.get("ttl_days").and_then(|v| v.as_u64()).unwrap_or(90);
-                        let now = chrono::Utc::now().to_rfc3339();
-                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                        let purged = s.threat_intel.purge_expired(&now, ttl_days);
-                        json_response(&format!(r#"{{"purged":{purged},"ttl_days":{ttl_days}}}"#), 200)
-                    }
+        (Method::Post, "/api/threat-intel/purge") => match read_body_limited(body, 4096) {
+            Err(e) => error_json(&e, 400),
+            Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
+                Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
+                Ok(parsed) => {
+                    let ttl_days = parsed
+                        .get("ttl_days")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(90);
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    let purged = s.threat_intel.purge_expired(&now, ttl_days);
+                    json_response(
+                        &format!(r#"{{"purged":{purged},"ttl_days":{ttl_days}}}"#),
+                        200,
+                    )
                 }
-            }
-        }
+            },
+        },
 
         // ── MITRE ATT&CK Coverage ────────────────────────────────
         (Method::Get, "/api/mitre/coverage") => {
@@ -4069,58 +4416,67 @@ fn handle_api(
         (Method::Get, "/api/detection/profile") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let profile = s.tuning_profile;
-            json_response(&format!(
-                r#"{{"profile":"{}","description":"{}","threshold_multiplier":{:.2},"learn_threshold":{:.1}}}"#,
-                profile.as_str(), profile.description(),
-                profile.threshold_multiplier(), profile.learn_threshold()
-            ), 200)
+            json_response(
+                &format!(
+                    r#"{{"profile":"{}","description":"{}","threshold_multiplier":{:.2},"learn_threshold":{:.1}}}"#,
+                    profile.as_str(),
+                    profile.description(),
+                    profile.threshold_multiplier(),
+                    profile.learn_threshold()
+                ),
+                200,
+            )
         }
-        (Method::Put, "/api/detection/profile") => {
-            match read_body_limited(body, 4096) {
-                Err(e) => error_json(&e, 400),
-                Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
-                    Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
-                    Ok(parsed) => {
-                        let name = parsed.get("profile").and_then(|v| v.as_str()).unwrap_or("");
-                        match crate::detector::TuningProfile::parse(name) {
-                            Some(p) => {
-                                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                                s.tuning_profile = p;
-                                json_response(&format!(r#"{{"profile":"{}","applied":true}}"#, p.as_str()), 200)
-                            }
-                            None => error_json("invalid profile: use aggressive, balanced, or quiet", 400),
+        (Method::Put, "/api/detection/profile") => match read_body_limited(body, 4096) {
+            Err(e) => error_json(&e, 400),
+            Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
+                Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
+                Ok(parsed) => {
+                    let name = parsed.get("profile").and_then(|v| v.as_str()).unwrap_or("");
+                    match crate::detector::TuningProfile::parse(name) {
+                        Some(p) => {
+                            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                            s.tuning_profile = p;
+                            json_response(
+                                &format!(r#"{{"profile":"{}","applied":true}}"#, p.as_str()),
+                                200,
+                            )
+                        }
+                        None => {
+                            error_json("invalid profile: use aggressive, balanced, or quiet", 400)
                         }
                     }
                 }
-            }
-        }
+            },
+        },
 
         // ── False-Positive Feedback ───────────────────────────────
-        (Method::Post, "/api/fp-feedback") => {
-            match read_body_limited(body, 4096) {
-                Err(e) => error_json(&e, 400),
-                Ok(body) => match serde_json::from_str::<crate::alert_analysis::FpFeedback>(&body) {
-                    Err(e) => error_json(&format!("invalid feedback: {e}"), 400),
-                    Ok(feedback) => {
-                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                        s.fp_feedback.record(feedback);
-                        json_response(r#"{"recorded":true}"#, 200)
-                    }
+        (Method::Post, "/api/fp-feedback") => match read_body_limited(body, 4096) {
+            Err(e) => error_json(&e, 400),
+            Ok(body) => match serde_json::from_str::<crate::alert_analysis::FpFeedback>(&body) {
+                Err(e) => error_json(&format!("invalid feedback: {e}"), 400),
+                Ok(feedback) => {
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    s.fp_feedback.record(feedback);
+                    json_response(r#"{"recorded":true}"#, 200)
                 }
-            }
-        }
+            },
+        },
         (Method::Get, "/api/fp-feedback/stats") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let stats = s.fp_feedback.stats();
-            let json_stats: Vec<serde_json::Value> = stats.iter().map(|(p, total, fps, ratio)| {
-                serde_json::json!({
-                    "pattern": p,
-                    "total_marked": total,
-                    "false_positives": fps,
-                    "fp_ratio": ratio,
-                    "suppression_weight": s.fp_feedback.suppression_weight(p),
+            let json_stats: Vec<serde_json::Value> = stats
+                .iter()
+                .map(|(p, total, fps, ratio)| {
+                    serde_json::json!({
+                        "pattern": p,
+                        "total_marked": total,
+                        "false_positives": fps,
+                        "fp_ratio": ratio,
+                        "suppression_weight": s.fp_feedback.suppression_weight(p),
+                    })
                 })
-            }).collect();
+                .collect();
             match serde_json::to_string(&json_stats) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
@@ -4156,9 +4512,7 @@ fn handle_api(
             });
             json_response(&info.to_string(), 200)
         }
-        (Method::Post, "/api/digital-twin/simulate") => {
-            handle_digital_twin_simulate(body, state)
-        }
+        (Method::Post, "/api/digital-twin/simulate") => handle_digital_twin_simulate(body, state),
 
         // ── Compliance ────────────────────────────────────────────
         (Method::Get, "/api/compliance/status") => {
@@ -4476,37 +4830,35 @@ fn handle_api(
             }
         }
         (Method::Post, "/api/config/reload") => handle_config_reload(body, state),
-        (Method::Post, "/api/config/save") => {
-            match read_body_limited(body, 10 * 1024 * 1024) {
-                Ok(body) => {
-                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                    let config_path = s.config_path.clone();
-                    match config_save_target(&s.config, &body) {
-                        Ok((next_config, applied_fields)) => {
-                            if let Err(e) = persist_config_to_path(&next_config, &config_path) {
-                                error_json(&e, 500)
-                            } else {
-                                s.config = next_config.clone();
-                                s.siem_connector.update_config(next_config.siem.clone());
-                                s.taxii_client.update_config(next_config.taxii.clone());
+        (Method::Post, "/api/config/save") => match read_body_limited(body, 10 * 1024 * 1024) {
+            Ok(body) => {
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let config_path = s.config_path.clone();
+                match config_save_target(&s.config, &body) {
+                    Ok((next_config, applied_fields)) => {
+                        if let Err(e) = persist_config_to_path(&next_config, &config_path) {
+                            error_json(&e, 500)
+                        } else {
+                            s.config = next_config.clone();
+                            s.siem_connector.update_config(next_config.siem.clone());
+                            s.taxii_client.update_config(next_config.taxii.clone());
 
-                                json_response(
-                                    &serde_json::json!({
-                                        "status": "saved",
-                                        "path": config_path.display().to_string(),
-                                        "applied_fields": applied_fields,
-                                    })
-                                    .to_string(),
-                                    200,
-                                )
-                            }
+                            json_response(
+                                &serde_json::json!({
+                                    "status": "saved",
+                                    "path": config_path.display().to_string(),
+                                    "applied_fields": applied_fields,
+                                })
+                                .to_string(),
+                                200,
+                            )
                         }
-                        Err(response) => response,
                     }
+                    Err(response) => response,
                 }
-                Err(e) => error_json(&e, 400),
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
 
         // ── Health & Alerts ──────────────────────────────────────────
         (Method::Get, "/api/health") => {
@@ -4533,9 +4885,7 @@ fn handle_api(
             json_response(&body.to_string(), 200)
         }
         // ── Kubernetes health probes ──────────────────────────────
-        (Method::Get, "/api/healthz/live") => {
-            json_response(r#"{"status":"alive"}"#, 200)
-        }
+        (Method::Get, "/api/healthz/live") => json_response(r#"{"status":"alive"}"#, 200),
         (Method::Get, "/api/healthz/ready") => {
             let s = match state.lock() {
                 Ok(g) => g,
@@ -4889,9 +5239,13 @@ fn handle_api(
         (Method::Get, "/api/threads/status") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let uptime = s.server_start.elapsed().as_secs();
-            let uptime_fmt = format!("{}d {}h {}m {}s",
-                uptime / 86400, (uptime % 86400) / 3600,
-                (uptime % 3600) / 60, uptime % 60);
+            let uptime_fmt = format!(
+                "{}d {}h {}m {}s",
+                uptime / 86400,
+                (uptime % 86400) / 3600,
+                (uptime % 3600) / 60,
+                uptime % 60
+            );
             // Gather OS-level thread count for this process
             let thread_count: u32 = {
                 #[cfg(target_os = "macos")]
@@ -4918,9 +5272,13 @@ fn handle_api(
                         .unwrap_or(0)
                 }
                 #[cfg(target_os = "windows")]
-                { 0 }
+                {
+                    0
+                }
                 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-                { 0 }
+                {
+                    0
+                }
             };
             // Process memory (RSS) in MB
             let rss_mb: f64 = {
@@ -4933,7 +5291,8 @@ fn handle_api(
                             String::from_utf8_lossy(&o.stdout)
                                 .trim()
                                 .parse::<f64>()
-                                .unwrap_or(0.0) / 1024.0
+                                .unwrap_or(0.0)
+                                / 1024.0
                         })
                         .unwrap_or(0.0)
                 }
@@ -4947,17 +5306,28 @@ fn handle_api(
                                 .and_then(|l| l.split_whitespace().nth(1))
                                 .and_then(|v| v.parse::<f64>().ok())
                         })
-                        .unwrap_or(0.0) / 1024.0
+                        .unwrap_or(0.0)
+                        / 1024.0
                 }
                 #[cfg(target_os = "windows")]
-                { 0.0 }
+                {
+                    0.0
+                }
                 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-                { 0.0 }
+                {
+                    0.0
+                }
             };
             let sample_rate = if s.local_telemetry.len() > 1 {
                 let span = uptime as f64;
-                if span > 0.0 { s.local_telemetry.len() as f64 / span } else { 0.2 }
-            } else { 0.2 };
+                if span > 0.0 {
+                    s.local_telemetry.len() as f64 / span
+                } else {
+                    0.2
+                }
+            } else {
+                0.2
+            };
             let body = serde_json::json!({
                 "monitoring_thread": "active",
                 "thread_count": thread_count,
@@ -5175,6 +5545,7 @@ fn handle_api(
                 {"method": "GET", "path": "/api/process-tree/deep-chains", "auth": true, "description": "Deep process ancestry chains"},
                 {"method": "GET", "path": "/api/processes/live", "auth": true, "description": "Live process list from local host"},
                 {"method": "GET", "path": "/api/processes/analysis", "auth": true, "description": "Analyse running processes for suspicious behaviour"},
+                {"method": "GET", "path": "/api/processes/detail?pid=<pid>", "auth": true, "description": "Detailed local process investigation view for a specific PID"},
                 {"method": "GET", "path": "/api/host/apps", "auth": true, "description": "Enumerate installed applications"},
                 {"method": "GET", "path": "/api/host/inventory", "auth": true, "description": "Full system inventory (hardware, software, services, users)"},
                 {"method": "POST", "path": "/api/policy-vm/execute", "auth": true, "description": "Execute a policy VM program"},
@@ -5220,9 +5591,10 @@ fn handle_api(
             for entry in &supplemental {
                 if let (Some(method), Some(path)) =
                     (entry["method"].as_str(), entry["path"].as_str())
-                    && seen.insert((method.to_string(), path.to_string())) {
-                        endpoints.push(entry.clone());
-                    }
+                    && seen.insert((method.to_string(), path.to_string()))
+                {
+                    endpoints.push(entry.clone());
+                }
             }
             endpoints.sort_by(|a, b| {
                 let left = (
@@ -6021,54 +6393,50 @@ fn handle_api(
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(&serde_json::json!({"connectors": s.enterprise.connectors(), "count": s.enterprise.connectors().len()}).to_string(), 200)
         }
-        (Method::Post, "/api/enrichments/connectors") => {
-            match read_json_value(body, 16 * 1024) {
-                Ok(v) => {
-                    let metadata = v
-                        .get("metadata")
-                        .cloned()
-                        .and_then(|value| {
-                            serde_json::from_value::<HashMap<String, String>>(value).ok()
-                        })
-                        .unwrap_or_default();
-                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                    let connector = s.enterprise.create_or_update_connector(
-                        v["id"].as_str(),
-                        v["kind"].as_str().unwrap_or("custom").to_string(),
-                        v["display_name"]
-                            .as_str()
-                            .unwrap_or("Connector")
-                            .to_string(),
-                        v.get("endpoint")
-                            .and_then(|value| value.as_str())
-                            .map(|s| s.to_string()),
-                        v.get("auth_mode")
-                            .and_then(|value| value.as_str())
-                            .map(|s| s.to_string()),
-                        v.get("enabled")
-                            .and_then(|value| value.as_bool())
-                            .unwrap_or(true),
-                        v.get("timeout_secs")
-                            .and_then(|value| value.as_u64())
-                            .unwrap_or(10),
-                        metadata,
-                    );
-                    let _ = s.enterprise.record_change(
-                        "connector",
-                        &connector.id,
-                        &format!("Saved enrichment connector {}", connector.display_name),
-                        auth_identity.actor(),
-                        Some(connector.id.clone()),
-                        Some(&v.to_string()),
-                    );
-                    json_response(
-                        &serde_json::json!({"status": "saved", "connector": connector}).to_string(),
-                        200,
-                    )
-                }
-                Err(e) => error_json(&e, 400),
+        (Method::Post, "/api/enrichments/connectors") => match read_json_value(body, 16 * 1024) {
+            Ok(v) => {
+                let metadata = v
+                    .get("metadata")
+                    .cloned()
+                    .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
+                    .unwrap_or_default();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let connector = s.enterprise.create_or_update_connector(
+                    v["id"].as_str(),
+                    v["kind"].as_str().unwrap_or("custom").to_string(),
+                    v["display_name"]
+                        .as_str()
+                        .unwrap_or("Connector")
+                        .to_string(),
+                    v.get("endpoint")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("auth_mode")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
+                    v.get("enabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(true),
+                    v.get("timeout_secs")
+                        .and_then(|value| value.as_u64())
+                        .unwrap_or(10),
+                    metadata,
+                );
+                let _ = s.enterprise.record_change(
+                    "connector",
+                    &connector.id,
+                    &format!("Saved enrichment connector {}", connector.display_name),
+                    auth_identity.actor(),
+                    Some(connector.id.clone()),
+                    Some(&v.to_string()),
+                );
+                json_response(
+                    &serde_json::json!({"status": "saved", "connector": connector}).to_string(),
+                    200,
+                )
             }
-        }
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Post, "/api/tickets/sync") => {
             let started = std::time::Instant::now();
             match read_json_value(body, 12 * 1024) {
@@ -6346,7 +6714,10 @@ fn handle_api(
                 .header("Access-Control-Allow-Origin", origin)
                 .header("Vary", "Origin")
                 .header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-                .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                .header(
+                    "Access-Control-Allow-Headers",
+                    "Content-Type, Authorization",
+                )
                 .body(Body::empty())
                 .unwrap()
         }
@@ -6598,21 +6969,28 @@ fn handle_api(
             #[cfg(target_os = "macos")]
             {
                 let procs = crate::collector_macos::collect_processes();
-                let items: Vec<serde_json::Value> = procs.iter().map(|p| {
-                    serde_json::json!({
-                        "pid": p.pid, "ppid": p.ppid, "name": p.name,
-                        "user": p.user, "group": p.group,
-                        "cpu_percent": p.cpu_percent, "mem_percent": p.mem_percent,
+                let items: Vec<serde_json::Value> = procs
+                    .iter()
+                    .map(|p| {
+                        serde_json::json!({
+                            "pid": p.pid, "ppid": p.ppid, "name": p.name,
+                            "user": p.user, "group": p.group,
+                            "cpu_percent": p.cpu_percent, "mem_percent": p.mem_percent,
+                        })
                     })
-                }).collect();
+                    .collect();
                 let total_cpu: f32 = procs.iter().map(|p| p.cpu_percent).sum();
                 let total_mem: f32 = procs.iter().map(|p| p.mem_percent).sum();
-                json_response(&serde_json::json!({
-                    "processes": items, "count": items.len(),
-                    "total_cpu_percent": (total_cpu * 10.0).round() / 10.0,
-                    "total_mem_percent": (total_mem * 10.0).round() / 10.0,
-                    "platform": "macos",
-                }).to_string(), 200)
+                json_response(
+                    &serde_json::json!({
+                        "processes": items, "count": items.len(),
+                        "total_cpu_percent": (total_cpu * 10.0).round() / 10.0,
+                        "total_mem_percent": (total_mem * 10.0).round() / 10.0,
+                        "platform": "macos",
+                    })
+                    .to_string(),
+                    200,
+                )
             }
             #[cfg(target_os = "linux")]
             {
@@ -6646,36 +7024,56 @@ fn handle_api(
                         "cpu_percent": cpu, "mem_percent": mem,
                     })
                 }).collect();
-                let total_cpu: f32 = items.iter().map(|i| i["cpu_percent"].as_f64().unwrap_or(0.0) as f32).sum();
-                let total_mem: f32 = items.iter().map(|i| i["mem_percent"].as_f64().unwrap_or(0.0) as f32).sum();
-                json_response(&serde_json::json!({
-                    "processes": items, "count": items.len(),
-                    "total_cpu_percent": (total_cpu * 10.0).round() / 10.0,
-                    "total_mem_percent": (total_mem * 10.0).round() / 10.0,
-                    "platform": "linux",
-                }).to_string(), 200)
+                let total_cpu: f32 = items
+                    .iter()
+                    .map(|i| i["cpu_percent"].as_f64().unwrap_or(0.0) as f32)
+                    .sum();
+                let total_mem: f32 = items
+                    .iter()
+                    .map(|i| i["mem_percent"].as_f64().unwrap_or(0.0) as f32)
+                    .sum();
+                json_response(
+                    &serde_json::json!({
+                        "processes": items, "count": items.len(),
+                        "total_cpu_percent": (total_cpu * 10.0).round() / 10.0,
+                        "total_mem_percent": (total_mem * 10.0).round() / 10.0,
+                        "platform": "linux",
+                    })
+                    .to_string(),
+                    200,
+                )
             }
             #[cfg(target_os = "windows")]
             {
                 let procs = crate::collector_windows::collect_processes();
-                let items: Vec<serde_json::Value> = procs.iter().map(|p| {
-                    serde_json::json!({
-                        "pid": p.pid, "ppid": p.ppid, "name": p.name,
-                        "user": if p.user.is_empty() { "—" } else { &p.user },
-                        "group": "—",
-                        "cpu_percent": 0.0, "mem_percent": 0.0,
+                let items: Vec<serde_json::Value> = procs
+                    .iter()
+                    .map(|p| {
+                        serde_json::json!({
+                            "pid": p.pid, "ppid": p.ppid, "name": p.name,
+                            "user": if p.user.is_empty() { "—" } else { &p.user },
+                            "group": "—",
+                            "cpu_percent": 0.0, "mem_percent": 0.0,
+                        })
                     })
-                }).collect();
-                json_response(&serde_json::json!({
-                    "processes": items, "count": items.len(),
-                    "total_cpu_percent": 0.0,
-                    "total_mem_percent": 0.0,
-                    "platform": "windows",
-                }).to_string(), 200)
+                    .collect();
+                json_response(
+                    &serde_json::json!({
+                        "processes": items, "count": items.len(),
+                        "total_cpu_percent": 0.0,
+                        "total_mem_percent": 0.0,
+                        "platform": "windows",
+                    })
+                    .to_string(),
+                    200,
+                )
             }
             #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
             {
-                json_response(r#"{"processes":[],"count":0,"message":"Unsupported platform"}"#, 200)
+                json_response(
+                    r#"{"processes":[],"count":0,"message":"Unsupported platform"}"#,
+                    200,
+                )
             }
         }
         (Method::Get, "/api/processes/analysis") => {
@@ -6683,16 +7081,25 @@ fn handle_api(
             {
                 let procs = crate::collector_macos::collect_processes();
                 let findings = crate::collector_macos::analyze_processes(&procs);
-                let items: Vec<serde_json::Value> = findings.iter().map(|f| {
-                    serde_json::json!({
-                        "pid": f.pid, "name": f.name, "user": f.user,
-                        "risk_level": f.risk_level, "reason": f.reason,
-                        "cpu_percent": f.cpu_percent, "mem_percent": f.mem_percent,
+                let items: Vec<serde_json::Value> = findings
+                    .iter()
+                    .map(|f| {
+                        serde_json::json!({
+                            "pid": f.pid, "name": f.name, "user": f.user,
+                            "risk_level": f.risk_level, "reason": f.reason,
+                            "cpu_percent": f.cpu_percent, "mem_percent": f.mem_percent,
+                        })
                     })
-                }).collect();
-                let critical = findings.iter().filter(|f| f.risk_level == "critical").count();
+                    .collect();
+                let critical = findings
+                    .iter()
+                    .filter(|f| f.risk_level == "critical")
+                    .count();
                 let severe = findings.iter().filter(|f| f.risk_level == "severe").count();
-                let elevated = findings.iter().filter(|f| f.risk_level == "elevated").count();
+                let elevated = findings
+                    .iter()
+                    .filter(|f| f.risk_level == "elevated")
+                    .count();
                 json_response(&serde_json::json!({
                     "findings": items, "total": items.len(),
                     "risk_summary": { "critical": critical, "severe": severe, "elevated": elevated },
@@ -6705,16 +7112,25 @@ fn handle_api(
             {
                 let procs = crate::collector_linux::collect_processes();
                 let findings = crate::collector_linux::analyze_processes(&procs);
-                let items: Vec<serde_json::Value> = findings.iter().map(|f| {
-                    serde_json::json!({
-                        "pid": f.pid, "name": f.name, "user": f.user,
-                        "risk_level": f.risk_level, "reason": f.reason,
-                        "cpu_percent": f.cpu_percent, "mem_percent": f.mem_percent,
+                let items: Vec<serde_json::Value> = findings
+                    .iter()
+                    .map(|f| {
+                        serde_json::json!({
+                            "pid": f.pid, "name": f.name, "user": f.user,
+                            "risk_level": f.risk_level, "reason": f.reason,
+                            "cpu_percent": f.cpu_percent, "mem_percent": f.mem_percent,
+                        })
                     })
-                }).collect();
-                let critical = findings.iter().filter(|f| f.risk_level == "critical").count();
+                    .collect();
+                let critical = findings
+                    .iter()
+                    .filter(|f| f.risk_level == "critical")
+                    .count();
                 let severe = findings.iter().filter(|f| f.risk_level == "severe").count();
-                let elevated = findings.iter().filter(|f| f.risk_level == "elevated").count();
+                let elevated = findings
+                    .iter()
+                    .filter(|f| f.risk_level == "elevated")
+                    .count();
                 json_response(&serde_json::json!({
                     "findings": items, "total": items.len(),
                     "risk_summary": { "critical": critical, "severe": severe, "elevated": elevated },
@@ -6727,16 +7143,25 @@ fn handle_api(
             {
                 let procs = crate::collector_windows::collect_processes();
                 let findings = crate::collector_windows::analyze_processes(&procs);
-                let items: Vec<serde_json::Value> = findings.iter().map(|f| {
-                    serde_json::json!({
-                        "pid": f.pid, "name": f.name, "user": f.user,
-                        "risk_level": f.risk_level, "reason": f.reason,
-                        "cpu_percent": f.cpu_percent, "mem_percent": f.mem_percent,
+                let items: Vec<serde_json::Value> = findings
+                    .iter()
+                    .map(|f| {
+                        serde_json::json!({
+                            "pid": f.pid, "name": f.name, "user": f.user,
+                            "risk_level": f.risk_level, "reason": f.reason,
+                            "cpu_percent": f.cpu_percent, "mem_percent": f.mem_percent,
+                        })
                     })
-                }).collect();
-                let critical = findings.iter().filter(|f| f.risk_level == "critical").count();
+                    .collect();
+                let critical = findings
+                    .iter()
+                    .filter(|f| f.risk_level == "critical")
+                    .count();
                 let severe = findings.iter().filter(|f| f.risk_level == "severe").count();
-                let elevated = findings.iter().filter(|f| f.risk_level == "elevated").count();
+                let elevated = findings
+                    .iter()
+                    .filter(|f| f.risk_level == "elevated")
+                    .count();
                 json_response(&serde_json::json!({
                     "findings": items, "total": items.len(),
                     "risk_summary": { "critical": critical, "severe": severe, "elevated": elevated },
@@ -6747,55 +7172,96 @@ fn handle_api(
             }
             #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
             {
-                json_response(r#"{"findings":[],"total":0,"status":"clean","message":"Unsupported platform"}"#, 200)
+                json_response(
+                    r#"{"findings":[],"total":0,"status":"clean","message":"Unsupported platform"}"#,
+                    200,
+                )
+            }
+        }
+        (Method::Get, "/api/processes/detail") => {
+            if let Some(pid) = url_param(&url, "pid").and_then(|value| value.parse::<u32>().ok()) {
+                let hostname = {
+                    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    s.local_host_info.hostname.clone()
+                };
+                match process_detail_json(pid, &hostname) {
+                    Some(detail) => json_response(&detail.to_string(), 200),
+                    None => error_json("process not found", 404),
+                }
+            } else {
+                error_json("pid query parameter required", 400)
             }
         }
         (Method::Get, "/api/host/apps") => {
             #[cfg(target_os = "macos")]
             {
                 let apps = crate::collector_macos::collect_installed_apps();
-                let items: Vec<serde_json::Value> = apps.iter().map(|a| {
-                    serde_json::json!({
-                        "name": a.name, "path": a.path, "version": a.version,
-                        "bundle_id": a.bundle_id, "size_mb": (a.size_mb * 10.0).round() / 10.0,
-                        "last_modified": a.last_modified,
+                let items: Vec<serde_json::Value> = apps
+                    .iter()
+                    .map(|a| {
+                        serde_json::json!({
+                            "name": a.name, "path": a.path, "version": a.version,
+                            "bundle_id": a.bundle_id, "size_mb": (a.size_mb * 10.0).round() / 10.0,
+                            "last_modified": a.last_modified,
+                        })
                     })
-                }).collect();
-                json_response(&serde_json::json!({
-                    "apps": items, "count": items.len(), "platform": "macos",
-                }).to_string(), 200)
+                    .collect();
+                json_response(
+                    &serde_json::json!({
+                        "apps": items, "count": items.len(), "platform": "macos",
+                    })
+                    .to_string(),
+                    200,
+                )
             }
             #[cfg(target_os = "linux")]
             {
                 let apps = crate::collector_linux::collect_installed_apps();
-                let items: Vec<serde_json::Value> = apps.iter().map(|a| {
-                    serde_json::json!({
-                        "name": a.name, "path": a.path, "version": a.version,
-                        "bundle_id": a.bundle_id, "size_mb": (a.size_mb * 10.0).round() / 10.0,
-                        "last_modified": a.last_modified,
+                let items: Vec<serde_json::Value> = apps
+                    .iter()
+                    .map(|a| {
+                        serde_json::json!({
+                            "name": a.name, "path": a.path, "version": a.version,
+                            "bundle_id": a.bundle_id, "size_mb": (a.size_mb * 10.0).round() / 10.0,
+                            "last_modified": a.last_modified,
+                        })
                     })
-                }).collect();
-                json_response(&serde_json::json!({
-                    "apps": items, "count": items.len(), "platform": "linux",
-                }).to_string(), 200)
+                    .collect();
+                json_response(
+                    &serde_json::json!({
+                        "apps": items, "count": items.len(), "platform": "linux",
+                    })
+                    .to_string(),
+                    200,
+                )
             }
             #[cfg(target_os = "windows")]
             {
                 let apps = crate::collector_windows::collect_installed_apps();
-                let items: Vec<serde_json::Value> = apps.iter().map(|a| {
-                    serde_json::json!({
-                        "name": a.name, "path": a.path, "version": a.version,
-                        "bundle_id": a.bundle_id, "size_mb": (a.size_mb * 10.0).round() / 10.0,
-                        "last_modified": a.last_modified,
+                let items: Vec<serde_json::Value> = apps
+                    .iter()
+                    .map(|a| {
+                        serde_json::json!({
+                            "name": a.name, "path": a.path, "version": a.version,
+                            "bundle_id": a.bundle_id, "size_mb": (a.size_mb * 10.0).round() / 10.0,
+                            "last_modified": a.last_modified,
+                        })
                     })
-                }).collect();
-                json_response(&serde_json::json!({
-                    "apps": items, "count": items.len(), "platform": "windows",
-                }).to_string(), 200)
+                    .collect();
+                json_response(
+                    &serde_json::json!({
+                        "apps": items, "count": items.len(), "platform": "windows",
+                    })
+                    .to_string(),
+                    200,
+                )
             }
             #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
             {
-                json_response(r#"{"apps":[],"count":0,"message":"Unsupported platform"}"#, 200)
+                json_response(
+                    r#"{"apps":[],"count":0,"message":"Unsupported platform"}"#,
+                    200,
+                )
             }
         }
         (Method::Get, "/api/host/inventory") => {
@@ -7299,7 +7765,8 @@ fn handle_api(
                                 );
                             }
                         };
-                        let approver = v["approver"].as_str()
+                        let approver = v["approver"]
+                            .as_str()
                             .filter(|s| !s.is_empty())
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| response_approver(&auth_identity));
@@ -7689,10 +8156,12 @@ fn handle_api(
                 };
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 // Cap total tracked agents to prevent unbounded memory growth
-                if !s.agent_inventories.contains_key(agent_id) && s.agent_inventories.len() >= 10_000
-                    && let Some(evict_key) = s.agent_inventories.keys().next().cloned() {
-                        s.agent_inventories.remove(&evict_key);
-                    }
+                if !s.agent_inventories.contains_key(agent_id)
+                    && s.agent_inventories.len() >= 10_000
+                    && let Some(evict_key) = s.agent_inventories.keys().next().cloned()
+                {
+                    s.agent_inventories.remove(&evict_key);
+                }
                 s.agent_inventories.insert(agent_id.to_string(), inventory);
                 json_response(
                     &serde_json::json!({"status":"inventory_stored","agent_id":agent_id})
@@ -7752,13 +8221,14 @@ fn handle_api(
                                         );
                                         payload.insert(
                                             "ticket_syncs".to_string(),
-                                            serde_json::json!(s
-                                                .enterprise
-                                                .ticket_syncs()
-                                                .iter()
-                                                .filter(|sync| sync.object_kind == "incident"
-                                                    && sync.object_id == inc.id.to_string())
-                                                .collect::<Vec<_>>()),
+                                            serde_json::json!(
+                                                s.enterprise
+                                                    .ticket_syncs()
+                                                    .iter()
+                                                    .filter(|sync| sync.object_kind == "incident"
+                                                        && sync.object_id == inc.id.to_string())
+                                                    .collect::<Vec<_>>()
+                                            ),
                                         );
                                         payload.insert(
                                             "evidence_package".to_string(),
@@ -7886,7 +8356,10 @@ fn handle_api(
                                     .status(200)
                                     .header("Content-Type", "text/html; charset=utf-8")
                                     .header("Access-Control-Allow-Origin", cors_origin())
-                                    .header("Content-Disposition", "attachment; filename=\"report.html\"")
+                                    .header(
+                                        "Content-Disposition",
+                                        "attachment; filename=\"report.html\"",
+                                    )
                                     .header("X-Content-Type-Options", "nosniff")
                                     .header("X-Frame-Options", "DENY")
                                     .header("Cache-Control", "no-store")
@@ -7931,14 +8404,12 @@ fn handle_api(
                     .unwrap_or("");
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.update_manager.get_release_binary(file_name) {
-                    Ok(data) => {
-                        Response::builder()
-                            .status(200)
-                            .header("Content-Type", "application/octet-stream")
-                            .header("Access-Control-Allow-Origin", cors_origin())
-                            .body(Body::from(data))
-                            .unwrap()
-                    }
+                    Ok(data) => Response::builder()
+                        .status(200)
+                        .header("Content-Type", "application/octet-stream")
+                        .header("Access-Control-Allow-Origin", cors_origin())
+                        .body(Body::from(data))
+                        .unwrap(),
                     Err(e) => error_json(&e, 404),
                 }
             } else if method == Method::Get
@@ -8119,7 +8590,14 @@ fn handle_api(
                             _ => None,
                         };
                         let Some(target) = target else {
-                            return respond_api(state, &method, &url, remote_addr, needs_auth, error_json(&format!("invalid target_status: {status_str}"), 400));
+                            return respond_api(
+                                state,
+                                &method,
+                                &url,
+                                remote_addr,
+                                needs_auth,
+                                error_json(&format!("invalid target_status: {status_str}"), 400),
+                            );
                         };
                         let reason = v["reason"].as_str().unwrap_or("promotion");
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -8323,16 +8801,41 @@ fn handle_api(
                                         _ => None,
                                     };
                                     let Some(status) = status else {
-                                        return respond_api(state, &method, &url, remote_addr, needs_auth, error_json(&format!("invalid status: {status_str}"), 400));
+                                        return respond_api(
+                                            state,
+                                            &method,
+                                            &url,
+                                            remote_addr,
+                                            needs_auth,
+                                            error_json(
+                                                &format!("invalid status: {status_str}"),
+                                                400,
+                                            ),
+                                        );
                                     };
                                     if !s.case_store.update_status(id, status) {
-                                        return respond_api(state, &method, &url, remote_addr, needs_auth, error_json("case not found", 404));
+                                        return respond_api(
+                                            state,
+                                            &method,
+                                            &url,
+                                            remote_addr,
+                                            needs_auth,
+                                            error_json("case not found", 404),
+                                        );
                                     }
                                 }
                                 if let Some(assignee) = v["assignee"].as_str()
-                                    && !s.case_store.assign(id, assignee.to_string()) {
-                                        return respond_api(state, &method, &url, remote_addr, needs_auth, error_json("case not found", 404));
-                                    }
+                                    && !s.case_store.assign(id, assignee.to_string())
+                                {
+                                    return respond_api(
+                                        state,
+                                        &method,
+                                        &url,
+                                        remote_addr,
+                                        needs_auth,
+                                        error_json("case not found", 404),
+                                    );
+                                }
                                 if let Some(incident_id) = v["link_incident"].as_u64() {
                                     s.case_store.link_incident(id, incident_id);
                                 }
@@ -8522,12 +9025,10 @@ fn handle_api(
                         let now = chrono::Utc::now().timestamp_millis() as u64;
                         let executed_by = playbook_executor(&auth_identity);
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                        match s.playbook_engine.start_execution(
-                            pb_id,
-                            alert_id,
-                            &executed_by,
-                            now,
-                        ) {
+                        match s
+                            .playbook_engine
+                            .start_execution(pb_id, alert_id, &executed_by, now)
+                        {
                             Some(eid) => json_response(
                                 &serde_json::json!({"execution_id": eid}).to_string(),
                                 200,
@@ -8786,7 +9287,9 @@ fn handle_api(
                 };
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.query_alerts(&filter))) {
-                    Ok(alerts) => json_response(&serde_json::to_string(&alerts).unwrap_or_default(), 200),
+                    Ok(alerts) => {
+                        json_response(&serde_json::to_string(&alerts).unwrap_or_default(), 200)
+                    }
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Get && url_path == "/api/storage/cases" {
@@ -8799,7 +9302,9 @@ fn handle_api(
                 };
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.list_cases(&filter))) {
-                    Ok(cases) => json_response(&serde_json::to_string(&cases).unwrap_or_default(), 200),
+                    Ok(cases) => {
+                        json_response(&serde_json::to_string(&cases).unwrap_or_default(), 200)
+                    }
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Get && url_path == "/api/storage/audit" {
@@ -8817,7 +9322,9 @@ fn handle_api(
             } else if method == Method::Get && url_path == "/api/storage/stats" {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.stats())) {
-                    Ok(stats) => json_response(&serde_json::to_string(&stats).unwrap_or_default(), 200),
+                    Ok(stats) => {
+                        json_response(&serde_json::to_string(&stats).unwrap_or_default(), 200)
+                    }
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Get && url_path == "/api/storage/agents" {
@@ -8825,23 +9332,23 @@ fn handle_api(
                 let tenant = query.get("tenant_id").map(|s| s.as_str());
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.storage.with(|store| Ok(store.list_agents(tenant))) {
-                    Ok(agents) => json_response(&serde_json::to_string(&agents).unwrap_or_default(), 200),
+                    Ok(agents) => {
+                        json_response(&serde_json::to_string(&agents).unwrap_or_default(), 200)
+                    }
                     Err(e) => error_json(&e.message, 500),
                 }
             } else if method == Method::Post && url_path == "/api/storage/alerts" {
                 match read_body_limited(body, 8192) {
-                    Ok(body) => {
-                        match serde_json::from_str::<crate::storage::StoredAlert>(&body) {
-                            Ok(alert) => {
-                                let s = state.lock().unwrap_or_else(|e| e.into_inner());
-                                match s.storage.with(|store| store.insert_alert(alert)) {
-                                    Ok(()) => json_response(r#"{"status":"stored"}"#, 201),
-                                    Err(e) => error_json(&e.message, 409),
-                                }
+                    Ok(body) => match serde_json::from_str::<crate::storage::StoredAlert>(&body) {
+                        Ok(alert) => {
+                            let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                            match s.storage.with(|store| store.insert_alert(alert)) {
+                                Ok(()) => json_response(r#"{"status":"stored"}"#, 201),
+                                Err(e) => error_json(&e.message, 409),
                             }
-                            Err(e) => error_json(&format!("invalid alert JSON: {e}"), 400),
                         }
-                    }
+                        Err(e) => error_json(&format!("invalid alert JSON: {e}"), 400),
+                    },
                     Err(e) => error_json(&e, 400),
                 }
             } else if method == Method::Get && url_path == "/api/detectors/slow-attack" {
@@ -8851,7 +9358,6 @@ fn handle_api(
                 };
                 let report = s.slow_attack.evaluate();
                 json_response(&serde_json::to_string(&report).unwrap_or_default(), 200)
-
             } else if method == Method::Get && url_path == "/api/detectors/ransomware" {
                 let mut s = match state.lock() {
                     Ok(g) => g,
@@ -8868,7 +9374,10 @@ fn handle_api(
                 };
                 match s.storage.with(|store| store.rollback_migration()) {
                     Ok(Some(version)) => {
-                        let new_ver = s.storage.with(|store| Ok(store.schema_version())).unwrap_or(0);
+                        let new_ver = s
+                            .storage
+                            .with(|store| Ok(store.schema_version()))
+                            .unwrap_or(0);
                         let body = serde_json::json!({
                             "status": "rolled_back",
                             "version": version,
@@ -8963,7 +9472,8 @@ fn handle_api(
                 match read_body_limited(body, 4096) {
                     Ok(body_str) => {
                         // Require confirmation token to prevent accidental reset
-                        let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&body_str).unwrap_or_default();
                         let confirm = parsed["confirm"].as_str().unwrap_or("");
                         if confirm != "RESET_ALL_DATA" {
                             error_json("send {\"confirm\":\"RESET_ALL_DATA\"} to confirm", 400)
@@ -9019,7 +9529,8 @@ fn handle_api(
             } else if method == Method::Post && url_path == "/api/admin/db/purge" {
                 match read_body_limited(body, 4096) {
                     Ok(body_str) => {
-                        let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&body_str).unwrap_or_default();
                         let days = parsed["retention_days"].as_u64().unwrap_or(0) as u32;
                         if days == 0 {
                             error_json("retention_days must be > 0", 400)
@@ -9028,9 +9539,18 @@ fn handle_api(
                                 Ok(g) => g,
                                 Err(e) => e.into_inner(),
                             };
-                            let alerts_purged = s.storage.with(|store| store.purge_old_alerts(days)).unwrap_or(0);
-                            let audit_purged = s.storage.with(|store| store.purge_old_audit(days)).unwrap_or(0);
-                            let metrics_purged = s.storage.with(|store| store.purge_old_metrics(days)).unwrap_or(0);
+                            let alerts_purged = s
+                                .storage
+                                .with(|store| store.purge_old_alerts(days))
+                                .unwrap_or(0);
+                            let audit_purged = s
+                                .storage
+                                .with(|store| store.purge_old_audit(days))
+                                .unwrap_or(0);
+                            let metrics_purged = s
+                                .storage
+                                .with(|store| store.purge_old_metrics(days))
+                                .unwrap_or(0);
                             let body = serde_json::json!({
                                 "status": "completed",
                                 "retention_days": days,
@@ -9053,7 +9573,8 @@ fn handle_api(
                     env!("CARGO_PKG_VERSION"),
                 );
                 let components = generator.parse_cargo_lock(&lock_content);
-                let doc = generator.generate(components, vec![], crate::sbom::SbomFormat::CycloneDX);
+                let doc =
+                    generator.generate(components, vec![], crate::sbom::SbomFormat::CycloneDX);
                 let rendered = generator.to_cyclonedx_json(&doc);
                 json_response(&rendered, 200)
 
@@ -9086,7 +9607,8 @@ fn handle_api(
             } else if method == Method::Post && url_path == "/api/license/validate" {
                 match read_body_limited(body, 4096) {
                     Ok(body_str) => {
-                        let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&body_str).unwrap_or_default();
                         let key = parsed["key"].as_str().unwrap_or("");
                         if key.is_empty() {
                             error_json("license key required", 400)
@@ -9107,20 +9629,28 @@ fn handle_api(
             } else if method == Method::Post && url_path == "/api/search" {
                 match read_body_limited(body, 65_536) {
                     Ok(body_str) => {
-                        let query: crate::search::SearchQuery = match serde_json::from_str(&body_str) {
-                            Ok(q) => q,
-                            Err(e) => return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid query: {e}"), 400)),
-                        };
-                        match crate::search::SearchIndex::new("/tmp/wardex-search") {
-                            Ok(idx) => {
-                                match idx.search(&query) {
-                                    Ok(result) => {
-                                        let body = serde_json::to_string(&result).unwrap_or_default();
-                                        json_response(&body, 200)
-                                    }
-                                    Err(e) => error_json(&format!("search failed: {e}"), 500),
+                        let query: crate::search::SearchQuery =
+                            match serde_json::from_str(&body_str) {
+                                Ok(q) => q,
+                                Err(e) => {
+                                    return respond_api(
+                                        state,
+                                        &method,
+                                        &url,
+                                        remote_addr,
+                                        auth_used,
+                                        error_json(&format!("invalid query: {e}"), 400),
+                                    );
                                 }
-                            }
+                            };
+                        match crate::search::SearchIndex::new("/tmp/wardex-search") {
+                            Ok(idx) => match idx.search(&query) {
+                                Ok(result) => {
+                                    let body = serde_json::to_string(&result).unwrap_or_default();
+                                    json_response(&body, 200)
+                                }
+                                Err(e) => error_json(&format!("search failed: {e}"), 500),
+                            },
                             Err(e) => error_json(&format!("search index unavailable: {e}"), 500),
                         }
                     }
@@ -9158,7 +9688,9 @@ fn handle_api(
                 let body = serde_json::to_string(&packs).unwrap_or_default();
                 json_response(&body, 200)
             } else if method == Method::Get && url_path.starts_with("/api/marketplace/packs/") {
-                let pack_id = url_path.strip_prefix("/api/marketplace/packs/").unwrap_or("");
+                let pack_id = url_path
+                    .strip_prefix("/api/marketplace/packs/")
+                    .unwrap_or("");
                 let mgr = crate::marketplace::MarketplaceManager::new();
                 match mgr.get_pack(pack_id) {
                     Some(pack) => {
@@ -9215,7 +9747,6 @@ fn handle_api(
                     "scopes": cfg.scopes,
                 });
                 json_response(&body.to_string(), 200)
-
             } else if method == Method::Get && url_path == "/api/auth/sso/login" {
                 let cfg = crate::auth::OidcConfig::default();
                 let mgr = crate::auth::AuthManager::new(cfg);
@@ -9225,11 +9756,11 @@ fn handle_api(
                     "state": nonce,
                 });
                 json_response(&body.to_string(), 200)
-
             } else if method == Method::Post && url_path == "/api/auth/sso/callback" {
                 match read_body_limited(body, 8192) {
                     Ok(body_str) => {
-                        let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&body_str).unwrap_or_default();
                         let code = parsed["code"].as_str().unwrap_or("");
                         let state = parsed["state"].as_str().unwrap_or("");
                         if code.is_empty() {
@@ -9242,7 +9773,9 @@ fn handle_api(
                             match mgr.exchange_code(code) {
                                 Ok(token_resp) => {
                                     // Extract user info from id_token; use defaults if token is opaque
-                                    let claims: serde_json::Value = serde_json::from_str(&token_resp.id_token).unwrap_or_default();
+                                    let claims: serde_json::Value =
+                                        serde_json::from_str(&token_resp.id_token)
+                                            .unwrap_or_default();
                                     let user_id = claims["sub"].as_str().unwrap_or("sso-user");
                                     let email = claims["email"].as_str().unwrap_or("unknown@sso");
                                     let role = claims["role"].as_str().unwrap_or("analyst");
@@ -9260,13 +9793,16 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-
             } else if method == Method::Get && url_path == "/api/auth/session" {
                 // Check current authentication state from bearer token
                 let identity = authenticate_request(headers, state);
                 let (user_id, role, authenticated) = match &identity {
                     AuthIdentity::AdminToken => ("admin".to_string(), "admin".to_string(), true),
-                    AuthIdentity::UserToken(u) => (u.username.clone(), format!("{:?}", u.role).to_lowercase(), true),
+                    AuthIdentity::UserToken(u) => (
+                        u.username.clone(),
+                        format!("{:?}", u.role).to_lowercase(),
+                        true,
+                    ),
                     AuthIdentity::None => ("anonymous".to_string(), "viewer".to_string(), false),
                 };
                 let body = serde_json::json!({
@@ -9275,7 +9811,6 @@ fn handle_api(
                     "authenticated": authenticated,
                 });
                 json_response(&body.to_string(), 200)
-
             } else if method == Method::Post && url_path == "/api/auth/logout" {
                 let body = serde_json::json!({ "logged_out": true });
                 json_response(&body.to_string(), 200)
@@ -9357,10 +9892,20 @@ fn handle_api(
             } else if method == Method::Post && url_path == "/api/ml/triage" {
                 match read_body_limited(body, 8192) {
                     Ok(body_str) => {
-                        let features: crate::ml_engine::TriageFeatures = match serde_json::from_str(&body_str) {
-                            Ok(f) => f,
-                            Err(e) => return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid features: {e}"), 400)),
-                        };
+                        let features: crate::ml_engine::TriageFeatures =
+                            match serde_json::from_str(&body_str) {
+                                Ok(f) => f,
+                                Err(e) => {
+                                    return respond_api(
+                                        state,
+                                        &method,
+                                        &url,
+                                        remote_addr,
+                                        auth_used,
+                                        error_json(&format!("invalid features: {e}"), 400),
+                                    );
+                                }
+                            };
                         let engine = crate::ml_engine::StubEngine::new();
                         let result = engine.triage_alert(&features);
                         let body = serde_json::to_string(&result).unwrap_or_default();
@@ -9368,7 +9913,6 @@ fn handle_api(
                     }
                     Err(e) => error_json(&e, 400),
                 }
-
             } else {
                 error_json("not found", 404)
             }
@@ -9387,9 +9931,7 @@ fn read_body_limited(body: &[u8], limit: usize) -> Result<String, String> {
     String::from_utf8(body.to_vec()).map_err(|_| "invalid UTF-8 in request body".to_string())
 }
 
-fn handle_analyze(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_analyze(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9449,7 +9991,9 @@ fn handle_analyze(body: &[u8],
                     .snapshot()
                     .and_then(|snap| {
                         serde_json::to_vec(&snap)
-                            .map_err(|e| log::error!("proof post-snapshot serialization error: {e}"))
+                            .map_err(|e| {
+                                log::error!("proof post-snapshot serialization error: {e}")
+                            })
                             .ok()
                     })
                     .unwrap_or_default();
@@ -9466,9 +10010,7 @@ fn handle_analyze(body: &[u8],
     }
 }
 
-fn handle_mode(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_mode(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9505,9 +10047,7 @@ fn handle_mode(body: &[u8],
     json_response(&body.to_string(), 200)
 }
 
-fn handle_fleet_register(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_fleet_register(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9540,9 +10080,7 @@ fn handle_fleet_register(body: &[u8],
     json_response(&body.to_string(), 200)
 }
 
-fn handle_enforcement_quarantine(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_enforcement_quarantine(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9572,9 +10110,7 @@ fn handle_enforcement_quarantine(body: &[u8],
     json_response(&info.to_string(), 200)
 }
 
-fn handle_threat_intel_ioc(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_threat_intel_ioc(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9619,9 +10155,7 @@ fn handle_threat_intel_ioc(body: &[u8],
     json_response(&body.to_string(), 200)
 }
 
-fn handle_digital_twin_simulate(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_digital_twin_simulate(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9675,9 +10209,7 @@ fn handle_digital_twin_simulate(body: &[u8],
     json_response(&info.to_string(), 200)
 }
 
-fn handle_energy_consume(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_energy_consume(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9700,9 +10232,7 @@ fn handle_energy_consume(body: &[u8],
     json_response(&info.to_string(), 200)
 }
 
-fn handle_policy_vm_execute(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_policy_vm_execute(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9738,9 +10268,7 @@ fn handle_policy_vm_execute(body: &[u8],
     json_response(&info.to_string(), 200)
 }
 
-fn handle_deception_deploy(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_deception_deploy(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9776,9 +10304,7 @@ fn handle_deception_deploy(body: &[u8],
     )
 }
 
-fn handle_policy_compose(body: &[u8],
-    _state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_policy_compose(body: &[u8], _state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9859,9 +10385,7 @@ fn handle_policy_compose(body: &[u8],
     json_response(&info.to_string(), 200)
 }
 
-fn handle_config_reload(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_config_reload(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9908,9 +10432,7 @@ fn config_save_target(
 
 // ── XDR Handler Functions ────────────────────────────────────────────
 
-fn handle_agent_enroll(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_agent_enroll(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9929,9 +10451,7 @@ fn handle_agent_enroll(body: &[u8],
     }
 }
 
-fn handle_agent_create_token(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_agent_create_token(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -9966,7 +10486,8 @@ fn handle_agent_create_token(body: &[u8],
     }
 }
 
-fn handle_agent_heartbeat(body: &[u8],
+fn handle_agent_heartbeat(
+    body: &[u8],
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
 ) -> Response<Body> {
@@ -9996,20 +10517,21 @@ fn handle_agent_heartbeat(body: &[u8],
             if let Some(deployment) = s.remote_deployments.get_mut(agent_id) {
                 deployment.last_heartbeat_at = Some(now.clone());
                 if let Some(health) = &req.health
-                    && let Some(update_state) = &health.update_state {
-                        deployment.status = update_state.clone();
-                        deployment.status_reason = health.last_update_error.clone();
-                        if matches!(
-                            update_state.as_str(),
-                            "checking" | "downloading" | "downloaded" | "applying"
-                        )
-                            && deployment.acknowledged_at.is_none() {
-                                deployment.acknowledged_at = Some(now.clone());
-                            }
-                        if matches!(update_state.as_str(), "restart_pending" | "applied") {
-                            deployment.completed_at = Some(now.clone());
-                        }
+                    && let Some(update_state) = &health.update_state
+                {
+                    deployment.status = update_state.clone();
+                    deployment.status_reason = health.last_update_error.clone();
+                    if matches!(
+                        update_state.as_str(),
+                        "checking" | "downloading" | "downloaded" | "applying"
+                    ) && deployment.acknowledged_at.is_none()
+                    {
+                        deployment.acknowledged_at = Some(now.clone());
                     }
+                    if matches!(update_state.as_str(), "restart_pending" | "applied") {
+                        deployment.completed_at = Some(now.clone());
+                    }
+                }
                 if deployment.version == req.version {
                     deployment.status = "applied".to_string();
                     deployment.completed_at = Some(now);
@@ -10026,29 +10548,27 @@ fn handle_agent_heartbeat(body: &[u8],
                 for dep in s.remote_deployments.values() {
                     if dep.status == "applied"
                         && let Some(ref completed) = dep.completed_at
-                            && let Ok(completed_time) =
-                                chrono::DateTime::parse_from_rfc3339(completed)
-                            {
-                                let elapsed =
-                                    chrono::Utc::now().signed_duration_since(completed_time);
-                                let soak = match dep.rollout_group.as_str() {
-                                    "canary" => rollout_cfg.canary_soak_secs as i64,
-                                    "ring-1" => rollout_cfg.ring1_soak_secs as i64,
-                                    _ => continue,
-                                };
-                                if elapsed.num_seconds() >= soak {
-                                    let next_ring = match dep.rollout_group.as_str() {
-                                        "canary" => "ring-1",
-                                        "ring-1" => "ring-2",
-                                        _ => continue,
-                                    };
-                                    progress_candidates.push((
-                                        dep.version.clone(),
-                                        dep.platform.clone(),
-                                        next_ring.to_string(),
-                                    ));
-                                }
-                            }
+                        && let Ok(completed_time) = chrono::DateTime::parse_from_rfc3339(completed)
+                    {
+                        let elapsed = chrono::Utc::now().signed_duration_since(completed_time);
+                        let soak = match dep.rollout_group.as_str() {
+                            "canary" => rollout_cfg.canary_soak_secs as i64,
+                            "ring-1" => rollout_cfg.ring1_soak_secs as i64,
+                            _ => continue,
+                        };
+                        if elapsed.num_seconds() >= soak {
+                            let next_ring = match dep.rollout_group.as_str() {
+                                "canary" => "ring-1",
+                                "ring-1" => "ring-2",
+                                _ => continue,
+                            };
+                            progress_candidates.push((
+                                dep.version.clone(),
+                                dep.platform.clone(),
+                                next_ring.to_string(),
+                            ));
+                        }
+                    }
                 }
                 // Check for failures -> auto-rollback
                 if rollout_cfg.auto_rollback {
@@ -10142,10 +10662,7 @@ fn handle_agent_heartbeat(body: &[u8],
     }
 }
 
-fn handle_agent_details(
-    state: &Arc<Mutex<AppState>>,
-    agent_id: &str,
-) -> Response<Body> {
+fn handle_agent_details(state: &Arc<Mutex<AppState>>, agent_id: &str) -> Response<Body> {
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
     match build_agent_activity_snapshot(&s, agent_id) {
         Ok(snapshot) => match serde_json::to_string(&snapshot) {
@@ -10156,7 +10673,8 @@ fn handle_agent_details(
     }
 }
 
-fn handle_agent_update_check(_body: &[u8],
+fn handle_agent_update_check(
+    _body: &[u8],
     url: &str,
     state: &Arc<Mutex<AppState>>,
 ) -> Response<Body> {
@@ -10174,26 +10692,27 @@ fn handle_agent_update_check(_body: &[u8],
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(agent_id) = agent_id.as_deref() {
         if platform == "universal"
-            && let Some(agent) = s.agent_registry.get(agent_id) {
-                platform = agent.platform.clone();
-            }
+            && let Some(agent) = s.agent_registry.get(agent_id)
+        {
+            platform = agent.platform.clone();
+        }
         if let Some(deployment) = s.remote_deployments.get(agent_id)
             && deployment_requires_action(deployment, &current_version)
-                && let Some(release) = s.update_manager.get_release(&deployment.version, &platform)
-                {
-                    let resp = crate::auto_update::UpdateCheckResponse {
-                        update_available: true,
-                        version: Some(release.version.clone()),
-                        download_url: Some(format!("/api/updates/download/{}", release.file_name)),
-                        sha256: Some(release.sha256.clone()),
-                        release_notes: Some(release.release_notes.clone()),
-                        mandatory: Some(release.mandatory),
-                    };
-                    return match serde_json::to_string(&resp) {
-                        Ok(json) => json_response(&json, 200),
-                        Err(e) => error_json(&format!("serialization error: {e}"), 500),
-                    };
-                }
+            && let Some(release) = s.update_manager.get_release(&deployment.version, &platform)
+        {
+            let resp = crate::auto_update::UpdateCheckResponse {
+                update_available: true,
+                version: Some(release.version.clone()),
+                download_url: Some(format!("/api/updates/download/{}", release.file_name)),
+                sha256: Some(release.sha256.clone()),
+                release_notes: Some(release.release_notes.clone()),
+                mandatory: Some(release.mandatory),
+            };
+            return match serde_json::to_string(&resp) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            };
+        }
     }
     let resp = s.update_manager.check_update(&current_version, &platform);
     match serde_json::to_string(&resp) {
@@ -10202,9 +10721,7 @@ fn handle_agent_update_check(_body: &[u8],
     }
 }
 
-fn handle_update_deploy(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_update_deploy(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -10238,13 +10755,13 @@ fn handle_update_deploy(body: &[u8],
     }
     if let Some(existing) = s.remote_deployments.get(&req.agent_id)
         && !req.allow_downgrade
-            && compare_versions(&req.version, &existing.version) == std::cmp::Ordering::Less
-        {
-            return error_json(
-                "deployment would roll back an already assigned version",
-                409,
-            );
-        }
+        && compare_versions(&req.version, &existing.version) == std::cmp::Ordering::Less
+    {
+        return error_json(
+            "deployment would roll back an already assigned version",
+            409,
+        );
+    }
     let platform = req.platform.unwrap_or_else(|| agent.platform.clone());
     let release = match s.update_manager.get_release(&req.version, &platform) {
         Some(release) => release.clone(),
@@ -10279,7 +10796,8 @@ fn handle_update_deploy(body: &[u8],
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_event_triage(body: &[u8],
+fn handle_event_triage(
+    body: &[u8],
     state: &Arc<Mutex<AppState>>,
     event_id: &str,
 ) -> Response<Body> {
@@ -10307,9 +10825,7 @@ fn handle_event_triage(body: &[u8],
     }
 }
 
-fn handle_event_ingest(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_event_ingest(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -10386,9 +10902,7 @@ fn handle_event_ingest(body: &[u8],
     resp
 }
 
-fn handle_bulk_triage(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_bulk_triage(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -10420,9 +10934,7 @@ fn handle_bulk_triage(body: &[u8],
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_update_rollback(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_update_rollback(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -10448,9 +10960,10 @@ fn handle_update_rollback(body: &[u8],
     };
     // Cancel any existing deployment
     if let Some(existing) = s.remote_deployments.get(&req.agent_id)
-        && !is_terminal_deployment_status(&existing.status) {
-            // Mark the old deployment as cancelled before replacing
-        }
+        && !is_terminal_deployment_status(&existing.status)
+    {
+        // Mark the old deployment as cancelled before replacing
+    }
     let deployment = AgentDeployment {
         agent_id: req.agent_id.clone(),
         version: release.version.clone(),
@@ -10477,9 +10990,7 @@ fn handle_update_rollback(body: &[u8],
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_update_cancel(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_update_cancel(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -10511,7 +11022,8 @@ fn handle_update_cancel(body: &[u8],
     }
 }
 
-fn handle_agent_set_scope(body: &[u8],
+fn handle_agent_set_scope(
+    body: &[u8],
     state: &Arc<Mutex<AppState>>,
     agent_id: &str,
 ) -> Response<Body> {
@@ -10556,10 +11068,7 @@ fn handle_agent_set_scope(body: &[u8],
     }
 }
 
-fn handle_agent_get_scope(
-    state: &Arc<Mutex<AppState>>,
-    agent_id: &str,
-) -> Response<Body> {
+fn handle_agent_get_scope(state: &Arc<Mutex<AppState>>, agent_id: &str) -> Response<Body> {
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
     match s.agent_registry.get(agent_id) {
         Some(agent) => {
@@ -10579,9 +11088,7 @@ fn handle_agent_get_scope(
     }
 }
 
-fn handle_policy_publish(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_policy_publish(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -10599,9 +11106,7 @@ fn handle_policy_publish(body: &[u8],
     )
 }
 
-fn handle_update_publish(body: &[u8],
-    state: &Arc<Mutex<AppState>>,
-) -> Response<Body> {
+fn handle_update_publish(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -11060,7 +11565,10 @@ fn execute_hunt_response_actions(
                     );
                 }
             }
-            HuntResponseAction::CreateIncident { severity, title_template } => {
+            HuntResponseAction::CreateIncident {
+                severity,
+                title_template,
+            } => {
                 let title = title_template
                     .replace("{hunt_name}", &hunt.name)
                     .replace("{match_count}", &run.match_count.to_string());
@@ -11076,17 +11584,13 @@ fn execute_hunt_response_actions(
                 } else {
                     run.matched_agent_ids.clone()
                 };
-                if let Some(existing) = incident_store
-                    .incidents
-                    .iter_mut()
-                    .find(|incident| {
-                        matches!(
-                            incident.status,
-                            crate::incident::IncidentStatus::Open
-                                | crate::incident::IncidentStatus::Investigating
-                        ) && incident.summary.contains(&hunt_incident_marker(hunt))
-                    })
-                {
+                if let Some(existing) = incident_store.incidents.iter_mut().find(|incident| {
+                    matches!(
+                        incident.status,
+                        crate::incident::IncidentStatus::Open
+                            | crate::incident::IncidentStatus::Investigating
+                    ) && incident.summary.contains(&hunt_incident_marker(hunt))
+                }) {
                     for event_id in &event_ids {
                         if !existing.event_ids.contains(event_id) {
                             existing.event_ids.push(*event_id);
@@ -11137,9 +11641,9 @@ fn execute_hunt_response_actions(
                             && suppression.name == suppression_name
                     })
                     .map(|suppression| suppression.id.clone());
-                let expires_at =
-                    (chrono::Utc::now() + chrono::Duration::seconds(*duration_secs as i64))
-                        .to_rfc3339();
+                let expires_at = (chrono::Utc::now()
+                    + chrono::Duration::seconds(*duration_secs as i64))
+                .to_rfc3339();
                 let suppression = enterprise.create_or_update_suppression(
                     existing_id.as_deref(),
                     suppression_name,
@@ -11245,48 +11749,107 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-// Admin console embedded at compile time — single portable binary
-const EMBEDDED_ADMIN_HTML: &str = include_str!("../admin-console/admin.html");
-const EMBEDDED_ADMIN_CSS: &str = include_str!("../admin-console/admin.css");
-const EMBEDDED_ADMIN_JS: &str = include_str!("../admin-console/admin.js");
+// Admin console embedded at compile time from the React build output.
+const EMBEDDED_ADMIN_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/admin-console/dist");
 
-fn serve_embedded(content: &str, content_type: &str) -> Response<Body> {
-    let data = content.as_bytes();
-    let origin = cors_origin();
-    let cache = if content_type.contains("html") {
+fn cache_policy(content_type: &str) -> &'static str {
+    if content_type.contains("html") {
         "no-cache"
     } else {
         "public, max-age=3600, immutable"
-    };
+    }
+}
+
+fn content_type_for_path(path: &str) -> &'static str {
+    match Path::new(path).extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "application/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json") => "application/json",
+        Some("csv") => "text/csv",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("ico") => "image/x-icon",
+        Some("woff2") => "font/woff2",
+        _ => "application/octet-stream",
+    }
+}
+
+fn serve_embedded(content: &[u8], content_type: &str) -> Response<Body> {
+    let origin = cors_origin();
     Response::builder()
         .status(200)
         .header("Content-Type", content_type)
         .header("Access-Control-Allow-Origin", origin)
         .header("X-Content-Type-Options", "nosniff")
         .header("X-Frame-Options", "DENY")
-        .header("Cache-Control", cache)
-        .body(Body::from(data.to_vec()))
+        .header("Cache-Control", cache_policy(content_type))
+        .body(Body::from(content.to_vec()))
         .unwrap()
 }
 
-fn serve_static(url: &str, site_dir: &Path) -> Response<Body> {
-    let relative = if url == "/" { "/index.html" } else { url };
+fn redirect_response(location: &str) -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", location)
+        .header("Cache-Control", "no-cache")
+        .body(Body::empty())
+        .unwrap()
+}
 
-    // Serve embedded admin console from the binary itself
+fn contains_parent_dir(path: &str) -> bool {
+    Path::new(path)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+}
+
+fn serve_embedded_admin(relative: &str) -> Option<Response<Body>> {
     match relative {
-        "/admin.html" => return serve_embedded(EMBEDDED_ADMIN_HTML, "text/html; charset=utf-8"),
-        "/admin.css" => return serve_embedded(EMBEDDED_ADMIN_CSS, "text/css; charset=utf-8"),
-        "/admin.js" => return serve_embedded(EMBEDDED_ADMIN_JS, "application/javascript; charset=utf-8"),
+        "/admin" | "/admin.html" => return Some(redirect_response("/admin/")),
         _ => {}
+    }
+
+    let admin_path = match relative.strip_prefix("/admin/") {
+        Some("") => "index.html",
+        Some(rest) => rest,
+        None => return None,
+    };
+
+    if contains_parent_dir(admin_path) {
+        return Some(error_json("forbidden", 403));
+    }
+
+    if let Some(file) = EMBEDDED_ADMIN_DIST.get_file(admin_path) {
+        return Some(serve_embedded(
+            file.contents(),
+            content_type_for_path(admin_path),
+        ));
+    }
+
+    let last_segment = admin_path.rsplit('/').next().unwrap_or(admin_path);
+    let is_spa_route = !admin_path.starts_with("assets/") && !last_segment.contains('.');
+    if is_spa_route && let Some(index) = EMBEDDED_ADMIN_DIST.get_file("index.html") {
+        return Some(serve_embedded(index.contents(), "text/html; charset=utf-8"));
+    }
+
+    Some(error_json("not found", 404))
+}
+
+fn serve_static(url: &str, site_dir: &Path) -> Response<Body> {
+    let clean_url = url.split('?').next().unwrap_or(url);
+    let relative = if clean_url == "/" {
+        "/index.html"
+    } else {
+        clean_url
+    };
+
+    if let Some(response) = serve_embedded_admin(relative) {
+        return response;
     }
 
     // Prevent path traversal via components
     let clean = relative.trim_start_matches('/');
-    let requested = PathBuf::from(clean);
-    if requested
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
+    if contains_parent_dir(clean) {
         return error_json("forbidden", 403);
     }
 
@@ -11300,39 +11863,24 @@ fn serve_static(url: &str, site_dir: &Path) -> Response<Body> {
         }
     };
     if let Ok(canon_file) = file_path.canonicalize()
-        && !canon_file.starts_with(&canon_site) {
-            return error_json("forbidden", 403);
-        }
+        && !canon_file.starts_with(&canon_site)
+    {
+        return error_json("forbidden", 403);
+    }
 
     if file_path.is_file() {
-        let content_type = match file_path.extension().and_then(|e| e.to_str()) {
-            Some("html") => "text/html; charset=utf-8",
-            Some("js") => "application/javascript; charset=utf-8",
-            Some("css") => "text/css; charset=utf-8",
-            Some("json") => "application/json",
-            Some("csv") => "text/csv",
-            Some("svg") => "image/svg+xml",
-            Some("png") => "image/png",
-            Some("ico") => "image/x-icon",
-            Some("woff2") => "font/woff2",
-            _ => "application/octet-stream",
-        };
+        let content_type = content_type_for_path(clean);
 
         match fs::read(&file_path) {
             Ok(data) => {
                 let origin = cors_origin();
-                let cache = if content_type.contains("html") {
-                    "no-cache"
-                } else {
-                    "public, max-age=3600"
-                };
                 Response::builder()
                     .status(200)
                     .header("Content-Type", content_type)
                     .header("Access-Control-Allow-Origin", origin)
                     .header("X-Content-Type-Options", "nosniff")
                     .header("X-Frame-Options", "DENY")
-                    .header("Cache-Control", cache)
+                    .header("Cache-Control", cache_policy(content_type))
                     .body(Body::from(data))
                     .unwrap()
             }
@@ -11429,11 +11977,50 @@ mod tests {
     fn rate_limiter_gives_static_assets_a_separate_bucket() {
         let mut limiter = RateLimiter::new(2, 1);
 
-        assert!(limiter.check("127.0.0.1", &Method::Get, "/site/admin.html"));
-        assert!(limiter.check("127.0.0.1", &Method::Get, "/site/admin.js"));
+        assert!(limiter.check("127.0.0.1", &Method::Get, "/admin/"));
+        assert!(limiter.check("127.0.0.1", &Method::Get, "/admin/assets/index.js"));
         assert!(limiter.check("127.0.0.1", &Method::Get, "/site/styles.css"));
         assert!(limiter.check("127.0.0.1", &Method::Get, "/site/app.js"));
         assert!(!limiter.check("127.0.0.1", &Method::Get, "/site/index.html"));
+    }
+
+    #[test]
+    fn embedded_admin_html_redirects_to_admin_base() {
+        let response = serve_static("/admin.html", Path::new("site"));
+        assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(
+            response
+                .headers()
+                .get("Location")
+                .and_then(|value| value.to_str().ok()),
+            Some("/admin/")
+        );
+    }
+
+    #[test]
+    fn embedded_admin_base_serves_react_shell() {
+        let response = serve_static("/admin/", Path::new("site"));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("Content-Type")
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
+    }
+
+    #[test]
+    fn embedded_admin_spa_routes_fall_back_to_index() {
+        let response = serve_static("/admin/soc", Path::new("site"));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("Content-Type")
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
     }
 
     #[test]
@@ -11582,10 +12169,12 @@ mod tests {
         assert_eq!(overview.cases.total, 1);
         assert_eq!(overview.incidents.total, 1);
         assert_eq!(overview.response.ready_to_execute, 1);
-        assert!(overview
-            .urgent_items
-            .iter()
-            .any(|item| item.kind == "queue" || item.kind == "response"));
+        assert!(
+            overview
+                .urgent_items
+                .iter()
+                .any(|item| item.kind == "queue" || item.kind == "response")
+        );
         assert_eq!(overview.hot_agents.len(), 1);
 
         let _ = fs::remove_file(case_path);
@@ -11747,7 +12336,12 @@ mod tests {
         let mut events = EventStore::new(20);
         events.ingest(&EventBatch {
             agent_id: agent_id.clone(),
-            events: vec![sample_alert("hunt-host", "Critical", 9.7, "credential storm")],
+            events: vec![sample_alert(
+                "hunt-host",
+                "Critical",
+                9.7,
+                "credential storm",
+            )],
         });
         let stored_events = events.all_events().to_vec();
 
@@ -11819,17 +12413,27 @@ mod tests {
         assert!(results[0].executed);
         assert!(results[0].detail.contains("ops-slack"));
         assert_eq!(incidents.list().len(), 1);
-        assert!(incidents.list()[0].title.contains("Credential Storm: 1 hits"));
+        assert!(
+            incidents.list()[0]
+                .title
+                .contains("Credential Storm: 1 hits")
+        );
         assert_eq!(enterprise.suppressions().len(), 1);
         assert_eq!(response.all_requests().len(), 2);
-        assert!(response
-            .all_requests()
-            .iter()
-            .any(|request| request.action == ResponseAction::Alert && request.status == ApprovalStatus::Executed));
-        assert!(response
-            .all_requests()
-            .iter()
-            .any(|request| request.action == ResponseAction::Isolate && request.status == ApprovalStatus::Pending));
+        assert!(
+            response
+                .all_requests()
+                .iter()
+                .any(|request| request.action == ResponseAction::Alert
+                    && request.status == ApprovalStatus::Executed)
+        );
+        assert!(
+            response
+                .all_requests()
+                .iter()
+                .any(|request| request.action == ResponseAction::Isolate
+                    && request.status == ApprovalStatus::Pending)
+        );
 
         let _ = fs::remove_file(enterprise_path);
         let _ = fs::remove_file(incident_path);
@@ -11914,8 +12518,16 @@ mod tests {
         assert!(results[0].executed);
         let requests = response.all_requests();
         assert_eq!(requests.len(), 2);
-        assert!(requests.iter().any(|request| request.target.agent_uid.as_deref() == Some("agent-a")));
-        assert!(requests.iter().any(|request| request.target.agent_uid.as_deref() == Some("agent-b")));
+        assert!(
+            requests
+                .iter()
+                .any(|request| request.target.agent_uid.as_deref() == Some("agent-a"))
+        );
+        assert!(
+            requests
+                .iter()
+                .any(|request| request.target.agent_uid.as_deref() == Some("agent-b"))
+        );
 
         let _ = fs::remove_file(enterprise_path);
         let _ = fs::remove_file(incident_path);
@@ -12013,7 +12625,11 @@ mod tests {
 
         assert_eq!(incidents.list().len(), 1);
         assert!(first[0].detail.contains("Create high incident #"));
-        assert!(second[0].detail.contains("Updated existing high incident #"));
+        assert!(
+            second[0]
+                .detail
+                .contains("Updated existing high incident #")
+        );
         assert!(incidents.list()[0].summary.contains("hunt_id=hunt-reuse"));
 
         let _ = fs::remove_file(enterprise_path);

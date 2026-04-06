@@ -53,9 +53,9 @@ impl MeteringPlan {
 
     pub fn storage_limit_bytes(&self) -> u64 {
         match self {
-            MeteringPlan::Free => 1_073_741_824,          // 1 GB
+            MeteringPlan::Free => 1_073_741_824,           // 1 GB
             MeteringPlan::Trial { .. } => 10_737_418_240,  // 10 GB
-            MeteringPlan::Professional => 107_374_182_400,  // 100 GB
+            MeteringPlan::Professional => 107_374_182_400, // 100 GB
             MeteringPlan::Enterprise => u64::MAX,
         }
     }
@@ -102,14 +102,22 @@ impl MeteringManager {
             period_end,
             plan,
         };
-        self.meters.lock().unwrap_or_else(|e| e.into_inner()).insert(tenant_id.to_string(), meter);
+        self.meters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(tenant_id.to_string(), meter);
     }
 
     pub fn record_events(&self, tenant_id: &str, count: u64) -> Result<(), String> {
         let mut meters = self.meters.lock().unwrap_or_else(|e| e.into_inner());
-        let meter = meters.get_mut(tenant_id).ok_or_else(|| format!("Unknown tenant: {tenant_id}"))?;
+        let meter = meters
+            .get_mut(tenant_id)
+            .ok_or_else(|| format!("Unknown tenant: {tenant_id}"))?;
         if meter.events_ingested + count > meter.events_limit {
-            return Err(format!("Event limit exceeded for tenant {tenant_id}: {} + {} > {}", meter.events_ingested, count, meter.events_limit));
+            return Err(format!(
+                "Event limit exceeded for tenant {tenant_id}: {} + {} > {}",
+                meter.events_ingested, count, meter.events_limit
+            ));
         }
         meter.events_ingested += count;
         Ok(())
@@ -117,7 +125,9 @@ impl MeteringManager {
 
     pub fn record_api_call(&self, tenant_id: &str) -> Result<(), String> {
         let mut meters = self.meters.lock().unwrap_or_else(|e| e.into_inner());
-        let meter = meters.get_mut(tenant_id).ok_or_else(|| format!("Unknown tenant: {tenant_id}"))?;
+        let meter = meters
+            .get_mut(tenant_id)
+            .ok_or_else(|| format!("Unknown tenant: {tenant_id}"))?;
         if meter.api_calls >= meter.api_calls_limit {
             return Err(format!("API call limit exceeded for tenant {tenant_id}"));
         }
@@ -127,7 +137,9 @@ impl MeteringManager {
 
     pub fn record_storage(&self, tenant_id: &str, bytes: u64) -> Result<(), String> {
         let mut meters = self.meters.lock().unwrap_or_else(|e| e.into_inner());
-        let meter = meters.get_mut(tenant_id).ok_or_else(|| format!("Unknown tenant: {tenant_id}"))?;
+        let meter = meters
+            .get_mut(tenant_id)
+            .ok_or_else(|| format!("Unknown tenant: {tenant_id}"))?;
         if meter.storage_bytes + bytes > meter.storage_limit_bytes {
             return Err(format!("Storage limit exceeded for tenant {tenant_id}"));
         }
@@ -136,7 +148,11 @@ impl MeteringManager {
     }
 
     pub fn get_usage(&self, tenant_id: &str) -> Option<UsageMeter> {
-        self.meters.lock().unwrap_or_else(|e| e.into_inner()).get(tenant_id).cloned()
+        self.meters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(tenant_id)
+            .cloned()
     }
 
     pub fn snapshot(&self, tenant_id: &str) -> Option<UsageSnapshot> {
@@ -151,7 +167,10 @@ impl MeteringManager {
             storage_bytes: meter.storage_bytes,
             utilization_pct: utilization,
         };
-        self.snapshots.lock().unwrap_or_else(|e| e.into_inner()).push(snap.clone());
+        self.snapshots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(snap.clone());
         Some(snap)
     }
 
@@ -165,7 +184,12 @@ impl MeteringManager {
     }
 
     pub fn list_tenants(&self) -> Vec<String> {
-        self.meters.lock().unwrap_or_else(|e| e.into_inner()).keys().cloned().collect()
+        self.meters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .cloned()
+            .collect()
     }
 
     pub fn reset_period(&self, tenant_id: &str) -> Result<(), String> {

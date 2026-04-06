@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 fn looks_like_runtime_root(path: &Path) -> bool {
     path.join("var/wardex.toml").exists()
-        || path.join("site/admin.html").exists()
+        || path.join("site/index.html").exists()
+        || path.join("admin-console/package.json").exists()
         || path.join("Cargo.toml").exists()
         || path.join("SentinelEdge.code-workspace").exists()
 }
@@ -20,11 +21,12 @@ pub fn runtime_root_dir() -> PathBuf {
     }
 
     if let Ok(exe_path) = env::current_exe()
-        && let Some(parent) = exe_path.parent() {
-            for ancestor in parent.ancestors() {
-                candidates.push(ancestor.to_path_buf());
-            }
+        && let Some(parent) = exe_path.parent()
+    {
+        for ancestor in parent.ancestors() {
+            candidates.push(ancestor.to_path_buf());
         }
+    }
 
     candidates
         .into_iter()
@@ -537,7 +539,10 @@ impl ConfigPatch {
         }
 
         if let Some(v) = self.warmup_samples {
-            previous.insert("warmup_samples".into(), config.detector.warmup_samples.to_string());
+            previous.insert(
+                "warmup_samples".into(),
+                config.detector.warmup_samples.to_string(),
+            );
             config.detector.warmup_samples = v;
             applied.push("warmup_samples".into());
         }
@@ -547,32 +552,50 @@ impl ConfigPatch {
             applied.push("smoothing".into());
         }
         if let Some(v) = self.learn_threshold {
-            previous.insert("learn_threshold".into(), config.detector.learn_threshold.to_string());
+            previous.insert(
+                "learn_threshold".into(),
+                config.detector.learn_threshold.to_string(),
+            );
             config.detector.learn_threshold = v;
             applied.push("learn_threshold".into());
         }
         if let Some(v) = self.critical_score {
-            previous.insert("critical_score".into(), config.policy.critical_score.to_string());
+            previous.insert(
+                "critical_score".into(),
+                config.policy.critical_score.to_string(),
+            );
             config.policy.critical_score = v;
             applied.push("critical_score".into());
         }
         if let Some(v) = self.severe_score {
-            previous.insert("severe_score".into(), config.policy.severe_score.to_string());
+            previous.insert(
+                "severe_score".into(),
+                config.policy.severe_score.to_string(),
+            );
             config.policy.severe_score = v;
             applied.push("severe_score".into());
         }
         if let Some(v) = self.elevated_score {
-            previous.insert("elevated_score".into(), config.policy.elevated_score.to_string());
+            previous.insert(
+                "elevated_score".into(),
+                config.policy.elevated_score.to_string(),
+            );
             config.policy.elevated_score = v;
             applied.push("elevated_score".into());
         }
         if let Some(v) = self.critical_integrity_drift {
-            previous.insert("critical_integrity_drift".into(), config.policy.critical_integrity_drift.to_string());
+            previous.insert(
+                "critical_integrity_drift".into(),
+                config.policy.critical_integrity_drift.to_string(),
+            );
             config.policy.critical_integrity_drift = v;
             applied.push("critical_integrity_drift".into());
         }
         if let Some(v) = self.low_battery_threshold {
-            previous.insert("low_battery_threshold".into(), config.policy.low_battery_threshold.to_string());
+            previous.insert(
+                "low_battery_threshold".into(),
+                config.policy.low_battery_threshold.to_string(),
+            );
             config.policy.low_battery_threshold = v;
             applied.push("low_battery_threshold".into());
         }
@@ -602,7 +625,7 @@ impl ConfigPatch {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, ConfigPatch, MonitorSettings, MonitorScopeSettings, PolicySettings};
+    use super::{Config, ConfigPatch, MonitorScopeSettings, MonitorSettings, PolicySettings};
 
     #[test]
     fn default_round_trip_toml() {
@@ -876,6 +899,9 @@ scheduled_tasks = false
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.security.token_ttl_secs, 7200);
         assert_eq!(parsed.retention.audit_max_records, 5000);
-        assert_eq!(parsed.retention.remote_syslog_endpoint.as_deref(), Some("udp://syslog:514"));
+        assert_eq!(
+            parsed.retention.remote_syslog_endpoint.as_deref(),
+            Some("udp://syslog:514")
+        );
     }
 }

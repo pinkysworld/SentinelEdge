@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -122,9 +122,10 @@ impl SiemConnector {
     pub fn queue_alert(&mut self, alert: &AlertRecord) {
         self.pending.push(alert.clone());
         if self.pending.len() >= self.config.batch_size
-            && let Err(e) = self.flush() {
-                self.last_error = Some(e);
-            }
+            && let Err(e) = self.flush()
+        {
+            self.last_error = Some(e);
+        }
     }
 
     /// Queue a log record for batch pushing to SIEM.
@@ -136,7 +137,11 @@ impl SiemConnector {
     }
 
     /// Push inventory to SIEM as an event.
-    pub fn push_inventory(&mut self, inventory: &crate::inventory::SystemInventory, agent_id: &str) {
+    pub fn push_inventory(
+        &mut self,
+        inventory: &crate::inventory::SystemInventory,
+        agent_id: &str,
+    ) {
         if !self.config.enabled {
             return;
         }
@@ -149,13 +154,12 @@ impl SiemConnector {
                 });
                 serde_json::to_string(&event).unwrap_or_default()
             }
-            _ => {
-                serde_json::json!({
-                    "type": "inventory",
-                    "agent_id": agent_id,
-                    "inventory": inventory,
-                }).to_string()
-            }
+            _ => serde_json::json!({
+                "type": "inventory",
+                "agent_id": agent_id,
+                "inventory": inventory,
+            })
+            .to_string(),
         };
         let _ = self.send_to_siem(&payload);
     }
@@ -168,13 +172,18 @@ impl SiemConnector {
         let count = self.pending_logs.len();
         let payload = match self.config.siem_type.as_str() {
             "splunk" => {
-                let lines: Vec<String> = self.pending_logs.iter().map(|log| {
-                    serde_json::json!({
-                        "event": log,
-                        "sourcetype": "wardex:logs",
-                        "index": self.config.index,
-                    }).to_string()
-                }).collect();
+                let lines: Vec<String> = self
+                    .pending_logs
+                    .iter()
+                    .map(|log| {
+                        serde_json::json!({
+                            "event": log,
+                            "sourcetype": "wardex:logs",
+                            "index": self.config.index,
+                        })
+                        .to_string()
+                    })
+                    .collect();
                 lines.join("\n")
             }
             "elastic" => {
@@ -229,10 +238,7 @@ impl SiemConnector {
                 self.config.endpoint,
                 urlencoding(&self.config.pull_query),
             ),
-            "elastic" => format!(
-                "{}/_search",
-                self.config.endpoint,
-            ),
+            "elastic" => format!("{}/_search", self.config.endpoint,),
             _ => format!(
                 "{}/api/search?q={}",
                 self.config.endpoint,
@@ -241,7 +247,10 @@ impl SiemConnector {
         };
 
         let resp = ureq::get(&url)
-            .set("Authorization", &format!("Bearer {}", self.config.auth_token))
+            .set(
+                "Authorization",
+                &format!("Bearer {}", self.config.auth_token),
+            )
             .call()
             .map_err(|e| format!("SIEM pull failed: {e}"))?;
 
@@ -249,7 +258,8 @@ impl SiemConnector {
             return Err(format!("SIEM pull returned status {}", resp.status()));
         }
 
-        let body = resp.into_string()
+        let body = resp
+            .into_string()
             .map_err(|e| format!("failed to read SIEM response: {e}"))?;
 
         let records = self.parse_intel_response(&body)?;
@@ -304,8 +314,7 @@ impl SiemConnector {
                 "index": self.config.index,
                 "time": parse_epoch(&alert.timestamp),
             });
-            lines.push(serde_json::to_string(&event)
-                .map_err(|e| format!("JSON error: {e}"))?);
+            lines.push(serde_json::to_string(&event).map_err(|e| format!("JSON error: {e}"))?);
         }
         Ok(lines.join("\n"))
     }
@@ -317,10 +326,8 @@ impl SiemConnector {
             let action = serde_json::json!({
                 "index": { "_index": self.config.index }
             });
-            lines.push(serde_json::to_string(&action)
-                .map_err(|e| format!("JSON error: {e}"))?);
-            lines.push(serde_json::to_string(alert)
-                .map_err(|e| format!("JSON error: {e}"))?);
+            lines.push(serde_json::to_string(&action).map_err(|e| format!("JSON error: {e}"))?);
+            lines.push(serde_json::to_string(alert).map_err(|e| format!("JSON error: {e}"))?);
         }
         // Elasticsearch bulk API requires trailing newline
         let mut result = lines.join("\n");
@@ -330,8 +337,7 @@ impl SiemConnector {
 
     /// Generic JSON array format.
     fn format_generic_json(&self, alerts: &[AlertRecord]) -> Result<String, String> {
-        serde_json::to_string(alerts)
-            .map_err(|e| format!("JSON error: {e}"))
+        serde_json::to_string(alerts).map_err(|e| format!("JSON error: {e}"))
     }
 
     /// Format alerts in ArcSight Common Event Format (CEF).
@@ -381,210 +387,221 @@ impl SiemConnector {
     /// Format alerts in Microsoft Sentinel ASIM (Advanced Security Information Model) format.
     /// Follows SecurityEvent / ASIMProcessEvent normalized schema.
     pub fn format_sentinel_asim(alerts: &[AlertRecord]) -> String {
-        let events: Vec<serde_json::Value> = alerts.iter().map(|a| {
-            let severity = match a.level.as_str() {
-                "critical" => "High",
-                "severe" => "High",
-                "elevated" => "Medium",
-                _ => "Low",
-            };
-            let mitre_techniques: Vec<String> = a.mitre.iter()
-                .map(|m| m.technique_id.clone())
-                .collect();
-            let mitre_tactics: Vec<String> = a.mitre.iter()
-                .map(|m| m.tactic.clone())
-                .collect();
-            serde_json::json!({
-                "TimeGenerated": a.timestamp,
-                "EventProduct": "SentinelEdge",
-                "EventVendor": "Wardex",
-                "EventSchemaVersion": "0.1",
-                "EventType": "Alert",
-                "EventSeverity": severity,
-                "EventResult": if a.enforced { "Success" } else { "NA" },
-                "DvcHostname": a.hostname,
-                "DvcOs": a.platform,
-                "EventOriginalUid": format!("{}-{:.0}", a.hostname, a.score * 1000.0),
-                "ThreatConfidence": (a.confidence * 100.0) as u32,
-                "ThreatCategory": a.reasons.first().cloned().unwrap_or_default(),
-                "ThreatName": a.reasons.join("; "),
-                "AdditionalFields": {
-                    "score": a.score,
-                    "action": &a.action,
-                    "mitre_techniques": mitre_techniques,
-                    "mitre_tactics": mitre_tactics,
-                },
+        let events: Vec<serde_json::Value> = alerts
+            .iter()
+            .map(|a| {
+                let severity = match a.level.as_str() {
+                    "critical" => "High",
+                    "severe" => "High",
+                    "elevated" => "Medium",
+                    _ => "Low",
+                };
+                let mitre_techniques: Vec<String> =
+                    a.mitre.iter().map(|m| m.technique_id.clone()).collect();
+                let mitre_tactics: Vec<String> = a.mitre.iter().map(|m| m.tactic.clone()).collect();
+                serde_json::json!({
+                    "TimeGenerated": a.timestamp,
+                    "EventProduct": "SentinelEdge",
+                    "EventVendor": "Wardex",
+                    "EventSchemaVersion": "0.1",
+                    "EventType": "Alert",
+                    "EventSeverity": severity,
+                    "EventResult": if a.enforced { "Success" } else { "NA" },
+                    "DvcHostname": a.hostname,
+                    "DvcOs": a.platform,
+                    "EventOriginalUid": format!("{}-{:.0}", a.hostname, a.score * 1000.0),
+                    "ThreatConfidence": (a.confidence * 100.0) as u32,
+                    "ThreatCategory": a.reasons.first().cloned().unwrap_or_default(),
+                    "ThreatName": a.reasons.join("; "),
+                    "AdditionalFields": {
+                        "score": a.score,
+                        "action": &a.action,
+                        "mitre_techniques": mitre_techniques,
+                        "mitre_tactics": mitre_tactics,
+                    },
+                })
             })
-        }).collect();
+            .collect();
         serde_json::to_string(&events).unwrap_or_else(|_| "[]".into())
     }
 
     /// Format alerts in Google SecOps Unified Data Model (UDM) format.
     /// Follows chronicle.googleapis.com/v1alpha UDM event schema.
     pub fn format_google_udm(alerts: &[AlertRecord]) -> String {
-        let events: Vec<serde_json::Value> = alerts.iter().map(|a| {
-            let severity_enum = match a.level.as_str() {
-                "critical" => "CRITICAL",
-                "severe" => "HIGH",
-                "elevated" => "MEDIUM",
-                _ => "LOW",
-            };
-            let security_result_category = if a.mitre.is_empty() {
-                "UNKNOWN_CATEGORY"
-            } else {
-                "SOFTWARE_MALICIOUS"
-            };
-            let attacks: Vec<serde_json::Value> = a.mitre.iter().map(|m| {
-                serde_json::json!({
-                    "attack": {
-                        "tactic": m.tactic,
-                        "technique": m.technique_id,
-                        "technique_label": m.technique_name,
-                    }
-                })
-            }).collect();
+        let events: Vec<serde_json::Value> = alerts
+            .iter()
+            .map(|a| {
+                let severity_enum = match a.level.as_str() {
+                    "critical" => "CRITICAL",
+                    "severe" => "HIGH",
+                    "elevated" => "MEDIUM",
+                    _ => "LOW",
+                };
+                let security_result_category = if a.mitre.is_empty() {
+                    "UNKNOWN_CATEGORY"
+                } else {
+                    "SOFTWARE_MALICIOUS"
+                };
+                let attacks: Vec<serde_json::Value> = a
+                    .mitre
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "attack": {
+                                "tactic": m.tactic,
+                                "technique": m.technique_id,
+                                "technique_label": m.technique_name,
+                            }
+                        })
+                    })
+                    .collect();
 
-            serde_json::json!({
-                "metadata": {
-                    "event_timestamp": a.timestamp,
-                    "event_type": "GENERIC_EVENT",
-                    "vendor_name": "Wardex",
-                    "product_name": "SentinelEdge",
-                    "product_event_type": "alert",
-                    "product_log_id": format!("{}-{:.0}", a.hostname, a.score * 1000.0),
-                },
-                "principal": {
-                    "hostname": a.hostname,
-                    "platform": match a.platform.as_str() {
-                        "linux" => "LINUX",
-                        "macos" => "MAC",
-                        "windows" => "WINDOWS",
-                        _ => "UNKNOWN_PLATFORM",
+                serde_json::json!({
+                    "metadata": {
+                        "event_timestamp": a.timestamp,
+                        "event_type": "GENERIC_EVENT",
+                        "vendor_name": "Wardex",
+                        "product_name": "SentinelEdge",
+                        "product_event_type": "alert",
+                        "product_log_id": format!("{}-{:.0}", a.hostname, a.score * 1000.0),
                     },
-                },
-                "securityResult": [{
-                    "severity": severity_enum,
-                    "confidence_score": (a.confidence * 100.0) as u32,
-                    "summary": a.reasons.join("; "),
-                    "category": security_result_category,
-                    "action": [if a.enforced { "BLOCK" } else { "ALLOW" }],
-                    "attack_details": attacks,
-                }],
-                "additional": {
-                    "score": a.score,
-                    "action_taken": &a.action,
-                    "reasons": &a.reasons,
-                },
+                    "principal": {
+                        "hostname": a.hostname,
+                        "platform": match a.platform.as_str() {
+                            "linux" => "LINUX",
+                            "macos" => "MAC",
+                            "windows" => "WINDOWS",
+                            _ => "UNKNOWN_PLATFORM",
+                        },
+                    },
+                    "securityResult": [{
+                        "severity": severity_enum,
+                        "confidence_score": (a.confidence * 100.0) as u32,
+                        "summary": a.reasons.join("; "),
+                        "category": security_result_category,
+                        "action": [if a.enforced { "BLOCK" } else { "ALLOW" }],
+                        "attack_details": attacks,
+                    }],
+                    "additional": {
+                        "score": a.score,
+                        "action_taken": &a.action,
+                        "reasons": &a.reasons,
+                    },
+                })
             })
-        }).collect();
+            .collect();
         serde_json::to_string(&events).unwrap_or_else(|_| "[]".into())
     }
 
     /// Format alerts in Elastic Common Schema (ECS) format for Elasticsearch.
     pub fn format_elastic_ecs(alerts: &[AlertRecord]) -> String {
-        let events: Vec<serde_json::Value> = alerts.iter().map(|a| {
-            let severity_num: u8 = match a.level.as_str() {
-                "critical" => 4,
-                "severe" => 3,
-                "elevated" => 2,
-                _ => 1,
-            };
-            let mitre_ids: Vec<String> = a.mitre.iter()
-                .map(|m| m.technique_id.clone())
-                .collect();
-            let mitre_names: Vec<String> = a.mitre.iter()
-                .map(|m| m.technique_name.clone())
-                .collect();
-            let mitre_tactics: Vec<String> = a.mitre.iter()
-                .map(|m| m.tactic.clone())
-                .collect();
-            serde_json::json!({
-                "@timestamp": a.timestamp,
-                "event": {
-                    "kind": "alert",
-                    "category": ["threat"],
-                    "type": ["indicator"],
-                    "severity": severity_num,
-                    "risk_score": a.score,
-                    "module": "sentineledge",
-                    "dataset": "sentineledge.alert",
-                    "outcome": if a.enforced { "success" } else { "unknown" },
-                },
-                "host": {
-                    "hostname": a.hostname,
-                    "os": {
-                        "platform": a.platform.to_lowercase(),
+        let events: Vec<serde_json::Value> = alerts
+            .iter()
+            .map(|a| {
+                let severity_num: u8 = match a.level.as_str() {
+                    "critical" => 4,
+                    "severe" => 3,
+                    "elevated" => 2,
+                    _ => 1,
+                };
+                let mitre_ids: Vec<String> =
+                    a.mitre.iter().map(|m| m.technique_id.clone()).collect();
+                let mitre_names: Vec<String> =
+                    a.mitre.iter().map(|m| m.technique_name.clone()).collect();
+                let mitre_tactics: Vec<String> = a.mitre.iter().map(|m| m.tactic.clone()).collect();
+                serde_json::json!({
+                    "@timestamp": a.timestamp,
+                    "event": {
+                        "kind": "alert",
+                        "category": ["threat"],
+                        "type": ["indicator"],
+                        "severity": severity_num,
+                        "risk_score": a.score,
+                        "module": "sentineledge",
+                        "dataset": "sentineledge.alert",
+                        "outcome": if a.enforced { "success" } else { "unknown" },
                     },
-                },
-                "rule": {
-                    "name": a.reasons.first().cloned().unwrap_or_default(),
-                    "description": a.reasons.join("; "),
-                },
-                "threat": {
-                    "framework": "MITRE ATT&CK",
-                    "technique": {
-                        "id": mitre_ids,
-                        "name": mitre_names,
+                    "host": {
+                        "hostname": a.hostname,
+                        "os": {
+                            "platform": a.platform.to_lowercase(),
+                        },
                     },
-                    "tactic": {
-                        "name": mitre_tactics,
+                    "rule": {
+                        "name": a.reasons.first().cloned().unwrap_or_default(),
+                        "description": a.reasons.join("; "),
                     },
-                },
-                "observer": {
-                    "vendor": "Wardex",
-                    "product": "SentinelEdge",
-                    "type": "ids",
-                },
-                "sentineledge": {
-                    "score": a.score,
-                    "confidence": a.confidence,
-                    "action": &a.action,
-                    "level": &a.level,
-                },
+                    "threat": {
+                        "framework": "MITRE ATT&CK",
+                        "technique": {
+                            "id": mitre_ids,
+                            "name": mitre_names,
+                        },
+                        "tactic": {
+                            "name": mitre_tactics,
+                        },
+                    },
+                    "observer": {
+                        "vendor": "Wardex",
+                        "product": "SentinelEdge",
+                        "type": "ids",
+                    },
+                    "sentineledge": {
+                        "score": a.score,
+                        "confidence": a.confidence,
+                        "action": &a.action,
+                        "level": &a.level,
+                    },
+                })
             })
-        }).collect();
+            .collect();
         serde_json::to_string(&events).unwrap_or_else(|_| "[]".into())
     }
 
     /// Format alerts in IBM QRadar Log Source format (JSON payload).
     pub fn format_qradar(alerts: &[AlertRecord]) -> String {
-        let events: Vec<serde_json::Value> = alerts.iter().map(|a| {
-            let severity: u8 = match a.level.as_str() {
-                "critical" => 10,
-                "severe" => 7,
-                "elevated" => 4,
-                _ => 1,
-            };
-            let mitre_str: String = a.mitre.iter()
-                .map(|m| format!("{}/{}", m.tactic, m.technique_id))
-                .collect::<Vec<_>>()
-                .join(",");
-            serde_json::json!({
-                "HEADER": {
-                    "logSourceTypeName": "SentinelEdge XDR",
-                    "logSourceName": format!("sentineledge-{}", a.hostname),
-                },
-                "EventName": a.reasons.first().cloned().unwrap_or("alert".into()),
-                "EventTime": a.timestamp,
-                "Severity": severity,
-                "SourceHostName": a.hostname,
-                "Platform": a.platform,
-                "AnomalyScore": a.score,
-                "Confidence": (a.confidence * 100.0) as u32,
-                "RiskLevel": &a.level,
-                "ResponseAction": &a.action,
-                "Enforced": a.enforced,
-                "Description": a.reasons.join("; "),
-                "MitreAttack": mitre_str,
-                "CustomFields": {
-                    "reasons": &a.reasons,
-                    "cpu_load_pct": a.sample.cpu_load_pct,
-                    "memory_load_pct": a.sample.memory_load_pct,
-                    "network_kbps": a.sample.network_kbps,
-                    "auth_failures": a.sample.auth_failures,
-                },
+        let events: Vec<serde_json::Value> = alerts
+            .iter()
+            .map(|a| {
+                let severity: u8 = match a.level.as_str() {
+                    "critical" => 10,
+                    "severe" => 7,
+                    "elevated" => 4,
+                    _ => 1,
+                };
+                let mitre_str: String = a
+                    .mitre
+                    .iter()
+                    .map(|m| format!("{}/{}", m.tactic, m.technique_id))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                serde_json::json!({
+                    "HEADER": {
+                        "logSourceTypeName": "SentinelEdge XDR",
+                        "logSourceName": format!("sentineledge-{}", a.hostname),
+                    },
+                    "EventName": a.reasons.first().cloned().unwrap_or("alert".into()),
+                    "EventTime": a.timestamp,
+                    "Severity": severity,
+                    "SourceHostName": a.hostname,
+                    "Platform": a.platform,
+                    "AnomalyScore": a.score,
+                    "Confidence": (a.confidence * 100.0) as u32,
+                    "RiskLevel": &a.level,
+                    "ResponseAction": &a.action,
+                    "Enforced": a.enforced,
+                    "Description": a.reasons.join("; "),
+                    "MitreAttack": mitre_str,
+                    "CustomFields": {
+                        "reasons": &a.reasons,
+                        "cpu_load_pct": a.sample.cpu_load_pct,
+                        "memory_load_pct": a.sample.memory_load_pct,
+                        "network_kbps": a.sample.network_kbps,
+                        "auth_failures": a.sample.auth_failures,
+                    },
+                })
             })
-        }).collect();
+            .collect();
         serde_json::to_string(&events).unwrap_or_else(|_| "[]".into())
     }
 
@@ -639,9 +656,10 @@ impl SiemConnector {
             results: Option<Vec<SiemIntelRecord>>,
         }
         if let Ok(wrapper) = serde_json::from_str::<SplunkResults>(body)
-            && let Some(results) = wrapper.results {
-                return Ok(results);
-            }
+            && let Some(results) = wrapper.results
+        {
+            return Ok(results);
+        }
 
         // Try Elasticsearch-style hits wrapper
         #[derive(Deserialize)]
@@ -657,9 +675,10 @@ impl SiemConnector {
             _source: Option<SiemIntelRecord>,
         }
         if let Ok(wrapper) = serde_json::from_str::<EsHits>(body)
-            && let Some(hits) = wrapper.hits.and_then(|h| h.hits) {
-                return Ok(hits.into_iter().filter_map(|h| h._source).collect());
-            }
+            && let Some(hits) = wrapper.hits.and_then(|h| h.hits)
+        {
+            return Ok(hits.into_iter().filter_map(|h| h._source).collect());
+        }
 
         Ok(Vec::new())
     }
@@ -720,7 +739,9 @@ pub fn start_siem_poller(
                     for record in &records {
                         log::info!(
                             "[siem]   {} = {} ({})",
-                            record.indicator_type, record.indicator_value, record.severity
+                            record.indicator_type,
+                            record.indicator_value,
+                            record.severity
                         );
                     }
                 }
@@ -794,7 +815,11 @@ pub struct TaxiiClient {
 
 impl TaxiiClient {
     pub fn new(config: TaxiiConfig) -> Self {
-        Self { config, pull_count: 0, last_error: None }
+        Self {
+            config,
+            pull_count: 0,
+            last_error: None,
+        }
     }
 
     pub fn config(&self) -> &TaxiiConfig {
@@ -815,12 +840,18 @@ impl TaxiiClient {
         let mut url = self.config.url.clone();
         if !self.config.added_after.is_empty() {
             let sep = if url.contains('?') { '&' } else { '?' };
-            url = format!("{url}{sep}added_after={}", urlencoding(&self.config.added_after));
+            url = format!(
+                "{url}{sep}added_after={}",
+                urlencoding(&self.config.added_after)
+            );
         }
 
         let resp = ureq::get(&url)
             .set("Accept", "application/taxii+json;version=2.1")
-            .set("Authorization", &format!("Bearer {}", self.config.auth_token))
+            .set(
+                "Authorization",
+                &format!("Bearer {}", self.config.auth_token),
+            )
             .call()
             .map_err(|e| {
                 let msg = format!("TAXII fetch failed: {e}");
@@ -834,7 +865,8 @@ impl TaxiiClient {
             return Err(msg);
         }
 
-        let body = resp.into_string()
+        let body = resp
+            .into_string()
             .map_err(|e| format!("Failed to read TAXII response: {e}"))?;
 
         let records = Self::parse_stix_bundle(&body);
@@ -853,33 +885,50 @@ impl TaxiiClient {
         // STIX bundle: { "type": "bundle", "objects": [...] }
         // Or TAXII envelope: { "objects": [...] }
         let objects = parsed.get("objects").and_then(|o| o.as_array());
-        let Some(objects) = objects else { return Vec::new() };
+        let Some(objects) = objects else {
+            return Vec::new();
+        };
 
-        objects.iter().filter_map(|obj| {
-            let obj_type = obj.get("type")?.as_str()?;
-            if obj_type != "indicator" {
-                return None;
-            }
-            let pattern = obj.get("pattern").and_then(|p| p.as_str()).unwrap_or("");
-            let (ind_type, ind_value) = Self::parse_stix_pattern(pattern);
-            let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            let desc = obj.get("description").and_then(|d| d.as_str()).unwrap_or(name);
+        objects
+            .iter()
+            .filter_map(|obj| {
+                let obj_type = obj.get("type")?.as_str()?;
+                if obj_type != "indicator" {
+                    return None;
+                }
+                let pattern = obj.get("pattern").and_then(|p| p.as_str()).unwrap_or("");
+                let (ind_type, ind_value) = Self::parse_stix_pattern(pattern);
+                let name = obj.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let desc = obj
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or(name);
 
-            // Map confidence (0-100) to severity
-            let confidence = obj.get("confidence").and_then(|c| c.as_u64()).unwrap_or(50);
-            let severity = if confidence >= 80 { "critical" }
-                else if confidence >= 60 { "high" }
-                else if confidence >= 40 { "medium" }
-                else { "low" };
+                // Map confidence (0-100) to severity
+                let confidence = obj.get("confidence").and_then(|c| c.as_u64()).unwrap_or(50);
+                let severity = if confidence >= 80 {
+                    "critical"
+                } else if confidence >= 60 {
+                    "high"
+                } else if confidence >= 40 {
+                    "medium"
+                } else {
+                    "low"
+                };
 
-            Some(SiemIntelRecord {
-                indicator_type: ind_type,
-                indicator_value: ind_value,
-                severity: severity.into(),
-                source: obj.get("created_by_ref").and_then(|c| c.as_str()).unwrap_or("taxii").into(),
-                description: desc.into(),
+                Some(SiemIntelRecord {
+                    indicator_type: ind_type,
+                    indicator_value: ind_value,
+                    severity: severity.into(),
+                    source: obj
+                        .get("created_by_ref")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("taxii")
+                        .into(),
+                    description: desc.into(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     /// Extract indicator type and value from a STIX 2.1 pattern string.
@@ -888,7 +937,12 @@ impl TaxiiClient {
         // Simplified parser: extract `object-type:property = 'value'`
         let trimmed = pattern.trim_start_matches('[').trim_end_matches(']').trim();
         if let Some((lhs, rhs)) = trimmed.split_once('=') {
-            let ind_type = lhs.split(':').next().unwrap_or("unknown").trim().to_string();
+            let ind_type = lhs
+                .split(':')
+                .next()
+                .unwrap_or("unknown")
+                .trim()
+                .to_string();
             let ind_value = rhs.trim().trim_matches('\'').trim().to_string();
             (ind_type, ind_value)
         } else {
@@ -932,10 +986,16 @@ mod tests {
             action: "isolate".into(),
             reasons: vec!["high_cpu".into(), "auth_failures".into()],
             sample: TelemetrySample {
-                timestamp_ms: 0, cpu_load_pct: 0.0, memory_load_pct: 0.0,
-                temperature_c: 0.0, network_kbps: 0.0, auth_failures: 0,
-                battery_pct: 100.0, integrity_drift: 0.0,
-                process_count: 0, disk_pressure_pct: 0.0,
+                timestamp_ms: 0,
+                cpu_load_pct: 0.0,
+                memory_load_pct: 0.0,
+                temperature_c: 0.0,
+                network_kbps: 0.0,
+                auth_failures: 0,
+                battery_pct: 100.0,
+                integrity_drift: 0.0,
+                process_count: 0,
+                disk_pressure_pct: 0.0,
             },
             enforced: false,
             mitre: vec![],
@@ -1109,8 +1169,16 @@ mod tests {
         let output = SiemConnector::format_google_udm(&[alert]);
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed[0]["securityResult"][0]["severity"], "HIGH");
-        assert_eq!(parsed[0]["securityResult"][0]["category"], "SOFTWARE_MALICIOUS");
-        assert!(!parsed[0]["securityResult"][0]["attack_details"].as_array().unwrap().is_empty());
+        assert_eq!(
+            parsed[0]["securityResult"][0]["category"],
+            "SOFTWARE_MALICIOUS"
+        );
+        assert!(
+            !parsed[0]["securityResult"][0]["attack_details"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1226,7 +1294,11 @@ mod tests {
 
     #[test]
     fn siem_config_getter() {
-        let cfg = SiemConfig { enabled: true, siem_type: "splunk".into(), ..Default::default() };
+        let cfg = SiemConfig {
+            enabled: true,
+            siem_type: "splunk".into(),
+            ..Default::default()
+        };
         let conn = SiemConnector::new(cfg);
         assert_eq!(conn.config().siem_type, "splunk");
         assert!(conn.config().enabled);
@@ -1237,7 +1309,11 @@ mod tests {
         let cfg = SiemConfig::default();
         let mut conn = SiemConnector::new(cfg);
         assert!(!conn.config().enabled);
-        let new_cfg = SiemConfig { enabled: true, siem_type: "elastic".into(), ..Default::default() };
+        let new_cfg = SiemConfig {
+            enabled: true,
+            siem_type: "elastic".into(),
+            ..Default::default()
+        };
         conn.update_config(new_cfg);
         assert!(conn.config().enabled);
         assert_eq!(conn.config().siem_type, "elastic");

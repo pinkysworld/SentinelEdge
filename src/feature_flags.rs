@@ -26,15 +26,25 @@ pub struct FeatureFlagRegistry {
 
 impl FeatureFlagRegistry {
     pub fn new() -> Self {
-        Self { flags: Mutex::new(HashMap::new()) }
+        Self {
+            flags: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn register(&self, flag: FeatureFlag) {
-        self.flags.lock().unwrap_or_else(|e| e.into_inner()).insert(flag.name.clone(), flag);
+        self.flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(flag.name.clone(), flag);
     }
 
     pub fn set_enabled(&self, name: &str, enabled: bool) -> bool {
-        if let Some(f) = self.flags.lock().unwrap_or_else(|e| e.into_inner()).get_mut(name) {
+        if let Some(f) = self
+            .flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(name)
+        {
             f.enabled = enabled;
             true
         } else {
@@ -43,7 +53,12 @@ impl FeatureFlagRegistry {
     }
 
     pub fn set_kill_switch(&self, name: &str, killed: bool) -> bool {
-        if let Some(f) = self.flags.lock().unwrap_or_else(|e| e.into_inner()).get_mut(name) {
+        if let Some(f) = self
+            .flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(name)
+        {
             f.kill_switch = killed;
             true
         } else {
@@ -52,7 +67,12 @@ impl FeatureFlagRegistry {
     }
 
     pub fn set_rollout_pct(&self, name: &str, pct: u8) -> bool {
-        if let Some(f) = self.flags.lock().unwrap_or_else(|e| e.into_inner()).get_mut(name) {
+        if let Some(f) = self
+            .flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(name)
+        {
             f.rollout_pct = pct.min(100);
             true
         } else {
@@ -63,14 +83,24 @@ impl FeatureFlagRegistry {
     /// Check if a feature is active for a given context key (e.g. agent_uid or hostname).
     pub fn is_enabled(&self, name: &str, context_key: &str) -> bool {
         let flags = self.flags.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(flag) = flags.get(name) else { return false };
-        if flag.kill_switch { return false; }
-        if !flag.enabled { return false; }
+        let Some(flag) = flags.get(name) else {
+            return false;
+        };
+        if flag.kill_switch {
+            return false;
+        }
+        if !flag.enabled {
+            return false;
+        }
 
         // OS filter check
         if !flag.os_filter.is_empty() {
             let current_os = std::env::consts::OS;
-            if !flag.os_filter.iter().any(|o| o.eq_ignore_ascii_case(current_os)) {
+            if !flag
+                .os_filter
+                .iter()
+                .any(|o| o.eq_ignore_ascii_case(current_os))
+            {
                 return false;
             }
         }
@@ -92,7 +122,12 @@ impl FeatureFlagRegistry {
     }
 
     pub fn list_flags(&self) -> Vec<FeatureFlag> {
-        self.flags.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect()
+        self.flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn all_flags(&self) -> Vec<FeatureFlag> {
@@ -100,12 +135,18 @@ impl FeatureFlagRegistry {
     }
 
     pub fn get_flag(&self, name: &str) -> Option<FeatureFlag> {
-        self.flags.lock().unwrap_or_else(|e| e.into_inner()).get(name).cloned()
+        self.flags
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+            .cloned()
     }
 }
 
 impl Default for FeatureFlagRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn simple_hash(s: &str) -> u64 {
@@ -119,16 +160,86 @@ fn simple_hash(s: &str) -> u64 {
 /// Register built-in feature flags for SentinelEdge.
 pub fn register_defaults(registry: &FeatureFlagRegistry) {
     let defaults = vec![
-        FeatureFlag { name: "sigma_engine".into(), description: "Sigma rule-based detection engine".into(), enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "ocsf_normalization".into(), description: "OCSF canonical event normalization".into(), enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "response_orchestration".into(), description: "Approval-gated response actions".into(), enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "process_tree".into(), description: "Process tree tracking and lineage".into(), enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "encrypted_spool".into(), description: "Encrypted local event spool".into(), enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "sentinel_asim_export".into(), description: "Microsoft Sentinel ASIM export format".into(), enabled: false, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "google_udm_export".into(), description: "Google SecOps UDM export format".into(), enabled: false, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "digital_twin_advanced".into(), description: "Advanced digital twin simulations".into(), enabled: true, rollout_pct: 50, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "causal_storyline".into(), description: "Causal storyline generation for incidents".into(), enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false },
-        FeatureFlag { name: "deception_morphing".into(), description: "Dynamic decoy endpoint morphing".into(), enabled: false, rollout_pct: 25, os_filter: vec![], kill_switch: false },
+        FeatureFlag {
+            name: "sigma_engine".into(),
+            description: "Sigma rule-based detection engine".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "ocsf_normalization".into(),
+            description: "OCSF canonical event normalization".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "response_orchestration".into(),
+            description: "Approval-gated response actions".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "process_tree".into(),
+            description: "Process tree tracking and lineage".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "encrypted_spool".into(),
+            description: "Encrypted local event spool".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "sentinel_asim_export".into(),
+            description: "Microsoft Sentinel ASIM export format".into(),
+            enabled: false,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "google_udm_export".into(),
+            description: "Google SecOps UDM export format".into(),
+            enabled: false,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "digital_twin_advanced".into(),
+            description: "Advanced digital twin simulations".into(),
+            enabled: true,
+            rollout_pct: 50,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "causal_storyline".into(),
+            description: "Causal storyline generation for incidents".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
+        },
+        FeatureFlag {
+            name: "deception_morphing".into(),
+            description: "Dynamic decoy endpoint morphing".into(),
+            enabled: false,
+            rollout_pct: 25,
+            os_filter: vec![],
+            kill_switch: false,
+        },
     ];
     for f in defaults {
         registry.register(f);
@@ -143,8 +254,12 @@ mod tests {
     fn register_and_check() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "test_flag".into(), description: "test".into(),
-            enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+            name: "test_flag".into(),
+            description: "test".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
         });
         assert!(reg.is_enabled("test_flag", "any-key"));
         assert!(!reg.is_enabled("nonexistent", "any-key"));
@@ -154,8 +269,12 @@ mod tests {
     fn kill_switch_overrides() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "killable".into(), description: "".into(),
-            enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+            name: "killable".into(),
+            description: "".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
         });
         assert!(reg.is_enabled("killable", "k"));
         reg.set_kill_switch("killable", true);
@@ -166,8 +285,12 @@ mod tests {
     fn rollout_percentage() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "canary".into(), description: "".into(),
-            enabled: true, rollout_pct: 50, os_filter: vec![], kill_switch: false,
+            name: "canary".into(),
+            description: "".into(),
+            enabled: true,
+            rollout_pct: 50,
+            os_filter: vec![],
+            kill_switch: false,
         });
         // With 50% rollout, roughly half of random keys should pass
         let mut enabled_count = 0;
@@ -177,15 +300,23 @@ mod tests {
             }
         }
         // Should be roughly 50 +/- 20
-        assert!(enabled_count > 20 && enabled_count < 80, "Got {} enabled out of 100", enabled_count);
+        assert!(
+            enabled_count > 20 && enabled_count < 80,
+            "Got {} enabled out of 100",
+            enabled_count
+        );
     }
 
     #[test]
     fn zero_rollout_blocks_all() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "blocked".into(), description: "".into(),
-            enabled: true, rollout_pct: 0, os_filter: vec![], kill_switch: false,
+            name: "blocked".into(),
+            description: "".into(),
+            enabled: true,
+            rollout_pct: 0,
+            os_filter: vec![],
+            kill_switch: false,
         });
         for i in 0..50 {
             assert!(!reg.is_enabled("blocked", &format!("k{}", i)));
@@ -196,8 +327,12 @@ mod tests {
     fn disabled_flag() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "off".into(), description: "".into(),
-            enabled: false, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+            name: "off".into(),
+            description: "".into(),
+            enabled: false,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
         });
         assert!(!reg.is_enabled("off", "any"));
     }
@@ -206,8 +341,12 @@ mod tests {
     fn toggle_enabled() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "toggle".into(), description: "".into(),
-            enabled: false, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+            name: "toggle".into(),
+            description: "".into(),
+            enabled: false,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
         });
         assert!(!reg.is_globally_enabled("toggle"));
         reg.set_enabled("toggle", true);
@@ -236,8 +375,12 @@ mod tests {
     fn kill_switch_overrides_enabled() {
         let reg = FeatureFlagRegistry::new();
         reg.register(FeatureFlag {
-            name: "killme".into(), description: "".into(),
-            enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+            name: "killme".into(),
+            description: "".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
         });
         assert!(reg.is_enabled("killme", "any"));
         reg.set_kill_switch("killme", true);
@@ -249,8 +392,12 @@ mod tests {
         use std::sync::Arc;
         let reg = Arc::new(FeatureFlagRegistry::new());
         reg.register(FeatureFlag {
-            name: "before_poison".into(), description: "".into(),
-            enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+            name: "before_poison".into(),
+            description: "".into(),
+            enabled: true,
+            rollout_pct: 100,
+            os_filter: vec![],
+            kill_switch: false,
         });
         // Poison the mutex by panicking while holding a lock via is_enabled path
         let reg2 = Arc::clone(&reg);
@@ -261,11 +408,16 @@ mod tests {
             // so just verify operations are safe under concurrent stress
             for i in 0..100 {
                 reg2.register(FeatureFlag {
-                    name: format!("f{}", i), description: "".into(),
-                    enabled: true, rollout_pct: 100, os_filter: vec![], kill_switch: false,
+                    name: format!("f{}", i),
+                    description: "".into(),
+                    enabled: true,
+                    rollout_pct: 100,
+                    os_filter: vec![],
+                    kill_switch: false,
                 });
             }
-        }).join();
+        })
+        .join();
         // All operations should still work
         assert!(reg.is_enabled("before_poison", "any"));
         assert!(!reg.list_flags().is_empty());

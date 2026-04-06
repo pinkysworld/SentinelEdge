@@ -46,10 +46,14 @@ impl TimingAnalyzer {
         let n = self.samples.len() as f64;
         self.mean = self.samples.iter().map(|&s| s as f64).sum::<f64>() / n;
         let variance = if self.samples.len() > 1 {
-            self.samples.iter().map(|&s| {
-                let d = s as f64 - self.mean;
-                d * d
-            }).sum::<f64>() / (n - 1.0)
+            self.samples
+                .iter()
+                .map(|&s| {
+                    let d = s as f64 - self.mean;
+                    d * d
+                })
+                .sum::<f64>()
+                / (n - 1.0)
         } else {
             0.0
         };
@@ -75,10 +79,7 @@ impl TimingAnalyzer {
                 stddev,
             }
         } else {
-            TimingVerdict::Normal {
-                sample_ns,
-                z_score,
-            }
+            TimingVerdict::Normal { sample_ns, z_score }
         }
     }
 
@@ -101,8 +102,16 @@ impl TimingAnalyzer {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TimingVerdict {
-    Normal { sample_ns: u64, z_score: f64 },
-    Anomaly { sample_ns: u64, z_score: f64, mean: f64, stddev: f64 },
+    Normal {
+        sample_ns: u64,
+        z_score: f64,
+    },
+    Anomaly {
+        sample_ns: u64,
+        z_score: f64,
+        mean: f64,
+        stddev: f64,
+    },
 }
 
 // ── Cache Behaviour Monitor ──────────────────────────────────────────────────
@@ -197,8 +206,8 @@ impl CacheMonitor {
         if self.history.is_empty() {
             return;
         }
-        let avg: f64 = self.history.iter().map(|s| s.miss_rate).sum::<f64>()
-            / self.history.len() as f64;
+        let avg: f64 =
+            self.history.iter().map(|s| s.miss_rate).sum::<f64>() / self.history.len() as f64;
         self.baseline_miss_rate = avg;
     }
 }
@@ -243,8 +252,7 @@ impl FrequencyAnalyzer {
                 let mut re = 0.0_f64;
                 let mut im = 0.0_f64;
                 for (i, val) in centered.iter().enumerate() {
-                    let angle =
-                        2.0 * std::f64::consts::PI * k as f64 * i as f64 / n as f64;
+                    let angle = 2.0 * std::f64::consts::PI * k as f64 * i as f64 / n as f64;
                     re += val * angle.cos();
                     im -= val * angle.sin();
                 }

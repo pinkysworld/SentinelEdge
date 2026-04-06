@@ -237,10 +237,18 @@ pub fn compose_decisions(
 
             let chosen = match op {
                 CompositionOp::MaxSeverity => {
-                    if l.level >= r.level { l } else { r }
+                    if l.level >= r.level {
+                        l
+                    } else {
+                        r
+                    }
                 }
                 CompositionOp::MinSeverity => {
-                    if l.level <= r.level { l } else { r }
+                    if l.level <= r.level {
+                        l
+                    } else {
+                        r
+                    }
                 }
                 CompositionOp::LeftPriority => l,
                 CompositionOp::RightPriority => r,
@@ -378,8 +386,7 @@ mod composition_tests {
             isolation_pct: 100,
             rationale: "right".into(),
         };
-        let (result, _) =
-            compose_decisions(Some(left), Some(right), CompositionOp::LeftPriority);
+        let (result, _) = compose_decisions(Some(left), Some(right), CompositionOp::LeftPriority);
         assert_eq!(result.unwrap().level, ThreatLevel::Nominal);
     }
 
@@ -446,13 +453,16 @@ mod composition_tests {
 
     #[test]
     fn abstain_passes_through() {
-        let (result, _) =
-            compose_decisions(None, Some(PolicyDecision {
+        let (result, _) = compose_decisions(
+            None,
+            Some(PolicyDecision {
                 level: ThreatLevel::Severe,
                 action: ResponseAction::Quarantine,
                 isolation_pct: 75,
                 rationale: "only".into(),
-            }), CompositionOp::MaxSeverity);
+            }),
+            CompositionOp::MaxSeverity,
+        );
         assert_eq!(result.unwrap().level, ThreatLevel::Severe);
 
         let (result, _) = compose_decisions(None, None, CompositionOp::MaxSeverity);

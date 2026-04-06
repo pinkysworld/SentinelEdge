@@ -1,5 +1,6 @@
 import { useApi } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 export default function HelpDocs() {
   const { data: epList } = useApi(api.endpoints);
@@ -9,6 +10,12 @@ export default function HelpDocs() {
   const { data: statusData } = useApi(api.status);
 
   const epArr = Array.isArray(epList) ? epList : epList?.endpoints || [];
+  const openApiSummary = openApi ? {
+    title: openApi?.info?.title,
+    version: openApi?.info?.version,
+    paths: openApi?.paths ? Object.keys(openApi.paths).length : 0,
+    schemas: openApi?.components?.schemas ? Object.keys(openApi.components.schemas).length : 0,
+  } : null;
 
   return (
     <div>
@@ -50,14 +57,18 @@ export default function HelpDocs() {
             </table>
           </div>
         ) : (
-          <div className="json-block">{JSON.stringify(epList, null, 2)}</div>
+          <>
+            <div className="empty">Endpoint metadata is not available.</div>
+            <JsonDetails data={epList} label="Endpoint metadata JSON" />
+          </>
         )}
       </div>
 
       {research && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-title" style={{ marginBottom: 12 }}>Research Tracks</div>
-          <div className="json-block">{JSON.stringify(research, null, 2)}</div>
+          <SummaryGrid data={research} limit={10} />
+          <JsonDetails data={research} />
         </div>
       )}
 
@@ -72,7 +83,8 @@ export default function HelpDocs() {
       {openApi && (
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>OpenAPI Schema</div>
-          <div className="json-block" style={{ maxHeight: 500 }}>{JSON.stringify(openApi, null, 2)}</div>
+          <SummaryGrid data={openApiSummary} limit={6} />
+          <JsonDetails data={openApi} />
         </div>
       )}
     </div>

@@ -155,7 +155,11 @@ impl EventStore {
         }
     }
 
-    pub fn update_triage(&mut self, event_id: u64, update: EventTriageUpdate) -> Result<StoredEvent, String> {
+    pub fn update_triage(
+        &mut self,
+        event_id: u64,
+        update: EventTriageUpdate,
+    ) -> Result<StoredEvent, String> {
         let event = self
             .events
             .iter_mut()
@@ -167,8 +171,10 @@ impl EventStore {
             let normalized = Self::normalize_status(&status)
                 .ok_or_else(|| format!("invalid triage status: {status}"))?;
             event.triage.status = normalized.clone();
-            if matches!(normalized.as_str(), "acknowledged" | "investigating" | "contained" | "resolved")
-                && event.triage.acknowledged_at.is_none()
+            if matches!(
+                normalized.as_str(),
+                "acknowledged" | "investigating" | "contained" | "resolved"
+            ) && event.triage.acknowledged_at.is_none()
             {
                 event.triage.acknowledged_at = Some(now.clone());
             }
@@ -216,7 +222,11 @@ impl EventStore {
     }
 
     /// Bulk update triage on multiple events at once.
-    pub fn bulk_update_triage(&mut self, event_ids: &[u64], update: &EventTriageUpdate) -> BulkTriageResult {
+    pub fn bulk_update_triage(
+        &mut self,
+        event_ids: &[u64],
+        update: &EventTriageUpdate,
+    ) -> BulkTriageResult {
         let now = chrono::Utc::now().to_rfc3339();
         let mut updated = 0u64;
         let mut failed = Vec::new();
@@ -233,8 +243,10 @@ impl EventStore {
                 match Self::normalize_status(status) {
                     Some(normalized) => {
                         event.triage.status = normalized.clone();
-                        if matches!(normalized.as_str(), "acknowledged" | "investigating" | "contained" | "resolved")
-                            && event.triage.acknowledged_at.is_none()
+                        if matches!(
+                            normalized.as_str(),
+                            "acknowledged" | "investigating" | "contained" | "resolved"
+                        ) && event.triage.acknowledged_at.is_none()
                         {
                             event.triage.acknowledged_at = Some(now.clone());
                         }
@@ -255,7 +267,8 @@ impl EventStore {
                 event.triage.assignee = (!trimmed.is_empty()).then_some(trimmed.to_string());
             }
             if let Some(ref tags) = update.tags {
-                event.triage.tags = tags.iter()
+                event.triage.tags = tags
+                    .iter()
                     .map(|t| t.trim().to_ascii_lowercase())
                     .filter(|t| !t.is_empty())
                     .collect();
@@ -266,7 +279,10 @@ impl EventStore {
                 let trimmed = note.trim();
                 if !trimmed.is_empty() {
                     event.triage.notes.push(EventNote {
-                        author: update.author.clone().unwrap_or_else(|| "analyst".to_string()),
+                        author: update
+                            .author
+                            .clone()
+                            .unwrap_or_else(|| "analyst".to_string()),
                         note: trimmed.to_string(),
                         created_at: now.clone(),
                     });
@@ -354,7 +370,10 @@ impl EventStore {
             let mut agent_groups: HashMap<String, Vec<usize>> = HashMap::new();
             for &idx in indices {
                 let event = &self.events[idx];
-                agent_groups.entry(event.agent_id.clone()).or_default().push(idx);
+                agent_groups
+                    .entry(event.agent_id.clone())
+                    .or_default()
+                    .push(idx);
             }
 
             if agent_groups.len() < 2 {
@@ -426,7 +445,10 @@ impl EventStore {
     pub fn list(&self, agent_id: Option<&str>, limit: usize) -> Vec<&StoredEvent> {
         let iter = self.events.iter().rev();
         match agent_id {
-            Some(id) => iter.filter(|event| event.agent_id == id).take(limit).collect(),
+            Some(id) => iter
+                .filter(|event| event.agent_id == id)
+                .take(limit)
+                .collect(),
             None => iter.take(limit).collect(),
         }
     }
@@ -443,7 +465,8 @@ impl EventStore {
 
         let mut matches = Vec::new();
         for (reason, events) in &by_reason {
-            let mut agents: Vec<String> = events.iter().map(|event| event.agent_id.clone()).collect();
+            let mut agents: Vec<String> =
+                events.iter().map(|event| event.agent_id.clone()).collect();
             agents.sort();
             agents.dedup();
             if agents.len() >= 2 {
@@ -475,13 +498,18 @@ impl EventStore {
         for event in &self.events {
             let level = event.alert.level.to_ascii_lowercase();
             *severity_counts.entry(level).or_insert(0) += 1;
-            *triage_counts.entry(event.triage.status.clone()).or_insert(0) += 1;
+            *triage_counts
+                .entry(event.triage.status.clone())
+                .or_insert(0) += 1;
 
             for reason in &event.alert.reasons {
                 *reason_counts.entry(reason.clone()).or_insert(0) += 1;
             }
 
-            per_agent.entry(event.agent_id.clone()).or_default().push(event);
+            per_agent
+                .entry(event.agent_id.clone())
+                .or_default()
+                .push(event);
         }
 
         let mut top_reasons: Vec<TopReason> = reason_counts
@@ -815,7 +843,12 @@ mod tests {
         assert_eq!(analytics.total_events, 4);
         assert!(!analytics.top_reasons.is_empty());
         assert_eq!(analytics.top_reasons[0].reason, "high_cpu");
-        assert!(analytics.hot_agents.iter().any(|agent| agent.agent_id == "agent-1"));
+        assert!(
+            analytics
+                .hot_agents
+                .iter()
+                .any(|agent| agent.agent_id == "agent-1")
+        );
         assert_eq!(analytics.triage_counts.get("new").copied().unwrap_or(0), 4);
     }
 }

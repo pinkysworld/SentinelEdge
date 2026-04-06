@@ -29,14 +29,12 @@ pub struct TlsConfig {
 }
 
 /// Supported TLS protocol versions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TlsVersion {
     #[default]
     Tls12,
     Tls13,
 }
-
 
 impl TlsVersion {
     pub fn as_str(self) -> &'static str {
@@ -94,9 +92,10 @@ impl TlsConfig {
                 self.cert_path.display()
             ));
         } else if let Ok(content) = std::fs::read_to_string(&self.cert_path)
-            && !content.contains("BEGIN CERTIFICATE") {
-                errors.push("Certificate file does not appear to be PEM-encoded".into());
-            }
+            && !content.contains("BEGIN CERTIFICATE")
+        {
+            errors.push("Certificate file does not appear to be PEM-encoded".into());
+        }
 
         // Check key file
         if !self.key_path.exists() {
@@ -121,19 +120,21 @@ impl TlsConfig {
             }
 
             if let Ok(content) = std::fs::read_to_string(&self.key_path)
-                && !content.contains("PRIVATE KEY") {
-                    errors.push("Key file does not appear to contain a private key".into());
-                }
+                && !content.contains("PRIVATE KEY")
+            {
+                errors.push("Key file does not appear to contain a private key".into());
+            }
         }
 
         // Check client CA for mTLS
         if let Some(ref ca_path) = self.client_ca_path
-            && !ca_path.exists() {
-                errors.push(format!(
-                    "Client CA certificate not found: {}",
-                    ca_path.display()
-                ));
-            }
+            && !ca_path.exists()
+        {
+            errors.push(format!(
+                "Client CA certificate not found: {}",
+                ca_path.display()
+            ));
+        }
 
         if self.require_client_cert && self.client_ca_path.is_none() {
             errors.push("mTLS requires a client CA certificate path".into());
@@ -187,11 +188,7 @@ impl ListenerMode {
 
     /// Get the scheme (http or https).
     pub fn scheme(&self) -> &'static str {
-        if self.is_tls() {
-            "https"
-        } else {
-            "http"
-        }
+        if self.is_tls() { "https" } else { "http" }
     }
 
     /// Get the TLS config, if any.
@@ -215,9 +212,7 @@ impl ListenerMode {
 /// require_client_cert = true        # optional, default false
 /// ```
 pub fn parse_tls_config(table: &toml::Value) -> Result<TlsConfig, String> {
-    let obj = table
-        .as_table()
-        .ok_or("TLS config must be a TOML table")?;
+    let obj = table.as_table().ok_or("TLS config must be a TOML table")?;
 
     let cert = obj
         .get("cert")
@@ -302,10 +297,7 @@ mod tests {
     #[test]
     fn listener_mode_tls() {
         let config = TlsConfig::new("cert.pem", "key.pem");
-        let mode = ListenerMode::Tls {
-            port: 8443,
-            config,
-        };
+        let mode = ListenerMode::Tls { port: 8443, config };
         assert!(mode.is_tls());
         assert_eq!(mode.port(), 8443);
         assert_eq!(mode.scheme(), "https");

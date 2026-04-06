@@ -15,11 +15,11 @@ pub struct WindowsCapabilities {
     pub build_number: u32,
     pub is_server: bool,
     pub has_wmi: bool,
-    pub has_etw: bool,           // Event Tracing for Windows
-    pub has_amsi: bool,          // Anti-Malware Scan Interface (Win10+)
-    pub has_sysmon: bool,        // Sysmon installed (optional enrichment)
+    pub has_etw: bool,    // Event Tracing for Windows
+    pub has_amsi: bool,   // Anti-Malware Scan Interface (Win10+)
+    pub has_sysmon: bool, // Sysmon installed (optional enrichment)
     pub has_powershell_logging: bool,
-    pub has_wmic: bool,          // wmic deprecated in newer builds
+    pub has_wmic: bool, // wmic deprecated in newer builds
 }
 
 impl WindowsCapabilities {
@@ -28,12 +28,12 @@ impl WindowsCapabilities {
         let (version, build_number) = detect_windows_version();
         Self {
             is_server: version.contains("Server"),
-            has_wmi: true, // always available
-            has_etw: build_number >= 6000,      // Vista+
-            has_amsi: build_number >= 10240,     // Win10+
+            has_wmi: true,                   // always available
+            has_etw: build_number >= 6000,   // Vista+
+            has_amsi: build_number >= 10240, // Win10+
             has_sysmon: check_sysmon_installed(),
             has_powershell_logging: build_number >= 10240,
-            has_wmic: build_number < 25000,      // deprecated in Win11 24H2+
+            has_wmic: build_number < 25000, // deprecated in Win11 24H2+
             version,
             build_number,
         }
@@ -42,10 +42,18 @@ impl WindowsCapabilities {
     /// Return list of unavailable features for documentation/logging.
     pub fn unavailable_features(&self) -> Vec<&'static str> {
         let mut missing = Vec::new();
-        if !self.has_etw { missing.push("ETW tracing"); }
-        if !self.has_amsi { missing.push("AMSI script scanning"); }
-        if !self.has_sysmon { missing.push("Sysmon enrichment"); }
-        if !self.has_powershell_logging { missing.push("PowerShell ScriptBlock logging"); }
+        if !self.has_etw {
+            missing.push("ETW tracing");
+        }
+        if !self.has_amsi {
+            missing.push("AMSI script scanning");
+        }
+        if !self.has_sysmon {
+            missing.push("Sysmon enrichment");
+        }
+        if !self.has_powershell_logging {
+            missing.push("PowerShell ScriptBlock logging");
+        }
         missing
     }
 }
@@ -86,7 +94,7 @@ pub struct WinProcessEvent {
     pub cmd_line: String,
     pub user: String,
     pub session_id: u32,
-    pub exe_hash: Option<String>,  // SHA-256 of executable
+    pub exe_hash: Option<String>, // SHA-256 of executable
     pub ocsf_class_id: u32,       // 1007 = ProcessActivity
 }
 
@@ -100,7 +108,12 @@ pub enum WinProcessEventType {
 pub fn collect_processes() -> Vec<WinProcessEvent> {
     let now = chrono::Utc::now().to_rfc3339();
     let output = match std::process::Command::new("wmic")
-        .args(["process", "get", "ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,SessionId", "/format:csv"])
+        .args([
+            "process",
+            "get",
+            "ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,SessionId",
+            "/format:csv",
+        ])
         .output()
     {
         Ok(o) => o,
@@ -110,19 +123,36 @@ pub fn collect_processes() -> Vec<WinProcessEvent> {
     let mut events = Vec::new();
     for line in text.lines().skip(1) {
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 7 { continue; }
+        if fields.len() < 7 {
+            continue;
+        }
         // CSV format: Node,CommandLine,ExecutablePath,Name,ParentProcessId,ProcessId,SessionId
         let cmd_line = fields.get(1).unwrap_or(&"").to_string();
         let exe_path = fields.get(2).unwrap_or(&"").to_string();
         let name = fields.get(3).unwrap_or(&"").to_string();
-        let ppid: u32 = fields.get(4).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-        let pid: u32 = fields.get(5).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-        let session_id: u32 = fields.get(6).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-        if pid == 0 { continue; }
+        let ppid: u32 = fields
+            .get(4)
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        let pid: u32 = fields
+            .get(5)
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        let session_id: u32 = fields
+            .get(6)
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        if pid == 0 {
+            continue;
+        }
         events.push(WinProcessEvent {
             timestamp: now.clone(),
             event_type: WinProcessEventType::Create,
-            pid, ppid, name, exe_path, cmd_line,
+            pid,
+            ppid,
+            name,
+            exe_path,
+            cmd_line,
             user: String::new(),
             session_id,
             exe_hash: None,
@@ -146,7 +176,7 @@ pub struct WinNetworkConnection {
     pub state: String,
     pub pid: u32,
     pub process_name: String,
-    pub ocsf_class_id: u32,  // 4001 = NetworkActivity
+    pub ocsf_class_id: u32, // 4001 = NetworkActivity
 }
 
 /// Collect active network connections using netstat.
@@ -163,19 +193,31 @@ pub fn collect_network_connections() -> Vec<WinNetworkConnection> {
     let mut conns = Vec::new();
     for line in text.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 { continue; }
+        if parts.len() < 5 {
+            continue;
+        }
         let proto = parts[0];
-        if proto != "TCP" && proto != "UDP" { continue; }
+        if proto != "TCP" && proto != "UDP" {
+            continue;
+        }
         let (local_addr, local_port) = parse_endpoint(parts[1]);
         let (remote_addr, remote_port) = parse_endpoint(parts[2]);
-        let state = if proto == "TCP" { parts[3].to_string() } else { "STATELESS".into() };
+        let state = if proto == "TCP" {
+            parts[3].to_string()
+        } else {
+            "STATELESS".into()
+        };
         let pid_idx = if proto == "TCP" { 4 } else { 3 };
         let pid: u32 = parts.get(pid_idx).and_then(|s| s.parse().ok()).unwrap_or(0);
         conns.push(WinNetworkConnection {
             timestamp: now.clone(),
             protocol: proto.to_string(),
-            local_addr, local_port, remote_addr, remote_port,
-            state, pid,
+            local_addr,
+            local_port,
+            remote_addr,
+            remote_port,
+            state,
+            pid,
             process_name: String::new(),
             ocsf_class_id: 4001,
         });
@@ -186,7 +228,7 @@ pub fn collect_network_connections() -> Vec<WinNetworkConnection> {
 fn parse_endpoint(s: &str) -> (String, u16) {
     if let Some(idx) = s.rfind(':') {
         let addr = s[..idx].to_string();
-        let port: u16 = s[idx+1..].parse().unwrap_or(0);
+        let port: u16 = s[idx + 1..].parse().unwrap_or(0);
         (addr, port)
     } else {
         (s.to_string(), 0)
@@ -203,7 +245,7 @@ pub struct WinDnsEvent {
     pub query_type: String,
     pub response: String,
     pub pid: u32,
-    pub ocsf_class_id: u32,  // 4003 = DnsActivity
+    pub ocsf_class_id: u32, // 4003 = DnsActivity
 }
 
 /// Collect DNS cache entries (non-invasive snapshot).
@@ -225,8 +267,14 @@ pub fn collect_dns_cache() -> Vec<WinDnsEvent> {
             current_name = name.trim().to_string();
         } else if let Some(rtype) = trimmed.strip_prefix("Record Type . . . . . : ") {
             let qtype = match rtype.trim() {
-                "1" => "A", "28" => "AAAA", "5" => "CNAME", "15" => "MX",
-                "2" => "NS", "12" => "PTR", "6" => "SOA", "16" => "TXT",
+                "1" => "A",
+                "28" => "AAAA",
+                "5" => "CNAME",
+                "15" => "MX",
+                "2" => "NS",
+                "12" => "PTR",
+                "6" => "SOA",
+                "16" => "TXT",
                 other => other,
             };
             events.push(WinDnsEvent {
@@ -253,7 +301,7 @@ pub struct WinRegistryEvent {
     pub value_name: String,
     pub value_data: String,
     pub event_type: RegistryEventType,
-    pub ocsf_class_id: u32,  // 5001 = ConfigState
+    pub ocsf_class_id: u32, // 5001 = ConfigState
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -292,7 +340,9 @@ pub fn snapshot_registry_persistence() -> Vec<WinRegistryEvent> {
         let (hive, key_path) = key.split_once('\\').unwrap_or((key, ""));
         for line in text.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("HKEY") { continue; }
+            if trimmed.is_empty() || trimmed.starts_with("HKEY") {
+                continue;
+            }
             let parts: Vec<&str> = trimmed.splitn(3, "    ").collect();
             if parts.len() >= 3 {
                 events.push(WinRegistryEvent {
@@ -312,11 +362,23 @@ pub fn snapshot_registry_persistence() -> Vec<WinRegistryEvent> {
 
 /// Diff two registry snapshots to find changes.
 pub fn diff_registry(old: &[WinRegistryEvent], new: &[WinRegistryEvent]) -> Vec<WinRegistryEvent> {
-    let old_map: HashMap<(String, String), String> = old.iter()
-        .map(|e| ((e.key_path.clone(), e.value_name.clone()), e.value_data.clone()))
+    let old_map: HashMap<(String, String), String> = old
+        .iter()
+        .map(|e| {
+            (
+                (e.key_path.clone(), e.value_name.clone()),
+                e.value_data.clone(),
+            )
+        })
         .collect();
-    let new_map: HashMap<(String, String), String> = new.iter()
-        .map(|e| ((e.key_path.clone(), e.value_name.clone()), e.value_data.clone()))
+    let new_map: HashMap<(String, String), String> = new
+        .iter()
+        .map(|e| {
+            (
+                (e.key_path.clone(), e.value_name.clone()),
+                e.value_data.clone(),
+            )
+        })
         .collect();
     let now = chrono::Utc::now().to_rfc3339();
     let mut changes = Vec::new();
@@ -372,14 +434,19 @@ pub struct WinServiceInfo {
     pub start_type: String,
     pub binary_path: String,
     pub account: String,
-    pub ocsf_class_id: u32,  // 5001
+    pub ocsf_class_id: u32, // 5001
 }
 
 /// Collect installed Windows services.
 pub fn collect_services() -> Vec<WinServiceInfo> {
     let now = chrono::Utc::now().to_rfc3339();
     let output = match std::process::Command::new("wmic")
-        .args(["service", "get", "Name,DisplayName,State,StartMode,PathName,StartName", "/format:csv"])
+        .args([
+            "service",
+            "get",
+            "Name,DisplayName,State,StartMode,PathName,StartName",
+            "/format:csv",
+        ])
         .output()
     {
         Ok(o) => o,
@@ -389,14 +456,18 @@ pub fn collect_services() -> Vec<WinServiceInfo> {
     let mut services = Vec::new();
     for line in text.lines().skip(1) {
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() < 7 { continue; }
+        if fields.len() < 7 {
+            continue;
+        }
         let display_name = fields.get(1).unwrap_or(&"").to_string();
         let name = fields.get(2).unwrap_or(&"").to_string();
         let binary_path = fields.get(3).unwrap_or(&"").to_string();
         let start_type = fields.get(4).unwrap_or(&"").to_string();
         let account = fields.get(5).unwrap_or(&"").to_string();
         let state = fields.get(6).unwrap_or(&"").to_string();
-        if name.trim().is_empty() { continue; }
+        if name.trim().is_empty() {
+            continue;
+        }
         services.push(WinServiceInfo {
             timestamp: now.clone(),
             name: name.trim().to_string(),
@@ -422,18 +493,21 @@ pub struct WinPowerShellEvent {
     pub pid: u32,
     pub user: String,
     pub is_encoded: bool,
-    pub ocsf_class_id: u32,  // 1007
+    pub ocsf_class_id: u32, // 1007
 }
 
 /// Detect running PowerShell processes and flag encoded commands.
 pub fn collect_powershell_activity() -> Vec<WinPowerShellEvent> {
     let procs = collect_processes();
     let now = chrono::Utc::now().to_rfc3339();
-    procs.iter()
+    procs
+        .iter()
         .filter(|p| {
             let lower = p.name.to_lowercase();
-            lower.contains("powershell") || lower.contains("pwsh")
-                || lower.contains("wscript") || lower.contains("cscript")
+            lower.contains("powershell")
+                || lower.contains("pwsh")
+                || lower.contains("wscript")
+                || lower.contains("cscript")
         })
         .map(|p| {
             let lower_cmd = p.cmd_line.to_lowercase();
@@ -502,13 +576,13 @@ impl WindowsSnapshot {
 /// Map a Windows event source to its OCSF class ID.
 pub fn ocsf_class_for(source: &str) -> u32 {
     match source {
-        "process" => 1007,    // ProcessActivity
-        "network" => 4001,    // NetworkActivity
-        "dns" => 4003,        // DnsActivity
+        "process" => 1007,                         // ProcessActivity
+        "network" => 4001,                         // NetworkActivity
+        "dns" => 4003,                             // DnsActivity
         "registry" | "service" | "config" => 5001, // ConfigState
-        "auth" => 3002,       // Authentication
-        "file" => 1001,       // FileActivity
-        _ => 2004,            // DetectionFinding
+        "auth" => 3002,                            // Authentication
+        "file" => 1001,                            // FileActivity
+        _ => 2004,                                 // DetectionFinding
     }
 }
 
@@ -517,12 +591,30 @@ pub fn ocsf_class_for(source: &str) -> u32 {
 /// Supported Windows versions with their capabilities.
 pub fn supported_versions() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("Windows 10 1809+",    "Full telemetry: processes, registry, services, PowerShell, AMSI, ETW"),
-        ("Windows 10 1507-1803","Reduced: no AMSI, limited ScriptBlock logging"),
-        ("Windows 11",          "Full telemetry, wmic may require fallback to PowerShell CIM"),
-        ("Windows Server 2016+","Full telemetry with server-specific service monitoring"),
-        ("Windows Server 2019+","Full telemetry including container-aware collection"),
-        ("Windows 8.1",         "Basic: processes, network, services only. No AMSI/ETW."),
+        (
+            "Windows 10 1809+",
+            "Full telemetry: processes, registry, services, PowerShell, AMSI, ETW",
+        ),
+        (
+            "Windows 10 1507-1803",
+            "Reduced: no AMSI, limited ScriptBlock logging",
+        ),
+        (
+            "Windows 11",
+            "Full telemetry, wmic may require fallback to PowerShell CIM",
+        ),
+        (
+            "Windows Server 2016+",
+            "Full telemetry with server-specific service monitoring",
+        ),
+        (
+            "Windows Server 2019+",
+            "Full telemetry including container-aware collection",
+        ),
+        (
+            "Windows 8.1",
+            "Basic: processes, network, services only. No AMSI/ETW.",
+        ),
     ]
 }
 
@@ -563,31 +655,86 @@ const SUSPICIOUS_NAMES: &[(&str, &str)] = &[
     ("nc.exe", "Netcat — potential reverse shell"),
     ("ncat.exe", "Ncat — potential reverse shell"),
     ("socat", "Socat — potential tunnel"),
-    ("powershell -enc", "Encoded PowerShell — potential obfuscated payload"),
-    ("powershell -e ", "Encoded PowerShell — potential obfuscated payload"),
-    ("-encodedcommand", "Encoded PowerShell — potential obfuscated payload"),
-    ("iex(", "PowerShell Invoke-Expression — potential code injection"),
-    ("invoke-expression", "PowerShell Invoke-Expression — potential code injection"),
-    ("downloadstring", "PowerShell download cradle — remote code execution"),
-    ("bitsadmin /transfer", "BITS transfer — potential data exfil or download"),
+    (
+        "powershell -enc",
+        "Encoded PowerShell — potential obfuscated payload",
+    ),
+    (
+        "powershell -e ",
+        "Encoded PowerShell — potential obfuscated payload",
+    ),
+    (
+        "-encodedcommand",
+        "Encoded PowerShell — potential obfuscated payload",
+    ),
+    (
+        "iex(",
+        "PowerShell Invoke-Expression — potential code injection",
+    ),
+    (
+        "invoke-expression",
+        "PowerShell Invoke-Expression — potential code injection",
+    ),
+    (
+        "downloadstring",
+        "PowerShell download cradle — remote code execution",
+    ),
+    (
+        "bitsadmin /transfer",
+        "BITS transfer — potential data exfil or download",
+    ),
     ("certutil -urlcache", "Certutil download — LOLBin abuse"),
-    ("regsvr32 /s /n /u /i:", "Regsvr32 proxy execution — LOLBin abuse"),
+    (
+        "regsvr32 /s /n /u /i:",
+        "Regsvr32 proxy execution — LOLBin abuse",
+    ),
     ("mshta ", "MSHTA execution — LOLBin abuse"),
-    ("rundll32 javascript:", "Rundll32 script exec — LOLBin abuse"),
+    (
+        "rundll32 javascript:",
+        "Rundll32 script exec — LOLBin abuse",
+    ),
     ("\\temp\\", "Process in temp folder — suspicious location"),
     ("\\tmp\\", "Process in tmp folder — suspicious location"),
-    ("appdata\\local\\temp", "Process in user temp — suspicious location"),
+    (
+        "appdata\\local\\temp",
+        "Process in user temp — suspicious location",
+    ),
 ];
 
 const WINDOWS_SYSTEM_PROCS: &[&str] = &[
-    "system", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe",
-    "services.exe", "lsass.exe", "svchost.exe", "dwm.exe", "explorer.exe",
-    "spoolsv.exe", "ctfmon.exe", "taskhostw.exe", "runtimebroker.exe",
-    "searchindexer", "securityhealthservice", "msmpeng.exe", "nissrv.exe",
-    "wuauserv", "trustedinstaller", "msiexec.exe", "dllhost.exe",
-    "conhost.exe", "sihost.exe", "fontdrvhost.exe", "lsaiso.exe",
-    "registry", "memcompression", "wmiprvse.exe", "searchprotocolhost",
-    "searchfilterhost", "audiodg.exe", "dashost.exe",
+    "system",
+    "smss.exe",
+    "csrss.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "services.exe",
+    "lsass.exe",
+    "svchost.exe",
+    "dwm.exe",
+    "explorer.exe",
+    "spoolsv.exe",
+    "ctfmon.exe",
+    "taskhostw.exe",
+    "runtimebroker.exe",
+    "searchindexer",
+    "securityhealthservice",
+    "msmpeng.exe",
+    "nissrv.exe",
+    "wuauserv",
+    "trustedinstaller",
+    "msiexec.exe",
+    "dllhost.exe",
+    "conhost.exe",
+    "sihost.exe",
+    "fontdrvhost.exe",
+    "lsaiso.exe",
+    "registry",
+    "memcompression",
+    "wmiprvse.exe",
+    "searchprotocolhost",
+    "searchfilterhost",
+    "audiodg.exe",
+    "dashost.exe",
 ];
 
 /// Analyse running Windows processes for suspicious behaviour.
@@ -601,12 +748,22 @@ pub fn analyze_processes(procs: &[WinProcessEvent]) -> Vec<ProcessFinding> {
 
         // Suspicious name/command patterns
         for &(pattern, desc) in SUSPICIOUS_NAMES {
-            if name_lower.contains(pattern) || cmd_lower.contains(pattern) || exe_lower.contains(pattern) {
+            if name_lower.contains(pattern)
+                || cmd_lower.contains(pattern)
+                || exe_lower.contains(pattern)
+            {
                 findings.push(ProcessFinding {
-                    pid: p.pid, name: p.name.clone(),
-                    user: if p.user.is_empty() { "—".into() } else { p.user.clone() },
-                    risk_level: "critical", reason: desc.to_string(),
-                    cpu_percent: 0.0, mem_percent: 0.0,
+                    pid: p.pid,
+                    name: p.name.clone(),
+                    user: if p.user.is_empty() {
+                        "—".into()
+                    } else {
+                        p.user.clone()
+                    },
+                    risk_level: "critical",
+                    reason: desc.to_string(),
+                    cpu_percent: 0.0,
+                    mem_percent: 0.0,
                 });
             }
         }
@@ -614,11 +771,17 @@ pub fn analyze_processes(procs: &[WinProcessEvent]) -> Vec<ProcessFinding> {
         // Non-system process with PID < 100 — unusual (potential PID spoofing)
         if p.pid > 4 && p.pid < 100 && !is_known_windows_system_process(&name_lower) {
             findings.push(ProcessFinding {
-                pid: p.pid, name: p.name.clone(),
-                user: if p.user.is_empty() { "—".into() } else { p.user.clone() },
+                pid: p.pid,
+                name: p.name.clone(),
+                user: if p.user.is_empty() {
+                    "—".into()
+                } else {
+                    p.user.clone()
+                },
                 risk_level: "elevated",
                 reason: "Very low PID for non-system process — unusual".to_string(),
-                cpu_percent: 0.0, mem_percent: 0.0,
+                cpu_percent: 0.0,
+                mem_percent: 0.0,
             });
         }
 
@@ -631,15 +794,23 @@ pub fn analyze_processes(procs: &[WinProcessEvent]) -> Vec<ProcessFinding> {
             && !is_known_windows_system_process(&name_lower)
         {
             // Check for truly suspicious paths
-            if exe_lower.contains("\\temp\\") || exe_lower.contains("\\tmp\\")
-                || exe_lower.contains("\\downloads\\") || exe_lower.contains("\\appdata\\local\\temp")
+            if exe_lower.contains("\\temp\\")
+                || exe_lower.contains("\\tmp\\")
+                || exe_lower.contains("\\downloads\\")
+                || exe_lower.contains("\\appdata\\local\\temp")
             {
                 findings.push(ProcessFinding {
-                    pid: p.pid, name: p.name.clone(),
-                    user: if p.user.is_empty() { "—".into() } else { p.user.clone() },
+                    pid: p.pid,
+                    name: p.name.clone(),
+                    user: if p.user.is_empty() {
+                        "—".into()
+                    } else {
+                        p.user.clone()
+                    },
                     risk_level: "elevated",
                     reason: format!("Process running from suspicious path: {}", p.exe_path),
-                    cpu_percent: 0.0, mem_percent: 0.0,
+                    cpu_percent: 0.0,
+                    mem_percent: 0.0,
                 });
             }
         }
@@ -656,7 +827,12 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
 
     // Try wmic product
     if let Ok(output) = std::process::Command::new("wmic")
-        .args(["product", "get", "Name,Version,InstallLocation", "/format:csv"])
+        .args([
+            "product",
+            "get",
+            "Name,Version,InstallLocation",
+            "/format:csv",
+        ])
         .output()
     {
         if output.status.success() {
@@ -667,7 +843,9 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
                     let install_location = fields.get(1).unwrap_or(&"").to_string();
                     let name = fields.get(2).unwrap_or(&"").trim().to_string();
                     let version = fields.get(3).unwrap_or(&"").trim().to_string();
-                    if name.is_empty() { continue; }
+                    if name.is_empty() {
+                        continue;
+                    }
                     apps.push(InstalledApp {
                         name,
                         path: install_location,
@@ -684,7 +862,11 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
     // Fallback: registry query for 64-bit apps
     if apps.is_empty() {
         if let Ok(output) = std::process::Command::new("reg")
-            .args(["query", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "/s"])
+            .args([
+                "query",
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                "/s",
+            ])
             .output()
         {
             if output.status.success() {
@@ -743,7 +925,9 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
 }
 
 fn is_known_windows_system_process(name: &str) -> bool {
-    WINDOWS_SYSTEM_PROCS.iter().any(|sp| name.contains(&sp.to_lowercase()))
+    WINDOWS_SYSTEM_PROCS
+        .iter()
+        .any(|sp| name.contains(&sp.to_lowercase()))
 }
 
 fn risk_ord(level: &str) -> u8 {
@@ -862,16 +1046,22 @@ mod tests {
     #[test]
     fn test_registry_diff_detects_modified() {
         let old = vec![WinRegistryEvent {
-            timestamp: "t1".into(), hive: "HKLM".into(),
-            key_path: "Run".into(), value_name: "svc".into(),
+            timestamp: "t1".into(),
+            hive: "HKLM".into(),
+            key_path: "Run".into(),
+            value_name: "svc".into(),
             value_data: "good.exe".into(),
-            event_type: RegistryEventType::Snapshot, ocsf_class_id: 5001,
+            event_type: RegistryEventType::Snapshot,
+            ocsf_class_id: 5001,
         }];
         let new = vec![WinRegistryEvent {
-            timestamp: "t2".into(), hive: "HKLM".into(),
-            key_path: "Run".into(), value_name: "svc".into(),
+            timestamp: "t2".into(),
+            hive: "HKLM".into(),
+            key_path: "Run".into(),
+            value_name: "svc".into(),
             value_data: "evil.exe".into(),
-            event_type: RegistryEventType::Snapshot, ocsf_class_id: 5001,
+            event_type: RegistryEventType::Snapshot,
+            ocsf_class_id: 5001,
         }];
         let diff = diff_registry(&old, &new);
         assert_eq!(diff.len(), 1);
@@ -881,10 +1071,13 @@ mod tests {
     #[test]
     fn test_registry_diff_detects_deleted() {
         let old = vec![WinRegistryEvent {
-            timestamp: "t1".into(), hive: "HKLM".into(),
-            key_path: "Run".into(), value_name: "legit".into(),
+            timestamp: "t1".into(),
+            hive: "HKLM".into(),
+            key_path: "Run".into(),
+            value_name: "legit".into(),
             value_data: "app.exe".into(),
-            event_type: RegistryEventType::Snapshot, ocsf_class_id: 5001,
+            event_type: RegistryEventType::Snapshot,
+            ocsf_class_id: 5001,
         }];
         let new = vec![];
         let diff = diff_registry(&old, &new);
@@ -895,10 +1088,13 @@ mod tests {
     #[test]
     fn test_registry_no_changes() {
         let snap = vec![WinRegistryEvent {
-            timestamp: "t1".into(), hive: "HKLM".into(),
-            key_path: "Run".into(), value_name: "app".into(),
+            timestamp: "t1".into(),
+            hive: "HKLM".into(),
+            key_path: "Run".into(),
+            value_name: "app".into(),
             value_data: "val".into(),
-            event_type: RegistryEventType::Snapshot, ocsf_class_id: 5001,
+            event_type: RegistryEventType::Snapshot,
+            ocsf_class_id: 5001,
         }];
         let diff = diff_registry(&snap, &snap);
         assert!(diff.is_empty());
@@ -916,8 +1112,10 @@ mod tests {
             timestamp: "t".into(),
             script_name: "powershell.exe".into(),
             cmd_line: "powershell.exe -EncodedCommand ZQBj...".into(),
-            pid: 1234, user: "admin".into(),
-            is_encoded: true, ocsf_class_id: 1007,
+            pid: 1234,
+            user: "admin".into(),
+            is_encoded: true,
+            ocsf_class_id: 1007,
         };
         assert!(evt.is_encoded);
     }
@@ -927,10 +1125,15 @@ mod tests {
         let snap = WindowsSnapshot {
             timestamp: "t".into(),
             capabilities: WindowsCapabilities {
-                version: "test".into(), build_number: 19045,
-                is_server: false, has_wmi: true, has_etw: true,
-                has_amsi: true, has_sysmon: false,
-                has_powershell_logging: true, has_wmic: true,
+                version: "test".into(),
+                build_number: 19045,
+                is_server: false,
+                has_wmi: true,
+                has_etw: true,
+                has_amsi: true,
+                has_sysmon: false,
+                has_powershell_logging: true,
+                has_wmic: true,
             },
             processes: vec![],
             network_connections: vec![],

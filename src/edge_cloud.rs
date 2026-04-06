@@ -45,10 +45,7 @@ pub struct OffloadDecision {
 }
 
 /// Decide where to run workloads based on edge capacity and requirements.
-pub fn decide_offload(
-    workloads: &[Workload],
-    edge: &EdgeCapacity,
-) -> Vec<OffloadDecision> {
+pub fn decide_offload(workloads: &[Workload], edge: &EdgeCapacity) -> Vec<OffloadDecision> {
     let mut remaining_cpu = edge.cpu_available;
     let mut remaining_mem = edge.memory_available_mb;
     let mut decisions = Vec::new();
@@ -64,7 +61,7 @@ pub fn decide_offload(
                     reason: "forced edge-only".into(),
                     estimated_latency_ms: 1,
                 }
-            },
+            }
             ProcessingTier::CloudOnly => OffloadDecision {
                 workload_id: w.id.clone(),
                 run_on: "cloud".into(),
@@ -72,10 +69,9 @@ pub fn decide_offload(
                 estimated_latency_ms: edge.latency_to_cloud_ms,
             },
             ProcessingTier::EdgePreferred | ProcessingTier::CloudPreferred => {
-                let fits_edge = w.cpu_cost <= remaining_cpu
-                    && w.memory_mb <= remaining_mem;
-                let prefer_edge = matches!(w.tier, ProcessingTier::EdgePreferred)
-                    || w.latency_sensitive;
+                let fits_edge = w.cpu_cost <= remaining_cpu && w.memory_mb <= remaining_mem;
+                let prefer_edge =
+                    matches!(w.tier, ProcessingTier::EdgePreferred) || w.latency_sensitive;
 
                 if fits_edge && prefer_edge {
                     remaining_cpu -= w.cpu_cost;
@@ -339,7 +335,10 @@ impl PatchManager {
     }
 
     pub fn installed_count(&self) -> usize {
-        self.patches.values().filter(|p| p.status == PatchStatus::Installed).count()
+        self.patches
+            .values()
+            .filter(|p| p.status == PatchStatus::Installed)
+            .count()
     }
 }
 

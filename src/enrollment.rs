@@ -208,7 +208,12 @@ impl AgentRegistry {
     }
 
     /// Process a heartbeat from an agent.
-    pub fn heartbeat(&mut self, agent_id: &str, version: &str, health: Option<AgentHealth>) -> Result<(), String> {
+    pub fn heartbeat(
+        &mut self,
+        agent_id: &str,
+        version: &str,
+        health: Option<AgentHealth>,
+    ) -> Result<(), String> {
         let agent = self
             .agents
             .get_mut(agent_id)
@@ -282,7 +287,11 @@ impl AgentRegistry {
     }
 
     /// Set the monitoring scope override for a specific agent.
-    pub fn set_monitor_scope(&mut self, agent_id: &str, scope: Option<MonitorScopeSettings>) -> Result<(), String> {
+    pub fn set_monitor_scope(
+        &mut self,
+        agent_id: &str,
+        scope: Option<MonitorScopeSettings>,
+    ) -> Result<(), String> {
         let agent = self
             .agents
             .get_mut(agent_id)
@@ -294,7 +303,9 @@ impl AgentRegistry {
 
     /// Get the monitoring scope for a specific agent (returns the override or None).
     pub fn get_monitor_scope(&self, agent_id: &str) -> Option<&MonitorScopeSettings> {
-        self.agents.get(agent_id).and_then(|a| a.monitor_scope.as_ref())
+        self.agents
+            .get(agent_id)
+            .and_then(|a| a.monitor_scope.as_ref())
     }
 
     fn save(&self) {
@@ -314,10 +325,11 @@ impl AgentRegistry {
     fn load(&mut self) {
         let path = Path::new(&self.store_path);
         if let Ok(raw) = fs::read_to_string(path)
-            && let Ok(data) = serde_json::from_str::<RegistryData>(&raw) {
-                self.agents = data.agents;
-                self.tokens = data.tokens;
-            }
+            && let Ok(data) = serde_json::from_str::<RegistryData>(&raw)
+        {
+            self.agents = data.agents;
+            self.tokens = data.tokens;
+        }
     }
 }
 
@@ -442,10 +454,7 @@ mod tests {
         }
 
         reg.refresh_staleness();
-        assert_eq!(
-            reg.get(&resp.agent_id).unwrap().status,
-            AgentStatus::Stale
-        );
+        assert_eq!(reg.get(&resp.agent_id).unwrap().status, AgentStatus::Stale);
 
         let _ = fs::remove_dir_all(&dir);
     }

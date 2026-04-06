@@ -1,7 +1,8 @@
 [package]
 name = "wardex"
-version = "0.41.3"
+version = "0.41.4"
 edition = "2024"
+build = "build.rs"
 description = "Private-cloud XDR and SIEM platform with enterprise detection, response, and fleet operations"
 license-file = "LICENSE"
 
@@ -23,6 +24,7 @@ log = "0.4"
 env_logger = "0.11"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 base64 = "0.22"
+include_dir = "0.7"
 # Axum async HTTP server stack
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }

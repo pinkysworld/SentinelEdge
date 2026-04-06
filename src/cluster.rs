@@ -65,9 +65,9 @@ pub enum NodeRole {
 impl std::fmt::Display for NodeRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Follower  => write!(f, "follower"),
+            Self::Follower => write!(f, "follower"),
             Self::Candidate => write!(f, "candidate"),
-            Self::Leader    => write!(f, "leader"),
+            Self::Leader => write!(f, "leader"),
         }
     }
 }
@@ -242,12 +242,15 @@ impl ClusterNode {
         let mut peer_status = HashMap::new();
 
         for peer in &config.peers {
-            peer_status.insert(peer.node_id.clone(), PeerStatus {
-                reachable: false,
-                last_contact: now,
-                match_index: 0,
-                next_index: 1,
-            });
+            peer_status.insert(
+                peer.node_id.clone(),
+                PeerStatus {
+                    reachable: false,
+                    last_contact: now,
+                    match_index: 0,
+                    next_index: 1,
+                },
+            );
         }
 
         let node_id = config.node_id.clone();
@@ -273,15 +276,28 @@ impl ClusterNode {
     }
 
     pub fn node_id(&self) -> NodeId {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).config.node_id.clone()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .config
+            .node_id
+            .clone()
     }
 
     pub fn state(&self) -> NodeState {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).state.clone()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state
+            .clone()
     }
 
     pub fn role(&self) -> NodeRole {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).state.role
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state
+            .role
     }
 
     pub fn is_leader(&self) -> bool {
@@ -289,15 +305,27 @@ impl ClusterNode {
     }
 
     pub fn term(&self) -> u64 {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).state.term
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state
+            .term
     }
 
     pub fn commit_index(&self) -> u64 {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).state.commit_index
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state
+            .commit_index
     }
 
     pub fn log_len(&self) -> u64 {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).log.len() as u64
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .log
+            .len() as u64
     }
 
     // ── Election ─────────────────────────────────────────────────────────
@@ -307,8 +335,8 @@ impl ClusterNode {
         inner.state.term += 1;
         inner.state.role = NodeRole::Candidate;
         inner.state.voted_for = Some(inner.config.node_id.clone());
-        inner.election_deadline = Instant::now()
-            + Duration::from_millis(inner.config.election_timeout_ms);
+        inner.election_deadline =
+            Instant::now() + Duration::from_millis(inner.config.election_timeout_ms);
 
         let (last_index, last_term) = if let Some(last) = inner.log.last() {
             (last.index, last.term)
@@ -328,15 +356,18 @@ impl ClusterNode {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
 
         if req.term < inner.state.term {
-            return VoteResponse { term: inner.state.term, vote_granted: false };
+            return VoteResponse {
+                term: inner.state.term,
+                vote_granted: false,
+            };
         }
 
         if req.term > inner.state.term {
             inner.state.term = req.term;
             inner.state.role = NodeRole::Follower;
             inner.state.voted_for = None;
-            inner.election_deadline = Instant::now()
-                + Duration::from_millis(inner.config.election_timeout_ms);
+            inner.election_deadline =
+                Instant::now() + Duration::from_millis(inner.config.election_timeout_ms);
         }
 
         let can_vote = inner.state.voted_for.is_none()
@@ -354,7 +385,10 @@ impl ClusterNode {
             inner.state.voted_for = Some(req.candidate_id.clone());
         }
 
-        VoteResponse { term: inner.state.term, vote_granted: granted }
+        VoteResponse {
+            term: inner.state.term,
+            vote_granted: granted,
+        }
     }
 
     pub fn become_leader(&self) {
@@ -405,8 +439,8 @@ impl ClusterNode {
         inner.state.role = NodeRole::Follower;
         inner.state.leader_id = Some(req.leader_id.clone());
         inner.state.last_heartbeat = Utc::now().to_rfc3339();
-        inner.election_deadline = Instant::now()
-            + Duration::from_millis(inner.config.election_timeout_ms);
+        inner.election_deadline =
+            Instant::now() + Duration::from_millis(inner.config.election_timeout_ms);
 
         // Consistency check
         if req.prev_log_index > 0 {
@@ -486,7 +520,8 @@ impl ClusterNode {
             (0, 0)
         };
 
-        let entries: Vec<_> = inner.log
+        let entries: Vec<_> = inner
+            .log
             .iter()
             .skip((next - 1) as usize)
             .take(inner.config.replication_batch_size)
@@ -508,8 +543,8 @@ impl ClusterNode {
         if resp.term > inner.state.term {
             inner.state.term = resp.term;
             inner.state.role = NodeRole::Follower;
-            inner.election_deadline = Instant::now()
-                + Duration::from_millis(inner.config.election_timeout_ms);
+            inner.election_deadline =
+                Instant::now() + Duration::from_millis(inner.config.election_timeout_ms);
             return;
         }
 
@@ -542,7 +577,9 @@ impl ClusterNode {
             if entry.term != inner.state.term {
                 continue; // Raft: only commit entries from current term
             }
-            let replicated = 1 + inner.peer_status.values()
+            let replicated = 1 + inner
+                .peer_status
+                .values()
                 .filter(|s| s.match_index >= n)
                 .count();
             if replicated >= majority {
@@ -573,9 +610,10 @@ impl ClusterNode {
 
     pub fn mark_peer_unreachable(&self, peer_id: &NodeId) {
         if let Ok(mut inner) = self.inner.lock()
-            && let Some(status) = inner.peer_status.get_mut(peer_id) {
-                status.reachable = false;
-            }
+            && let Some(status) = inner.peer_status.get_mut(peer_id)
+        {
+            status.reachable = false;
+        }
     }
 
     pub fn should_start_election(&self) -> bool {
@@ -591,7 +629,9 @@ impl ClusterNode {
         }
         // After log compaction, committed entries may no longer be in the log.
         // Only snapshot if there are committed entries still present.
-        let committed: Vec<&ReplicatedEntry> = inner.log.iter()
+        let committed: Vec<&ReplicatedEntry> = inner
+            .log
+            .iter()
             .filter(|e| e.index <= inner.state.commit_index)
             .collect();
         if committed.is_empty() {
@@ -616,7 +656,10 @@ impl ClusterNode {
     pub fn handle_install_snapshot(&self, req: &InstallSnapshotRequest) -> InstallSnapshotResponse {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if req.term < inner.state.term {
-            return InstallSnapshotResponse { term: inner.state.term, success: false };
+            return InstallSnapshotResponse {
+                term: inner.state.term,
+                success: false,
+            };
         }
         // Update term
         if req.term > inner.state.term {
@@ -625,10 +668,18 @@ impl ClusterNode {
             inner.state.voted_for = None;
         }
         // Discard log entries covered by the snapshot
-        inner.log.retain(|e| e.index > req.snapshot.last_included_index);
-        inner.state.commit_index = inner.state.commit_index.max(req.snapshot.last_included_index);
+        inner
+            .log
+            .retain(|e| e.index > req.snapshot.last_included_index);
+        inner.state.commit_index = inner
+            .state
+            .commit_index
+            .max(req.snapshot.last_included_index);
         inner.state.leader_id = Some(req.leader_id.clone());
-        InstallSnapshotResponse { term: inner.state.term, success: true }
+        InstallSnapshotResponse {
+            term: inner.state.term,
+            success: true,
+        }
     }
 
     /// Compact the log by removing entries before the given index.
@@ -650,10 +701,16 @@ mod tests {
         ClusterConfig {
             node_id: NodeId(id.into()),
             bind_addr: "0.0.0.0:9078".into(),
-            peers: peers.iter().map(|p| PeerConfig {
-                node_id: NodeId(p.to_string()),
-                addr: format!("127.0.0.1:{}", 9079 + peers.iter().position(|x| x == p).unwrap_or(0)),
-            }).collect(),
+            peers: peers
+                .iter()
+                .map(|p| PeerConfig {
+                    node_id: NodeId(p.to_string()),
+                    addr: format!(
+                        "127.0.0.1:{}",
+                        9079 + peers.iter().position(|x| x == p).unwrap_or(0)
+                    ),
+                })
+                .collect(),
             heartbeat_interval_ms: 100,
             election_timeout_ms: 500,
             replication_batch_size: 50,
@@ -804,24 +861,28 @@ mod tests {
         use std::sync::Arc;
         let node = Arc::new(ClusterNode::new(test_config("n1", vec!["n2"])));
         // Hammer the node from multiple threads to verify thread safety
-        let handles: Vec<_> = (0..4).map(|i| {
-            let n = Arc::clone(&node);
-            std::thread::spawn(move || {
-                for _ in 0..50 {
-                    let _ = n.node_id();
-                    let _ = n.role();
-                    let _ = n.term();
-                    let _ = n.log_len();
-                    let _ = n.health();
-                    if i == 0 {
-                        n.start_election();
-                        n.become_leader();
-                        n.append_entry(EntryType::AlertCreated, serde_json::json!({}));
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let n = Arc::clone(&node);
+                std::thread::spawn(move || {
+                    for _ in 0..50 {
+                        let _ = n.node_id();
+                        let _ = n.role();
+                        let _ = n.term();
+                        let _ = n.log_len();
+                        let _ = n.health();
+                        if i == 0 {
+                            n.start_election();
+                            n.become_leader();
+                            n.append_entry(EntryType::AlertCreated, serde_json::json!({}));
+                        }
                     }
-                }
+                })
             })
-        }).collect();
-        for h in handles { h.join().unwrap(); }
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
         // No panics or deadlocks — success
     }
 

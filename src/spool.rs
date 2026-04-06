@@ -14,7 +14,7 @@ use std::collections::VecDeque;
 /// For production deployments with regulatory requirements, consider
 /// upgrading to AES-256-GCM via a dedicated crypto crate.
 fn spool_cipher_core(data: &[u8], key: &[u8], nonce: &[u8; 16]) -> Vec<u8> {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut result = Vec::with_capacity(data.len());
     let mut offset = 0;
     let mut counter: u128 = 0;
@@ -118,14 +118,19 @@ impl EncryptedSpool {
         })
     }
 
-
     /// Enqueue an event payload. Encrypts at rest.
     pub fn enqueue(&mut self, payload: &str, destination: &str, timestamp: &str) -> u64 {
         self.enqueue_with_tenant(payload, destination, timestamp, None)
     }
 
     /// Enqueue an event payload with tenant isolation. Encrypts at rest.
-    pub fn enqueue_with_tenant(&mut self, payload: &str, destination: &str, timestamp: &str, tenant_id: Option<&str>) -> u64 {
+    pub fn enqueue_with_tenant(
+        &mut self,
+        payload: &str,
+        destination: &str,
+        timestamp: &str,
+        tenant_id: Option<&str>,
+    ) -> u64 {
         let entry = SpoolEntry {
             seq: self.next_seq,
             enqueued_at: timestamp.into(),
@@ -151,7 +156,8 @@ impl EncryptedSpool {
 
     /// List entries for a specific tenant (decrypts all to filter).
     pub fn entries_for_tenant(&self, tenant_id: &str) -> Vec<SpoolEntry> {
-        self.queue.iter()
+        self.queue
+            .iter()
             .filter_map(|encrypted| {
                 let decrypted = spool_decrypt(encrypted, &self.key);
                 serde_json::from_slice::<SpoolEntry>(&decrypted).ok()
@@ -185,9 +191,10 @@ impl EncryptedSpool {
         for encrypted in &self.queue {
             let decrypted = spool_decrypt(encrypted, &self.key);
             if let Ok(entry) = serde_json::from_slice::<SpoolEntry>(&decrypted)
-                && entry.tenant_id.as_deref() == Some(tenant_id) {
-                    return Some(entry);
-                }
+                && entry.tenant_id.as_deref() == Some(tenant_id)
+            {
+                return Some(entry);
+            }
         }
         None
     }
@@ -296,14 +303,16 @@ impl EncryptedSpool {
         let text = String::from_utf8(data.to_vec()).map_err(|e| e.to_string())?;
         let mut lines = text.lines();
         let header_line = lines.next().ok_or("Empty persist data")?;
-        let header: SpoolPersistHeader = serde_json::from_str(header_line)
-            .map_err(|e| format!("Invalid header: {}", e))?;
+        let header: SpoolPersistHeader =
+            serde_json::from_str(header_line).map_err(|e| format!("Invalid header: {}", e))?;
 
         // Parse all entries FIRST before updating state
         let mut temp_queue = std::collections::VecDeque::new();
         let mut count = 0;
         for line in lines {
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             let encrypted = hex::decode(line).map_err(|e| format!("Invalid hex: {}", e))?;
             temp_queue.push_back(encrypted);
             count += 1;
@@ -333,7 +342,11 @@ impl EncryptedSpool {
             total_enqueued: self.total_enqueued,
             total_delivered: self.total_delivered,
             total_dropped: self.total_dropped,
-            utilization_pct: if self.max_entries > 0 { (self.queue.len() as f64 / self.max_entries as f64 * 100.0) as u8 } else { 0 },
+            utilization_pct: if self.max_entries > 0 {
+                (self.queue.len() as f64 / self.max_entries as f64 * 100.0) as u8
+            } else {
+                0
+            },
         }
     }
 }
@@ -396,7 +409,11 @@ mod tests {
     #[test]
     fn enqueue_dequeue() {
         let mut spool = EncryptedSpool::new(b"test-key-16bytes", 100);
-        spool.enqueue(r#"{"event":"test"}"#, "control-plane", "2026-01-01T00:00:00Z");
+        spool.enqueue(
+            r#"{"event":"test"}"#,
+            "control-plane",
+            "2026-01-01T00:00:00Z",
+        );
         assert_eq!(spool.len(), 1);
 
         let entry = spool.dequeue().unwrap();
@@ -415,7 +432,10 @@ mod tests {
         // Raw encrypted bytes should not contain the plaintext
         let raw = &spool.queue[0];
         let raw_str = String::from_utf8_lossy(raw);
-        assert!(!raw_str.contains("sensitive-payload"), "Payload should be encrypted");
+        assert!(
+            !raw_str.contains("sensitive-payload"),
+            "Payload should be encrypted"
+        );
     }
 
     #[test]
@@ -523,16 +543,35 @@ mod tests {
 
     #[test]
     fn backpressure_signals() {
-        let stats = SpoolStats { current_depth: 50, max_entries: 100, total_enqueued: 50, total_delivered: 0, total_dropped: 0, utilization_pct: 50 };
+        let stats = SpoolStats {
+            current_depth: 50,
+            max_entries: 100,
+            total_enqueued: 50,
+            total_delivered: 0,
+            total_dropped: 0,
+            utilization_pct: 50,
+        };
         assert_eq!(backpressure_signal(&stats), BackpressureSignal::Accept);
 
-        let stats = SpoolStats { utilization_pct: 80, ..stats.clone() };
+        let stats = SpoolStats {
+            utilization_pct: 80,
+            ..stats.clone()
+        };
         assert_eq!(backpressure_signal(&stats), BackpressureSignal::ThrottleLow);
 
-        let stats = SpoolStats { utilization_pct: 90, ..stats.clone() };
-        assert_eq!(backpressure_signal(&stats), BackpressureSignal::CriticalOnly);
+        let stats = SpoolStats {
+            utilization_pct: 90,
+            ..stats.clone()
+        };
+        assert_eq!(
+            backpressure_signal(&stats),
+            BackpressureSignal::CriticalOnly
+        );
 
-        let stats = SpoolStats { utilization_pct: 98, ..stats.clone() };
+        let stats = SpoolStats {
+            utilization_pct: 98,
+            ..stats.clone()
+        };
         assert_eq!(backpressure_signal(&stats), BackpressureSignal::Drop);
     }
 

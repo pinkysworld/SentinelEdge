@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid, downloadData } from './operator.jsx';
 
 export default function ReportsExports() {
   const toast = useToast();
@@ -17,11 +18,19 @@ export default function ReportsExports() {
 
   const reportArr = Array.isArray(rptList) ? rptList : rptList?.reports || [];
 
-  const download = (data, name) => {
-    const blob = new Blob([typeof data === 'string' ? data : JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = name; a.click();
-    URL.revokeObjectURL(url);
+  const download = (data, name, mime = 'application/json') => {
+    downloadData(data, name, mime);
+  };
+
+  const runExport = async (label, name, fetcher, mime = 'application/json') => {
+    try {
+      const data = await fetcher();
+      setExportData({ type: label, data, mime });
+      download(data, name, mime);
+      toast(`${label} exported`, 'success');
+    } catch {
+      toast(`${label} export failed`, 'error');
+    }
   };
 
   return (
@@ -39,7 +48,8 @@ export default function ReportsExports() {
           {execSum && (
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Executive Summary</div>
-              <div className="json-block">{JSON.stringify(execSum, null, 2)}</div>
+              <SummaryGrid data={execSum} limit={12} />
+              <JsonDetails data={execSum} />
             </div>
           )}
           <div className="card" style={{ marginBottom: 16 }}>
@@ -61,7 +71,13 @@ export default function ReportsExports() {
                         <td>
                           <div className="btn-group">
                             <button className="btn btn-sm" onClick={async () => {
-                              try { const d = await api.reportById(r.id || i); download(d, `report-${r.id || i}.json`); toast('Downloaded', 'success'); } catch { toast('Failed', 'error'); }
+                              try {
+                                const d = await api.reportById(r.id || i);
+                                download(d, `report-${r.id || i}.json`);
+                                toast('Downloaded', 'success');
+                              } catch {
+                                toast('Failed', 'error');
+                              }
                             }}>⬇ Download</button>
                           </div>
                         </td>
@@ -76,44 +92,82 @@ export default function ReportsExports() {
             <div className="card-header">
               <span className="card-title">Run Analysis</span>
               <button className="btn btn-sm btn-primary" onClick={async () => {
-                try { const r = await api.analyze({}); setAnalyzeResult(r); toast('Analysis complete', 'success'); } catch { toast('Analysis failed', 'error'); }
+                try {
+                  const r = await api.analyze({});
+                  setAnalyzeResult(r);
+                  toast('Analysis complete', 'success');
+                } catch {
+                  toast('Analysis failed', 'error');
+                }
               }}>Analyze</button>
             </div>
-            {analyzeResult && <div className="json-block">{JSON.stringify(analyzeResult, null, 2)}</div>}
+            {analyzeResult ? (
+              <>
+                <SummaryGrid data={analyzeResult} limit={10} />
+                <JsonDetails data={analyzeResult} />
+              </>
+            ) : (
+              <div className="empty">Run analysis to capture an exportable snapshot.</div>
+            )}
           </div>
         </>
       )}
 
       {tab === 'exports' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 16 }}>Formal Verification Exports</div>
-          <div className="btn-group">
-            <button className="btn" onClick={async () => {
-              try { const r = await api.exportTla(); setExportData({ type: 'TLA+', data: r }); toast('TLA+ exported', 'success'); } catch { toast('Failed', 'error'); }
-            }}>Export TLA+</button>
-            <button className="btn" onClick={async () => {
-              try { const r = await api.exportAlloy(); setExportData({ type: 'Alloy', data: r }); toast('Alloy exported', 'success'); } catch { toast('Failed', 'error'); }
-            }}>Export Alloy</button>
-            <button className="btn" onClick={async () => {
-              try { const r = await api.exportWitnesses(); setExportData({ type: 'Witnesses', data: r }); toast('Witnesses exported', 'success'); } catch { toast('Failed', 'error'); }
-            }}>Export Witnesses</button>
+        <>
+          <div className="card-grid">
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 16 }}>Operational Exports</div>
+              <div className="btn-group">
+                <button className="btn" onClick={() => runExport('Alerts', 'wardex-alerts.json', api.alerts)}>Export Alerts</button>
+                <button className="btn" onClick={() => runExport('Events CSV', 'wardex-events.csv', api.eventsExport, 'text/csv;charset=utf-8')}>Export Events CSV</button>
+                <button className="btn" onClick={() => runExport('Audit Log', 'wardex-audit-log.json', api.auditLog)}>Export Audit Log</button>
+                <button className="btn" onClick={() => runExport('Executive Summary', 'wardex-executive-summary.json', api.executiveSummary)}>Export Summary</button>
+              </div>
+              <div className="hint">Exports download immediately and stay visible here for operator review.</div>
+            </div>
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 16 }}>Formal Verification Exports</div>
+              <div className="btn-group">
+                <button className="btn" onClick={() => runExport('TLA+', 'wardex-tla.json', api.exportTla)}>Export TLA+</button>
+                <button className="btn" onClick={() => runExport('Alloy', 'wardex-alloy.json', api.exportAlloy)}>Export Alloy</button>
+                <button className="btn" onClick={() => runExport('Witnesses', 'wardex-witnesses.json', api.exportWitnesses)}>Export Witnesses</button>
+              </div>
+            </div>
           </div>
           {exportData && (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header">
                 <span className="card-title">{exportData.type}</span>
-                <button className="btn btn-sm" onClick={() => download(exportData.data, `${exportData.type.toLowerCase()}.json`)}>⬇ Download</button>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => download(
+                    exportData.data,
+                    `${exportData.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${exportData.mime?.includes('csv') ? 'csv' : 'json'}`,
+                    exportData.mime
+                  )}
+                >
+                  Download again
+                </button>
               </div>
-              <div className="json-block">{typeof exportData.data === 'string' ? exportData.data : JSON.stringify(exportData.data, null, 2)}</div>
+              {typeof exportData.data === 'string' ? (
+                <div className="json-block">{exportData.data}</div>
+              ) : (
+                <>
+                  <SummaryGrid data={exportData.data} limit={10} />
+                  <JsonDetails data={exportData.data} />
+                </>
+              )}
             </div>
           )}
           {research && (
-            <div style={{ marginTop: 16 }}>
+            <div className="card" style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Research Tracks</div>
-              <div className="json-block">{JSON.stringify(research, null, 2)}</div>
+              <SummaryGrid data={research} limit={10} />
+              <JsonDetails data={research} />
             </div>
           )}
-        </div>
+        </>
       )}
 
       {tab === 'audit' && (
@@ -121,16 +175,19 @@ export default function ReportsExports() {
           <div className="card-grid">
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Audit Log</div>
-              <div className="json-block">{JSON.stringify(auditData, null, 2)}</div>
+              <SummaryGrid data={auditData} limit={10} />
+              <JsonDetails data={auditData} />
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Admin Audit</div>
-              <div className="json-block">{JSON.stringify(adminAudit, null, 2)}</div>
+              <SummaryGrid data={adminAudit} limit={10} />
+              <JsonDetails data={adminAudit} />
             </div>
           </div>
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Audit Verification</div>
-            <div className="json-block">{JSON.stringify(auditVerifyData, null, 2)}</div>
+            <SummaryGrid data={auditVerifyData} limit={10} />
+            <JsonDetails data={auditVerifyData} />
           </div>
         </>
       )}
@@ -140,10 +197,16 @@ export default function ReportsExports() {
           <div className="card-header">
             <span className="card-title">Data Retention</span>
             <button className="btn btn-sm btn-primary" onClick={async () => {
-              try { await api.retentionApply({}); toast('Retention policy applied', 'success'); } catch { toast('Failed', 'error'); }
+              try {
+                await api.retentionApply({});
+                toast('Retention policy applied', 'success');
+              } catch {
+                toast('Failed', 'error');
+              }
             }}>Apply Policy</button>
           </div>
-          <div className="json-block">{JSON.stringify(retStatus, null, 2)}</div>
+          <SummaryGrid data={retStatus} limit={10} />
+          <JsonDetails data={retStatus} />
         </div>
       )}
     </div>

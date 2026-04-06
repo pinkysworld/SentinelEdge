@@ -153,7 +153,8 @@ impl StubEngine {
                 version: "0.0.0-stub".into(),
                 input_shape: vec![1, 256],
                 output_shape: vec![1, 3],
-                description: "NLP alert triage: true-positive / false-positive / needs-review".into(),
+                description: "NLP alert triage: true-positive / false-positive / needs-review"
+                    .into(),
             },
         ]
     }
@@ -254,9 +255,13 @@ mod tests {
     fn triage_high_score_is_tp() {
         let engine = StubEngine::new();
         let features = TriageFeatures {
-            anomaly_score: 0.95, confidence: 0.9,
-            suspicious_axes: 3, hour_of_day: 2, day_of_week: 6,
-            alert_frequency_1h: 5, device_risk_score: 0.8,
+            anomaly_score: 0.95,
+            confidence: 0.9,
+            suspicious_axes: 3,
+            hour_of_day: 2,
+            day_of_week: 6,
+            alert_frequency_1h: 5,
+            device_risk_score: 0.8,
         };
         let result = engine.triage_alert(&features);
         assert_eq!(result.label, TriageLabel::TruePositive);
@@ -267,9 +272,13 @@ mod tests {
     fn triage_low_score_is_fp() {
         let engine = StubEngine::new();
         let features = TriageFeatures {
-            anomaly_score: 0.1, confidence: 0.1,
-            suspicious_axes: 0, hour_of_day: 14, day_of_week: 2,
-            alert_frequency_1h: 0, device_risk_score: 0.05,
+            anomaly_score: 0.1,
+            confidence: 0.1,
+            suspicious_axes: 0,
+            hour_of_day: 14,
+            day_of_week: 2,
+            alert_frequency_1h: 0,
+            device_risk_score: 0.05,
         };
         let result = engine.triage_alert(&features);
         assert_eq!(result.label, TriageLabel::FalsePositive);
@@ -279,9 +288,13 @@ mod tests {
     fn triage_mid_score_needs_review() {
         let engine = StubEngine::new();
         let features = TriageFeatures {
-            anomaly_score: 0.5, confidence: 0.5,
-            suspicious_axes: 1, hour_of_day: 10, day_of_week: 3,
-            alert_frequency_1h: 2, device_risk_score: 0.3,
+            anomaly_score: 0.5,
+            confidence: 0.5,
+            suspicious_axes: 1,
+            hour_of_day: 10,
+            day_of_week: 3,
+            alert_frequency_1h: 2,
+            device_risk_score: 0.3,
         };
         let result = engine.triage_alert(&features);
         assert_eq!(result.label, TriageLabel::NeedsReview);
@@ -290,9 +303,13 @@ mod tests {
     #[test]
     fn triage_features_to_vec() {
         let features = TriageFeatures {
-            anomaly_score: 0.5, confidence: 0.8,
-            suspicious_axes: 2, hour_of_day: 12, day_of_week: 3,
-            alert_frequency_1h: 10, device_risk_score: 0.6,
+            anomaly_score: 0.5,
+            confidence: 0.8,
+            suspicious_axes: 2,
+            hour_of_day: 12,
+            day_of_week: 3,
+            alert_frequency_1h: 10,
+            device_risk_score: 0.6,
         };
         let v = features.to_vec();
         assert_eq!(v.len(), 7);

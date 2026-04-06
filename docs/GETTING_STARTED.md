@@ -50,7 +50,7 @@ Default output is `var/last-run.report.json`.
 cargo run
 ```
 
-This starts the HTTP server on port `8080`, launches the embedded local monitor, and prints a one-time admin token to the terminal. Open `http://localhost:8080/admin.html`, paste the token, and use the console to:
+This starts the HTTP server on port `8080`, launches the embedded local monitor, and prints a one-time admin token to the terminal. Open `http://localhost:8080/admin/`, paste the token, and use the console to:
 
 - inspect the Dashboard, Fleet & Agents, Threat Detection, Reports, and Settings surfaces
 - work cases and alerts in the SOC Workbench
@@ -72,7 +72,7 @@ This refreshes the structured status payload consumed by the static site and off
 cargo test
 ```
 
-The current release passes 1251 automated tests (1088 lib + 163 integration) across unit and integration coverage, including API regression coverage for hunts, content lifecycle, suppressions, entity pivots, incident storyline, governance, and supportability.
+The current release passes 1258 automated tests (1095 lib + 163 integration) across unit and integration coverage, including API regression coverage for hunts, content lifecycle, suppressions, entity pivots, incident storyline, governance, and supportability.
 
 ## Live validation helpers
 

@@ -182,7 +182,10 @@ impl SearchIndex {
     }
 
     pub fn clear(&self) -> Result<(), String> {
-        self.documents.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.documents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
         stats.total_documents = 0;
         stats.pending_docs = 0;
@@ -203,11 +206,17 @@ mod tests {
         fields.insert("timestamp".into(), "2026-04-05T12:00:00Z".into());
         fields.insert("device_id".into(), "srv-01".into());
         fields.insert("process_name".into(), "mimikatz.exe".into());
-        fields.insert("command_line".into(), "mimikatz.exe sekurlsa::logonpasswords".into());
+        fields.insert(
+            "command_line".into(),
+            "mimikatz.exe sekurlsa::logonpasswords".into(),
+        );
         fields.insert("src_ip".into(), "10.0.0.5".into());
         fields.insert("dst_ip".into(), "10.0.0.1".into());
         fields.insert("user_name".into(), "admin".into());
-        fields.insert("raw_text".into(), "Credential dumping detected: mimikatz".into());
+        fields.insert(
+            "raw_text".into(),
+            "Credential dumping detected: mimikatz".into(),
+        );
         idx.index_event(fields).unwrap();
 
         let mut fields2 = HashMap::new();

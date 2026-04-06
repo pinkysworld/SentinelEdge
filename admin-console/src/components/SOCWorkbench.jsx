@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import ProcessDrawer from './ProcessDrawer.jsx';
+import { JsonDetails, SummaryGrid, downloadData } from './operator.jsx';
 
 export default function SOCWorkbench() {
   const toast = useToast();
@@ -18,7 +20,7 @@ export default function SOCWorkbench() {
   const { data: procs } = useApi(api.processTree);
   const { data: deepCh } = useApi(api.deepChains);
   const { data: liveProcs, reload: rLive } = useApi(api.processesLive);
-  const { data: procFindings } = useApi(api.processesAnalysis);
+  const { data: procFindings, reload: rProcFindings } = useApi(api.processesAnalysis);
   const { data: rbacData, reload: rRbac } = useApi(api.rbacUsers);
   const { data: tlHost } = useApi(api.timelineHost);
   const { data: escPolicies, reload: rEsc } = useApi(api.escalationPolicies);
@@ -30,6 +32,7 @@ export default function SOCWorkbench() {
   const [entityResult, setEntityResult] = useState(null);
   const [escForm, setEscForm] = useState({ name: '', severity: 'critical', channel: 'email', targets: '', timeout_minutes: 30 });
   const [showEscForm, setShowEscForm] = useState(false);
+  const [selectedProcessPid, setSelectedProcessPid] = useState(null);
 
   useInterval(() => { rOverview(); rQueue(); rEscActive(); }, 15000);
 
@@ -58,16 +61,7 @@ export default function SOCWorkbench() {
       {tab === 'overview' && (
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>Workbench Overview</div>
-          {overview ? (
-            <div className="card-grid" style={{ gap: 12 }}>
-              {Object.entries(overview).map(([k, v]) => (
-                <div key={k} style={{ padding: '8px 12px', background: 'var(--bg)', borderRadius: 6 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 2 }}>{k.replace(/_/g, ' ')}</div>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                </div>
-              ))}
-            </div>
-          ) : <div className="empty">Loading...</div>}
+          {overview ? <><SummaryGrid data={overview} limit={10} /><JsonDetails data={overview} /></> : <div className="empty">Loading...</div>}
         </div>
       )}
 
@@ -169,13 +163,8 @@ export default function SOCWorkbench() {
             }}>+ New Case</button>
           </div>
           {caseStats && (
-            <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-              {Object.entries(caseStats).map(([k, v]) => (
-                <div key={k} style={{ padding: '6px 12px', background: 'var(--bg)', borderRadius: 6, textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                </div>
-              ))}
+            <div style={{ marginBottom: 12 }}>
+              <SummaryGrid data={caseStats} limit={8} />
             </div>
           )}
           {caseArr.length === 0 ? <div className="empty">No cases</div> : (
@@ -205,7 +194,12 @@ export default function SOCWorkbench() {
             <span className="card-title">SOC Queue ({queueArr.length} alerts)</span>
             <button className="btn btn-sm" onClick={rQueue}>↻ Refresh</button>
           </div>
-          {qStats && <div className="json-block" style={{ marginBottom: 12 }}>{JSON.stringify(qStats, null, 2)}</div>}
+          {qStats && (
+            <div style={{ marginBottom: 12 }}>
+              <SummaryGrid data={qStats} limit={8} />
+              <JsonDetails data={qStats} />
+            </div>
+          )}
           {queueArr.length === 0 ? <div className="empty">Queue empty</div> : (
             <div className="table-wrap">
               <table>
@@ -261,14 +255,10 @@ export default function SOCWorkbench() {
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Response Stats</div>
               {respStats ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-                  {Object.entries(respStats).map(([k, v]) => (
-                    <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                      <div style={{ fontSize: 16, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <SummaryGrid data={respStats} limit={8} />
+                  <JsonDetails data={respStats} />
+                </>
               ) : <div className="empty">Loading...</div>}
             </div>
           </div>
@@ -422,7 +412,13 @@ export default function SOCWorkbench() {
           {/* Security findings banner */}
           {procFindings?.findings?.length > 0 && (
             <div className="card" style={{ marginBottom: 16, borderLeft: '3px solid var(--danger)' }}>
-              <div className="card-title" style={{ marginBottom: 8 }}>⚠ Process Security Findings ({procFindings.total})</div>
+              <div className="card-header">
+                <span className="card-title">Process Security Findings ({procFindings.total})</span>
+                <div className="btn-group">
+                  <button className="btn btn-sm" onClick={() => downloadData(procFindings, 'soc-process-findings.json')}>Export</button>
+                  <button className="btn btn-sm" onClick={() => { rLive(); rProcFindings(); }}>↻ Refresh</button>
+                </div>
+              </div>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                 {Object.entries(procFindings.risk_summary || {}).map(([k, v]) => v > 0 && (
                   <span key={k} className={`sev-${k}`} style={{ fontWeight: 600 }}>{v} {k}</span>
@@ -430,10 +426,10 @@ export default function SOCWorkbench() {
               </div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Risk</th><th>PID</th><th>Process</th><th>User</th><th>CPU</th><th>Mem</th><th>Reason</th></tr></thead>
+                  <thead><tr><th>Risk</th><th>PID</th><th>Process</th><th>User</th><th>CPU</th><th>Mem</th><th>Reason</th><th>Actions</th></tr></thead>
                   <tbody>
                     {procFindings.findings.map((f, i) => (
-                      <tr key={i} style={{ background: f.risk_level === 'critical' ? 'rgba(239,68,68,.06)' : f.risk_level === 'high' ? 'rgba(249,115,22,.06)' : undefined }}>
+                      <tr key={i} className="interactive-row" style={{ background: f.risk_level === 'critical' ? 'rgba(239,68,68,.06)' : f.risk_level === 'high' ? 'rgba(249,115,22,.06)' : undefined }}>
                         <td><span className={`sev-${f.risk_level}`}>{f.risk_level}</span></td>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{f.pid}</td>
                         <td style={{ fontWeight: 600 }}>{f.name}</td>
@@ -441,6 +437,7 @@ export default function SOCWorkbench() {
                         <td>{f.cpu_percent?.toFixed(1)}%</td>
                         <td>{f.mem_percent?.toFixed(1)}%</td>
                         <td style={{ fontSize: 12 }}>{f.reason}</td>
+                        <td><button className="btn btn-sm" onClick={() => setSelectedProcessPid(f.pid)}>Investigate</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -453,22 +450,26 @@ export default function SOCWorkbench() {
             <div className="card">
               <div className="card-header">
                 <span className="card-title">Live Processes ({liveProcs?.count ?? '—'})</span>
-                <button className="btn btn-sm" onClick={rLive}>↻ Refresh</button>
+                <div className="btn-group">
+                  <button className="btn btn-sm" onClick={rLive}>↻ Refresh</button>
+                  <button className="btn btn-sm" onClick={() => downloadData(liveProcs, 'soc-live-processes.json')}>Export</button>
+                </div>
               </div>
               {liveProcs?.processes?.length > 0 ? (
                 <div className="table-wrap" style={{ maxHeight: 400, overflowY: 'auto' }}>
                   <table>
                     <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', zIndex: 1 }}>
-                      <tr><th>PID</th><th>Name</th><th>User</th><th>CPU %</th><th>Mem %</th></tr>
+                      <tr><th>PID</th><th>Name</th><th>User</th><th>CPU %</th><th>Mem %</th><th>Actions</th></tr>
                     </thead>
                     <tbody>
                       {[...(liveProcs.processes)].sort((a, b) => (b.cpu_percent || 0) - (a.cpu_percent || 0)).slice(0, 100).map(p => (
-                        <tr key={p.pid}>
+                        <tr key={p.pid} className="interactive-row">
                           <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.pid}</td>
                           <td style={{ fontWeight: p.cpu_percent > 50 ? 700 : 400 }}>{p.name}</td>
                           <td>{p.user}</td>
                           <td style={{ color: p.cpu_percent > 50 ? 'var(--danger)' : undefined }}>{p.cpu_percent?.toFixed(1)}</td>
                           <td style={{ color: p.mem_percent > 30 ? 'var(--warning)' : undefined }}>{p.mem_percent?.toFixed(1)}</td>
+                          <td><button className="btn btn-sm" onClick={() => setSelectedProcessPid(p.pid)}>Investigate</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -501,7 +502,7 @@ export default function SOCWorkbench() {
             <details style={{ marginTop: 16 }}>
               <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>Static Process Tree (raw)</summary>
               <div className="card" style={{ marginTop: 8 }}>
-                <div className="json-block">{JSON.stringify(procs, null, 2)}</div>
+                <JsonDetails data={procs} label="Process tree JSON" />
               </div>
             </details>
           )}
@@ -524,14 +525,10 @@ export default function SOCWorkbench() {
             }}>Lookup</button>
           </div>
           {entityResult && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-              {Object.entries(entityResult).map(([k, v]) => (
-                <div key={k} style={{ padding: '8px 12px', background: 'var(--bg)', borderRadius: 6 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 2 }}>{k.replace(/_/g, ' ')}</div>
-                  <div style={{ fontSize: 13, wordBreak: 'break-all' }}>{typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)}</div>
-                </div>
-              ))}
-            </div>
+            <>
+              <SummaryGrid data={entityResult} limit={12} />
+              <JsonDetails data={entityResult} />
+            </>
           )}
         </div>
       )}
@@ -593,6 +590,11 @@ export default function SOCWorkbench() {
           })()}
         </div>
       )}
+      <ProcessDrawer
+        pid={selectedProcessPid}
+        onClose={() => setSelectedProcessPid(null)}
+        onUpdated={() => { rLive(); rProcFindings(); }}
+      />
     </div>
   );
 }

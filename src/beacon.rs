@@ -255,10 +255,7 @@ impl BeaconDetector {
             let score = regularity * 0.7 + count_factor * 0.3;
 
             if score >= self.config.beacon_threshold {
-                let total_bytes: u64 = conns
-                    .iter()
-                    .map(|c| c.bytes_sent + c.bytes_received)
-                    .sum();
+                let total_bytes: u64 = conns.iter().map(|c| c.bytes_sent + c.bytes_received).sum();
                 let hostname = conns[0].hostname.clone();
                 let process = conns[0].process.clone();
 
@@ -286,9 +283,7 @@ impl BeaconDetector {
         // Group DNS queries by domain
         let mut domain_counts: HashMap<&str, (usize, bool)> = HashMap::new();
         for dns in &self.dns_records {
-            let entry = domain_counts
-                .entry(&dns.domain)
-                .or_insert((0, false));
+            let entry = domain_counts.entry(&dns.domain).or_insert((0, false));
             entry.0 += 1;
             if dns.response_code == DnsResponseCode::NxDomain {
                 entry.1 = true;
@@ -307,8 +302,7 @@ impl BeaconDetector {
             let consonant_ratio = compute_consonant_ratio(label);
 
             // DGA score: high entropy + high consonant ratio + NXDOMAIN
-            let entropy_factor =
-                ((entropy - 2.5) / 2.0).clamp(0.0, 1.0);
+            let entropy_factor = ((entropy - 2.5) / 2.0).clamp(0.0, 1.0);
             let consonant_factor = ((consonant_ratio - 0.5) / 0.3).clamp(0.0, 1.0);
             let nx_bonus = if nxdomain { 0.2 } else { 0.0 };
             let score = entropy_factor * 0.5 + consonant_factor * 0.3 + nx_bonus;
@@ -346,11 +340,8 @@ impl BeaconDetector {
                 continue;
             }
 
-            let avg_length: f32 = records
-                .iter()
-                .map(|r| r.domain.len() as f32)
-                .sum::<f32>()
-                / records.len() as f32;
+            let avg_length: f32 =
+                records.iter().map(|r| r.domain.len() as f32).sum::<f32>() / records.len() as f32;
 
             let txt_count = records
                 .iter()
@@ -418,11 +409,7 @@ fn shannon_entropy(s: &str) -> f32 {
         .values()
         .map(|&count| {
             let p = count / len;
-            if p > 0.0 {
-                p * p.log2()
-            } else {
-                0.0
-            }
+            if p > 0.0 { p * p.log2() } else { 0.0 }
         })
         .sum::<f32>()
 }
@@ -503,7 +490,9 @@ mod tests {
     fn jittery_connections_lower_score() {
         let mut det = BeaconDetector::default();
         // Irregular connection timing
-        let times = [0, 100, 5000, 5100, 20000, 21000, 50000, 50500, 100000, 105000];
+        let times = [
+            0, 100, 5000, 5100, 20000, 21000, 50000, 50500, 100000, 105000,
+        ];
         for ts in &times {
             det.record_connection(make_conn("1.2.3.4", 80, *ts));
         }
@@ -544,9 +533,7 @@ mod tests {
         });
         // Long subdomains typical of DNS tunnelling
         for i in 0..10 {
-            let long_sub = format!(
-                "aGVsbG8gd29ybGQgdGhpcyBpcyBhIHR1bm5lbA{i}.tunnel.evil.com"
-            );
+            let long_sub = format!("aGVsbG8gd29ybGQgdGhpcyBpcyBhIHR1bm5lbA{i}.tunnel.evil.com");
             let mut dns = make_dns(&long_sub, i * 1000, DnsResponseCode::NoError);
             dns.query_type = "TXT".into();
             det.record_dns(dns);

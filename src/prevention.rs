@@ -228,7 +228,10 @@ impl PreventionEngine {
 
         drop(stats);
         if !decisions.is_empty() {
-            self.decisions.lock().unwrap_or_else(|e| e.into_inner()).extend(decisions.clone());
+            self.decisions
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend(decisions.clone());
         }
         decisions
     }
@@ -246,17 +249,24 @@ impl PreventionEngine {
                 let port_match = port.is_none() || event.dst_port == *port;
                 ip_match && port_match
             }
-            PreventionCondition::FilePathPattern(pattern) => {
-                event.file_path.as_deref().is_some_and(|p| p.to_lowercase().contains(&pattern.to_lowercase()))
-            }
+            PreventionCondition::FilePathPattern(pattern) => event
+                .file_path
+                .as_deref()
+                .is_some_and(|p| p.to_lowercase().contains(&pattern.to_lowercase())),
             PreventionCondition::RegistryKeyPattern(_) => false, // Not applicable to unix
-            PreventionCondition::CommandLineContains(substr) => {
-                event.command_line.to_lowercase().contains(&substr.to_lowercase())
-            }
+            PreventionCondition::CommandLineContains(substr) => event
+                .command_line
+                .to_lowercase()
+                .contains(&substr.to_lowercase()),
             PreventionCondition::ParentChildChain { parent, child } => {
-                let parent_match = event.parent_process.as_deref()
+                let parent_match = event
+                    .parent_process
+                    .as_deref()
                     .is_some_and(|p| p.to_lowercase().contains(&parent.to_lowercase()));
-                let child_match = event.process_name.to_lowercase().contains(&child.to_lowercase());
+                let child_match = event
+                    .process_name
+                    .to_lowercase()
+                    .contains(&child.to_lowercase());
                 parent_match && child_match
             }
             PreventionCondition::Composite(conditions) => {
@@ -266,18 +276,28 @@ impl PreventionEngine {
     }
 
     pub fn add_policy(&self, policy: PreventionPolicy) {
-        self.policies.lock().unwrap_or_else(|e| e.into_inner()).insert(policy.id.clone(), policy);
+        self.policies
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(policy.id.clone(), policy);
     }
 
     pub fn remove_policy(&self, policy_id: &str) -> Result<(), String> {
-        self.policies.lock().unwrap_or_else(|e| e.into_inner())
+        self.policies
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .remove(policy_id)
             .ok_or("Policy not found".into())
             .map(|_| ())
     }
 
     pub fn list_policies(&self) -> Vec<PreventionPolicy> {
-        self.policies.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect()
+        self.policies
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn recent_decisions(&self, limit: usize) -> Vec<PreventionDecision> {
@@ -290,7 +310,10 @@ impl PreventionEngine {
     }
 
     pub fn report_false_positive(&self, _rule_id: &str) {
-        self.stats.lock().unwrap_or_else(|e| e.into_inner()).false_positives_reported += 1;
+        self.stats
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .false_positives_reported += 1;
     }
 }
 
@@ -384,7 +407,10 @@ mod tests {
         engine.add_policy(policy);
         let event = make_event("calc.exe", "", 0.9);
         let decisions = engine.evaluate(&event);
-        let calc_decisions: Vec<_> = decisions.iter().filter(|d| d.policy_id == "detect-only").collect();
+        let calc_decisions: Vec<_> = decisions
+            .iter()
+            .filter(|d| d.policy_id == "detect-only")
+            .collect();
         assert_eq!(calc_decisions.len(), 1);
         assert!(!calc_decisions[0].blocked);
         assert_eq!(calc_decisions[0].action, PreventionAction::AlertOnly);

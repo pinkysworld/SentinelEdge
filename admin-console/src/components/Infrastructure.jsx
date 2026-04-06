@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 export default function Infrastructure() {
   const toast = useToast();
@@ -35,42 +36,15 @@ export default function Infrastructure() {
         <div className="card-grid">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Monitor Status</div>
-            {monSt ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {Object.entries(monSt).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'boolean' ? (v ? '✓' : '✕') : typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {monSt ? <><SummaryGrid data={monSt} limit={12} /><JsonDetails data={monSt} /></> : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Fingerprint</div>
-            {fp ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {Object.entries(fp).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: 'break-all' }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {fp ? <><SummaryGrid data={fp} limit={10} /><JsonDetails data={fp} /></> : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Causal Graph</div>
-            {causal ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {Object.entries(causal).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{typeof v === 'object' ? (Array.isArray(v) ? v.length + ' items' : JSON.stringify(v)) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {causal ? <><SummaryGrid data={causal} limit={10} /><JsonDetails data={causal} /></> : <div className="empty">Loading...</div>}
           </div>
         </div>
       )}
@@ -159,29 +133,11 @@ export default function Infrastructure() {
         <div className="card-grid">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Energy Status</div>
-            {energy ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                {Object.entries(energy).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {energy ? <><SummaryGrid data={energy} limit={12} /><JsonDetails data={energy} /></> : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Tenants</div>
-            {tenants ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                {Object.entries(tenants).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {tenants ? <><SummaryGrid data={tenants} limit={10} /><JsonDetails data={tenants} /></> : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Patches</div>
@@ -213,6 +169,7 @@ export default function Infrastructure() {
                 ))}
               </div>;
             })()}
+            <JsonDetails data={patchData} />
           </div>
         </div>
       )}
@@ -226,29 +183,11 @@ export default function Infrastructure() {
                 try { await api.meshHeal(); toast('Mesh heal initiated', 'success'); } catch { toast('Failed', 'error'); }
               }}>Heal</button>
             </div>
-            {mesh ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {Object.entries(mesh).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{typeof v === 'boolean' ? (v ? '✓ Healthy' : '✕ Unhealthy') : typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {mesh ? <><SummaryGrid data={mesh} limit={10} /><JsonDetails data={mesh} /></> : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>TLS Status</div>
-            {tls ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {Object.entries(tls).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: 'break-all' }}>{typeof v === 'boolean' ? (v ? '✓' : '✕') : typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {tls ? <><SummaryGrid data={tls} limit={10} /><JsonDetails data={tls} /></> : <div className="empty">Loading...</div>}
           </div>
         </div>
       )}
@@ -258,28 +197,15 @@ export default function Infrastructure() {
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Threads</div>
             {threads ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                {Object.entries(threads).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
+              <>
+                <SummaryGrid data={threads} exclude={['subsystems']} limit={12} />
+                <JsonDetails data={threads?.subsystems} label="Subsystems" />
+              </>
             ) : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>SLO Status</div>
-            {slo ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                {Object.entries(slo).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: k.includes('violation') && v > 0 ? 'var(--danger)' : undefined }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="empty">Loading...</div>}
+            {slo ? <><SummaryGrid data={slo} limit={12} /><JsonDetails data={slo} /></> : <div className="empty">Loading...</div>}
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Dependencies</div>
@@ -287,30 +213,56 @@ export default function Infrastructure() {
               <>
                 {(() => {
                   const depArr = deps.dependencies || deps.deps || (Array.isArray(deps) ? deps : []);
+                  const connectors = deps?.connectors?.items || [];
                   return depArr.length > 0 ? (
-                    <div className="table-wrap">
-                      <table>
-                        <thead><tr><th>Name</th><th>Version</th><th>Status</th></tr></thead>
-                        <tbody>
-                          {(Array.isArray(depArr) ? depArr : []).map((d, i) => (
-                            <tr key={i}>
-                              <td style={{ fontWeight: 600 }}>{d.name || '—'}</td>
-                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{d.version || '—'}</td>
-                              <td><span className={`badge ${d.healthy !== false ? 'badge-ok' : 'badge-danger'}`}>{d.healthy !== false ? 'OK' : 'Unhealthy'}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <>
+                      <div className="table-wrap">
+                        <table>
+                          <thead><tr><th>Name</th><th>Version</th><th>Status</th></tr></thead>
+                          <tbody>
+                            {(Array.isArray(depArr) ? depArr : []).map((d, i) => (
+                              <tr key={i}>
+                                <td style={{ fontWeight: 600 }}>{d.name || '—'}</td>
+                                <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{d.version || '—'}</td>
+                                <td><span className={`badge ${d.healthy !== false ? 'badge-ok' : 'badge-err'}`}>{d.healthy !== false ? 'OK' : 'Unhealthy'}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <JsonDetails data={deps} />
+                    </>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                      {Object.entries(deps).map(([k, v]) => (
-                        <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                    <>
+                      <SummaryGrid data={deps} exclude={['connectors', 'deployments', 'dependencies', 'deps']} limit={10} />
+                      {connectors.length > 0 && (
+                        <div style={{ marginTop: 16 }}>
+                          <div className="card-title" style={{ marginBottom: 8 }}>Connectors</div>
+                          <div className="table-wrap">
+                            <table>
+                              <thead><tr><th>Name</th><th>Kind</th><th>Status</th><th>Auth</th></tr></thead>
+                              <tbody>
+                                {connectors.slice(0, 12).map((item, index) => (
+                                  <tr key={item.id || index}>
+                                    <td>{item.name || item.id || '—'}</td>
+                                    <td>{item.kind || '—'}</td>
+                                    <td>{item.status || '—'}</td>
+                                    <td>{item.auth_mode || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                      {deps?.deployments && (
+                        <div style={{ marginTop: 16 }}>
+                          <div className="card-title" style={{ marginBottom: 8 }}>Deployments</div>
+                          <SummaryGrid data={deps.deployments} limit={8} />
+                        </div>
+                      )}
+                      <JsonDetails data={deps} />
+                    </>
                   );
                 })()}
               </>
@@ -394,7 +346,7 @@ export default function Infrastructure() {
                   <tbody>
                     {hostInv.services.map((s, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{typeof s === 'string' ? s : s.name || JSON.stringify(s)}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{typeof s === 'string' ? s : s.name || s.label || s.id || 'service'}</td>
                         <td>{typeof s === 'object' ? s.status || '—' : '—'}</td>
                       </tr>
                     ))}
@@ -414,7 +366,7 @@ export default function Infrastructure() {
                   <tbody>
                     {hostInv.ports.map((p, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)' }}>{typeof p === 'string' ? p : p.port || JSON.stringify(p)}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>{typeof p === 'string' ? p : p.port || p.address || p.endpoint || '—'}</td>
                         <td>{typeof p === 'object' ? p.protocol || '—' : '—'}</td>
                         <td>{typeof p === 'object' ? p.process || '—' : '—'}</td>
                       </tr>

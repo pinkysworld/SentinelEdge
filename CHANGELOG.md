@@ -2,6 +2,17 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.41.4] — React Console Consolidation, Process Investigation & Release Refresh
+
+### Fixed
+- **Process false positives** — The live process analyzer no longer flags `OneDrive Sync Service` as `netcat`, no longer self-detects Wardex when launched from `./...`, and treats relative-path launches as an investigation signal instead of an automatic critical hit.
+- **Embedded admin console drift** — The shipped binary now embeds the React admin-console build instead of the retired single-file HTML console, eliminating the split between the latest UI source and the embedded release.
+- **Operator UI cleanup** — Dashboard, Live Monitor, Threat Detection, Settings, and Reports now default to structured operator views instead of raw JSON-heavy panels, and alert investigation opens in a side drawer rather than a bottom popout.
+
+### Added
+- **Process investigation drawer** — Operators can click a live process to inspect execution context, network activity, code-signing metadata, behavioural findings, and analyst recommendations, then queue kill or isolate actions from the same surface.
+- **Admin export surfaces** — Live alert/process exports and dedicated Reports & Exports download actions now provide first-class export paths directly from the embedded console.
+
 ## [0.41.3] — Dashboard Layout Polish & Release Copy Sync
 
 ### Fixed

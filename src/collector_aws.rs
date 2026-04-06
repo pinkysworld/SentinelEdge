@@ -202,7 +202,10 @@ impl AwsCloudTrailCollector {
             }
         };
 
-        let next_token = root.get("NextToken").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let next_token = root
+            .get("NextToken")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let raw_events = match root.get("Events").and_then(|v| v.as_array()) {
             Some(arr) => arr,
@@ -220,29 +223,64 @@ impl AwsCloudTrailCollector {
 
         let mut events = Vec::new();
         for raw in raw_events {
-            let event_name = raw.get("EventName").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+            let event_name = raw
+                .get("EventName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
 
             // Skip if we have a filter and event doesn't match
             if !self.config.event_name_filter.is_empty()
-                && !self.config.event_name_filter.iter().any(|f| f == &event_name)
+                && !self
+                    .config
+                    .event_name_filter
+                    .iter()
+                    .any(|f| f == &event_name)
             {
                 continue;
             }
 
-            let error_code = raw.get("ErrorCode").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let error_code = raw
+                .get("ErrorCode")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let (risk_score, mitre_techniques) = score_event(&event_name, error_code.as_deref());
 
             let event = CloudTrailEvent {
-                event_id: raw.get("EventId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                event_id: raw
+                    .get("EventId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 event_name,
-                event_source: raw.get("EventSource").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                timestamp: raw.get("EventTime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                event_source: raw
+                    .get("EventSource")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                timestamp: raw
+                    .get("EventTime")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 region: self.config.region.clone(),
-                source_ip: raw.get("SourceIPAddress").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                user_arn: raw.get("Username").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                user_agent: raw.get("UserAgent").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                source_ip: raw
+                    .get("SourceIPAddress")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                user_arn: raw
+                    .get("Username")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                user_agent: raw
+                    .get("UserAgent")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 error_code,
-                error_message: raw.get("ErrorMessage").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                error_message: raw
+                    .get("ErrorMessage")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 read_only: raw.get("ReadOnly").and_then(|v| v.as_str()) == Some("true"),
                 risk_score,
                 mitre_techniques,
@@ -250,7 +288,8 @@ impl AwsCloudTrailCollector {
                     let s = raw.to_string();
                     if s.len() > 4096 {
                         // Truncate at a char boundary to avoid panic on multi-byte UTF-8
-                        let end = s.char_indices()
+                        let end = s
+                            .char_indices()
                             .take_while(|(i, _)| *i < 4096)
                             .last()
                             .map(|(i, c)| i + c.len_utf8())
@@ -319,7 +358,10 @@ impl AwsCloudTrailCollector {
 
     /// Get high-risk events (score >= threshold).
     pub fn high_risk_events(events: &[CloudTrailEvent], threshold: f32) -> Vec<&CloudTrailEvent> {
-        events.iter().filter(|e| e.risk_score >= threshold).collect()
+        events
+            .iter()
+            .filter(|e| e.risk_score >= threshold)
+            .collect()
     }
 
     /// Summarise events by source service.
@@ -441,19 +483,35 @@ mod tests {
     fn high_risk_filter() {
         let events = vec![
             CloudTrailEvent {
-                event_id: "e1".into(), event_name: "GetObject".into(),
-                event_source: "s3".into(), timestamp: "t".into(),
-                region: "us-east-1".into(), source_ip: None, user_arn: None,
-                user_agent: None, error_code: None, error_message: None,
-                read_only: true, risk_score: 1.0, mitre_techniques: vec![],
+                event_id: "e1".into(),
+                event_name: "GetObject".into(),
+                event_source: "s3".into(),
+                timestamp: "t".into(),
+                region: "us-east-1".into(),
+                source_ip: None,
+                user_arn: None,
+                user_agent: None,
+                error_code: None,
+                error_message: None,
+                read_only: true,
+                risk_score: 1.0,
+                mitre_techniques: vec![],
                 raw_json: None,
             },
             CloudTrailEvent {
-                event_id: "e2".into(), event_name: "StopLogging".into(),
-                event_source: "cloudtrail".into(), timestamp: "t".into(),
-                region: "us-east-1".into(), source_ip: None, user_arn: None,
-                user_agent: None, error_code: None, error_message: None,
-                read_only: false, risk_score: 9.5, mitre_techniques: vec!["T1562.008".into()],
+                event_id: "e2".into(),
+                event_name: "StopLogging".into(),
+                event_source: "cloudtrail".into(),
+                timestamp: "t".into(),
+                region: "us-east-1".into(),
+                source_ip: None,
+                user_arn: None,
+                user_agent: None,
+                error_code: None,
+                error_message: None,
+                read_only: false,
+                risk_score: 9.5,
+                mitre_techniques: vec!["T1562.008".into()],
                 raw_json: None,
             },
         ];

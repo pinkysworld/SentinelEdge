@@ -66,7 +66,12 @@ impl AgentClient {
     }
 
     /// Enroll this agent with the server.
-    pub fn enroll(&mut self, token: &str, hostname: &str, platform: &str) -> Result<EnrollResponse, String> {
+    pub fn enroll(
+        &mut self,
+        token: &str,
+        hostname: &str,
+        platform: &str,
+    ) -> Result<EnrollResponse, String> {
         let req = EnrollRequest {
             enrollment_token: token.to_string(),
             hostname: hostname.to_string(),
@@ -173,9 +178,10 @@ impl AgentClient {
 
     fn self_log_update_hint(&self, response: &HeartbeatResponse) {
         if response.update_assigned
-            && let Some(version) = &response.target_version {
-                log::info!("[update] Server assigned remote deployment for v{version}");
-            }
+            && let Some(version) = &response.target_version
+        {
+            log::info!("[update] Server assigned remote deployment for v{version}");
+        }
     }
 
     fn process_update(&self, target_version: Option<&str>) {
@@ -183,15 +189,22 @@ impl AgentClient {
         match self.check_update() {
             Ok(Some(info)) => {
                 if let Some(expected) = target_version
-                    && info.version != expected {
-                        self.set_update_state(
-                            "mismatch",
-                            Some(expected),
-                            Some(format!("server returned {} instead of assigned target", info.version)),
-                        );
-                        log::warn!("[update] Assigned target {expected}, but server returned {}", info.version);
-                        return;
-                    }
+                    && info.version != expected
+                {
+                    self.set_update_state(
+                        "mismatch",
+                        Some(expected),
+                        Some(format!(
+                            "server returned {} instead of assigned target",
+                            info.version
+                        )),
+                    );
+                    log::warn!(
+                        "[update] Assigned target {expected}, but server returned {}",
+                        info.version
+                    );
+                    return;
+                }
                 log::info!("[update] New version available: v{}", info.version);
                 if info.mandatory {
                     log::info!("[update] Mandatory update - downloading...");
@@ -200,7 +213,10 @@ impl AgentClient {
                 match self.download_update(&info) {
                     Ok(binary) => {
                         self.set_update_state("downloaded", Some(&info.version), None);
-                        log::info!("[update] Downloaded {} bytes, checksum verified", binary.len());
+                        log::info!(
+                            "[update] Downloaded {} bytes, checksum verified",
+                            binary.len()
+                        );
                         self.set_update_state("applying", Some(&info.version), None);
                         if let Err(e) = apply_update(&binary, &info.version) {
                             self.set_update_state("failed", Some(&info.version), Some(e.clone()));
@@ -244,9 +260,10 @@ impl AgentClient {
         F: FnOnce(&mut AgentRuntimeStatus),
     {
         if let Some(runtime_status) = &self.runtime_status
-            && let Ok(mut status) = runtime_status.lock() {
-                mutate(&mut status);
-            }
+            && let Ok(mut status) = runtime_status.lock()
+        {
+            mutate(&mut status);
+        }
     }
 
     fn set_queue_depth(&self, queue_depth: usize) {
@@ -293,7 +310,9 @@ impl AgentClient {
 
     /// Download an update binary from the server.
     pub fn download_update(&self, info: &UpdateInfo) -> Result<Vec<u8>, String> {
-        let download_url = if info.download_url.starts_with("http://") || info.download_url.starts_with("https://") {
+        let download_url = if info.download_url.starts_with("http://")
+            || info.download_url.starts_with("https://")
+        {
             info.download_url.clone()
         } else {
             format!("{}{}", self.server_url, info.download_url)
@@ -315,7 +334,7 @@ impl AgentClient {
             .map_err(|e| format!("failed to read update binary: {e}"))?;
 
         // Verify checksum
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let hash = hex::encode(Sha256::digest(&buf));
         if hash != info.sha256 {
             return Err(format!(
@@ -337,8 +356,8 @@ impl AgentClient {
         if logs.is_empty() {
             return Ok(());
         }
-        let body = serde_json::to_string(logs)
-            .map_err(|e| format!("failed to serialize logs: {e}"))?;
+        let body =
+            serde_json::to_string(logs).map_err(|e| format!("failed to serialize logs: {e}"))?;
         let url = format!("{}/api/agents/{}/logs", self.server_url, agent_id);
         let resp = ureq::post(&url)
             .set("Content-Type", "application/json")
@@ -351,7 +370,10 @@ impl AgentClient {
     }
 
     /// Report system inventory to the server.
-    pub fn report_inventory(&self, inventory: &crate::inventory::SystemInventory) -> Result<(), String> {
+    pub fn report_inventory(
+        &self,
+        inventory: &crate::inventory::SystemInventory,
+    ) -> Result<(), String> {
         let agent_id = self.agent_id.as_ref().ok_or("not enrolled")?;
         let body = serde_json::to_string(inventory)
             .map_err(|e| format!("failed to serialize inventory: {e}"))?;
@@ -361,7 +383,10 @@ impl AgentClient {
             .send_string(&body)
             .map_err(|e| format!("inventory report failed: {e}"))?;
         if resp.status() != 200 {
-            return Err(format!("inventory report rejected: status {}", resp.status()));
+            return Err(format!(
+                "inventory report rejected: status {}",
+                resp.status()
+            ));
         }
         Ok(())
     }
@@ -401,14 +426,22 @@ pub fn run_agent(
     let host_info = collector::detect_platform();
 
     log::info!("Wardex Agent v{}", env!("CARGO_PKG_VERSION"));
-    log::info!("  Platform: {} ({})", host_info.platform, host_info.hostname);
+    log::info!(
+        "  Platform: {} ({})",
+        host_info.platform,
+        host_info.hostname
+    );
     log::info!("  Server: {}", server_url);
 
     // Enroll
     let mut client = AgentClient::new(server_url);
     let runtime_status = Arc::new(Mutex::new(AgentRuntimeStatus::default()));
     client.attach_runtime_status(runtime_status.clone());
-    let resp = client.enroll(enrollment_token, &host_info.hostname, &host_info.platform.to_string())?;
+    let resp = client.enroll(
+        enrollment_token,
+        &host_info.hostname,
+        &host_info.platform.to_string(),
+    )?;
     log::info!("  Enrolled as: {}", resp.agent_id);
     log::info!("  Heartbeat interval: {}s", resp.heartbeat_interval_secs);
     log::info!("");
@@ -498,15 +531,17 @@ pub fn run_agent(
                     current_version = p.version;
                     log::info!("[policy] Applying policy v{}", p.version);
                     if let Some(t) = p.alert_threshold
-                        && let Ok(mut th) = policy_threshold.lock() {
-                            *th = t;
-                            log::info!("[policy]   alert_threshold = {t}");
-                        }
+                        && let Ok(mut th) = policy_threshold.lock()
+                    {
+                        *th = t;
+                        log::info!("[policy]   alert_threshold = {t}");
+                    }
                     if let Some(i) = p.interval_secs
-                        && let Ok(mut iv) = policy_interval_secs.lock() {
-                            *iv = i;
-                            log::info!("[policy]   interval_secs = {i}");
-                        }
+                        && let Ok(mut iv) = policy_interval_secs.lock()
+                    {
+                        *iv = i;
+                        log::info!("[policy]   interval_secs = {i}");
+                    }
                 }
                 Ok(_) => {} // no change or no policy
                 Err(e) => log::error!("[policy] fetch error: {e}"),
@@ -521,9 +556,13 @@ pub fn run_agent(
     let policy = crate::policy::PolicyEngine;
     let mut collector_state = collector::CollectorState::default();
     let fim = if !config.monitor.watch_paths.is_empty() {
-        Some(collector::FileIntegrityMonitor::new(&config.monitor.watch_paths))
+        Some(collector::FileIntegrityMonitor::new(
+            &config.monitor.watch_paths,
+        ))
     } else if !monitor_args.watch_paths.is_empty() {
-        Some(collector::FileIntegrityMonitor::new(&monitor_args.watch_paths))
+        Some(collector::FileIntegrityMonitor::new(
+            &monitor_args.watch_paths,
+        ))
     } else {
         None
     };
@@ -560,7 +599,8 @@ pub fn run_agent(
         sample_count += 1;
 
         // Use policy-enforced threshold (may change via server policy push)
-        let current_threshold = active_threshold.lock()
+        let current_threshold = active_threshold
+            .lock()
             .map(|t| *t)
             .unwrap_or(config.monitor.alert_threshold);
         if signal.score >= current_threshold {
@@ -591,16 +631,20 @@ pub fn run_agent(
 
         // Forward events every 10 samples or when we have 5+ alerts
         if (sample_count.is_multiple_of(10) || pending_alerts.len() >= 5)
-            && !pending_alerts.is_empty() {
-                match client.forward_events(&pending_alerts) {
-                    Ok(()) => {
-                        log::info!("[agent] Forwarded {} alerts to server", pending_alerts.len());
-                        pending_alerts.clear();
-                        client.set_queue_depth(0);
-                    }
-                    Err(e) => log::error!("[agent] Forward failed (will retry): {e}"),
+            && !pending_alerts.is_empty()
+        {
+            match client.forward_events(&pending_alerts) {
+                Ok(()) => {
+                    log::info!(
+                        "[agent] Forwarded {} alerts to server",
+                        pending_alerts.len()
+                    );
+                    pending_alerts.clear();
+                    client.set_queue_depth(0);
                 }
+                Err(e) => log::error!("[agent] Forward failed (will retry): {e}"),
             }
+        }
 
         // Collect and forward logs every heartbeat cycle
         if sample_count.is_multiple_of(10) {
@@ -647,8 +691,8 @@ pub fn run_agent(
 
 /// Apply a downloaded update binary.
 fn apply_update(binary: &[u8], version: &str) -> Result<(), String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("cannot determine current executable: {e}"))?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("cannot determine current executable: {e}"))?;
     let backup_path = exe_path.with_extension("bak");
 
     // Create backup of current binary
@@ -656,12 +700,11 @@ fn apply_update(binary: &[u8], version: &str) -> Result<(), String> {
         .map_err(|e| format!("failed to backup current binary: {e}"))?;
 
     // Write new binary
-    std::fs::write(&exe_path, binary)
-        .map_err(|e| {
-            // Restore backup on failure
-            let _ = std::fs::copy(&backup_path, &exe_path);
-            format!("failed to write update: {e}")
-        })?;
+    std::fs::write(&exe_path, binary).map_err(|e| {
+        // Restore backup on failure
+        let _ = std::fs::copy(&backup_path, &exe_path);
+        format!("failed to write update: {e}")
+    })?;
 
     // Set executable permissions on Unix
     #[cfg(unix)]
@@ -670,7 +713,10 @@ fn apply_update(binary: &[u8], version: &str) -> Result<(), String> {
         let _ = std::fs::set_permissions(&exe_path, std::fs::Permissions::from_mode(0o755));
     }
 
-    log::info!("[update] Updated to v{version}. Backup at: {}", backup_path.display());
+    log::info!(
+        "[update] Updated to v{version}. Backup at: {}",
+        backup_path.display()
+    );
     Ok(())
 }
 

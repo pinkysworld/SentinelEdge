@@ -20,7 +20,11 @@ pub enum RemediationAction {
     /// Delete a persistence mechanism.
     RemovePersistence { mechanism: PersistenceMechanism },
     /// Revert a registry change (Windows).
-    RevertRegistry { key: String, value_name: String, original_data: String },
+    RevertRegistry {
+        key: String,
+        value_name: String,
+        original_data: String,
+    },
     /// Block an IP at host firewall.
     BlockIp { addr: String },
     /// Disable a user account.
@@ -38,7 +42,11 @@ pub enum RemediationAction {
     /// Flush DNS cache.
     FlushDns,
     /// Custom remediation command.
-    Custom { label: String, command: String, args: Vec<String> },
+    Custom {
+        label: String,
+        command: String,
+        args: Vec<String>,
+    },
 }
 
 /// Persistence mechanisms across platforms.
@@ -51,7 +59,10 @@ pub enum PersistenceMechanism {
     /// Linux/macOS: rc.local or init script.
     InitScript { path: String },
     /// macOS: LaunchDaemon or LaunchAgent plist.
-    LaunchItem { path: String, item_type: LaunchItemType },
+    LaunchItem {
+        path: String,
+        item_type: LaunchItemType,
+    },
     /// macOS: login item.
     LoginItem { name: String },
     /// Windows: Run/RunOnce registry key.
@@ -123,7 +134,7 @@ pub fn platform_commands(
                     true,
                 )]
             }
-        }
+        },
         RemediationAction::BlockIp { addr } => match platform {
             RemediationPlatform::Linux => {
                 vec![RemediationCommand::new(
@@ -234,7 +245,12 @@ pub fn platform_commands(
             RemediationPlatform::Windows => {
                 vec![RemediationCommand::new(
                     "schtasks",
-                    vec!["/Delete".into(), "/TN".into(), task_name.clone(), "/F".into()],
+                    vec![
+                        "/Delete".into(),
+                        "/TN".into(),
+                        task_name.clone(),
+                        "/F".into(),
+                    ],
                     true,
                 )]
             }
@@ -251,11 +267,7 @@ fn persistence_removal_commands(
         PersistenceMechanism::SystemdUnit { name } => {
             if *platform == RemediationPlatform::Linux {
                 vec![
-                    RemediationCommand::new(
-                        "systemctl",
-                        vec!["stop".into(), name.clone()],
-                        true,
-                    ),
+                    RemediationCommand::new("systemctl", vec!["stop".into(), name.clone()], true),
                     RemediationCommand::new(
                         "systemctl",
                         vec!["disable".into(), name.clone()],
@@ -274,17 +286,10 @@ fn persistence_removal_commands(
                     .unwrap_or(path)
                     .trim_end_matches(".plist");
                 vec![
-                    RemediationCommand::new(
-                        "launchctl",
-                        vec!["unload".into(), path.clone()],
-                        true,
-                    ),
+                    RemediationCommand::new("launchctl", vec!["unload".into(), path.clone()], true),
                     RemediationCommand::new(
                         "mv",
-                        vec![
-                            path.clone(),
-                            format!("/var/quarantine/{label}.plist"),
-                        ],
+                        vec![path.clone(), format!("/var/quarantine/{label}.plist")],
                         true,
                     ),
                 ]
@@ -321,7 +326,8 @@ fn persistence_removal_commands(
                 vec![]
             }
         }
-        PersistenceMechanism::ScheduledTask { name } | PersistenceMechanism::WmiSubscription { name } => {
+        PersistenceMechanism::ScheduledTask { name }
+        | PersistenceMechanism::WmiSubscription { name } => {
             if *platform == RemediationPlatform::Windows {
                 vec![RemediationCommand::new(
                     "schtasks",
@@ -440,9 +446,9 @@ impl RemediationEngine {
 
     /// Check whether an action needs approval (matches by variant only).
     pub fn needs_approval(&self, action: &RemediationAction) -> bool {
-        self.approval_required.iter().any(|a| {
-            std::mem::discriminant(a) == std::mem::discriminant(action)
-        })
+        self.approval_required
+            .iter()
+            .any(|a| std::mem::discriminant(a) == std::mem::discriminant(action))
     }
 
     /// Set which action types need approval.
@@ -537,10 +543,7 @@ pub struct RemediationPlan {
 }
 
 /// Prerequisite checks for a remediation action.
-fn prerequisite_checks(
-    action: &RemediationAction,
-    _platform: &RemediationPlatform,
-) -> Vec<String> {
+fn prerequisite_checks(action: &RemediationAction, _platform: &RemediationPlatform) -> Vec<String> {
     match action {
         RemediationAction::KillProcess { pid, .. } => {
             vec![format!("Process {pid} exists and is running")]
@@ -722,6 +725,9 @@ mod tests {
     #[test]
     fn sanitize_filename_strips_slashes() {
         assert_eq!(sanitize_filename("/etc/passwd"), "etc_passwd");
-        assert_eq!(sanitize_filename("C:\\Windows\\file.exe"), "C:_Windows_file.exe");
+        assert_eq!(
+            sanitize_filename("C:\\Windows\\file.exe"),
+            "C:_Windows_file.exe"
+        );
     }
 }

@@ -74,9 +74,10 @@ impl CoverageMap {
         let bucket = ((score.clamp(0.0, 0.999) * 20.0) as usize).min(19);
         self.score_buckets[bucket] += 1;
         if let Some(prev) = self.last_bucket
-            && prev != bucket {
-                self.transition_count += 1;
-            }
+            && prev != bucket
+        {
+            self.transition_count += 1;
+        }
         self.last_bucket = Some(bucket);
     }
 

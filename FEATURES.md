@@ -127,6 +127,6 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 ## Operator entry points
 
 - `cargo run -- serve` for the live control plane
-- `site/admin.html` for the browser console
+- `http://localhost:8080/admin/` for the embedded browser console
 - `docs/` for architecture, deployment, runbooks, and status
 - GitHub Releases for packaged builds

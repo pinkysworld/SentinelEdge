@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex};
 
 // ── Log Level ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -28,8 +30,8 @@ impl fmt::Display for LogLevel {
         match self {
             Self::Trace => write!(f, "trace"),
             Self::Debug => write!(f, "debug"),
-            Self::Info  => write!(f, "info"),
-            Self::Warn  => write!(f, "warn"),
+            Self::Info => write!(f, "info"),
+            Self::Warn => write!(f, "warn"),
             Self::Error => write!(f, "error"),
             Self::Fatal => write!(f, "fatal"),
         }
@@ -41,7 +43,7 @@ impl LogLevel {
         match s.to_lowercase().as_str() {
             "trace" => Self::Trace,
             "debug" => Self::Debug,
-            "info"  => Self::Info,
+            "info" => Self::Info,
             "warn" | "warning" => Self::Warn,
             "error" | "err" => Self::Error,
             "fatal" | "critical" => Self::Fatal,
@@ -332,7 +334,10 @@ impl SharedLogger {
             Ok(logger) => logger.log(entry),
             Err(poisoned) => {
                 // Log to stderr on poisoned mutex rather than silently dropping
-                eprintln!("[structured_log] mutex poisoned, log entry dropped: {}", entry.message);
+                eprintln!(
+                    "[structured_log] mutex poisoned, log entry dropped: {}",
+                    entry.message
+                );
                 let _ = poisoned;
             }
         }
@@ -396,11 +401,14 @@ pub fn security_log(event: &str, source_ip: &str, details: &str) -> LogEntry {
 }
 
 pub fn audit_log(actor: &str, action: &str, resource: &str) -> LogEntry {
-    LogEntry::new(LogLevel::Info, format!("audit: {} {} {}", actor, action, resource))
-        .with_target("audit")
-        .with_field("actor", actor)
-        .with_field("action", action)
-        .with_field("resource", resource)
+    LogEntry::new(
+        LogLevel::Info,
+        format!("audit: {} {} {}", actor, action, resource),
+    )
+    .with_target("audit")
+    .with_field("actor", actor)
+    .with_field("action", action)
+    .with_field("resource", resource)
 }
 
 // ── Tracing-compatible configuration ─────────────────────────────────────────

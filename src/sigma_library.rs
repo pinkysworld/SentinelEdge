@@ -206,10 +206,22 @@ impl SigmaLibrary {
                         }
                     } else if indent_level >= 4 {
                         // Nested detection field
-                        let full_key = format!("{}.{}", detection_key, trimmed.trim_start_matches("- ").split(':').next().unwrap_or("").trim());
-                        if let Some(val) = trimmed.split_once(':').map(|(_, v)| v.trim().to_string()) {
+                        let full_key = format!(
+                            "{}.{}",
+                            detection_key,
+                            trimmed
+                                .trim_start_matches("- ")
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .trim()
+                        );
+                        if let Some(val) =
+                            trimmed.split_once(':').map(|(_, v)| v.trim().to_string())
+                        {
                             if !val.is_empty() {
-                                rule.detection.insert(full_key, serde_json::Value::String(val));
+                                rule.detection
+                                    .insert(full_key, serde_json::Value::String(val));
                             }
                         } else if let Some(item) = trimmed.strip_prefix("- ") {
                             rule.detection
@@ -253,7 +265,10 @@ impl SigmaLibrary {
     }
 
     pub fn find_by_tag(&self, tag: &str) -> Vec<&SigmaRule> {
-        self.rules.iter().filter(|r| r.tags.iter().any(|t| t == tag)).collect()
+        self.rules
+            .iter()
+            .filter(|r| r.tags.iter().any(|t| t == tag))
+            .collect()
     }
 
     pub fn find_by_level(&self, level: &str) -> Vec<&SigmaRule> {
@@ -261,11 +276,16 @@ impl SigmaLibrary {
     }
 
     pub fn find_by_category(&self, category: &str) -> Vec<&SigmaRule> {
-        self.rules.iter().filter(|r| r.logsource.category == category).collect()
+        self.rules
+            .iter()
+            .filter(|r| r.logsource.category == category)
+            .collect()
     }
 
     pub fn categories(&self) -> Vec<String> {
-        let mut cats: Vec<String> = self.rules.iter()
+        let mut cats: Vec<String> = self
+            .rules
+            .iter()
             .map(|r| r.logsource.category.clone())
             .filter(|c| !c.is_empty())
             .collect();
@@ -281,7 +301,9 @@ impl SigmaLibrary {
 
         for rule in &self.rules {
             *by_level.entry(rule.level.clone()).or_default() += 1;
-            *by_category.entry(rule.logsource.category.clone()).or_default() += 1;
+            *by_category
+                .entry(rule.logsource.category.clone())
+                .or_default() += 1;
             *by_status.entry(rule.status.clone()).or_default() += 1;
         }
 
@@ -307,19 +329,22 @@ impl SigmaLibrary {
     fn event_matches_rule(&self, event: &serde_json::Value, rule: &SigmaRule) -> bool {
         // Match selection fields from detection (AND semantics)
         if let Some(selection) = rule.detection.get("selection")
-            && let serde_json::Value::Object(sel_map) = selection {
-                for (key, expected) in sel_map {
-                    let actual = event.get(key);
-                    match actual {
-                        Some(val) if val == expected => continue,
-                        _ => return false,
-                    }
+            && let serde_json::Value::Object(sel_map) = selection
+        {
+            for (key, expected) in sel_map {
+                let actual = event.get(key);
+                match actual {
+                    Some(val) if val == expected => continue,
+                    _ => return false,
                 }
-                return !sel_map.is_empty();
             }
+            return !sel_map.is_empty();
+        }
 
         // Check simple key-value detection matches — ALL must match (AND)
-        let detection_fields: Vec<_> = rule.detection.iter()
+        let detection_fields: Vec<_> = rule
+            .detection
+            .iter()
             .filter(|(key, _)| key.as_str() != "condition" && key.as_str() != "timeframe")
             .collect();
 

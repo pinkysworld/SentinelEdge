@@ -283,9 +283,7 @@ impl NetworkEnforcer {
         #[cfg(target_os = "macos")]
         {
             // macOS uses pf (packet filter)
-            Ok(format!(
-                "pf rule added: block drop all from/to {device_id}"
-            ))
+            Ok(format!("pf rule added: block drop all from/to {device_id}"))
         }
         #[cfg(target_os = "linux")]
         {
@@ -296,7 +294,9 @@ impl NetworkEnforcer {
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
-            Ok(format!("network block applied for {device_id} (platform adapter)"))
+            Ok(format!(
+                "network block applied for {device_id} (platform adapter)"
+            ))
         }
     }
 }
@@ -372,8 +372,8 @@ impl FilesystemEnforcer {
 
     /// Compute integrity hash of a file for drift detection.
     pub fn integrity_hash(path: &Path) -> Result<String, String> {
-        let data = std::fs::read(path)
-            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        let data =
+            std::fs::read(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
         Ok(sha256_hex(&data))
     }
 
@@ -430,9 +430,7 @@ impl SoftwareTpm {
             pcrs.insert(i, vec![0u8; 32]);
         }
         // Generate a deterministic endorsement key
-        let ek = sha256_hex(b"wardex-software-tpm-ek")
-            .as_bytes()
-            .to_vec();
+        let ek = sha256_hex(b"wardex-software-tpm-ek").as_bytes().to_vec();
         Self {
             pcrs,
             sealed_store: HashMap::new(),
@@ -823,82 +821,134 @@ impl EnforcementEngine {
         platform: &str,
     ) -> Vec<ContainmentCommand> {
         // Validate target to prevent shell injection
-        if !target.chars().all(|c| c.is_alphanumeric() || "-_.:".contains(c)) {
+        if !target
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-_.:".contains(c))
+        {
             return vec![];
         }
         match level {
             EnforcementLevel::Observe => vec![],
             EnforcementLevel::Constrain => match platform {
                 "linux" => vec![
-                    ContainmentCommand::new("cgroup_cpu_limit", &format!(
-                        "echo {target} > /sys/fs/cgroup/cpu/wardex/tasks && echo 50000 > /sys/fs/cgroup/cpu/wardex/cpu.cfs_quota_us"
-                    ), true),
-                    ContainmentCommand::new("cgroup_mem_limit", &format!(
-                        "echo 512M > /sys/fs/cgroup/memory/wardex/{target}/memory.limit_in_bytes"
-                    ), true),
+                    ContainmentCommand::new(
+                        "cgroup_cpu_limit",
+                        &format!(
+                            "echo {target} > /sys/fs/cgroup/cpu/wardex/tasks && echo 50000 > /sys/fs/cgroup/cpu/wardex/cpu.cfs_quota_us"
+                        ),
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "cgroup_mem_limit",
+                        &format!(
+                            "echo 512M > /sys/fs/cgroup/memory/wardex/{target}/memory.limit_in_bytes"
+                        ),
+                        true,
+                    ),
                 ],
-                "macos" => vec![
-                    ContainmentCommand::new("sandbox_exec", &format!(
-                        "sandbox-exec -p '(deny network*)' {target}"
-                    ), true),
-                ],
-                "windows" => vec![
-                    ContainmentCommand::new("job_object_limit",
-                        "wmic process where ProcessId={target} CALL SetPriority 64", true),
-                ],
+                "macos" => vec![ContainmentCommand::new(
+                    "sandbox_exec",
+                    &format!("sandbox-exec -p '(deny network*)' {target}"),
+                    true,
+                )],
+                "windows" => vec![ContainmentCommand::new(
+                    "job_object_limit",
+                    "wmic process where ProcessId={target} CALL SetPriority 64",
+                    true,
+                )],
                 _ => vec![],
             },
             EnforcementLevel::Quarantine => match platform {
                 "linux" => vec![
-                    ContainmentCommand::new("nftables_restrict", &format!(
-                        "nft add rule inet wardex output ip daddr != 127.0.0.1 meta skuid {target} drop"
-                    ), true),
-                    ContainmentCommand::new("seccomp_restrict", &format!(
-                        "Apply seccomp BPF filter to restrict syscalls for pid {target}"
-                    ), true),
+                    ContainmentCommand::new(
+                        "nftables_restrict",
+                        &format!(
+                            "nft add rule inet wardex output ip daddr != 127.0.0.1 meta skuid {target} drop"
+                        ),
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "seccomp_restrict",
+                        &format!("Apply seccomp BPF filter to restrict syscalls for pid {target}"),
+                        true,
+                    ),
                 ],
                 "macos" => vec![
-                    ContainmentCommand::new("pfctl_restrict", &format!(
-                        "echo 'block drop from any to any user {target}' | pfctl -a wardex -f -"
-                    ), true),
-                    ContainmentCommand::new("sandbox_deny_all", &format!(
-                        "sandbox-exec -p '(deny default)' {target}"
-                    ), true),
+                    ContainmentCommand::new(
+                        "pfctl_restrict",
+                        &format!(
+                            "echo 'block drop from any to any user {target}' | pfctl -a wardex -f -"
+                        ),
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "sandbox_deny_all",
+                        &format!("sandbox-exec -p '(deny default)' {target}"),
+                        true,
+                    ),
                 ],
                 "windows" => vec![
-                    ContainmentCommand::new("firewall_block", &format!(
-                        "netsh advfirewall firewall add rule name=WardexBlock_{target} dir=out action=block program={target}"
-                    ), true),
-                    ContainmentCommand::new("applocker_block", &format!(
-                        "Set-AppLockerPolicy -XmlPolicy '<RuleCollection><FilePathRule Action=\"Deny\" Id=\"wardex-{target}\"><Conditions><FilePathCondition Path=\"{target}\"/></Conditions></FilePathRule></RuleCollection>'"
-                    ), true),
+                    ContainmentCommand::new(
+                        "firewall_block",
+                        &format!(
+                            "netsh advfirewall firewall add rule name=WardexBlock_{target} dir=out action=block program={target}"
+                        ),
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "applocker_block",
+                        &format!(
+                            "Set-AppLockerPolicy -XmlPolicy '<RuleCollection><FilePathRule Action=\"Deny\" Id=\"wardex-{target}\"><Conditions><FilePathCondition Path=\"{target}\"/></Conditions></FilePathRule></RuleCollection>'"
+                        ),
+                        true,
+                    ),
                 ],
                 _ => vec![],
             },
             EnforcementLevel::Isolate | EnforcementLevel::Eradicate => match platform {
                 "linux" => vec![
-                    ContainmentCommand::new("nftables_block_all", &format!(
-                        "nft add rule inet wardex output meta skuid {target} drop && nft add rule inet wardex input meta skuid {target} drop"
-                    ), true),
-                    ContainmentCommand::new("cgroup_freeze",
-                        "echo FROZEN > /sys/fs/cgroup/freezer/wardex/freezer.state", true),
-                    ContainmentCommand::new("namespace_isolate", &format!(
-                        "unshare --net --pid --mount -f {target}"
-                    ), true),
+                    ContainmentCommand::new(
+                        "nftables_block_all",
+                        &format!(
+                            "nft add rule inet wardex output meta skuid {target} drop && nft add rule inet wardex input meta skuid {target} drop"
+                        ),
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "cgroup_freeze",
+                        "echo FROZEN > /sys/fs/cgroup/freezer/wardex/freezer.state",
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "namespace_isolate",
+                        &format!("unshare --net --pid --mount -f {target}"),
+                        true,
+                    ),
                 ],
                 "macos" => vec![
-                    ContainmentCommand::new("pfctl_block_all",
-                        "echo 'block drop all' | pfctl -a wardex -f -", true),
-                    ContainmentCommand::new("esf_mute", &format!(
-                        "Mute process {target} via Endpoint Security Framework"
-                    ), true),
+                    ContainmentCommand::new(
+                        "pfctl_block_all",
+                        "echo 'block drop all' | pfctl -a wardex -f -",
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "esf_mute",
+                        &format!("Mute process {target} via Endpoint Security Framework"),
+                        true,
+                    ),
                 ],
                 "windows" => vec![
-                    ContainmentCommand::new("firewall_block_all", "netsh advfirewall firewall add rule name=WardexIsolate dir=out action=block remoteip=any && \
-                         netsh advfirewall firewall add rule name=WardexIsolateIn dir=in action=block remoteip=any", true),
-                    ContainmentCommand::new("wfp_block", &format!(
-                        "Block all network via Windows Filtering Platform for {target}"
-                    ), true),
+                    ContainmentCommand::new(
+                        "firewall_block_all",
+                        "netsh advfirewall firewall add rule name=WardexIsolate dir=out action=block remoteip=any && \
+                         netsh advfirewall firewall add rule name=WardexIsolateIn dir=in action=block remoteip=any",
+                        true,
+                    ),
+                    ContainmentCommand::new(
+                        "wfp_block",
+                        &format!("Block all network via Windows Filtering Platform for {target}"),
+                        true,
+                    ),
                 ],
                 _ => vec![],
             },
@@ -1058,11 +1108,7 @@ impl EnforcementExecutor {
 
     /// Kill a process by PID. Uses `kill -9` on Unix.
     pub fn kill_process(&mut self, pid: u32) -> ExecutionResult {
-        let cmd = ContainmentCommand::new(
-            "kill_process",
-            &format!("kill -9 {pid}"),
-            true,
-        );
+        let cmd = ContainmentCommand::new("kill_process", &format!("kill -9 {pid}"), true);
         self.execute(&cmd)
     }
 
@@ -1071,7 +1117,14 @@ impl EnforcementExecutor {
         // Reject paths containing shell metacharacters or traversal attempts
         if path.contains("..")
             || vault_dir.contains("..")
-            || [path, vault_dir].iter().any(|s| s.contains('\0') || s.contains('`') || s.contains('$') || s.contains(';') || s.contains('|') || s.contains('&'))
+            || [path, vault_dir].iter().any(|s| {
+                s.contains('\0')
+                    || s.contains('`')
+                    || s.contains('$')
+                    || s.contains(';')
+                    || s.contains('|')
+                    || s.contains('&')
+            })
         {
             return ExecutionResult {
                 command_name: "quarantine_file".into(),
@@ -1107,9 +1160,9 @@ impl EnforcementExecutor {
         }
 
         let command = match platform {
-            "linux" => format!(
-                "iptables -A INPUT -s {ip} -j DROP && iptables -A OUTPUT -d {ip} -j DROP"
-            ),
+            "linux" => {
+                format!("iptables -A INPUT -s {ip} -j DROP && iptables -A OUTPUT -d {ip} -j DROP")
+            }
             "macos" => format!(
                 "echo 'block drop from {ip} to any\nblock drop from any to {ip}' | pfctl -a wardex -f -"
             ),
@@ -1135,9 +1188,9 @@ impl EnforcementExecutor {
         }
 
         let command = match platform {
-            "linux" => format!(
-                "iptables -D INPUT -s {ip} -j DROP && iptables -D OUTPUT -d {ip} -j DROP"
-            ),
+            "linux" => {
+                format!("iptables -D INPUT -s {ip} -j DROP && iptables -D OUTPUT -d {ip} -j DROP")
+            }
             "macos" => "pfctl -a wardex -F rules".to_string(),
             _ => format!("echo 'unblock {ip} (platform {platform} not supported)'"),
         };
@@ -1166,11 +1219,13 @@ impl EnforcementExecutor {
     /// Basic IP validation (v4 or v6) to prevent command injection.
     fn is_valid_ip(ip: &str) -> bool {
         // IPv4: digits and dots only
-        let is_v4 = ip.split('.').count() == 4
-            && ip.chars().all(|c| c.is_ascii_digit() || c == '.');
+        let is_v4 =
+            ip.split('.').count() == 4 && ip.chars().all(|c| c.is_ascii_digit() || c == '.');
         // IPv6: hex digits, colons, optional dots in mapped form
         let is_v6 = ip.contains(':')
-            && ip.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.');
+            && ip
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.');
         is_v4 || is_v6
     }
 
@@ -1370,7 +1425,8 @@ mod tests {
     #[test]
     fn containment_windows_isolate() {
         let engine = EnforcementEngine::new();
-        let cmds = engine.containment_commands(&EnforcementLevel::Isolate, "malware.exe", "windows");
+        let cmds =
+            engine.containment_commands(&EnforcementLevel::Isolate, "malware.exe", "windows");
         assert!(cmds.iter().any(|c| c.name.contains("firewall")));
     }
 

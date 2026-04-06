@@ -28,7 +28,8 @@ pub fn map_alert_to_mitre(reasons: &[String]) -> Vec<MitreAttack> {
             technique_name: "Brute Force".into(),
         });
     }
-    if (j.contains("cpu") && j.contains("network")) || j.contains("mining") || j.contains("hijack") {
+    if (j.contains("cpu") && j.contains("network")) || j.contains("mining") || j.contains("hijack")
+    {
         result.push(MitreAttack {
             tactic: "Impact (TA0040)".into(),
             technique_id: "T1496".into(),
@@ -70,7 +71,11 @@ pub fn map_alert_to_mitre(reasons: &[String]) -> Vec<MitreAttack> {
             technique_name: "Exfiltration Over C2 Channel".into(),
         });
     }
-    if j.contains("persist") || j.contains("launch_agent") || j.contains("systemd") || j.contains("scheduled") {
+    if j.contains("persist")
+        || j.contains("launch_agent")
+        || j.contains("systemd")
+        || j.contains("scheduled")
+    {
         result.push(MitreAttack {
             tactic: "Persistence (TA0003)".into(),
             technique_id: "T1053".into(),

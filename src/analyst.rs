@@ -77,10 +77,11 @@ impl CaseStore {
         let path = Path::new(&self.store_path);
         if path.exists()
             && let Ok(content) = std::fs::read_to_string(path)
-                && let Ok(cases) = serde_json::from_str::<Vec<Case>>(&content) {
-                    self.next_id = cases.iter().map(|c| c.id).max().unwrap_or(0) + 1;
-                    self.cases = cases;
-                }
+            && let Ok(cases) = serde_json::from_str::<Vec<Case>>(&content)
+        {
+            self.next_id = cases.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+            self.cases = cases;
+        }
     }
 
     fn persist(&self) {
@@ -93,8 +94,15 @@ impl CaseStore {
         }
     }
 
-    pub fn create(&mut self, title: String, description: String, priority: CasePriority,
-                  incident_ids: Vec<u64>, event_ids: Vec<u64>, tags: Vec<String>) -> &Case {
+    pub fn create(
+        &mut self,
+        title: String,
+        description: String,
+        priority: CasePriority,
+        incident_ids: Vec<u64>,
+        event_ids: Vec<u64>,
+        tags: Vec<String>,
+    ) -> &Case {
         let now = chrono::Utc::now().to_rfc3339();
         let case = Case {
             id: self.next_id,
@@ -163,7 +171,13 @@ impl CaseStore {
         }
     }
 
-    pub fn add_evidence(&mut self, id: u64, kind: String, reference_id: String, description: String) -> bool {
+    pub fn add_evidence(
+        &mut self,
+        id: u64,
+        kind: String,
+        reference_id: String,
+        description: String,
+    ) -> bool {
         if let Some(c) = self.cases.iter_mut().find(|c| c.id == id) {
             c.evidence.push(EvidenceRef {
                 kind,
@@ -192,24 +206,36 @@ impl CaseStore {
         }
     }
 
-    pub fn list_filtered(&self, status: Option<&str>, priority: Option<&str>, assignee: Option<&str>) -> Vec<&Case> {
-        self.cases.iter().filter(|c| {
-            if let Some(s) = status {
-                let cs = format!("{:?}", c.status);
-                if !cs.eq_ignore_ascii_case(s) { return false; }
-            }
-            if let Some(p) = priority {
-                let cp = format!("{:?}", c.priority);
-                if !cp.eq_ignore_ascii_case(p) { return false; }
-            }
-            if let Some(a) = assignee {
-                match &c.assignee {
-                    Some(ca) if ca == a => {},
-                    _ => return false,
+    pub fn list_filtered(
+        &self,
+        status: Option<&str>,
+        priority: Option<&str>,
+        assignee: Option<&str>,
+    ) -> Vec<&Case> {
+        self.cases
+            .iter()
+            .filter(|c| {
+                if let Some(s) = status {
+                    let cs = format!("{:?}", c.status);
+                    if !cs.eq_ignore_ascii_case(s) {
+                        return false;
+                    }
                 }
-            }
-            true
-        }).collect()
+                if let Some(p) = priority {
+                    let cp = format!("{:?}", c.priority);
+                    if !cp.eq_ignore_ascii_case(p) {
+                        return false;
+                    }
+                }
+                if let Some(a) = assignee {
+                    match &c.assignee {
+                        Some(ca) if ca == a => {}
+                        _ => return false,
+                    }
+                }
+                true
+            })
+            .collect()
     }
 
     pub fn stats(&self) -> HashMap<String, usize> {
@@ -251,7 +277,14 @@ impl AlertQueue {
         AlertQueue { items: Vec::new() }
     }
 
-    pub fn enqueue(&mut self, event_id: u64, score: f64, level: String, hostname: String, timestamp: String) {
+    pub fn enqueue(
+        &mut self,
+        event_id: u64,
+        score: f64,
+        level: String,
+        hostname: String,
+        timestamp: String,
+    ) {
         let normalized_level = level.trim().to_ascii_lowercase();
         let sla_hours: i64 = match normalized_level.as_str() {
             "critical" => 1,
@@ -270,7 +303,11 @@ impl AlertQueue {
             sla_deadline: Some(deadline.to_rfc3339()),
             acknowledged: false,
         });
-        self.items.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        self.items.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     pub fn acknowledge(&mut self, event_id: u64) -> bool {
@@ -300,7 +337,10 @@ impl AlertQueue {
     }
 
     pub fn by_assignee(&self, assignee: &str) -> Vec<&QueuedAlert> {
-        self.items.iter().filter(|i| i.assignee.as_deref() == Some(assignee)).collect()
+        self.items
+            .iter()
+            .filter(|i| i.assignee.as_deref() == Some(assignee))
+            .collect()
     }
 
     pub fn dismiss(&mut self, event_id: u64) -> bool {
@@ -313,18 +353,22 @@ impl AlertQueue {
         let total = self.items.len();
         let pending = self.items.iter().filter(|i| !i.acknowledged).count();
         let assigned = self.items.iter().filter(|i| i.assignee.is_some()).count();
-        let breached = self.items.iter().filter(|i| {
-            if let Some(ref deadline) = i.sla_deadline {
-                let now = chrono::Utc::now();
-                if let Ok(dl) = chrono::DateTime::parse_from_rfc3339(deadline) {
-                    !i.acknowledged && now > dl
+        let breached = self
+            .items
+            .iter()
+            .filter(|i| {
+                if let Some(ref deadline) = i.sla_deadline {
+                    let now = chrono::Utc::now();
+                    if let Ok(dl) = chrono::DateTime::parse_from_rfc3339(deadline) {
+                        !i.acknowledged && now > dl
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 }
-            } else {
-                false
-            }
-        }).count();
+            })
+            .count();
         serde_json::json!({
             "total": total,
             "pending": pending,
@@ -349,28 +393,56 @@ pub struct SearchQuery {
     pub limit: Option<usize>,
 }
 
-pub fn search_events<'a>(events: &'a [crate::event_forward::StoredEvent], query: &SearchQuery) -> Vec<&'a crate::event_forward::StoredEvent> {
+pub fn search_events<'a>(
+    events: &'a [crate::event_forward::StoredEvent],
+    query: &SearchQuery,
+) -> Vec<&'a crate::event_forward::StoredEvent> {
     let limit = query.limit.unwrap_or(100).min(1000);
-    events.iter().filter(|e| {
-        if let Some(ref h) = query.hostname
-            && !e.alert.hostname.contains(h.as_str()) { return false; }
-        if let Some(ref l) = query.level
-            && !e.alert.level.eq_ignore_ascii_case(l) { return false; }
-        if let Some(ref a) = query.agent_id
-            && e.agent_id != *a { return false; }
-        if let Some(ref from) = query.from_ts
-            && e.alert.timestamp < *from { return false; }
-        if let Some(ref to) = query.to_ts
-            && e.alert.timestamp > *to { return false; }
-        if let Some(ref text) = query.text {
-            let t = text.to_lowercase();
-            let in_reasons = e.alert.reasons.iter().any(|r| r.to_lowercase().contains(&t));
-            let in_host = e.alert.hostname.to_lowercase().contains(&t);
-            let in_action = e.alert.action.to_lowercase().contains(&t);
-            if !in_reasons && !in_host && !in_action { return false; }
-        }
-        true
-    }).take(limit).collect()
+    events
+        .iter()
+        .filter(|e| {
+            if let Some(ref h) = query.hostname
+                && !e.alert.hostname.contains(h.as_str())
+            {
+                return false;
+            }
+            if let Some(ref l) = query.level
+                && !e.alert.level.eq_ignore_ascii_case(l)
+            {
+                return false;
+            }
+            if let Some(ref a) = query.agent_id
+                && e.agent_id != *a
+            {
+                return false;
+            }
+            if let Some(ref from) = query.from_ts
+                && e.alert.timestamp < *from
+            {
+                return false;
+            }
+            if let Some(ref to) = query.to_ts
+                && e.alert.timestamp > *to
+            {
+                return false;
+            }
+            if let Some(ref text) = query.text {
+                let t = text.to_lowercase();
+                let in_reasons = e
+                    .alert
+                    .reasons
+                    .iter()
+                    .any(|r| r.to_lowercase().contains(&t));
+                let in_host = e.alert.hostname.to_lowercase().contains(&t);
+                let in_action = e.alert.action.to_lowercase().contains(&t);
+                if !in_reasons && !in_host && !in_action {
+                    return false;
+                }
+            }
+            true
+        })
+        .take(limit)
+        .collect()
 }
 
 // ── Timeline ───────────────────────────────────────────────────────
@@ -385,15 +457,23 @@ pub struct TimelineEntry {
     pub agent_id: String,
 }
 
-pub fn build_host_timeline(events: &[crate::event_forward::StoredEvent], hostname: &str) -> Vec<TimelineEntry> {
-    let mut entries: Vec<TimelineEntry> = events.iter()
+pub fn build_host_timeline(
+    events: &[crate::event_forward::StoredEvent],
+    hostname: &str,
+) -> Vec<TimelineEntry> {
+    let mut entries: Vec<TimelineEntry> = events
+        .iter()
         .filter(|e| e.alert.hostname.eq_ignore_ascii_case(hostname))
         .map(|e| TimelineEntry {
             timestamp: e.alert.timestamp.clone(),
             event_id: e.id,
-            event_type: if e.alert.score >= 5.0 { "critical_alert".into() }
-                        else if e.alert.score >= 3.0 { "alert".into() }
-                        else { "observation".into() },
+            event_type: if e.alert.score >= 5.0 {
+                "critical_alert".into()
+            } else if e.alert.score >= 3.0 {
+                "alert".into()
+            } else {
+                "observation".into()
+            },
             severity: e.alert.level.clone(),
             description: e.alert.reasons.join("; "),
             agent_id: e.agent_id.clone(),
@@ -403,15 +483,23 @@ pub fn build_host_timeline(events: &[crate::event_forward::StoredEvent], hostnam
     entries
 }
 
-pub fn build_agent_timeline(events: &[crate::event_forward::StoredEvent], agent_id: &str) -> Vec<TimelineEntry> {
-    let mut entries: Vec<TimelineEntry> = events.iter()
+pub fn build_agent_timeline(
+    events: &[crate::event_forward::StoredEvent],
+    agent_id: &str,
+) -> Vec<TimelineEntry> {
+    let mut entries: Vec<TimelineEntry> = events
+        .iter()
         .filter(|e| e.agent_id == agent_id)
         .map(|e| TimelineEntry {
             timestamp: e.alert.timestamp.clone(),
             event_id: e.id,
-            event_type: if e.alert.score >= 5.0 { "critical_alert".into() }
-                        else if e.alert.score >= 3.0 { "alert".into() }
-                        else { "observation".into() },
+            event_type: if e.alert.score >= 5.0 {
+                "critical_alert".into()
+            } else if e.alert.score >= 3.0 {
+                "alert".into()
+            } else {
+                "observation".into()
+            },
             severity: e.alert.level.clone(),
             description: e.alert.reasons.join("; "),
             agent_id: e.agent_id.clone(),
@@ -551,10 +639,18 @@ impl Default for ApprovalLog {
 
 impl ApprovalLog {
     pub fn new() -> Self {
-        ApprovalLog { entries: Vec::new() }
+        ApprovalLog {
+            entries: Vec::new(),
+        }
     }
 
-    pub fn record(&mut self, request_id: String, decision: ApprovalDecision, approver: String, reason: String) {
+    pub fn record(
+        &mut self,
+        request_id: String,
+        decision: ApprovalDecision,
+        approver: String,
+        reason: String,
+    ) {
         self.entries.push(RemediationApproval {
             request_id,
             decision,
@@ -574,7 +670,10 @@ impl ApprovalLog {
     }
 
     pub fn for_request(&self, request_id: &str) -> Option<&RemediationApproval> {
-        self.entries.iter().rev().find(|e| e.request_id == request_id)
+        self.entries
+            .iter()
+            .rev()
+            .find(|e| e.request_id == request_id)
     }
 }
 
@@ -627,7 +726,11 @@ mod tests {
             id,
             agent_id: agent.into(),
             received_at: "2025-01-01T00:00:00Z".into(),
-            alert: make_alert(score, hostname, if score >= 5.0 { "critical" } else { "elevated" }),
+            alert: make_alert(
+                score,
+                hostname,
+                if score >= 5.0 { "critical" } else { "elevated" },
+            ),
             correlated: false,
             triage: Default::default(),
         }
@@ -641,8 +744,12 @@ mod tests {
         store.cases.clear();
         store.next_id = 1;
         let case = store.create(
-            "Test Case".into(), "Description".into(), CasePriority::High,
-            vec![1], vec![10, 20], vec!["malware".into()],
+            "Test Case".into(),
+            "Description".into(),
+            CasePriority::High,
+            vec![1],
+            vec![10, 20],
+            vec!["malware".into()],
         );
         assert_eq!(case.id, 1);
         assert_eq!(case.status, CaseStatus::New);
@@ -655,7 +762,14 @@ mod tests {
         let mut store = CaseStore::new("/tmp/wardex_test_cases2.json");
         store.cases.clear();
         store.next_id = 1;
-        store.create("C1".into(), "D1".into(), CasePriority::Medium, vec![], vec![], vec![]);
+        store.create(
+            "C1".into(),
+            "D1".into(),
+            CasePriority::Medium,
+            vec![],
+            vec![],
+            vec![],
+        );
         assert!(store.update_status(1, CaseStatus::Investigating));
         assert_eq!(store.get(1).unwrap().status, CaseStatus::Investigating);
         assert!(!store.update_status(99, CaseStatus::Closed));
@@ -666,7 +780,14 @@ mod tests {
         let mut store = CaseStore::new("/tmp/wardex_test_cases3.json");
         store.cases.clear();
         store.next_id = 1;
-        store.create("C1".into(), "D1".into(), CasePriority::Low, vec![], vec![], vec![]);
+        store.create(
+            "C1".into(),
+            "D1".into(),
+            CasePriority::Low,
+            vec![],
+            vec![],
+            vec![],
+        );
         assert!(store.assign(1, "analyst1".into()));
         assert_eq!(store.get(1).unwrap().assignee, Some("analyst1".into()));
         assert!(store.add_comment(1, "analyst1".into(), "Initial triage".into()));
@@ -678,8 +799,20 @@ mod tests {
         let mut store = CaseStore::new("/tmp/wardex_test_cases4.json");
         store.cases.clear();
         store.next_id = 1;
-        store.create("C1".into(), "D1".into(), CasePriority::Critical, vec![], vec![], vec![]);
-        assert!(store.add_evidence(1, "pcap".into(), "pcap-001".into(), "Network capture".into()));
+        store.create(
+            "C1".into(),
+            "D1".into(),
+            CasePriority::Critical,
+            vec![],
+            vec![],
+            vec![],
+        );
+        assert!(store.add_evidence(
+            1,
+            "pcap".into(),
+            "pcap-001".into(),
+            "Network capture".into()
+        ));
         assert_eq!(store.get(1).unwrap().evidence.len(), 1);
     }
 
@@ -688,7 +821,14 @@ mod tests {
         let mut store = CaseStore::new("/tmp/wardex_test_cases5.json");
         store.cases.clear();
         store.next_id = 1;
-        store.create("C1".into(), "D1".into(), CasePriority::High, vec![], vec![], vec![]);
+        store.create(
+            "C1".into(),
+            "D1".into(),
+            CasePriority::High,
+            vec![],
+            vec![],
+            vec![],
+        );
         assert!(store.link_incident(1, 42));
         assert!(store.get(1).unwrap().incident_ids.contains(&42));
         // Idempotent
@@ -701,8 +841,22 @@ mod tests {
         let mut store = CaseStore::new("/tmp/wardex_test_cases6.json");
         store.cases.clear();
         store.next_id = 1;
-        store.create("C1".into(), "D1".into(), CasePriority::High, vec![], vec![], vec![]);
-        store.create("C2".into(), "D2".into(), CasePriority::Low, vec![], vec![], vec![]);
+        store.create(
+            "C1".into(),
+            "D1".into(),
+            CasePriority::High,
+            vec![],
+            vec![],
+            vec![],
+        );
+        store.create(
+            "C2".into(),
+            "D2".into(),
+            CasePriority::Low,
+            vec![],
+            vec![],
+            vec![],
+        );
         store.update_status(1, CaseStatus::Investigating);
         let investigating = store.list_filtered(Some("Investigating"), None, None);
         assert_eq!(investigating.len(), 1);
@@ -715,8 +869,22 @@ mod tests {
         let mut store = CaseStore::new("/tmp/wardex_test_cases7.json");
         store.cases.clear();
         store.next_id = 1;
-        store.create("C1".into(), "D1".into(), CasePriority::High, vec![], vec![], vec![]);
-        store.create("C2".into(), "D2".into(), CasePriority::Low, vec![], vec![], vec![]);
+        store.create(
+            "C1".into(),
+            "D1".into(),
+            CasePriority::High,
+            vec![],
+            vec![],
+            vec![],
+        );
+        store.create(
+            "C2".into(),
+            "D2".into(),
+            CasePriority::Low,
+            vec![],
+            vec![],
+            vec![],
+        );
         let stats = store.stats();
         assert_eq!(stats["total"], 2);
     }
@@ -726,9 +894,27 @@ mod tests {
     #[test]
     fn alert_queue_priority_sort() {
         let mut q = AlertQueue::new();
-        q.enqueue(1, 3.0, "elevated".into(), "host-a".into(), "2025-01-01T00:00:00Z".into());
-        q.enqueue(2, 8.5, "critical".into(), "host-b".into(), "2025-01-01T00:01:00Z".into());
-        q.enqueue(3, 5.0, "severe".into(), "host-c".into(), "2025-01-01T00:02:00Z".into());
+        q.enqueue(
+            1,
+            3.0,
+            "elevated".into(),
+            "host-a".into(),
+            "2025-01-01T00:00:00Z".into(),
+        );
+        q.enqueue(
+            2,
+            8.5,
+            "critical".into(),
+            "host-b".into(),
+            "2025-01-01T00:01:00Z".into(),
+        );
+        q.enqueue(
+            3,
+            5.0,
+            "severe".into(),
+            "host-c".into(),
+            "2025-01-01T00:02:00Z".into(),
+        );
         let pending = q.pending();
         assert_eq!(pending[0].event_id, 2); // highest score first
         assert_eq!(pending[1].event_id, 3);
@@ -782,7 +968,15 @@ mod tests {
             make_stored_event(1, "a1", "web-01", 4.0),
             make_stored_event(2, "a1", "db-01", 3.0),
         ];
-        let q = SearchQuery { text: None, hostname: Some("web".into()), level: None, agent_id: None, from_ts: None, to_ts: None, limit: None };
+        let q = SearchQuery {
+            text: None,
+            hostname: Some("web".into()),
+            level: None,
+            agent_id: None,
+            from_ts: None,
+            to_ts: None,
+            limit: None,
+        };
         let results = search_events(&events, &q);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, 1);
@@ -794,7 +988,15 @@ mod tests {
             make_stored_event(1, "a1", "h1", 6.0),
             make_stored_event(2, "a1", "h2", 2.0),
         ];
-        let q = SearchQuery { text: None, hostname: None, level: Some("critical".into()), agent_id: None, from_ts: None, to_ts: None, limit: None };
+        let q = SearchQuery {
+            text: None,
+            hostname: None,
+            level: Some("critical".into()),
+            agent_id: None,
+            from_ts: None,
+            to_ts: None,
+            limit: None,
+        };
         let results = search_events(&events, &q);
         assert_eq!(results.len(), 1);
     }
@@ -802,15 +1004,33 @@ mod tests {
     #[test]
     fn search_by_text() {
         let events = vec![make_stored_event(1, "a1", "h1", 4.0)];
-        let q = SearchQuery { text: Some("test reason".into()), hostname: None, level: None, agent_id: None, from_ts: None, to_ts: None, limit: None };
+        let q = SearchQuery {
+            text: Some("test reason".into()),
+            hostname: None,
+            level: None,
+            agent_id: None,
+            from_ts: None,
+            to_ts: None,
+            limit: None,
+        };
         let results = search_events(&events, &q);
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn search_limit() {
-        let events: Vec<StoredEvent> = (1..=50).map(|i| make_stored_event(i, "a1", "h1", 3.0)).collect();
-        let q = SearchQuery { text: None, hostname: None, level: None, agent_id: None, from_ts: None, to_ts: None, limit: Some(5) };
+        let events: Vec<StoredEvent> = (1..=50)
+            .map(|i| make_stored_event(i, "a1", "h1", 3.0))
+            .collect();
+        let q = SearchQuery {
+            text: None,
+            hostname: None,
+            level: None,
+            agent_id: None,
+            from_ts: None,
+            to_ts: None,
+            limit: Some(5),
+        };
         let results = search_events(&events, &q);
         assert_eq!(results.len(), 5);
     }
@@ -874,8 +1094,18 @@ mod tests {
     #[test]
     fn approval_log_record_and_query() {
         let mut log = ApprovalLog::new();
-        log.record("req-1".into(), ApprovalDecision::Approved, "admin".into(), "Verified threat".into());
-        log.record("req-2".into(), ApprovalDecision::Denied, "admin".into(), "False positive".into());
+        log.record(
+            "req-1".into(),
+            ApprovalDecision::Approved,
+            "admin".into(),
+            "Verified threat".into(),
+        );
+        log.record(
+            "req-2".into(),
+            ApprovalDecision::Denied,
+            "admin".into(),
+            "False positive".into(),
+        );
         assert_eq!(log.recent(10).len(), 2);
         let r1 = log.for_request("req-1").unwrap();
         assert_eq!(r1.decision, ApprovalDecision::Approved);

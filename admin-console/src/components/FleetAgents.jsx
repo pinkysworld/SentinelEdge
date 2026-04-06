@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 export default function FleetAgents() {
   const toast = useToast();
@@ -51,11 +52,13 @@ export default function FleetAgents() {
           </div>
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Fleet Status</div>
-            <div className="json-block">{JSON.stringify(fleetSt, null, 2)}</div>
+            <SummaryGrid data={fleetSt} limit={12} />
+            <JsonDetails data={fleetSt} />
           </div>
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Fleet Dashboard</div>
-            <div className="json-block">{JSON.stringify(dash, null, 2)}</div>
+            <SummaryGrid data={dash} limit={12} />
+            <JsonDetails data={dash} />
           </div>
         </>
       )}
@@ -91,7 +94,8 @@ export default function FleetAgents() {
           {selectedAgent && agentDetail && (
             <div style={{ marginTop: 16 }}>
               <div className="card-title" style={{ marginBottom: 8 }}>Agent: {selectedAgent}</div>
-              <div className="json-block">{JSON.stringify(agentDetail, null, 2)}</div>
+              <SummaryGrid data={agentDetail} limit={16} />
+              <JsonDetails data={agentDetail} />
               <div className="btn-group" style={{ marginTop: 8 }}>
                 <button className="btn btn-sm btn-danger" onClick={async () => {
                   try { await api.deleteAgent(selectedAgent); toast('Agent removed', 'success'); rAgents(); setSelectedAgent(null); } catch { toast('Failed', 'error'); }
@@ -120,7 +124,12 @@ export default function FleetAgents() {
               }}>⬇ Export</button>
             </div>
           </div>
-          {evtSum && <div className="json-block" style={{ marginBottom: 16 }}>{JSON.stringify(evtSum, null, 2)}</div>}
+          {evtSum && (
+            <div style={{ marginBottom: 16 }}>
+              <SummaryGrid data={evtSum} limit={10} />
+              <JsonDetails data={evtSum} />
+            </div>
+          )}
           {eventArr.length === 0 ? <div className="empty">No events</div> : (
             <div className="table-wrap">
               <table>
@@ -146,17 +155,20 @@ export default function FleetAgents() {
           {releases && (
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Available Releases</div>
-              <div className="json-block">{JSON.stringify(releases, null, 2)}</div>
+              <SummaryGrid data={releases} limit={12} />
+              <JsonDetails data={releases} />
             </div>
           )}
           <div className="card-grid">
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Rollout Config</div>
-              <div className="json-block">{JSON.stringify(rollout, null, 2)}</div>
+              <SummaryGrid data={rollout} limit={10} />
+              <JsonDetails data={rollout} />
             </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Policy History</div>
-              <div className="json-block">{JSON.stringify(policyHist, null, 2)}</div>
+              <SummaryGrid data={policyHist} limit={10} />
+              <JsonDetails data={policyHist} />
             </div>
           </div>
         </>
@@ -166,11 +178,13 @@ export default function FleetAgents() {
         <>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Swarm Posture</div>
-            <div className="json-block">{JSON.stringify(swarm, null, 2)}</div>
+            <SummaryGrid data={swarm} limit={12} />
+            <JsonDetails data={swarm} />
           </div>
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>Swarm Intel</div>
-            <div className="json-block">{JSON.stringify(swarmIntelData, null, 2)}</div>
+            <SummaryGrid data={swarmIntelData} limit={12} />
+            <JsonDetails data={swarmIntelData} />
           </div>
         </>
       )}

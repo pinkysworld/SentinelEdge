@@ -14,7 +14,11 @@ use std::time::Instant;
 pub enum MetricValue {
     Counter(f64),
     Gauge(f64),
-    Histogram { sum: f64, count: u64, buckets: Vec<(f64, u64)> },
+    Histogram {
+        sum: f64,
+        count: u64,
+        buckets: Vec<(f64, u64)>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +52,13 @@ impl MetricsRegistry {
         }
     }
 
-    pub fn counter(&mut self, name: &str, help: &str, labels: BTreeMap<String, String>, value: f64) {
+    pub fn counter(
+        &mut self,
+        name: &str,
+        help: &str,
+        labels: BTreeMap<String, String>,
+        value: f64,
+    ) {
         let entry = MetricEntry {
             name: name.into(),
             help: help.into(),
@@ -70,13 +80,25 @@ impl MetricsRegistry {
         self.entries.entry(name.into()).or_default().push(entry);
     }
 
-    pub fn histogram(&mut self, name: &str, help: &str, labels: BTreeMap<String, String>, sum: f64, count: u64, buckets: Vec<(f64, u64)>) {
+    pub fn histogram(
+        &mut self,
+        name: &str,
+        help: &str,
+        labels: BTreeMap<String, String>,
+        sum: f64,
+        count: u64,
+        buckets: Vec<(f64, u64)>,
+    ) {
         let entry = MetricEntry {
             name: name.into(),
             help: help.into(),
             metric_type: "histogram".into(),
             labels,
-            value: MetricValue::Histogram { sum, count, buckets },
+            value: MetricValue::Histogram {
+                sum,
+                count,
+                buckets,
+            },
         };
         self.entries.entry(name.into()).or_default().push(entry);
     }
@@ -93,17 +115,41 @@ impl MetricsRegistry {
                     MetricValue::Counter(v) | MetricValue::Gauge(v) => {
                         out.push_str(&format!("{}{} {}\n", e.name, format_labels(&e.labels), v));
                     }
-                    MetricValue::Histogram { sum, count, buckets } => {
+                    MetricValue::Histogram {
+                        sum,
+                        count,
+                        buckets,
+                    } => {
                         for (le, c) in buckets {
                             let mut lb = e.labels.clone();
                             lb.insert("le".into(), format!("{}", le));
-                            out.push_str(&format!("{}_bucket{} {}\n", e.name, format_labels(&lb), c));
+                            out.push_str(&format!(
+                                "{}_bucket{} {}\n",
+                                e.name,
+                                format_labels(&lb),
+                                c
+                            ));
                         }
                         let mut lb_inf = e.labels.clone();
                         lb_inf.insert("le".into(), "+Inf".into());
-                        out.push_str(&format!("{}_bucket{} {}\n", e.name, format_labels(&lb_inf), count));
-                        out.push_str(&format!("{}_sum{} {}\n", e.name, format_labels(&e.labels), sum));
-                        out.push_str(&format!("{}_count{} {}\n", e.name, format_labels(&e.labels), count));
+                        out.push_str(&format!(
+                            "{}_bucket{} {}\n",
+                            e.name,
+                            format_labels(&lb_inf),
+                            count
+                        ));
+                        out.push_str(&format!(
+                            "{}_sum{} {}\n",
+                            e.name,
+                            format_labels(&e.labels),
+                            sum
+                        ));
+                        out.push_str(&format!(
+                            "{}_count{} {}\n",
+                            e.name,
+                            format_labels(&e.labels),
+                            count
+                        ));
                     }
                 }
             }
@@ -122,7 +168,15 @@ fn format_labels(labels: &BTreeMap<String, String>) -> String {
     }
     let pairs: Vec<String> = labels
         .iter()
-        .map(|(k, v)| format!("{}=\"{}\"", k, v.replace('\\', "\\\\").replace('\n', "\\n").replace('"', "\\\"")))
+        .map(|(k, v)| {
+            format!(
+                "{}=\"{}\"",
+                k,
+                v.replace('\\', "\\\\")
+                    .replace('\n', "\\n")
+                    .replace('"', "\\\"")
+            )
+        })
         .collect();
     format!("{{{}}}", pairs.join(","))
 }
@@ -199,7 +253,9 @@ impl SharedMetrics {
     pub fn record_request(&self, method: &str, status: u16, duration_ms: f64) {
         if let Ok(mut c) = self.inner.lock() {
             c.http_requests_total += 1;
-            *c.http_requests_by_method.entry(method.to_uppercase()).or_insert(0) += 1;
+            *c.http_requests_by_method
+                .entry(method.to_uppercase())
+                .or_insert(0) += 1;
             *c.http_requests_by_status.entry(status).or_insert(0) += 1;
             c.http_request_duration_sum_ms += duration_ms;
             c.http_request_count += 1;
@@ -279,66 +335,161 @@ impl SharedMetrics {
         let mut reg = MetricsRegistry::new();
 
         // Process
-        reg.gauge("wardex_uptime_seconds", "Seconds since server start", BTreeMap::new(), uptime);
-        reg.gauge("wardex_info", "Platform info", {
-            let mut m = BTreeMap::new();
-            m.insert("version".into(), env!("CARGO_PKG_VERSION").into());
-            m
-        }, 1.0);
+        reg.gauge(
+            "wardex_uptime_seconds",
+            "Seconds since server start",
+            BTreeMap::new(),
+            uptime,
+        );
+        reg.gauge(
+            "wardex_info",
+            "Platform info",
+            {
+                let mut m = BTreeMap::new();
+                m.insert("version".into(), env!("CARGO_PKG_VERSION").into());
+                m
+            },
+            1.0,
+        );
 
         // HTTP
-        reg.counter("wardex_http_requests_total", "Total HTTP requests", BTreeMap::new(), c.http_requests_total as f64);
+        reg.counter(
+            "wardex_http_requests_total",
+            "Total HTTP requests",
+            BTreeMap::new(),
+            c.http_requests_total as f64,
+        );
         for (method, count) in &c.http_requests_by_method {
-            reg.counter("wardex_http_requests_by_method", "HTTP requests by method", {
-                let mut m = BTreeMap::new();
-                m.insert("method".into(), method.clone());
-                m
-            }, *count as f64);
+            reg.counter(
+                "wardex_http_requests_by_method",
+                "HTTP requests by method",
+                {
+                    let mut m = BTreeMap::new();
+                    m.insert("method".into(), method.clone());
+                    m
+                },
+                *count as f64,
+            );
         }
         for (status, count) in &c.http_requests_by_status {
-            reg.counter("wardex_http_responses_by_status", "HTTP responses by status code", {
-                let mut m = BTreeMap::new();
-                m.insert("status".into(), status.to_string());
-                m
-            }, *count as f64);
+            reg.counter(
+                "wardex_http_responses_by_status",
+                "HTTP responses by status code",
+                {
+                    let mut m = BTreeMap::new();
+                    m.insert("status".into(), status.to_string());
+                    m
+                },
+                *count as f64,
+            );
         }
         if c.http_request_count > 0 {
             let avg = c.http_request_duration_sum_ms / c.http_request_count as f64;
-            reg.gauge("wardex_http_request_duration_avg_ms", "Average HTTP request duration in ms", BTreeMap::new(), avg);
+            reg.gauge(
+                "wardex_http_request_duration_avg_ms",
+                "Average HTTP request duration in ms",
+                BTreeMap::new(),
+                avg,
+            );
         }
 
         // Alerts
-        reg.counter("wardex_alerts_total", "Total alerts generated", BTreeMap::new(), c.alerts_total as f64);
+        reg.counter(
+            "wardex_alerts_total",
+            "Total alerts generated",
+            BTreeMap::new(),
+            c.alerts_total as f64,
+        );
         for (level, count) in &c.alerts_by_level {
-            reg.counter("wardex_alerts_by_level", "Alerts by severity level", {
-                let mut m = BTreeMap::new();
-                m.insert("level".into(), level.clone());
-                m
-            }, *count as f64);
+            reg.counter(
+                "wardex_alerts_by_level",
+                "Alerts by severity level",
+                {
+                    let mut m = BTreeMap::new();
+                    m.insert("level".into(), level.clone());
+                    m
+                },
+                *count as f64,
+            );
         }
 
         // Incidents
-        reg.gauge("wardex_incidents_open", "Currently open incidents", BTreeMap::new(), c.incidents_open as f64);
-        reg.counter("wardex_incidents_total", "Total incidents created", BTreeMap::new(), c.incidents_total as f64);
+        reg.gauge(
+            "wardex_incidents_open",
+            "Currently open incidents",
+            BTreeMap::new(),
+            c.incidents_open as f64,
+        );
+        reg.counter(
+            "wardex_incidents_total",
+            "Total incidents created",
+            BTreeMap::new(),
+            c.incidents_total as f64,
+        );
 
         // Fleet
-        reg.gauge("wardex_agents_online", "Currently online agents", BTreeMap::new(), c.agents_online as f64);
-        reg.gauge("wardex_agents_total", "Total enrolled agents", BTreeMap::new(), c.agents_total as f64);
+        reg.gauge(
+            "wardex_agents_online",
+            "Currently online agents",
+            BTreeMap::new(),
+            c.agents_online as f64,
+        );
+        reg.gauge(
+            "wardex_agents_total",
+            "Total enrolled agents",
+            BTreeMap::new(),
+            c.agents_total as f64,
+        );
 
         // Events
-        reg.counter("wardex_events_ingested_total", "Total events ingested", BTreeMap::new(), c.events_ingested as f64);
+        reg.counter(
+            "wardex_events_ingested_total",
+            "Total events ingested",
+            BTreeMap::new(),
+            c.events_ingested as f64,
+        );
 
         // Security
-        reg.counter("wardex_auth_failures_total", "Total authentication failures", BTreeMap::new(), c.auth_failures as f64);
-        reg.counter("wardex_rate_limit_hits_total", "Total rate limit rejections", BTreeMap::new(), c.rate_limit_hits as f64);
+        reg.counter(
+            "wardex_auth_failures_total",
+            "Total authentication failures",
+            BTreeMap::new(),
+            c.auth_failures as f64,
+        );
+        reg.counter(
+            "wardex_rate_limit_hits_total",
+            "Total rate limit rejections",
+            BTreeMap::new(),
+            c.rate_limit_hits as f64,
+        );
 
         // Operations
-        reg.counter("wardex_detection_runs_total", "Total detection pipeline runs", BTreeMap::new(), c.detection_runs as f64);
-        reg.counter("wardex_response_actions_total", "Total response actions executed", BTreeMap::new(), c.response_actions as f64);
+        reg.counter(
+            "wardex_detection_runs_total",
+            "Total detection pipeline runs",
+            BTreeMap::new(),
+            c.detection_runs as f64,
+        );
+        reg.counter(
+            "wardex_response_actions_total",
+            "Total response actions executed",
+            BTreeMap::new(),
+            c.response_actions as f64,
+        );
 
         // Storage
-        reg.gauge("wardex_storage_bytes", "Storage backend size in bytes", BTreeMap::new(), c.storage_bytes as f64);
-        reg.gauge("wardex_queue_depth", "Current alert queue depth", BTreeMap::new(), c.queue_depth as f64);
+        reg.gauge(
+            "wardex_storage_bytes",
+            "Storage backend size in bytes",
+            BTreeMap::new(),
+            c.storage_bytes as f64,
+        );
+        reg.gauge(
+            "wardex_queue_depth",
+            "Current alert queue depth",
+            BTreeMap::new(),
+            c.queue_depth as f64,
+        );
 
         reg.render()
     }
@@ -385,7 +536,14 @@ mod tests {
     fn registry_renders_histogram() {
         let mut reg = MetricsRegistry::new();
         let buckets = vec![(10.0, 5), (50.0, 8), (100.0, 10)];
-        reg.histogram("req_duration", "Request duration", BTreeMap::new(), 350.0, 10, buckets);
+        reg.histogram(
+            "req_duration",
+            "Request duration",
+            BTreeMap::new(),
+            350.0,
+            10,
+            buckets,
+        );
         let out = reg.render();
         assert!(out.contains("req_duration_bucket{le=\"10\"} 5"));
         assert!(out.contains("req_duration_bucket{le=\"+Inf\"} 10"));

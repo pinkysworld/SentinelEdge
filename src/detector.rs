@@ -154,7 +154,8 @@ impl AnomalyDetector {
     }
 
     fn weight_for(&self, axis: &str, default: f32) -> f32 {
-        self.custom_weights.as_ref()
+        self.custom_weights
+            .as_ref()
             .and_then(|w| w.get(axis).copied())
             .unwrap_or(default)
     }
@@ -589,7 +590,9 @@ impl VelocityDetector {
         }
     }
 
-    pub fn sigma(&self) -> f32 { self.velocity_sigma }
+    pub fn sigma(&self) -> f32 {
+        self.velocity_sigma
+    }
 
     fn sample_to_array(s: &TelemetrySample) -> [f32; 9] {
         [
@@ -606,8 +609,14 @@ impl VelocityDetector {
     }
 
     const AXIS_NAMES: [&'static str; 9] = [
-        "cpu_load_pct", "memory_load_pct", "temperature_c", "network_kbps",
-        "auth_failures", "battery_pct", "integrity_drift", "process_count",
+        "cpu_load_pct",
+        "memory_load_pct",
+        "temperature_c",
+        "network_kbps",
+        "auth_failures",
+        "battery_pct",
+        "integrity_drift",
+        "process_count",
         "disk_pressure_pct",
     ];
 
@@ -636,27 +645,32 @@ impl VelocityDetector {
 
         for dim in 0..9 {
             // Compute velocities (first differences)
-            let velocities: Vec<f32> = self.history.windows(2)
+            let velocities: Vec<f32> = self
+                .history
+                .windows(2)
                 .map(|w| w[1][dim] - w[0][dim])
                 .collect();
 
             // Last velocity
             let last_vel = velocities.last().copied().unwrap_or(0.0);
             let vel_abs = last_vel.abs();
-            if vel_abs > max_vel { max_vel = vel_abs; }
+            if vel_abs > max_vel {
+                max_vel = vel_abs;
+            }
 
             // Acceleration (second differences)
             if velocities.len() >= 2 {
                 let tail = velocities.len();
                 let acc = (velocities[tail - 1] - velocities[tail - 2]).abs();
-                if acc > max_acc { max_acc = acc; }
+                if acc > max_acc {
+                    max_acc = acc;
+                }
             }
 
             // Mean and std of velocity history
             let v_mean: f32 = velocities.iter().sum::<f32>() / velocities.len() as f32;
-            let v_var: f32 = velocities.iter()
-                .map(|v| (v - v_mean).powi(2))
-                .sum::<f32>() / velocities.len() as f32;
+            let v_var: f32 = velocities.iter().map(|v| (v - v_mean).powi(2)).sum::<f32>()
+                / velocities.len() as f32;
             let v_std = v_var.sqrt().max(0.001);
 
             // Check if latest velocity is an outlier (proper z-score)
@@ -710,8 +724,12 @@ impl EntropyDetector {
         }
     }
 
-    pub fn window_len(&self) -> usize { self.window.len() }
-    pub fn bins(&self) -> usize { self.bins }
+    pub fn window_len(&self) -> usize {
+        self.window.len()
+    }
+    pub fn bins(&self) -> usize {
+        self.bins
+    }
 
     /// Feed a new sample and compute per-axis Shannon entropy.
     pub fn update(&mut self, sample: &TelemetrySample) -> EntropyReport {
@@ -818,7 +836,10 @@ impl Default for CompoundThreatDetector {
 
 impl CompoundThreatDetector {
     pub fn new(min_concurrent_fraction: f32, per_axis_threshold: f32) -> Self {
-        Self { min_concurrent_fraction, per_axis_threshold }
+        Self {
+            min_concurrent_fraction,
+            per_axis_threshold,
+        }
     }
 
     /// Analyse how many axes are simultaneously elevated relative to
@@ -837,7 +858,9 @@ impl CompoundThreatDetector {
         side_channel: Option<&crate::side_channel::SideChannelReport>,
     ) -> CompoundThreatReport {
         // Count axes with non-trivial contribution
-        let elevated: Vec<String> = signal.contributions.iter()
+        let elevated: Vec<String> = signal
+            .contributions
+            .iter()
             .filter(|(_, v)| *v >= self.per_axis_threshold)
             .map(|(name, _)| name.to_string())
             .collect();
@@ -973,9 +996,13 @@ impl TuningProfile {
     /// Returns a human-readable description.
     pub fn description(&self) -> &'static str {
         match self {
-            Self::Aggressive => "Maximum sensitivity — catches more threats but may increase false positives",
+            Self::Aggressive => {
+                "Maximum sensitivity — catches more threats but may increase false positives"
+            }
             Self::Balanced => "Default — tuned for production with good precision/recall balance",
-            Self::Quiet => "Minimal alerts — high thresholds, lower false positives, may miss subtle attacks",
+            Self::Quiet => {
+                "Minimal alerts — high thresholds, lower false positives, may miss subtle attacks"
+            }
         }
     }
 
@@ -1374,7 +1401,10 @@ mod tests {
             process_count: 50,
             disk_pressure_pct: 10.0,
         });
-        assert!(!report.anomalous_axes.is_empty(), "should flag velocity anomaly on cpu ramp");
+        assert!(
+            !report.anomalous_axes.is_empty(),
+            "should flag velocity anomaly on cpu ramp"
+        );
         assert!(report.score_boost > 0.0);
     }
 
@@ -1411,7 +1441,10 @@ mod tests {
             process_count: 100,
             disk_pressure_pct: 30.0,
         });
-        assert!(!report.anomalous_axes.is_empty(), "constant values should flag low entropy");
+        assert!(
+            !report.anomalous_axes.is_empty(),
+            "constant values should flag low entropy"
+        );
         assert!(report.score_boost > 0.0);
     }
 
@@ -1425,7 +1458,13 @@ mod tests {
             score: 4.0,
             confidence: 1.0,
             suspicious_axes: 5,
-            reasons: vec!["cpu".into(), "mem".into(), "net".into(), "auth".into(), "disk".into()],
+            reasons: vec![
+                "cpu".into(),
+                "mem".into(),
+                "net".into(),
+                "auth".into(),
+                "disk".into(),
+            ],
             contributions: vec![
                 ("cpu_load_pct", 0.8),
                 ("memory_load_pct", 0.7),
@@ -1435,8 +1474,14 @@ mod tests {
             ],
         };
         let report = compound.evaluate(&signal);
-        assert!(report.is_compound_attack, "5 of 9 axes elevated should trigger compound");
-        assert!(report.compound_score > signal.score, "compound score should be boosted");
+        assert!(
+            report.is_compound_attack,
+            "5 of 9 axes elevated should trigger compound"
+        );
+        assert!(
+            report.compound_score > signal.score,
+            "compound score should be boosted"
+        );
     }
 
     #[test]
@@ -1460,7 +1505,10 @@ mod tests {
         };
         let without = compound.evaluate(&signal);
         let with = compound.evaluate_with_side_channel(&signal, Some(&sc_report));
-        assert!(with.compound_score > without.compound_score, "side-channel fusion should boost score");
+        assert!(
+            with.compound_score > without.compound_score,
+            "side-channel fusion should boost score"
+        );
     }
 
     #[test]
@@ -1494,14 +1542,20 @@ mod tests {
         assert!(TuningProfile::Aggressive.threshold_multiplier() < 1.0);
         assert!((TuningProfile::Balanced.threshold_multiplier() - 1.0).abs() < 0.001);
         assert!(TuningProfile::Quiet.threshold_multiplier() > 1.0);
-        assert!(TuningProfile::Aggressive.learn_threshold() < TuningProfile::Balanced.learn_threshold());
+        assert!(
+            TuningProfile::Aggressive.learn_threshold() < TuningProfile::Balanced.learn_threshold()
+        );
         assert!(TuningProfile::Balanced.learn_threshold() < TuningProfile::Quiet.learn_threshold());
     }
 
     #[test]
     fn tuning_profile_round_trip() {
         use super::TuningProfile;
-        for p in [TuningProfile::Aggressive, TuningProfile::Balanced, TuningProfile::Quiet] {
+        for p in [
+            TuningProfile::Aggressive,
+            TuningProfile::Balanced,
+            TuningProfile::Quiet,
+        ] {
             let s = p.as_str();
             assert_eq!(TuningProfile::parse(s), Some(p));
         }
@@ -1550,8 +1604,8 @@ pub struct SlowAttackConfig {
 impl Default for SlowAttackConfig {
     fn default() -> Self {
         Self {
-            short_window: 60,       // ~1 hour at 1 sample/min
-            long_window: 1440,      // ~24 hours at 1 sample/min
+            short_window: 60,  // ~1 hour at 1 sample/min
+            long_window: 1440, // ~24 hours at 1 sample/min
             auth_cumulative_threshold: 100,
             auth_rate_threshold: 0.5,
             network_cumulative_threshold: 500_000.0, // 500 MB

@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import AlertDrawer from './AlertDrawer.jsx';
+import ProcessDrawer from './ProcessDrawer.jsx';
 
 function Metric({ label, value, sub, accent, onClick }) {
   return (
@@ -19,6 +21,27 @@ function SectionTitle({ children }) {
 }
 
 const SEV_COLORS = { critical: '#ef4444', severe: '#f97316', elevated: '#eab308', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
+
+function alertSeverity(alert) {
+  return (alert?.severity || alert?.level || alert?.risk_level || 'unknown').toLowerCase();
+}
+
+function alertCategory(alert) {
+  return alert?.category || alert?.type || alert?.alert_origin || alert?.action || 'Signal';
+}
+
+function alertNarrative(alert) {
+  if (!alert) return 'Open alert details';
+  if (alert.message) return alert.message;
+  if (alert.description) return alert.description;
+  if (alert.summary) return alert.summary;
+  if (Array.isArray(alert.reasons) && alert.reasons.length > 0) return alert.reasons.join(', ');
+  if (alert.reason) return alert.reason;
+  if (alert.action && alert.score != null) return `${alert.action} · score ${Number(alert.score).toFixed(2)}`;
+  if (alert.action) return alert.action;
+  if (alert.alert_origin) return `Origin: ${alert.alert_origin}`;
+  return 'Open alert details';
+}
 
 export default function Dashboard() {
   const toast = useToast();
@@ -38,6 +61,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedAlert, setExpandedAlert] = useState(null);
   const [sevFilter, setSevFilter] = useState('all');
+  const [selectedProcessPid, setSelectedProcessPid] = useState(null);
 
   const reloadAll = async () => {
     setRefreshing(true);
@@ -47,18 +71,16 @@ export default function Dashboard() {
 
   useInterval(reloadAll, 30000);
 
-  if (l1) return <div className="loading"><div className="spinner" /> Loading dashboard…</div>;
-
   const alertList = Array.isArray(alertData) ? alertData : alertData?.alerts || [];
-  const critical = alertList.filter(a => (a.severity || '').toLowerCase() === 'critical').length;
-  const elevated = alertList.filter(a => ['elevated', 'severe', 'high'].includes((a.severity || '').toLowerCase())).length;
-  const low = alertList.filter(a => ['low', 'medium', 'info'].includes((a.severity || '').toLowerCase())).length;
+  const critical = alertList.filter(a => alertSeverity(a) === 'critical').length;
+  const elevated = alertList.filter(a => ['elevated', 'severe', 'high'].includes(alertSeverity(a))).length;
+  const low = alertList.filter(a => ['low', 'medium', 'info'].includes(alertSeverity(a))).length;
 
   // Severity breakdown for pie chart
   const sevBreakdown = useMemo(() => {
     const counts = {};
     alertList.forEach(a => {
-      const s = (a.severity || 'unknown').toLowerCase();
+      const s = alertSeverity(a);
       counts[s] = (counts[s] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
@@ -98,8 +120,13 @@ export default function Dashboard() {
 
   // Filtered alerts
   const filteredAlerts = sevFilter === 'all' ? alertList : alertList.filter(a =>
-    (a.severity || '').toLowerCase() === sevFilter
+    alertSeverity(a) === sevFilter
   );
+  const selectedAlert = expandedAlert == null
+    ? null
+    : filteredAlerts.find((a, i) => (a.id || a.alert_id || `alert-${i}`) === expandedAlert);
+
+  if (l1) return <div className="loading"><div className="spinner" /> Loading dashboard…</div>;
 
   return (
     <div>
@@ -199,11 +226,11 @@ export default function Dashboard() {
             {procAnalysis.findings?.length > 0 ? (
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>PID</th><th>Process</th><th>User</th><th>Risk</th><th>Reason</th><th>CPU%</th><th>Mem%</th></tr></thead>
+                  <thead><tr><th>PID</th><th>Process</th><th>User</th><th>Risk</th><th>Reason</th><th>CPU%</th><th>Mem%</th><th>Actions</th></tr></thead>
                   <tbody>
                     {procAnalysis.findings.map((f, i) => (
-                      <tr key={i} style={{ cursor: 'pointer', background: expandedAlert === `proc-${i}` ? 'rgba(59,130,246,.08)' : undefined }}
-                        onClick={() => setExpandedAlert(expandedAlert === `proc-${i}` ? null : `proc-${i}`)}>
+                      <tr key={i} style={{ cursor: 'pointer' }}
+                        onClick={() => setSelectedProcessPid(f.pid)}>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{f.pid}</td>
                         <td><strong>{f.name}</strong></td>
                         <td>{f.user}</td>
@@ -211,6 +238,14 @@ export default function Dashboard() {
                         <td style={{ fontSize: 12 }}>{f.reason}</td>
                         <td>{f.cpu_percent?.toFixed(1)}</td>
                         <td>{f.mem_percent?.toFixed(1)}</td>
+                        <td>
+                          <button className="btn btn-sm" onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedProcessPid(f.pid);
+                          }}>
+                            Investigate
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -262,17 +297,25 @@ export default function Dashboard() {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Time</th><th>Severity</th><th>Category</th><th>Message</th></tr></thead>
+              <thead><tr><th>Time</th><th>Severity</th><th>Category</th><th>Message</th><th>Actions</th></tr></thead>
               <tbody>
                 {filteredAlerts.slice(0, 25).map((a, i) => {
                   const aid = a.id || a.alert_id || `alert-${i}`;
                   return (
                     <tr key={aid} style={{ cursor: 'pointer', background: expandedAlert === aid ? 'rgba(59,130,246,.08)' : undefined }}
-                      onClick={() => setExpandedAlert(expandedAlert === aid ? null : aid)}>
+                      onClick={() => setExpandedAlert(aid)}>
                       <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.timestamp || a.time || '—'}</td>
-                      <td><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity || '—'}</span></td>
-                      <td>{a.category || a.type || '—'}</td>
-                      <td style={{ fontSize: 13 }}>{a.message || a.description || JSON.stringify(a).slice(0, 120)}</td>
+                      <td><span className={`sev-${alertSeverity(a)}`}>{alertSeverity(a)}</span></td>
+                      <td>{alertCategory(a)}</td>
+                      <td style={{ fontSize: 13 }}>{alertNarrative(a)}</td>
+                      <td>
+                        <button className="btn btn-sm" onClick={(event) => {
+                          event.stopPropagation();
+                          setExpandedAlert(aid);
+                        }}>
+                          Investigate
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -280,34 +323,9 @@ export default function Dashboard() {
             </table>
           </div>
         )}
-        {expandedAlert && (() => {
-          const a = filteredAlerts.find((x, i) => (x.id || x.alert_id || `alert-${i}`) === expandedAlert);
-          if (!a) return null;
-          return (
-            <div style={{ marginTop: 12, padding: '12px 16px', background: 'var(--bg)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--primary)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
-                {a.score != null && <div><span className="metric-label">Score</span><div style={{ fontSize: 16, fontWeight: 600 }}>{a.score}</div></div>}
-                {a.source && <div><span className="metric-label">Source</span><div style={{ fontSize: 14 }}>{a.source}</div></div>}
-                {a.hostname && <div><span className="metric-label">Host</span><div style={{ fontSize: 14 }}>{a.hostname}</div></div>}
-                {a.agent_id && <div><span className="metric-label">Agent</span><div style={{ fontSize: 14, fontFamily: 'var(--font-mono)' }}>{a.agent_id}</div></div>}
-              </div>
-              {a.reasons && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Reasons: {Array.isArray(a.reasons) ? a.reasons.join(', ') : a.reasons}</div>}
-              {a.contributions && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>Signal Contributions:</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {(Array.isArray(a.contributions) ? a.contributions : Object.entries(a.contributions || {})).map(([k, v], j) => (
-                      <span key={j} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--border)' }}>
-                        {Array.isArray(a.contributions) ? `${k}` : `${k}: ${typeof v === 'number' ? v.toFixed(2) : v}`}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
       </div>
+      <AlertDrawer alert={selectedAlert} onClose={() => setExpandedAlert(null)} onUpdated={reloadAll} />
+      <ProcessDrawer pid={selectedProcessPid} onClose={() => setSelectedProcessPid(null)} onUpdated={reloadAll} />
     </div>
   );
 }

@@ -157,7 +157,10 @@ fn score_identity_event(
     let mut techniques = Vec::new();
 
     // Login events
-    if et_lower.contains("session.start") || et_lower.contains("signin") || et_lower.contains("authentication") {
+    if et_lower.contains("session.start")
+        || et_lower.contains("signin")
+        || et_lower.contains("authentication")
+    {
         if is_failure {
             base_score = 4.0;
             techniques.push("T1078".into()); // Valid Accounts
@@ -189,8 +192,7 @@ fn score_identity_event(
     else if et_lower.contains("lifecycle.create") && et_lower.contains("user") {
         base_score = 4.0;
         techniques.push("T1136".into()); // Create Account
-    }
-    else if et_lower.contains("lifecycle.deactivate") {
+    } else if et_lower.contains("lifecycle.deactivate") {
         base_score = 3.0;
         techniques.push("T1531".into()); // Account Access Removal
     }
@@ -263,7 +265,11 @@ impl OktaCollector {
     }
 
     /// Parse Okta System Log JSON response.
-    pub fn parse_response(&mut self, json_body: &str, next_link: Option<&str>) -> IdentityPollResult {
+    pub fn parse_response(
+        &mut self,
+        json_body: &str,
+        next_link: Option<&str>,
+    ) -> IdentityPollResult {
         let now = chrono::Utc::now().to_rfc3339();
 
         let parsed: Result<Vec<serde_json::Value>, _> = serde_json::from_str(json_body);
@@ -283,56 +289,72 @@ impl OktaCollector {
 
         // Extract cursor from next link
         if let Some(link) = next_link
-            && let Some(after) = link.split("after=").nth(1) {
-                let cursor = after.split('&').next().unwrap_or(after);
-                self.after_cursor = Some(cursor.to_string());
-            }
+            && let Some(after) = link.split("after=").nth(1)
+        {
+            let cursor = after.split('&').next().unwrap_or(after);
+            self.after_cursor = Some(cursor.to_string());
+        }
 
         let mut events = Vec::new();
         for entry in &entries {
-            let event_type = entry.get("eventType")
+            let event_type = entry
+                .get("eventType")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string();
 
             // Apply filter
             if !self.config.event_type_filter.is_empty()
-                && !self.config.event_type_filter.iter().any(|f| f == &event_type)
+                && !self
+                    .config
+                    .event_type_filter
+                    .iter()
+                    .any(|f| f == &event_type)
             {
                 continue;
             }
 
-            let outcome = entry.get("outcome")
+            let outcome = entry
+                .get("outcome")
                 .and_then(|o| o.get("result"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("UNKNOWN")
                 .to_string();
 
-            let provider_risk = entry.get("securityContext")
+            let provider_risk = entry
+                .get("securityContext")
                 .and_then(|s| s.get("riskLevel"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_lowercase());
 
             // Check for MFA
-            let mfa_used = entry.get("authenticationContext")
+            let mfa_used = entry
+                .get("authenticationContext")
                 .and_then(|a| a.get("credentialType"))
                 .and_then(|v| v.as_str())
                 .map(|c| c.contains("MFA"))
                 .unwrap_or(false);
 
-            let (risk_score, mitre_techniques) = score_identity_event(
-                &event_type, &outcome, mfa_used, provider_risk.as_deref(),
-            );
+            let (risk_score, mitre_techniques) =
+                score_identity_event(&event_type, &outcome, mfa_used, provider_risk.as_deref());
 
             let actor = entry.get("actor");
             let client = entry.get("client");
 
             let event = IdentityEvent {
-                event_id: entry.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                event_id: entry
+                    .get("uuid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 provider: IdentityProvider::Okta,
                 event_type,
                 outcome: outcome.clone(),
-                timestamp: entry.get("published").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                timestamp: entry
+                    .get("published")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 user_principal: actor
                     .and_then(|a| a.get("alternateId"))
                     .and_then(|v| v.as_str())
@@ -355,7 +377,8 @@ impl OktaCollector {
                     .and_then(|g| g.get("country"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                target_app: entry.get("target")
+                target_app: entry
+                    .get("target")
                     .and_then(|t| t.as_array())
                     .and_then(|arr| arr.first())
                     .and_then(|t| t.get("displayName"))
@@ -366,7 +389,8 @@ impl OktaCollector {
                 risk_score,
                 mitre_techniques,
                 failure_reason: if outcome == "FAILURE" {
-                    entry.get("outcome")
+                    entry
+                        .get("outcome")
                         .and_then(|o| o.get("reason"))
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
@@ -427,7 +451,9 @@ impl EntraCollector {
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.config.enabled && !self.config.tenant_id.is_empty() && !self.config.client_id.is_empty()
+        self.config.enabled
+            && !self.config.tenant_id.is_empty()
+            && !self.config.client_id.is_empty()
     }
 
     pub fn set_token(&mut self, token: &str, expires_in_secs: u64) {
@@ -510,42 +536,74 @@ impl EntraCollector {
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
 
-            let outcome = if error_code == 0 { "SUCCESS" } else { "FAILURE" }.to_string();
+            let outcome = if error_code == 0 {
+                "SUCCESS"
+            } else {
+                "FAILURE"
+            }
+            .to_string();
 
             let mfa_detail = entry.get("mfaDetail");
-            let mfa_used = mfa_detail.is_some()
-                && mfa_detail.and_then(|m| m.get("authMethod")).is_some();
+            let mfa_used =
+                mfa_detail.is_some() && mfa_detail.and_then(|m| m.get("authMethod")).is_some();
 
-            let risk_level = entry.get("riskLevelDuringSignIn")
+            let risk_level = entry
+                .get("riskLevelDuringSignIn")
                 .and_then(|v| v.as_str())
                 .and_then(|r| if r == "none" { None } else { Some(r) })
                 .map(|s| s.to_string());
 
-            let (risk_score, mitre_techniques) = score_identity_event(
-                "signIn", &outcome, mfa_used, risk_level.as_deref(),
-            );
+            let (risk_score, mitre_techniques) =
+                score_identity_event("signIn", &outcome, mfa_used, risk_level.as_deref());
 
             let event = IdentityEvent {
-                event_id: entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                event_id: entry
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 provider: IdentityProvider::MicrosoftEntra,
                 event_type: "signIn".to_string(),
                 outcome,
-                timestamp: entry.get("createdDateTime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                user_principal: entry.get("userPrincipalName").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                user_display_name: entry.get("userDisplayName").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                source_ip: entry.get("ipAddress").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                user_agent: entry.get("clientAppUsed").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                location: entry.get("location")
+                timestamp: entry
+                    .get("createdDateTime")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                user_principal: entry
+                    .get("userPrincipalName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                user_display_name: entry
+                    .get("userDisplayName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                source_ip: entry
+                    .get("ipAddress")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                user_agent: entry
+                    .get("clientAppUsed")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                location: entry
+                    .get("location")
                     .and_then(|l| l.get("countryOrRegion"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                target_app: entry.get("appDisplayName").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                target_app: entry
+                    .get("appDisplayName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 mfa_used,
                 provider_risk: risk_level,
                 risk_score,
                 mitre_techniques,
                 failure_reason: if error_code != 0 {
-                    status.and_then(|s| s.get("failureReason")).and_then(|v| v.as_str()).map(|s| s.to_string())
+                    status
+                        .and_then(|s| s.get("failureReason"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
                 } else {
                     None
                 },
@@ -590,7 +648,10 @@ pub fn identity_summary(events: &[IdentityEvent]) -> HashMap<String, serde_json:
 
     let total = events.len();
     let failures = events.iter().filter(|e| e.outcome == "FAILURE").count();
-    let no_mfa = events.iter().filter(|e| !e.mfa_used && e.outcome == "SUCCESS").count();
+    let no_mfa = events
+        .iter()
+        .filter(|e| !e.mfa_used && e.outcome == "SUCCESS")
+        .count();
     let high_risk = events.iter().filter(|e| e.risk_score >= 6.0).count();
 
     let mut by_provider: HashMap<String, usize> = HashMap::new();
@@ -715,7 +776,8 @@ mod tests {
         let (score, _) = score_identity_event("user.account.lock", "FAILURE", false, Some("high"));
         assert!(score >= 6.0);
 
-        let (score, techniques) = score_identity_event("user.mfa.factor.deactivate", "SUCCESS", false, None);
+        let (score, techniques) =
+            score_identity_event("user.mfa.factor.deactivate", "SUCCESS", false, None);
         assert!(score >= 7.0);
         assert!(techniques.contains(&"T1556.006".to_string()));
 
@@ -727,20 +789,40 @@ mod tests {
     fn identity_summary_stats() {
         let events = vec![
             IdentityEvent {
-                event_id: "1".into(), provider: IdentityProvider::Okta,
-                event_type: "login".into(), outcome: "SUCCESS".into(),
-                timestamp: "t".into(), user_principal: None, user_display_name: None,
-                source_ip: None, user_agent: None, location: None, target_app: None,
-                mfa_used: true, provider_risk: None, risk_score: 1.0,
-                mitre_techniques: vec![], failure_reason: None,
+                event_id: "1".into(),
+                provider: IdentityProvider::Okta,
+                event_type: "login".into(),
+                outcome: "SUCCESS".into(),
+                timestamp: "t".into(),
+                user_principal: None,
+                user_display_name: None,
+                source_ip: None,
+                user_agent: None,
+                location: None,
+                target_app: None,
+                mfa_used: true,
+                provider_risk: None,
+                risk_score: 1.0,
+                mitre_techniques: vec![],
+                failure_reason: None,
             },
             IdentityEvent {
-                event_id: "2".into(), provider: IdentityProvider::MicrosoftEntra,
-                event_type: "signIn".into(), outcome: "FAILURE".into(),
-                timestamp: "t".into(), user_principal: None, user_display_name: None,
-                source_ip: None, user_agent: None, location: None, target_app: None,
-                mfa_used: false, provider_risk: Some("high".into()), risk_score: 7.0,
-                mitre_techniques: vec!["T1078".into()], failure_reason: Some("bad password".into()),
+                event_id: "2".into(),
+                provider: IdentityProvider::MicrosoftEntra,
+                event_type: "signIn".into(),
+                outcome: "FAILURE".into(),
+                timestamp: "t".into(),
+                user_principal: None,
+                user_display_name: None,
+                source_ip: None,
+                user_agent: None,
+                location: None,
+                target_app: None,
+                mfa_used: false,
+                provider_risk: Some("high".into()),
+                risk_score: 7.0,
+                mitre_techniques: vec!["T1078".into()],
+                failure_reason: Some("bad password".into()),
             },
         ];
 

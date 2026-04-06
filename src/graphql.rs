@@ -85,13 +85,19 @@ pub struct GqlError {
 
 impl GqlResponse {
     pub fn ok(data: serde_json::Value) -> Self {
-        Self { data: Some(data), errors: vec![] }
+        Self {
+            data: Some(data),
+            errors: vec![],
+        }
     }
 
     pub fn error(msg: impl Into<String>) -> Self {
         Self {
             data: None,
-            errors: vec![GqlError { message: msg.into(), path: None }],
+            errors: vec![GqlError {
+                message: msg.into(),
+                path: None,
+            }],
         }
     }
 }
@@ -100,7 +106,7 @@ impl GqlResponse {
 
 #[derive(Debug, Clone)]
 pub struct ParsedQuery {
-    pub operation: String,          // "query" or "mutation"
+    pub operation: String, // "query" or "mutation"
     pub name: Option<String>,
     pub selections: Vec<Selection>,
 }
@@ -117,13 +123,22 @@ pub struct Selection {
 
 pub fn parse_query(query: &str) -> Result<ParsedQuery, String> {
     if query.len() > MAX_QUERY_SIZE {
-        return Err(format!("Query exceeds maximum size of {} bytes", MAX_QUERY_SIZE));
+        return Err(format!(
+            "Query exceeds maximum size of {} bytes",
+            MAX_QUERY_SIZE
+        ));
     }
     let trimmed = query.trim();
     let (operation, rest) = if trimmed.starts_with("mutation") {
-        ("mutation".to_string(), trimmed.strip_prefix("mutation").unwrap_or(trimmed))
+        (
+            "mutation".to_string(),
+            trimmed.strip_prefix("mutation").unwrap_or(trimmed),
+        )
     } else if trimmed.starts_with("query") {
-        ("query".to_string(), trimmed.strip_prefix("query").unwrap_or(trimmed))
+        (
+            "query".to_string(),
+            trimmed.strip_prefix("query").unwrap_or(trimmed),
+        )
     } else if trimmed.starts_with('{') {
         ("query".to_string(), trimmed)
     } else {
@@ -135,10 +150,16 @@ pub fn parse_query(query: &str) -> Result<ParsedQuery, String> {
     // Extract optional name before first {
     let (name, body) = if let Some(brace_pos) = rest.find('{') {
         let before = rest[..brace_pos].trim();
-        let name = if before.is_empty() { None } else {
+        let name = if before.is_empty() {
+            None
+        } else {
             // Strip parenthesized variables if present
             let n = before.split('(').next().unwrap_or(before).trim();
-            if n.is_empty() { None } else { Some(n.to_string()) }
+            if n.is_empty() {
+                None
+            } else {
+                Some(n.to_string())
+            }
         };
         (name, &rest[brace_pos..])
     } else {
@@ -147,12 +168,19 @@ pub fn parse_query(query: &str) -> Result<ParsedQuery, String> {
 
     let selections = parse_selection_set(body, 0)?;
 
-    Ok(ParsedQuery { operation, name, selections })
+    Ok(ParsedQuery {
+        operation,
+        name,
+        selections,
+    })
 }
 
 fn parse_selection_set(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
     if depth >= MAX_DEPTH {
-        return Err(format!("Selection nesting exceeds maximum depth of {}", MAX_DEPTH));
+        return Err(format!(
+            "Selection nesting exceeds maximum depth of {}",
+            MAX_DEPTH
+        ));
     }
     let trimmed = input.trim();
     if !trimmed.starts_with('{') {
@@ -243,10 +271,14 @@ fn parse_fields(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
             let mut arg_str = String::new();
             let mut paren_depth = 1;
             for c in chars.by_ref() {
-                if c == '(' { paren_depth += 1; }
+                if c == '(' {
+                    paren_depth += 1;
+                }
                 if c == ')' {
                     paren_depth -= 1;
-                    if paren_depth == 0 { break; }
+                    if paren_depth == 0 {
+                        break;
+                    }
                 }
                 arg_str.push(c);
             }
@@ -263,10 +295,14 @@ fn parse_fields(input: &str, depth: usize) -> Result<Vec<Selection>, String> {
             let mut brace_depth = 0;
             for c in chars.by_ref() {
                 brace_str.push(c);
-                if c == '{' { brace_depth += 1; }
+                if c == '{' {
+                    brace_depth += 1;
+                }
                 if c == '}' {
                     brace_depth -= 1;
-                    if brace_depth == 0 { break; }
+                    if brace_depth == 0 {
+                        break;
+                    }
                 }
             }
             parse_selection_set(&brace_str, depth + 1).unwrap_or_default()
@@ -297,7 +333,9 @@ fn parse_args(input: &str) -> HashMap<String, serde_json::Value> {
 
     while !remaining.is_empty() {
         // Find the key (everything up to ':')
-        let Some(colon_pos) = remaining.find(':') else { break };
+        let Some(colon_pos) = remaining.find(':') else {
+            break;
+        };
         let key = remaining[..colon_pos].trim().to_string();
         remaining = remaining[colon_pos + 1..].trim();
 
@@ -316,7 +354,11 @@ fn parse_args(input: &str) -> HashMap<String, serde_json::Value> {
                 end += 1;
             }
             let s = &remaining[1..end];
-            let after = remaining.get(end + 1..).unwrap_or("").trim_start_matches(',').trim();
+            let after = remaining
+                .get(end + 1..)
+                .unwrap_or("")
+                .trim_start_matches(',')
+                .trim();
             (serde_json::Value::String(s.to_string()), after)
         } else {
             // Non-quoted: take until comma or end
@@ -353,41 +395,208 @@ pub fn wardex_schema() -> GqlSchema {
                 kind: GqlTypeKind::Object,
                 description: Some("Root query type".into()),
                 fields: vec![
-                    field("alerts", "[Alert]", &[arg("limit", "Int", Some("50")), arg("level", "String", None), arg("device_id", "String", None)],
-                          Some("List alerts with optional filters")),
-                    field("alert", "Alert", &[arg("id", "String!", None)], Some("Get alert by ID")),
-                    field("incidents", "[Incident]", &[arg("limit", "Int", Some("50")), arg("status", "String", None)],
-                          Some("List incidents")),
-                    field("incident", "Incident", &[arg("id", "String!", None)], Some("Get incident by ID")),
-                    field("agents", "[Agent]", &[arg("status", "String", None)], Some("List fleet agents")),
-                    field("agent", "Agent", &[arg("id", "String!", None)], Some("Get agent by ID")),
-                    field("events", "[Event]", &[arg("limit", "Int", Some("100")), arg("device_id", "String", None), arg("since", "String", None)],
-                          Some("Query telemetry events")),
+                    field(
+                        "alerts",
+                        "[Alert]",
+                        &[
+                            arg("limit", "Int", Some("50")),
+                            arg("level", "String", None),
+                            arg("device_id", "String", None),
+                        ],
+                        Some("List alerts with optional filters"),
+                    ),
+                    field(
+                        "alert",
+                        "Alert",
+                        &[arg("id", "String!", None)],
+                        Some("Get alert by ID"),
+                    ),
+                    field(
+                        "incidents",
+                        "[Incident]",
+                        &[
+                            arg("limit", "Int", Some("50")),
+                            arg("status", "String", None),
+                        ],
+                        Some("List incidents"),
+                    ),
+                    field(
+                        "incident",
+                        "Incident",
+                        &[arg("id", "String!", None)],
+                        Some("Get incident by ID"),
+                    ),
+                    field(
+                        "agents",
+                        "[Agent]",
+                        &[arg("status", "String", None)],
+                        Some("List fleet agents"),
+                    ),
+                    field(
+                        "agent",
+                        "Agent",
+                        &[arg("id", "String!", None)],
+                        Some("Get agent by ID"),
+                    ),
+                    field(
+                        "events",
+                        "[Event]",
+                        &[
+                            arg("limit", "Int", Some("100")),
+                            arg("device_id", "String", None),
+                            arg("since", "String", None),
+                        ],
+                        Some("Query telemetry events"),
+                    ),
                     field("policies", "[Policy]", &[], Some("List all policies")),
-                    field("iocs", "[IOC]", &[arg("type", "String", None)], Some("List threat indicators")),
+                    field(
+                        "iocs",
+                        "[IOC]",
+                        &[arg("type", "String", None)],
+                        Some("List threat indicators"),
+                    ),
                     field("status", "Status", &[], Some("System status")),
-                    field("compliance", "ComplianceReport", &[arg("framework", "String!", None)], Some("Run compliance check")),
-                    field("hunts", "[Hunt]", &[arg("limit", "Int", Some("20"))], Some("List threat hunts")),
-                    field("aggregate", "AggregateResult", &[
-                        arg("source", "String!", None),
-                        arg("op", "String!", None),
-                        arg("field", "String!", None),
-                        arg("group_by", "String", None),
-                    ], Some("Run aggregation (COUNT/SUM/AVG/MIN/MAX/DISTINCT) with optional GROUP BY")),
+                    field(
+                        "compliance",
+                        "ComplianceReport",
+                        &[arg("framework", "String!", None)],
+                        Some("Run compliance check"),
+                    ),
+                    field(
+                        "hunts",
+                        "[Hunt]",
+                        &[arg("limit", "Int", Some("20"))],
+                        Some("List threat hunts"),
+                    ),
+                    field(
+                        "aggregate",
+                        "AggregateResult",
+                        &[
+                            arg("source", "String!", None),
+                            arg("op", "String!", None),
+                            arg("field", "String!", None),
+                            arg("group_by", "String", None),
+                        ],
+                        Some(
+                            "Run aggregation (COUNT/SUM/AVG/MIN/MAX/DISTINCT) with optional GROUP BY",
+                        ),
+                    ),
                 ],
             },
-            gql_type("Alert", &["id: String!", "level: String!", "timestamp: String!", "device_id: String!", "score: Float!", "reasons: [String]!", "status: String!"]),
-            gql_type("Incident", &["id: String!", "title: String!", "severity: String!", "status: String!", "created_at: String!", "alert_count: Int!"]),
-            gql_type("Agent", &["id: String!", "hostname: String!", "os: String!", "version: String!", "status: String!", "last_heartbeat: String!"]),
-            gql_type("Event", &["timestamp: String!", "device_id: String!", "event_type: String!", "data: JSON!"]),
-            gql_type("Policy", &["id: String!", "name: String!", "enabled: Boolean!", "rules: Int!"]),
-            gql_type("IOC", &["value: String!", "ioc_type: String!", "source: String!", "added: String!"]),
-            gql_type("Status", &["version: String!", "uptime_secs: Float!", "agents_online: Int!", "alerts_total: Int!", "incidents_open: Int!"]),
-            gql_type("ComplianceReport", &["framework: String!", "score: Float!", "passed: Int!", "failed: Int!", "findings: [Finding]!"]),
-            gql_type("Finding", &["control_id: String!", "title: String!", "status: String!", "evidence: String!"]),
-            gql_type("Hunt", &["id: String!", "name: String!", "status: String!", "matches: Int!", "created_at: String!"]),
-            gql_type("AggregateResult", &["op: String!", "field: String!", "value: JSON", "group_by: String", "groups: [AggregateGroup]"]),
-            gql_type("AggregateGroup", &["key: String!", "value: JSON", "count: Int!"]),
+            gql_type(
+                "Alert",
+                &[
+                    "id: String!",
+                    "level: String!",
+                    "timestamp: String!",
+                    "device_id: String!",
+                    "score: Float!",
+                    "reasons: [String]!",
+                    "status: String!",
+                ],
+            ),
+            gql_type(
+                "Incident",
+                &[
+                    "id: String!",
+                    "title: String!",
+                    "severity: String!",
+                    "status: String!",
+                    "created_at: String!",
+                    "alert_count: Int!",
+                ],
+            ),
+            gql_type(
+                "Agent",
+                &[
+                    "id: String!",
+                    "hostname: String!",
+                    "os: String!",
+                    "version: String!",
+                    "status: String!",
+                    "last_heartbeat: String!",
+                ],
+            ),
+            gql_type(
+                "Event",
+                &[
+                    "timestamp: String!",
+                    "device_id: String!",
+                    "event_type: String!",
+                    "data: JSON!",
+                ],
+            ),
+            gql_type(
+                "Policy",
+                &[
+                    "id: String!",
+                    "name: String!",
+                    "enabled: Boolean!",
+                    "rules: Int!",
+                ],
+            ),
+            gql_type(
+                "IOC",
+                &[
+                    "value: String!",
+                    "ioc_type: String!",
+                    "source: String!",
+                    "added: String!",
+                ],
+            ),
+            gql_type(
+                "Status",
+                &[
+                    "version: String!",
+                    "uptime_secs: Float!",
+                    "agents_online: Int!",
+                    "alerts_total: Int!",
+                    "incidents_open: Int!",
+                ],
+            ),
+            gql_type(
+                "ComplianceReport",
+                &[
+                    "framework: String!",
+                    "score: Float!",
+                    "passed: Int!",
+                    "failed: Int!",
+                    "findings: [Finding]!",
+                ],
+            ),
+            gql_type(
+                "Finding",
+                &[
+                    "control_id: String!",
+                    "title: String!",
+                    "status: String!",
+                    "evidence: String!",
+                ],
+            ),
+            gql_type(
+                "Hunt",
+                &[
+                    "id: String!",
+                    "name: String!",
+                    "status: String!",
+                    "matches: Int!",
+                    "created_at: String!",
+                ],
+            ),
+            gql_type(
+                "AggregateResult",
+                &[
+                    "op: String!",
+                    "field: String!",
+                    "value: JSON",
+                    "group_by: String",
+                    "groups: [AggregateGroup]",
+                ],
+            ),
+            gql_type(
+                "AggregateGroup",
+                &["key: String!", "value: JSON", "count: Int!"],
+            ),
         ],
     }
 }
@@ -410,15 +619,18 @@ fn arg(name: &str, atype: &str, default: Option<&str>) -> GqlArg {
 }
 
 fn gql_type(name: &str, field_defs: &[&str]) -> GqlType {
-    let fields = field_defs.iter().map(|def| {
-        let parts: Vec<&str> = def.splitn(2, ':').collect();
-        GqlField {
-            name: parts[0].trim().into(),
-            field_type: parts.get(1).unwrap_or(&"String").trim().into(),
-            args: vec![],
-            description: None,
-        }
-    }).collect();
+    let fields = field_defs
+        .iter()
+        .map(|def| {
+            let parts: Vec<&str> = def.splitn(2, ':').collect();
+            GqlField {
+                name: parts[0].trim().into(),
+                field_type: parts.get(1).unwrap_or(&"String").trim().into(),
+                args: vec![],
+                description: None,
+            }
+        })
+        .collect();
 
     GqlType {
         name: name.into(),
@@ -485,12 +697,18 @@ pub struct AggregateGroup {
 }
 
 /// Run an aggregation over a JSON array of objects.
-pub fn aggregate(data: &[serde_json::Value], op: AggregateOp, field: &str, group_by: Option<&str>) -> AggregateResult {
+pub fn aggregate(
+    data: &[serde_json::Value],
+    op: AggregateOp,
+    field: &str,
+    group_by: Option<&str>,
+) -> AggregateResult {
     if let Some(gb) = group_by {
         // GROUP BY mode
         let mut groups: HashMap<String, Vec<&serde_json::Value>> = HashMap::new();
         for item in data {
-            let key = item.get(gb)
+            let key = item
+                .get(gb)
                 .map(|v| match v {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
@@ -499,13 +717,21 @@ pub fn aggregate(data: &[serde_json::Value], op: AggregateOp, field: &str, group
             groups.entry(key).or_default().push(item);
         }
 
-        let mut agg_groups: Vec<AggregateGroup> = groups.into_iter().map(|(key, items)| {
-            let vals: Vec<f64> = items.iter()
-                .filter_map(|i| i.get(field).and_then(|v| v.as_f64()))
-                .collect();
-            let value = compute_agg(op, &vals, items.len(), &items, field);
-            AggregateGroup { key, value, count: items.len() }
-        }).collect();
+        let mut agg_groups: Vec<AggregateGroup> = groups
+            .into_iter()
+            .map(|(key, items)| {
+                let vals: Vec<f64> = items
+                    .iter()
+                    .filter_map(|i| i.get(field).and_then(|v| v.as_f64()))
+                    .collect();
+                let value = compute_agg(op, &vals, items.len(), &items, field);
+                AggregateGroup {
+                    key,
+                    value,
+                    count: items.len(),
+                }
+            })
+            .collect();
         agg_groups.sort_by(|a, b| a.key.cmp(&b.key));
 
         AggregateResult {
@@ -517,7 +743,8 @@ pub fn aggregate(data: &[serde_json::Value], op: AggregateOp, field: &str, group
         }
     } else {
         // Simple aggregation
-        let vals: Vec<f64> = data.iter()
+        let vals: Vec<f64> = data
+            .iter()
             .filter_map(|i| i.get(field).and_then(|v| v.as_f64()))
             .collect();
         let refs: Vec<&serde_json::Value> = data.iter().collect();
@@ -533,7 +760,13 @@ pub fn aggregate(data: &[serde_json::Value], op: AggregateOp, field: &str, group
     }
 }
 
-fn compute_agg(op: AggregateOp, vals: &[f64], item_count: usize, items: &[&serde_json::Value], field: &str) -> serde_json::Value {
+fn compute_agg(
+    op: AggregateOp,
+    vals: &[f64],
+    item_count: usize,
+    items: &[&serde_json::Value],
+    field: &str,
+) -> serde_json::Value {
     match op {
         AggregateOp::Count => serde_json::json!(item_count),
         AggregateOp::Sum => {
@@ -548,18 +781,21 @@ fn compute_agg(op: AggregateOp, vals: &[f64], item_count: usize, items: &[&serde
                 serde_json::json!(avg)
             }
         }
-        AggregateOp::Min => {
-            vals.iter().copied().reduce(f64::min)
-                .map(|v| serde_json::json!(v))
-                .unwrap_or(serde_json::Value::Null)
-        }
-        AggregateOp::Max => {
-            vals.iter().copied().reduce(f64::max)
-                .map(|v| serde_json::json!(v))
-                .unwrap_or(serde_json::Value::Null)
-        }
+        AggregateOp::Min => vals
+            .iter()
+            .copied()
+            .reduce(f64::min)
+            .map(|v| serde_json::json!(v))
+            .unwrap_or(serde_json::Value::Null),
+        AggregateOp::Max => vals
+            .iter()
+            .copied()
+            .reduce(f64::max)
+            .map(|v| serde_json::json!(v))
+            .unwrap_or(serde_json::Value::Null),
         AggregateOp::Distinct => {
-            let mut unique: Vec<String> = items.iter()
+            let mut unique: Vec<String> = items
+                .iter()
                 .filter_map(|i| i.get(field))
                 .map(|v| match v {
                     serde_json::Value::String(s) => s.clone(),
@@ -578,7 +814,10 @@ fn compute_agg(op: AggregateOp, vals: &[f64], item_count: usize, items: &[&serde
 
 pub struct GqlExecutor {
     pub schema: GqlSchema,
-    resolvers: HashMap<String, Box<dyn Fn(&HashMap<String, serde_json::Value>) -> serde_json::Value + Send + Sync>>,
+    resolvers: HashMap<
+        String,
+        Box<dyn Fn(&HashMap<String, serde_json::Value>) -> serde_json::Value + Send + Sync>,
+    >,
 }
 
 impl GqlExecutor {
@@ -592,7 +831,9 @@ impl GqlExecutor {
     pub fn register_resolver(
         &mut self,
         field_name: &str,
-        resolver: Box<dyn Fn(&HashMap<String, serde_json::Value>) -> serde_json::Value + Send + Sync>,
+        resolver: Box<
+            dyn Fn(&HashMap<String, serde_json::Value>) -> serde_json::Value + Send + Sync,
+        >,
     ) {
         self.resolvers.insert(field_name.to_string(), resolver);
     }
@@ -646,7 +887,11 @@ impl GqlExecutor {
         GqlResponse::ok(serde_json::Value::Object(result))
     }
 
-    fn apply_selection(&self, value: &serde_json::Value, selections: &[Selection]) -> serde_json::Value {
+    fn apply_selection(
+        &self,
+        value: &serde_json::Value,
+        selections: &[Selection],
+    ) -> serde_json::Value {
         if selections.is_empty() {
             return value.clone();
         }
@@ -662,11 +907,11 @@ impl GqlExecutor {
                 }
                 serde_json::Value::Object(filtered)
             }
-            serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(
-                    arr.iter().map(|v| self.apply_selection(v, selections)).collect()
-                )
-            }
+            serde_json::Value::Array(arr) => serde_json::Value::Array(
+                arr.iter()
+                    .map(|v| self.apply_selection(v, selections))
+                    .collect(),
+            ),
             _ => value.clone(),
         }
     }
@@ -760,15 +1005,18 @@ mod tests {
     fn executor_resolves_field() {
         let schema = wardex_schema();
         let mut exec = GqlExecutor::new(schema);
-        exec.register_resolver("status", Box::new(|_args| {
-            serde_json::json!({
-                "version": "0.35.0",
-                "uptime_secs": 3600.0,
-                "agents_online": 5,
-                "alerts_total": 42,
-                "incidents_open": 2,
-            })
-        }));
+        exec.register_resolver(
+            "status",
+            Box::new(|_args| {
+                serde_json::json!({
+                    "version": "0.35.0",
+                    "uptime_secs": 3600.0,
+                    "agents_online": 5,
+                    "alerts_total": 42,
+                    "incidents_open": 2,
+                })
+            }),
+        );
 
         let req = GqlRequest {
             query: "{ status { version uptime_secs } }".into(),
@@ -814,15 +1062,22 @@ mod tests {
     #[test]
     fn executor_with_list_resolver() {
         let mut exec = GqlExecutor::new(wardex_schema());
-        exec.register_resolver("alerts", Box::new(|args| {
-            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50);
-            let alerts: Vec<_> = (0..limit.min(3)).map(|i| serde_json::json!({
-                "id": format!("alert-{}", i),
-                "level": "elevated",
-                "timestamp": "2025-01-01T00:00:00Z",
-            })).collect();
-            serde_json::json!(alerts)
-        }));
+        exec.register_resolver(
+            "alerts",
+            Box::new(|args| {
+                let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50);
+                let alerts: Vec<_> = (0..limit.min(3))
+                    .map(|i| {
+                        serde_json::json!({
+                            "id": format!("alert-{}", i),
+                            "level": "elevated",
+                            "timestamp": "2025-01-01T00:00:00Z",
+                        })
+                    })
+                    .collect();
+                serde_json::json!(alerts)
+            }),
+        );
 
         let req = GqlRequest {
             query: r#"{ alerts(limit: 2) { id level } }"#.into(),
@@ -861,7 +1116,11 @@ mod tests {
 
         let resp = exec.execute(&req);
         assert!(resp.data.is_none());
-        assert!(resp.errors[0].message.contains("Variables exceed maximum size"));
+        assert!(
+            resp.errors[0]
+                .message
+                .contains("Variables exceed maximum size")
+        );
     }
 
     #[test]

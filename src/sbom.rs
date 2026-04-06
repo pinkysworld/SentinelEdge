@@ -135,10 +135,7 @@ impl SbomGenerator {
         SbomDocument {
             format,
             spec_version,
-            serial_number: format!(
-                "urn:uuid:{}",
-                uuid_v4()
-            ),
+            serial_number: format!("urn:uuid:{}", uuid_v4()),
             created: chrono::Utc::now().to_rfc3339(),
             tool_name: "Wardex SBOM Generator".into(),
             tool_version: self.app_version.clone(),
@@ -292,11 +289,22 @@ fn uuid_v4() -> String {
     rng.fill(&mut bytes);
     format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-4{:01x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5],
-        bytes[6] & 0x0f, bytes[7],
-        (bytes[8] & 0x3f) | 0x80, bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6] & 0x0f,
+        bytes[7],
+        (bytes[8] & 0x3f) | 0x80,
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15],
     )
 }
 
@@ -415,17 +423,15 @@ version = "1.38.0"
     #[test]
     fn spdx_relationships() {
         let sbgen = SbomGenerator::new("wardex", "0.34.0");
-        let components = vec![
-            SbomComponent {
-                name: "foo".into(),
-                version: "1.0.0".into(),
-                kind: ComponentKind::Library,
-                purl: "pkg:cargo/foo@1.0.0".into(),
-                license: Some("MIT".into()),
-                sha256: None,
-                supplier: None,
-            },
-        ];
+        let components = vec![SbomComponent {
+            name: "foo".into(),
+            version: "1.0.0".into(),
+            kind: ComponentKind::Library,
+            purl: "pkg:cargo/foo@1.0.0".into(),
+            license: Some("MIT".into()),
+            sha256: None,
+            supplier: None,
+        }];
         let deps = vec![SbomDependency {
             from: "wardex".into(),
             to: vec!["foo".into()],
