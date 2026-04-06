@@ -102,7 +102,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--bg-alt);padding:.1
 .section-header p{color:var(--ink-2);font-size:.88rem;line-height:1.55;max-width:600px;}
 
 /* ── Cards ───────────────────────────────── */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;min-width:0;}
 .card h2{font-size:.95rem;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem;}
 .card h3{font-size:.85rem;font-weight:600;margin-bottom:.65rem;color:var(--ink-2);}
 .card-grid{display:grid;gap:1.25rem;}
@@ -153,6 +153,11 @@ code{font-family:var(--mono);font-size:.88em;background:var(--bg-alt);padding:.1
 .sparkline-box .spark-label{font-size:.72rem;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em;
   font-weight:600;margin-bottom:.4rem;}
 .sparkline-box canvas{width:100%;height:48px;display:block;}
+
+/* ── Dashboard Charts ───────────────────── */
+.chart-card{display:flex;flex-direction:column;}
+.chart-shell{position:relative;min-width:0;width:100%;height:220px;}
+.chart-shell canvas{display:block !important;width:100% !important;height:100% !important;}
 
 /* ── Dot indicators ──────────────────────── */
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
@@ -398,6 +403,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--bg-alt);padding:.1
 @media(max-width:600px){
   .metric-strip{grid-template-columns:1fr;}
   .auth-bar input{width:140px;}
+  .chart-shell{height:200px;}
 }
 
 /* ── Misc ────────────────────────────────── */
@@ -818,13 +824,17 @@ body.light .kv-grid .settings-input{background:#fff;border-color:#d1d5db;}
       </div>
 
       <div class="card-grid cols-2" style="margin-bottom:1.25rem;">
-        <div class="card">
+        <div class="card chart-card">
           <h2><span class="dot dot-blue"></span> Threat Score Timeline</h2>
-          <canvas id="chart-threat-timeline" height="180"></canvas>
+          <div class="chart-shell">
+            <canvas id="chart-threat-timeline" height="180"></canvas>
+          </div>
         </div>
-        <div class="card">
+        <div class="card chart-card">
           <h2><span class="dot dot-orange"></span> Alert Severity Distribution</h2>
-          <canvas id="chart-severity-dist" height="180"></canvas>
+          <div class="chart-shell">
+            <canvas id="chart-severity-dist" height="180"></canvas>
+          </div>
         </div>
       </div>
 
@@ -5532,7 +5542,18 @@ body.light .kv-grid .settings-input{background:#fff;border-color:#d1d5db;}
         type: 'doughnut',
         data: { labels: ['Critical','Severe','Elevated','Nominal'], datasets: [{ data: [0,0,0,0],
           backgroundColor: [CHART_COLORS.critical, CHART_COLORS.severe, CHART_COLORS.elevated, CHART_COLORS.nominal] }] },
-        options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#9fa3b4', font: { size: 11 } } } } }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 6, right: 6, bottom: 6, left: 6 } },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              align: 'center',
+              labels: { color: '#9fa3b4', font: { size: 11 }, boxWidth: 12, boxHeight: 12, padding: 14 }
+            }
+          }
+        }
       });
     }
     const itCtx = document.getElementById('chart-incident-timeline');

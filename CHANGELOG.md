@@ -2,6 +2,12 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.41.3] — Dashboard Layout Polish & Release Copy Sync
+
+### Fixed
+- **Alert Severity Distribution layout** — The embedded admin console now keeps the severity chart fully visible inside the dashboard grid, uses a responsive chart shell, and places the legend beneath the doughnut so the card stays aligned across desktop, tablet, and mobile widths.
+- **Website release labeling** — The public site now renders the current version directly alongside the BSL 1.1 licensing copy and footer release badge so operators can identify the exact release at a glance.
+
 ## [0.41.2] — Release Consistency, Live Monitor Guidance & Verification
 
 ### Fixed
