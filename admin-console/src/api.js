@@ -373,3 +373,40 @@ export const investigationWorkflow = (id) => get(`/api/investigations/workflows/
 export const investigationStart = (body) => post('/api/investigations/start', body);
 export const investigationActive = () => get('/api/investigations/active');
 export const investigationSuggest = (body) => post('/api/investigations/suggest', body);
+
+// ── Malware Detection / AV Scanning ──────────────────────────
+export const scanBuffer = (body) => post('/api/scan/buffer', body);
+export const scanHash = (body) => post('/api/scan/hash', body);
+export const malwareStats = () => get('/api/malware/stats');
+export const malwareRecent = () => get('/api/malware/recent');
+export const malwareImport = (body) => post('/api/malware/signatures/import', body);
+
+// ── Threat Hunting ───────────────────────────────────────────
+export const hunt = (query) => post('/api/hunt', { query });
+
+// ── SIEM Export ──────────────────────────────────────────────
+export const exportAlerts = (fmt = 'json') => get(`/api/export/alerts?format=${encodeURIComponent(fmt)}`);
+
+// ── Compliance ───────────────────────────────────────────────
+export const complianceReport = (framework) => get(framework ? `/api/compliance/report?framework=${encodeURIComponent(framework)}` : '/api/compliance/report');
+export const complianceSummary = () => get('/api/compliance/summary');
+
+// ── Playbook Run ─────────────────────────────────────────────
+export const runPlaybook = (body) => post('/api/playbooks/run', body);
+
+// ── Alert Deduplication ──────────────────────────────────────
+export const dedupAlerts = () => get('/api/alerts/dedup');
+
+// ── API Analytics ────────────────────────────────────────────
+export const apiAnalytics = () => get('/api/analytics');
+
+// ── OpenTelemetry Traces ─────────────────────────────────────
+export const traces = () => get('/api/traces');
+
+// ── Backup Encryption ────────────────────────────────────────
+export const backupEncrypt = (body) => post('/api/backup/encrypt', body);
+export const backupDecrypt = (body) => post('/api/backup/decrypt', body);
+
+// ── Detection Rules ──────────────────────────────────────────
+export const detectionRules = () => get('/api/detection/rules');
+export const addDetectionRule = (body) => post('/api/detection/rules', body);

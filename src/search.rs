@@ -192,6 +192,271 @@ impl SearchIndex {
         stats.index_size_bytes = 0;
         Ok(())
     }
+
+    /// Execute a hunt query using KQL-like syntax.
+    /// Supports: field:value, field="exact", AND, OR, NOT, parentheses.
+    /// Example: `process_name:mimikatz AND src_ip:10.0.0.*`
+    pub fn hunt(&self, hunt_query: &str) -> Result<SearchResult, String> {
+        let start = std::time::Instant::now();
+        let predicate = parse_hunt_query(hunt_query)?;
+        let docs = self.documents.lock().unwrap_or_else(|e| e.into_inner());
+
+        let mut hits: Vec<SearchHit> = docs
+            .iter()
+            .filter(|doc| evaluate_predicate(&predicate, doc))
+            .map(|doc| {
+                let snippet = if !doc.raw_text.is_empty() {
+                    doc.raw_text.chars().take(200).collect()
+                } else {
+                    format!("{} {} {}", doc.process_name, doc.command_line, doc.src_ip)
+                };
+                SearchHit {
+                    score: 1.0,
+                    timestamp: doc.timestamp.clone(),
+                    device_id: doc.device_id.clone(),
+                    event_class: doc.event_class.clone(),
+                    process_name: doc.process_name.clone(),
+                    src_ip: doc.src_ip.clone(),
+                    dst_ip: doc.dst_ip.clone(),
+                    snippet,
+                }
+            })
+            .collect();
+
+        let total = hits.len() as u64;
+        hits.truncate(100);
+        Ok(SearchResult {
+            total,
+            hits,
+            took_ms: start.elapsed().as_secs_f64() * 1000.0,
+            query: hunt_query.into(),
+        })
+    }
+}
+
+// ── Hunt Query DSL Parser ────────────────────────────────────────────────────
+
+/// Parsed hunt predicate tree.
+#[derive(Debug, Clone)]
+pub enum HuntPredicate {
+    /// field:value (wildcard * supported)
+    FieldMatch { field: String, pattern: String },
+    /// Full-text search
+    FreeText(String),
+    And(Box<HuntPredicate>, Box<HuntPredicate>),
+    Or(Box<HuntPredicate>, Box<HuntPredicate>),
+    Not(Box<HuntPredicate>),
+}
+
+/// Parse a KQL-like hunt query string into a predicate tree.
+pub fn parse_hunt_query(input: &str) -> Result<HuntPredicate, String> {
+    let tokens = tokenize_hunt(input)?;
+    if tokens.is_empty() {
+        return Err("empty query".into());
+    }
+    let (pred, rest) = parse_or(&tokens)?;
+    if !rest.is_empty() {
+        return Err(format!("unexpected tokens after query: {:?}", rest));
+    }
+    Ok(pred)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum HuntToken {
+    Word(String),
+    FieldValue(String, String),
+    And,
+    Or,
+    Not,
+    LParen,
+    RParen,
+}
+
+fn tokenize_hunt(input: &str) -> Result<Vec<HuntToken>, String> {
+    let mut tokens = Vec::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        if c == '(' {
+            tokens.push(HuntToken::LParen);
+            chars.next();
+        } else if c == ')' {
+            tokens.push(HuntToken::RParen);
+            chars.next();
+        } else if c == '"' {
+            chars.next();
+            let mut s = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch == '"' {
+                    chars.next();
+                    break;
+                }
+                s.push(ch);
+                chars.next();
+            }
+            tokens.push(HuntToken::Word(s));
+        } else {
+            let mut word = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch.is_whitespace() || ch == '(' || ch == ')' {
+                    break;
+                }
+                word.push(ch);
+                chars.next();
+            }
+            match word.to_uppercase().as_str() {
+                "AND" => tokens.push(HuntToken::And),
+                "OR" => tokens.push(HuntToken::Or),
+                "NOT" => tokens.push(HuntToken::Not),
+                _ => {
+                    if let Some((field, value)) = word.split_once(':') {
+                        let value = value.trim_matches('"').trim_matches('\'');
+                        tokens.push(HuntToken::FieldValue(
+                            field.to_string(),
+                            value.to_string(),
+                        ));
+                    } else {
+                        tokens.push(HuntToken::Word(word));
+                    }
+                }
+            }
+        }
+    }
+    Ok(tokens)
+}
+
+fn parse_or<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+    let (mut left, mut rest) = parse_and(tokens)?;
+    while !rest.is_empty() && rest[0] == HuntToken::Or {
+        let (right, r) = parse_and(&rest[1..])?;
+        left = HuntPredicate::Or(Box::new(left), Box::new(right));
+        rest = r;
+    }
+    Ok((left, rest))
+}
+
+fn parse_and<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+    let (mut left, mut rest) = parse_unary(tokens)?;
+    while !rest.is_empty() && (rest[0] == HuntToken::And || matches!(rest[0], HuntToken::Word(_) | HuntToken::FieldValue(_, _) | HuntToken::Not | HuntToken::LParen)) {
+        if rest[0] == HuntToken::And {
+            let (right, r) = parse_unary(&rest[1..])?;
+            left = HuntPredicate::And(Box::new(left), Box::new(right));
+            rest = r;
+        } else {
+            // Implicit AND
+            let (right, r) = parse_unary(rest)?;
+            left = HuntPredicate::And(Box::new(left), Box::new(right));
+            rest = r;
+        }
+    }
+    Ok((left, rest))
+}
+
+fn parse_unary<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+    if tokens.is_empty() {
+        return Err("unexpected end of query".into());
+    }
+    if tokens[0] == HuntToken::Not {
+        let (inner, rest) = parse_unary(&tokens[1..])?;
+        return Ok((HuntPredicate::Not(Box::new(inner)), rest));
+    }
+    parse_primary(tokens)
+}
+
+fn parse_primary<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+    if tokens.is_empty() {
+        return Err("unexpected end of query".into());
+    }
+    match &tokens[0] {
+        HuntToken::LParen => {
+            let (inner, rest) = parse_or(&tokens[1..])?;
+            if rest.is_empty() || rest[0] != HuntToken::RParen {
+                return Err("missing closing parenthesis".into());
+            }
+            Ok((inner, &rest[1..]))
+        }
+        HuntToken::FieldValue(field, value) => {
+            Ok((HuntPredicate::FieldMatch {
+                field: field.clone(),
+                pattern: value.clone(),
+            }, &tokens[1..]))
+        }
+        HuntToken::Word(w) => {
+            Ok((HuntPredicate::FreeText(w.clone()), &tokens[1..]))
+        }
+        other => Err(format!("unexpected token: {:?}", other)),
+    }
+}
+
+fn field_value(doc: &SearchDocument, field: &str) -> String {
+    match field {
+        "timestamp" => doc.timestamp.clone(),
+        "device_id" | "device" => doc.device_id.clone(),
+        "event_class" | "class" => doc.event_class.clone(),
+        "process_name" | "process" => doc.process_name.clone(),
+        "command_line" | "cmd" => doc.command_line.clone(),
+        "src_ip" | "src" => doc.src_ip.clone(),
+        "dst_ip" | "dst" => doc.dst_ip.clone(),
+        "user_name" | "user" => doc.user_name.clone(),
+        "raw_text" | "raw" => doc.raw_text.clone(),
+        _ => String::new(),
+    }
+}
+
+fn wildcard_match(pattern: &str, text: &str) -> bool {
+    let pattern = pattern.to_lowercase();
+    let text = text.to_lowercase();
+    if !pattern.contains('*') {
+        return text.contains(&pattern);
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return text == pattern;
+    }
+    let mut pos = 0;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if let Some(found) = text[pos..].find(part) {
+            if i == 0 && found != 0 {
+                return false;
+            }
+            pos += found + part.len();
+        } else {
+            return false;
+        }
+    }
+    if !parts.last().unwrap_or(&"").is_empty() {
+        return pos == text.len();
+    }
+    true
+}
+
+fn evaluate_predicate(pred: &HuntPredicate, doc: &SearchDocument) -> bool {
+    match pred {
+        HuntPredicate::FieldMatch { field, pattern } => {
+            let val = field_value(doc, field);
+            wildcard_match(pattern, &val)
+        }
+        HuntPredicate::FreeText(text) => {
+            let t = text.to_lowercase();
+            doc.raw_text.to_lowercase().contains(&t)
+                || doc.process_name.to_lowercase().contains(&t)
+                || doc.command_line.to_lowercase().contains(&t)
+                || doc.src_ip.contains(&t)
+                || doc.dst_ip.contains(&t)
+                || doc.user_name.to_lowercase().contains(&t)
+                || doc.device_id.to_lowercase().contains(&t)
+        }
+        HuntPredicate::And(a, b) => evaluate_predicate(a, doc) && evaluate_predicate(b, doc),
+        HuntPredicate::Or(a, b) => evaluate_predicate(a, doc) || evaluate_predicate(b, doc),
+        HuntPredicate::Not(inner) => !evaluate_predicate(inner, doc),
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -329,5 +594,62 @@ mod tests {
         };
         let r = idx.search(&q).unwrap();
         assert_eq!(r.total, 1);
+    }
+
+    #[test]
+    fn test_hunt_field_match() {
+        let idx = make_index();
+        let r = idx.hunt("process_name:mimikatz").unwrap();
+        assert_eq!(r.total, 1);
+    }
+
+    #[test]
+    fn test_hunt_wildcard() {
+        let idx = make_index();
+        let r = idx.hunt("src_ip:10.0.*").unwrap();
+        assert_eq!(r.total, 1);
+    }
+
+    #[test]
+    fn test_hunt_and() {
+        let idx = make_index();
+        let r = idx.hunt("process:mimikatz AND src:10.0.0.5").unwrap();
+        assert_eq!(r.total, 1);
+    }
+
+    #[test]
+    fn test_hunt_or() {
+        let idx = make_index();
+        let r = idx.hunt("process:mimikatz OR process:svchost").unwrap();
+        assert_eq!(r.total, 2);
+    }
+
+    #[test]
+    fn test_hunt_not() {
+        let idx = make_index();
+        let r = idx.hunt("NOT process:svchost").unwrap();
+        assert_eq!(r.total, 1);
+        assert_eq!(r.hits[0].process_name, "mimikatz.exe");
+    }
+
+    #[test]
+    fn test_hunt_free_text() {
+        let idx = make_index();
+        let r = idx.hunt("credential").unwrap();
+        assert_eq!(r.total, 1);
+    }
+
+    #[test]
+    fn test_hunt_implicit_and() {
+        let idx = make_index();
+        let r = idx.hunt("process:mimikatz user:admin").unwrap();
+        assert_eq!(r.total, 1);
+    }
+
+    #[test]
+    fn test_wildcard_match() {
+        assert!(wildcard_match("10.0.*", "10.0.0.5"));
+        assert!(wildcard_match("*.exe", "mimikatz.exe"));
+        assert!(!wildcard_match("10.1.*", "10.0.0.5"));
     }
 }

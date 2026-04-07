@@ -3,8 +3,185 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const CSV_HEADER: &str = "timestamp_ms,cpu_load_pct,memory_load_pct,temperature_c,network_kbps,auth_failures,battery_pct,integrity_drift,process_count,disk_pressure_pct";
+
+// ── OpenTelemetry-compatible tracing ────────────────────────────
+
+static TRACE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+static SPAN_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Generate a new trace ID (hex string).
+pub fn new_trace_id() -> String {
+    let id = TRACE_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:032x}", id)
+}
+
+/// Generate a new span ID (hex string).
+pub fn new_span_id() -> String {
+    let id = SPAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:016x}", id)
+}
+
+/// An OpenTelemetry-compatible span.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OtelSpan {
+    pub trace_id: String,
+    pub span_id: String,
+    pub parent_span_id: Option<String>,
+    pub operation_name: String,
+    pub service_name: String,
+    pub start_time_ms: u64,
+    pub end_time_ms: Option<u64>,
+    pub status: SpanStatus,
+    pub attributes: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SpanStatus {
+    Unset,
+    Ok,
+    Error,
+}
+
+impl OtelSpan {
+    pub fn new(operation: &str) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        Self {
+            trace_id: new_trace_id(),
+            span_id: new_span_id(),
+            parent_span_id: None,
+            operation_name: operation.to_string(),
+            service_name: "sentineledge".into(),
+            start_time_ms: now,
+            end_time_ms: None,
+            status: SpanStatus::Unset,
+            attributes: Vec::new(),
+        }
+    }
+
+    pub fn child(&self, operation: &str) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        Self {
+            trace_id: self.trace_id.clone(),
+            span_id: new_span_id(),
+            parent_span_id: Some(self.span_id.clone()),
+            operation_name: operation.to_string(),
+            service_name: "sentineledge".into(),
+            start_time_ms: now,
+            end_time_ms: None,
+            status: SpanStatus::Unset,
+            attributes: Vec::new(),
+        }
+    }
+
+    pub fn set_attribute(&mut self, key: &str, value: &str) {
+        self.attributes.push((key.to_string(), value.to_string()));
+    }
+
+    pub fn finish(&mut self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        self.end_time_ms = Some(now);
+        if self.status == SpanStatus::Unset {
+            self.status = SpanStatus::Ok;
+        }
+    }
+
+    pub fn finish_error(&mut self, error_msg: &str) {
+        self.finish();
+        self.status = SpanStatus::Error;
+        self.set_attribute("error.message", error_msg);
+    }
+
+    pub fn duration_ms(&self) -> Option<u64> {
+        self.end_time_ms.map(|end| end.saturating_sub(self.start_time_ms))
+    }
+
+    /// Export span in OTLP-compatible JSON format.
+    pub fn to_otlp_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "resourceSpans": [{
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": self.service_name}},
+                    ]
+                },
+                "scopeSpans": [{
+                    "spans": [{
+                        "traceId": self.trace_id,
+                        "spanId": self.span_id,
+                        "parentSpanId": self.parent_span_id,
+                        "name": self.operation_name,
+                        "startTimeUnixNano": self.start_time_ms * 1_000_000,
+                        "endTimeUnixNano": self.end_time_ms.unwrap_or(0) * 1_000_000,
+                        "status": {"code": match self.status {
+                            SpanStatus::Unset => 0,
+                            SpanStatus::Ok => 1,
+                            SpanStatus::Error => 2,
+                        }},
+                        "attributes": self.attributes.iter().map(|(k, v)| {
+                            serde_json::json!({"key": k, "value": {"stringValue": v}})
+                        }).collect::<Vec<_>>(),
+                    }]
+                }]
+            }]
+        })
+    }
+}
+
+/// Trace collector for aggregating spans.
+#[derive(Debug, Default)]
+pub struct TraceCollector {
+    spans: Vec<OtelSpan>,
+    max_spans: usize,
+}
+
+impl TraceCollector {
+    pub fn new(max_spans: usize) -> Self {
+        Self { spans: Vec::new(), max_spans }
+    }
+
+    pub fn record(&mut self, span: OtelSpan) {
+        self.spans.push(span);
+        if self.spans.len() > self.max_spans {
+            self.spans.remove(0);
+        }
+    }
+
+    pub fn recent(&self, limit: usize) -> &[OtelSpan] {
+        let start = self.spans.len().saturating_sub(limit);
+        &self.spans[start..]
+    }
+
+    pub fn stats(&self) -> TraceStats {
+        let total = self.spans.len();
+        let errors = self.spans.iter().filter(|s| s.status == SpanStatus::Error).count();
+        let avg_duration = if total > 0 {
+            let sum: u64 = self.spans.iter().filter_map(|s| s.duration_ms()).sum();
+            sum as f64 / total as f64
+        } else {
+            0.0
+        };
+        TraceStats { total_spans: total, error_spans: errors, avg_duration_ms: avg_duration }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TraceStats {
+    pub total_spans: usize,
+    pub error_spans: usize,
+    pub avg_duration_ms: f64,
+}
 
 // ── MITRE ATT&CK Mapping ──────────────────────────────────────
 
@@ -400,5 +577,62 @@ mod tests {
         // starts with low battery, degrades further
         assert!(samples.first().unwrap().battery_pct < 20.0);
         assert!(samples.iter().any(|s| s.battery_pct < 1.0));
+    }
+
+    #[test]
+    fn otel_span_lifecycle() {
+        let mut span = super::OtelSpan::new("test.operation");
+        assert!(!span.trace_id.is_empty());
+        assert!(!span.span_id.is_empty());
+        assert!(span.parent_span_id.is_none());
+        assert_eq!(span.status, super::SpanStatus::Unset);
+
+        span.set_attribute("http.method", "GET");
+        span.finish();
+        assert_eq!(span.status, super::SpanStatus::Ok);
+        assert!(span.end_time_ms.is_some());
+        assert!(span.duration_ms().is_some());
+    }
+
+    #[test]
+    fn otel_span_child() {
+        let parent = super::OtelSpan::new("parent");
+        let child = parent.child("child");
+        assert_eq!(child.trace_id, parent.trace_id);
+        assert_eq!(child.parent_span_id, Some(parent.span_id.clone()));
+        assert_ne!(child.span_id, parent.span_id);
+    }
+
+    #[test]
+    fn otel_span_error() {
+        let mut span = super::OtelSpan::new("failing.op");
+        span.finish_error("connection refused");
+        assert_eq!(span.status, super::SpanStatus::Error);
+        assert!(span.attributes.iter().any(|(k, _)| k == "error.message"));
+    }
+
+    #[test]
+    fn otel_otlp_json() {
+        let mut span = super::OtelSpan::new("export.test");
+        span.finish();
+        let json = span.to_otlp_json();
+        assert!(json["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["traceId"].is_string());
+    }
+
+    #[test]
+    fn trace_collector_aggregation() {
+        let mut collector = super::TraceCollector::new(100);
+        let mut span = super::OtelSpan::new("op1");
+        span.finish();
+        collector.record(span);
+
+        let mut span2 = super::OtelSpan::new("op2");
+        span2.finish_error("fail");
+        collector.record(span2);
+
+        let stats = collector.stats();
+        assert_eq!(stats.total_spans, 2);
+        assert_eq!(stats.error_spans, 1);
+        assert!(stats.avg_duration_ms >= 0.0);
     }
 }

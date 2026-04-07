@@ -869,6 +869,85 @@ pub fn all_frameworks() -> Vec<ComplianceFramework> {
     vec![cis_controls_v8(), pci_dss_v4(), soc2_type2(), nist_csf_v2()]
 }
 
+/// Generate compliance reports for all frameworks at once.
+pub fn generate_all_reports(state: &SystemState) -> Vec<ComplianceReport> {
+    all_frameworks()
+        .iter()
+        .map(|fw| evaluate_framework(fw, state))
+        .collect()
+}
+
+/// Export a compliance report as a Markdown document.
+pub fn report_to_markdown(report: &ComplianceReport) -> String {
+    let mut md = String::new();
+    md.push_str(&format!(
+        "# Compliance Report: {} v{}\n\n",
+        report.framework_name,
+        report.framework_id.split('-').last().unwrap_or(""),
+    ));
+    md.push_str(&format!("**Generated:** {}\n\n", report.generated_at));
+    md.push_str("## Summary\n\n");
+    md.push_str(&format!("| Metric | Value |\n|--------|-------|\n"));
+    md.push_str(&format!("| Total Controls | {} |\n", report.total_controls));
+    md.push_str(&format!("| Passed | {} |\n", report.passed));
+    md.push_str(&format!("| Failed | {} |\n", report.failed));
+    md.push_str(&format!("| Manual Review | {} |\n", report.manual_review));
+    md.push_str(&format!(
+        "| Compliance Score | {:.1}% |\n\n",
+        report.score_percent
+    ));
+    md.push_str("## Findings\n\n");
+    md.push_str("| Control | Title | Status | Evidence |\n");
+    md.push_str("|---------|-------|--------|----------|\n");
+    for f in &report.findings {
+        let status_icon = match f.status {
+            FindingStatus::Pass => "✅ Pass",
+            FindingStatus::Fail => "❌ Fail",
+            FindingStatus::NotApplicable => "➖ N/A",
+            FindingStatus::ManualReview => "🔍 Review",
+        };
+        md.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            f.control_id, f.title, status_icon, f.evidence,
+        ));
+    }
+    if report.failed > 0 {
+        md.push_str("\n## Remediation Actions\n\n");
+        for f in &report.findings {
+            if f.status == FindingStatus::Fail && !f.remediation.is_empty() {
+                md.push_str(&format!("- **{}**: {}\n", f.control_id, f.remediation));
+            }
+        }
+    }
+    md
+}
+
+/// Executive summary across all frameworks.
+pub fn executive_summary(reports: &[ComplianceReport]) -> serde_json::Value {
+    let frameworks: Vec<serde_json::Value> = reports
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "framework": r.framework_name,
+                "score": r.score_percent,
+                "passed": r.passed,
+                "failed": r.failed,
+                "total": r.total_controls,
+            })
+        })
+        .collect();
+    let avg_score: f64 = if reports.is_empty() {
+        0.0
+    } else {
+        reports.iter().map(|r| r.score_percent).sum::<f64>() / reports.len() as f64
+    };
+    serde_json::json!({
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "overall_score": (avg_score * 10.0).round() / 10.0,
+        "frameworks": frameworks,
+    })
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1010,5 +1089,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn generate_all_reports_returns_four() {
+        let state = full_state();
+        let reports = generate_all_reports(&state);
+        assert_eq!(reports.len(), 4);
+        assert!(reports.iter().all(|r| r.score_percent > 0.0));
+    }
+
+    #[test]
+    fn report_to_markdown_contains_key_sections() {
+        let state = full_state();
+        let report = evaluate_framework(&cis_controls_v8(), &state);
+        let md = report_to_markdown(&report);
+        assert!(md.contains("# Compliance Report"));
+        assert!(md.contains("## Summary"));
+        assert!(md.contains("## Findings"));
+        assert!(md.contains("✅ Pass"));
+    }
+
+    #[test]
+    fn markdown_failing_report_has_remediation() {
+        let state = SystemState::default();
+        let report = evaluate_framework(&cis_controls_v8(), &state);
+        let md = report_to_markdown(&report);
+        assert!(md.contains("## Remediation Actions"));
+        assert!(md.contains("❌ Fail"));
+    }
+
+    #[test]
+    fn executive_summary_aggregates() {
+        let state = full_state();
+        let reports = generate_all_reports(&state);
+        let summary = executive_summary(&reports);
+        assert_eq!(summary["frameworks"].as_array().unwrap().len(), 4);
+        assert!(summary["overall_score"].as_f64().unwrap() > 0.0);
     }
 }

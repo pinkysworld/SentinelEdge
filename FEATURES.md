@@ -53,6 +53,27 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - Configuration drift detection with SSH, kernel, and Docker baselines and MITRE ATT&CK mappings
   - Unified asset inventory with 9 asset types, upsert, risk scoring, and full-text search
 
+- **Malware detection & AV scanning**
+  - In-memory malware hash database with ~48 built-in SHA256/MD5 signatures across 7 families
+  - YARA-based file scanning with 30 community rules (Emotet, Cobalt Strike, Mimikatz, WannaCry, etc.)
+  - Combined verdict engine: hash lookup + YARA match → malicious/suspicious/clean classification
+  - Bulk signature import (JSON/CSV) and custom YARA rule creation via API
+
+- **Threat hunting & SIEM integration**
+  - KQL-like threat hunting DSL with recursive descent parser, field aliases, wildcard matching, AND/OR/NOT operators
+  - Multi-format SIEM alert export: CEF, LEEF, Syslog RFC 5424, Microsoft Sentinel, Google UDM, Elastic ECS, QRadar
+  - Alert deduplication with time-window incident merging and configurable burst thresholds
+
+- **Compliance & reporting**
+  - Full-framework compliance evaluation: CIS v8, PCI-DSS v4, SOC 2 Type II, NIST CSF 2.0
+  - Markdown report rendering with status icons, findings tables, and remediation actions
+  - Executive summary with per-framework scores and overall compliance percentage
+
+- **Observability & analytics**
+  - API usage analytics with per-endpoint request tracking, latency percentiles (p95), and error rates
+  - OpenTelemetry-compatible tracing with span hierarchy, OTLP JSON export, and trace statistics
+  - Backup encryption with AES-256-GCM and passphrase-derived keys
+
 - **Enterprise controls**
   - RBAC with endpoint-level enforcement
   - Session TTL, token rotation, audit and retention controls
@@ -71,10 +92,12 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - Outbound notifications to Slack, Teams, PagerDuty, Webhook, and Email (real SMTP delivery with retry) with severity filtering
   - CycloneDX 1.5 and SPDX 2.3 SBOM generation from Cargo.lock for supply-chain compliance
   - Runbooks, OpenAPI contract, deployment models, disaster recovery guidance, and production hardening docs
-  - Python SDK with ~55 typed API methods and custom exception hierarchy
+  - Python SDK with ~70 typed API methods and custom exception hierarchy
+  - TypeScript SDK (`@wardex/sdk`) with 20+ typed methods covering all API endpoints
   - GraphQL query layer for threat-hunting with aliases, sub-field selection, and introspection
   - Prometheus metrics endpoint with 20+ wardex_* counters, gauges, and histograms
   - OpenAPI 3.0.3 machine-readable spec with 90+ endpoints and full schema definitions
+  - Homebrew formula for macOS/Linux with multi-platform binary selection and launchd/systemd integration
 
 - **Production hardening**
   - Persistent JSON storage backend with atomic writes, schema migrations, and retention purge

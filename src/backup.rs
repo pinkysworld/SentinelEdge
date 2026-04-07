@@ -4,6 +4,50 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
+use aes_gcm::{
+    Aes256Gcm, KeyInit, Nonce,
+    aead::Aead,
+};
+
+/// Derive a 256-bit key from a passphrase using SHA-256.
+fn derive_key(passphrase: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"wardex-backup-key-v1|");
+    hasher.update(passphrase.as_bytes());
+    let result = hasher.finalize();
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&result);
+    key
+}
+
+/// Encrypt data with AES-256-GCM.  Returns nonce (12 bytes) || ciphertext.
+pub fn encrypt_backup_data(plaintext: &[u8], passphrase: &str) -> Result<Vec<u8>, String> {
+    let key = derive_key(passphrase);
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("key error: {e}"))?;
+    // Generate deterministic nonce from SHA-256 of plaintext (first 12 bytes)
+    let mut nonce_bytes = [0u8; 12];
+    let hash = sha2::Sha256::digest(plaintext);
+    nonce_bytes.copy_from_slice(&hash[..12]);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| format!("encrypt error: {e}"))?;
+    let mut output = Vec::with_capacity(12 + ciphertext.len());
+    output.extend_from_slice(&nonce_bytes);
+    output.extend_from_slice(&ciphertext);
+    Ok(output)
+}
+
+/// Decrypt data that was encrypted with `encrypt_backup_data`.
+pub fn decrypt_backup_data(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>, String> {
+    if encrypted.len() < 13 {
+        return Err("encrypted data too short".into());
+    }
+    let key = derive_key(passphrase);
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("key error: {e}"))?;
+    let nonce = Nonce::from_slice(&encrypted[..12]);
+    let plaintext = cipher.decrypt(nonce, &encrypted[12..]).map_err(|e| format!("decrypt error: {e}"))?;
+    Ok(plaintext)
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct BackupConfig {
     pub enabled: bool,
@@ -342,5 +386,31 @@ mod tests {
 
         let valid = mgr.verify_backup(&rec.name).unwrap();
         assert!(!valid);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_round_trip() {
+        let plaintext = b"sensitive backup data with secrets";
+        let passphrase = "test-password-123";
+
+        let encrypted = super::encrypt_backup_data(plaintext, passphrase).unwrap();
+        assert_ne!(&encrypted[12..], plaintext); // ciphertext differs from plaintext
+
+        let decrypted = super::decrypt_backup_data(&encrypted, passphrase).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_decrypt_wrong_passphrase_fails() {
+        let plaintext = b"secret data";
+        let encrypted = super::encrypt_backup_data(plaintext, "correct-pass").unwrap();
+        let result = super::decrypt_backup_data(&encrypted, "wrong-pass");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decrypt_too_short_fails() {
+        let result = super::decrypt_backup_data(b"short", "pass");
+        assert!(result.is_err());
     }
 }

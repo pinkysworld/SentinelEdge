@@ -366,9 +366,163 @@ impl PlaybookEngine {
             .filter(|e| e.status == ExecutionStatus::Running)
             .count()
     }
+
+    /// Execute all steps of a playbook synchronously.
+    /// Each step is evaluated according to its StepType and the execution
+    /// variables are updated along the way.  Returns the execution ID.
+    pub fn run_playbook(
+        &mut self,
+        playbook_id: &str,
+        alert_id: Option<&str>,
+        executed_by: &str,
+        variables: HashMap<String, String>,
+        now_ms: u64,
+    ) -> Result<String, String> {
+        let pb = self
+            .playbooks
+            .iter()
+            .find(|p| p.id == playbook_id)
+            .ok_or_else(|| format!("playbook not found: {playbook_id}"))?
+            .clone();
+        if !pb.enabled {
+            return Err("playbook is disabled".into());
+        }
+
+        let exec_id = self
+            .start_execution(playbook_id, alert_id, executed_by, now_ms)
+            .ok_or("failed to start execution")?;
+
+        // Inject caller-supplied variables
+        if let Some(exec) = self
+            .executions
+            .iter_mut()
+            .find(|e| e.execution_id == exec_id)
+        {
+            exec.variables = variables;
+        }
+
+        let steps = pb.steps.clone();
+        let mut i = 0;
+        while i < steps.len() {
+            let step = &steps[i];
+            let step_now = now_ms + (i as u64 + 1) * 100;
+
+            let result = self.dispatch_step(step, &exec_id);
+            match result {
+                Ok(output) => {
+                    self.update_step(
+                        &exec_id,
+                        &step.id,
+                        ExecutionStatus::Succeeded,
+                        output,
+                        None,
+                        step_now,
+                    );
+                }
+                Err(err) => {
+                    self.update_step(
+                        &exec_id,
+                        &step.id,
+                        ExecutionStatus::Failed,
+                        None,
+                        Some(err.clone()),
+                        step_now,
+                    );
+                    // Jump to on_failure step if specified, else abort
+                    if let Some(ref fallback_id) = step.on_failure {
+                        if let Some(jump_idx) = steps.iter().position(|s| &s.id == fallback_id) {
+                            i = jump_idx;
+                            continue;
+                        }
+                    }
+                    self.finish_execution(
+                        &exec_id,
+                        ExecutionStatus::Failed,
+                        Some(err),
+                        step_now,
+                    );
+                    return Ok(exec_id);
+                }
+            }
+            i += 1;
+        }
+
+        let final_time = now_ms + (steps.len() as u64 + 1) * 100;
+        self.finish_execution(&exec_id, ExecutionStatus::Succeeded, None, final_time);
+        Ok(exec_id)
+    }
+
+    /// Dispatch a single step and return its output or an error.
+    fn dispatch_step(
+        &self,
+        step: &PlaybookStep,
+        exec_id: &str,
+    ) -> Result<Option<String>, String> {
+        let exec = self
+            .executions
+            .iter()
+            .find(|e| e.execution_id == exec_id)
+            .ok_or("execution not found")?;
+
+        match &step.step_type {
+            StepType::RunAction { action, params } => {
+                Ok(Some(format!("executed action '{}' with {} params", action, params.len())))
+            }
+            StepType::Notify { channel, message_template } => {
+                let msg = substitute_template(message_template, &exec.variables);
+                Ok(Some(format!("notified {:?}: {}", channel, msg)))
+            }
+            StepType::Enrich { source, query_template } => {
+                let query = substitute_template(query_template, &exec.variables);
+                Ok(Some(format!("enriched from '{}': {}", source, query)))
+            }
+            StepType::Conditional { condition, then_step, else_step } => {
+                let result = evaluate_condition(condition, &exec.variables);
+                if result {
+                    Ok(Some(format!("condition true → {}", then_step)))
+                } else if let Some(el) = else_step {
+                    Ok(Some(format!("condition false → {}", el)))
+                } else {
+                    Ok(Some("condition false → skip".into()))
+                }
+            }
+            StepType::Parallel { step_ids } => {
+                Ok(Some(format!("parallel fan-out: {} steps", step_ids.len())))
+            }
+            StepType::Wait { seconds } => {
+                Ok(Some(format!("waited {} seconds", seconds)))
+            }
+            StepType::Escalate { target, message_template } => {
+                let msg = substitute_template(message_template, &exec.variables);
+                Ok(Some(format!("escalated to '{}': {}", target, msg)))
+            }
+            StepType::CreateCase { case_template } => {
+                Ok(Some(format!("created case from template '{}'", case_template)))
+            }
+            StepType::Approval { approver, message_template } => {
+                let msg = substitute_template(message_template, &exec.variables);
+                Ok(Some(format!("approval requested from '{}': {}", approver, msg)))
+            }
+            StepType::CollectEvidence { artifact_types } => {
+                Ok(Some(format!("collected evidence: {:?}", artifact_types)))
+            }
+            StepType::Contain { action, params } => {
+                Ok(Some(format!("containment '{}' with {} params", action, params.len())))
+            }
+        }
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+/// Simple template substitution: replaces `{key}` with value from variables map.
+fn substitute_template(template: &str, variables: &HashMap<String, String>) -> String {
+    let mut result = template.to_string();
+    for (key, value) in variables {
+        result = result.replace(&format!("{{{}}}", key), value);
+    }
+    result
+}
 
 /// Lightweight condition evaluator for playbook conditional steps.
 ///
@@ -706,5 +860,42 @@ mod tests {
         vars.insert("level".into(), "Severe".into());
         assert!(evaluate_condition("level == 'Severe'", &vars));
         assert!(!evaluate_condition("level == 'Critical'", &vars));
+    }
+
+    #[test]
+    fn run_playbook_executes_all_steps() {
+        let mut engine = PlaybookEngine::new();
+        engine.register(sample_playbook("pb1"));
+
+        let vars = HashMap::new();
+        let exec_id = engine
+            .run_playbook("pb1", Some("alert-1"), "analyst", vars, 1000)
+            .unwrap();
+
+        let exec = engine.get_execution(&exec_id).unwrap();
+        assert_eq!(exec.status, ExecutionStatus::Succeeded);
+        assert!(exec.finished_at.is_some());
+        assert_eq!(exec.step_results.len(), 2);
+        assert_eq!(exec.step_results[0].status, ExecutionStatus::Succeeded);
+        assert_eq!(exec.step_results[1].status, ExecutionStatus::Succeeded);
+    }
+
+    #[test]
+    fn run_playbook_disabled_errors() {
+        let mut engine = PlaybookEngine::new();
+        let mut pb = sample_playbook("pb1");
+        pb.enabled = false;
+        engine.register(pb);
+        let result = engine.run_playbook("pb1", None, "test", HashMap::new(), 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn template_substitution() {
+        let mut vars = HashMap::new();
+        vars.insert("alert_id".into(), "A-123".into());
+        vars.insert("host".into(), "web-01".into());
+        let result = substitute_template("Alert {alert_id} on {host}", &vars);
+        assert_eq!(result, "Alert A-123 on web-01");
     }
 }

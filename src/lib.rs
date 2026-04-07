@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 pub mod actions;
+pub mod api_analytics;
 pub mod agent_client;
 pub mod alert_analysis;
 pub mod analyst;
@@ -60,6 +61,8 @@ pub mod lateral;
 pub mod license;
 pub mod live_response;
 pub mod log_collector;
+pub mod malware_scanner;
+pub mod malware_signatures;
 pub mod marketplace;
 pub mod memory_forensics;
 pub mod metering;

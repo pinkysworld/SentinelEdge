@@ -31,11 +31,22 @@ export default function Infrastructure() {
   const { data: assetSummary, reload: rAssets } = useApi(api.assetsSummary);
   const [assetSearch, setAssetSearch] = useState('');
   const [assetResults, setAssetResults] = useState(null);
+  const { data: malwareStatsData, reload: rMalware } = useApi(api.malwareStats);
+  const { data: malwareRecentData } = useApi(api.malwareRecent);
+  const [scanHash, setScanHash] = useState('');
+  const [scanResult, setScanResult] = useState(null);
+  const { data: compData, reload: rComp } = useApi(api.complianceSummary);
+  const { data: analyticsData, reload: rAnalytics } = useApi(api.apiAnalytics);
+  const { data: tracesData, reload: rTraces } = useApi(api.traces);
+  const { data: rulesData, reload: rRules } = useApi(api.detectionRules);
+  const [huntQuery, setHuntQuery] = useState('');
+  const [huntResult, setHuntResult] = useState(null);
+  const [exportFmt, setExportFmt] = useState('cef');
 
   return (
     <div>
       <div className="tabs">
-        {['monitor', 'correlation', 'drift', 'energy', 'mesh', 'system', 'inventory', 'vulnerabilities', 'ndr', 'containers', 'certificates', 'assets'].map(t => (
+        {['monitor', 'correlation', 'drift', 'energy', 'mesh', 'system', 'inventory', 'vulnerabilities', 'ndr', 'containers', 'certificates', 'assets', 'malware', 'hunt', 'compliance', 'analytics', 'traces', 'rules'].map(t => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
@@ -504,6 +515,191 @@ export default function Infrastructure() {
             </div>
           )}
           {assetSummary && <JsonDetails data={assetSummary} />}
+        </div>
+      )}
+
+      {tab === 'malware' && (
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">Malware Detection / AV Scanning</span>
+            <button className="btn btn-sm" onClick={rMalware}>↻ Refresh</button>
+          </div>
+          {malwareStatsData && (
+            <div className="card-grid" style={{ marginBottom: 16 }}>
+              <div className="card"><div className="card-title">Hash Signatures</div><div className="big-number">{malwareStatsData.database?.total_hashes ?? '—'}</div></div>
+              <div className="card"><div className="card-title">YARA Rules</div><div className="big-number">{malwareStatsData.yara_rules ?? '—'}</div></div>
+              <div className="card"><div className="card-title">Total Scans</div><div className="big-number">{malwareStatsData.scanner?.total_scans ?? 0}</div></div>
+              <div className="card"><div className="card-title">Malicious</div><div className="big-number" style={{ color: 'var(--color-danger)' }}>{malwareStatsData.scanner?.malicious_count ?? 0}</div></div>
+              <div className="card"><div className="card-title">Suspicious</div><div className="big-number" style={{ color: 'var(--color-warning)' }}>{malwareStatsData.scanner?.suspicious_count ?? 0}</div></div>
+            </div>
+          )}
+          <h4 style={{ marginTop: 16 }}>Hash Lookup</h4>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input type="text" placeholder="SHA256 or MD5 hash..." value={scanHash} onChange={e => setScanHash(e.target.value)} className="auth-input" style={{ flex: 1 }} />
+            <button className="btn btn-sm btn-primary" onClick={async () => {
+              if (!scanHash.trim()) return;
+              try { const r = await api.scanHash({ hash: scanHash }); setScanResult(r); } catch { toast('Scan failed', 'error'); }
+            }}>Lookup</button>
+          </div>
+          {scanResult && <div className="card" style={{ marginBottom: 16 }}><JsonDetails data={scanResult} /></div>}
+          <h4>Recent Detections</h4>
+          {malwareRecentData && Array.isArray(malwareRecentData) && malwareRecentData.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>SHA256</th><th>Name</th><th>Family</th><th>Severity</th><th>Detected</th></tr></thead>
+                <tbody>
+                  {malwareRecentData.slice(-50).reverse().map((d, i) => (
+                    <tr key={i}>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{d.sha256?.substring(0, 16)}...</td>
+                      <td>{d.name || '—'}</td>
+                      <td>{d.family || '—'}</td>
+                      <td><span className={`badge badge-${d.severity === 'critical' ? 'danger' : d.severity === 'high' ? 'warning' : 'info'}`}>{d.severity}</span></td>
+                      <td>{d.detected_at || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="empty">No recent detections</div>}
+          {malwareStatsData && <JsonDetails data={malwareStatsData} />}
+        </div>
+      )}
+
+      {tab === 'hunt' && (
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 12 }}>Threat Hunting (KQL-like DSL)</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input type="text" placeholder='e.g. process:"powershell*" AND src:"10.*"' value={huntQuery} onChange={e => setHuntQuery(e.target.value)} className="auth-input" style={{ flex: 1 }} />
+            <button className="btn btn-sm btn-primary" onClick={async () => {
+              if (!huntQuery.trim()) return;
+              try { const r = await api.hunt(huntQuery); setHuntResult(r); } catch (err) { toast('Hunt failed: ' + (err.body || err.message), 'error'); }
+            }}>Hunt</button>
+          </div>
+          {huntResult && <JsonDetails data={huntResult} />}
+          <h4 style={{ marginTop: 16 }}>SIEM Export</h4>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select value={exportFmt} onChange={e => setExportFmt(e.target.value)} className="auth-input" style={{ width: 140 }}>
+              {['cef', 'leef', 'syslog', 'sentinel', 'udm', 'ecs', 'qradar', 'json'].map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}
+            </select>
+            <button className="btn btn-sm btn-primary" onClick={async () => {
+              try {
+                const blob = await api.exportAlerts(exportFmt);
+                const text = typeof blob === 'string' ? blob : JSON.stringify(blob, null, 2);
+                const b = new Blob([text], { type: 'text/plain' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `alerts.${exportFmt}`; a.click();
+              } catch (err) { toast('Export failed', 'error'); }
+            }}>Download</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'compliance' && (
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 12 }}>Compliance Summary <button className="btn btn-sm" onClick={rComp}>↻</button></div>
+          {compData ? (
+            <>
+              {compData.frameworks && (
+                <div className="card-grid" style={{ marginBottom: 16 }}>
+                  {Object.entries(compData.frameworks).map(([name, info]) => (
+                    <div key={name} className="card">
+                      <div className="card-title">{name}</div>
+                      <div className="big-number" style={{ color: (info.score ?? info) >= 80 ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                        {typeof info === 'object' ? `${info.score}%` : `${info}%`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <JsonDetails data={compData} />
+            </>
+          ) : <div className="empty">Loading...</div>}
+        </div>
+      )}
+
+      {tab === 'analytics' && (
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 12 }}>API Analytics <button className="btn btn-sm" onClick={rAnalytics}>↻</button></div>
+          {analyticsData ? (
+            <>
+              <div className="card-grid" style={{ marginBottom: 16 }}>
+                <div className="card"><div className="card-title">Total Requests</div><div className="big-number">{analyticsData.total_requests ?? 0}</div></div>
+                <div className="card"><div className="card-title">Error Rate</div><div className="big-number">{analyticsData.error_rate ?? '0%'}</div></div>
+                <div className="card"><div className="card-title">Endpoints</div><div className="big-number">{analyticsData.endpoint_count ?? 0}</div></div>
+              </div>
+              {analyticsData.top_endpoints && (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Endpoint</th><th>Requests</th><th>Errors</th><th>Avg Latency</th><th>P95 Latency</th></tr></thead>
+                    <tbody>
+                      {analyticsData.top_endpoints.map((ep, i) => (
+                        <tr key={i}><td>{ep.endpoint}</td><td>{ep.request_count}</td><td>{ep.error_count}</td><td>{ep.avg_latency_ms?.toFixed(1)}ms</td><td>{ep.p95_latency_ms?.toFixed(1)}ms</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <JsonDetails data={analyticsData} />
+            </>
+          ) : <div className="empty">Loading...</div>}
+        </div>
+      )}
+
+      {tab === 'traces' && (
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 12 }}>OpenTelemetry Traces <button className="btn btn-sm" onClick={rTraces}>↻</button></div>
+          {tracesData ? (
+            <>
+              {tracesData.stats && (
+                <div className="card-grid" style={{ marginBottom: 16 }}>
+                  <div className="card"><div className="card-title">Total Spans</div><div className="big-number">{tracesData.stats.total_spans}</div></div>
+                  <div className="card"><div className="card-title">Error Spans</div><div className="big-number" style={{ color: 'var(--color-danger)' }}>{tracesData.stats.error_spans}</div></div>
+                  <div className="card"><div className="card-title">Avg Duration</div><div className="big-number">{tracesData.stats.avg_duration_ms?.toFixed(1)}ms</div></div>
+                </div>
+              )}
+              {tracesData.recent && tracesData.recent.length > 0 && (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Trace ID</th><th>Operation</th><th>Status</th><th>Duration</th></tr></thead>
+                    <tbody>
+                      {tracesData.recent.map((sp, i) => (
+                        <tr key={i}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{sp.trace_id?.substring(0, 12)}...</td>
+                          <td>{sp.operation_name}</td>
+                          <td><span className={`badge badge-${sp.status === 'Error' ? 'danger' : 'success'}`}>{sp.status}</span></td>
+                          <td>{sp.end_time_ms && sp.start_time_ms ? `${sp.end_time_ms - sp.start_time_ms}ms` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <JsonDetails data={tracesData} />
+            </>
+          ) : <div className="empty">Loading...</div>}
+        </div>
+      )}
+
+      {tab === 'rules' && (
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 12 }}>Detection Rules <button className="btn btn-sm" onClick={rRules}>↻</button></div>
+          {rulesData ? (
+            <>
+              <div className="card-grid" style={{ marginBottom: 16 }}>
+                <div className="card"><div className="card-title">Sigma Rules</div><div className="big-number">{rulesData.sigma?.count ?? 0}</div></div>
+                <div className="card"><div className="card-title">YARA Rules</div><div className="big-number">{rulesData.yara?.count ?? 0}</div></div>
+                <div className="card"><div className="card-title">Malware Hashes</div><div className="big-number">{rulesData.malware_hashes?.total_hashes ?? 0}</div></div>
+              </div>
+              {rulesData.yara?.rules && (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>YARA Rule Name</th></tr></thead>
+                    <tbody>{rulesData.yara.rules.map((r, i) => <tr key={i}><td>{r}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              )}
+              <JsonDetails data={rulesData} />
+            </>
+          ) : <div className="empty">Loading...</div>}
         </div>
       )}
     </div>

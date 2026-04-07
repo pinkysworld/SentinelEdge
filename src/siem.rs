@@ -605,6 +605,53 @@ impl SiemConnector {
         serde_json::to_string(&events).unwrap_or_else(|_| "[]".into())
     }
 
+    /// Format alerts as Syslog RFC 5424 messages.
+    /// Facility=local4 (20), severity mapped from alert level.
+    pub fn format_syslog_rfc5424(alerts: &[AlertRecord]) -> String {
+        alerts.iter().map(|a| {
+            // RFC 5424 severity: 0=Emergency..7=Debug
+            // Map: critical→2(Critical), severe→3(Error), elevated→4(Warning), _→6(Informational)
+            let sev = match a.level.as_str() {
+                "critical" => 2u8,
+                "severe" => 3,
+                "elevated" => 4,
+                _ => 6,
+            };
+            // PRI = facility * 8 + severity; facility=local4=20
+            let pri = 20 * 8 + sev;
+            let mitre_str = a.mitre.iter()
+                .map(|m| format!("{}:{}", m.technique_id, m.tactic))
+                .collect::<Vec<_>>().join(",");
+            // <PRI>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID [SD] MSG
+            format!(
+                "<{pri}>1 {ts} {host} SentinelEdge - {action} [wardex@48710 score=\"{score:.2}\" level=\"{level}\" confidence=\"{conf:.2}\" mitre=\"{mitre}\"] {reasons}",
+                pri = pri,
+                ts = a.timestamp,
+                host = a.hostname,
+                action = a.action,
+                score = a.score,
+                level = a.level,
+                conf = a.confidence,
+                mitre = mitre_str,
+                reasons = a.reasons.join("; "),
+            )
+        }).collect::<Vec<_>>().join("\n")
+    }
+
+    /// Export alerts in the requested format.
+    pub fn export_alerts(alerts: &[AlertRecord], format: &str) -> String {
+        match format {
+            "cef" => Self::format_cef(alerts),
+            "leef" => Self::format_leef(alerts),
+            "syslog" | "rfc5424" => Self::format_syslog_rfc5424(alerts),
+            "sentinel" | "asim" => Self::format_sentinel_asim(alerts),
+            "udm" | "google" => Self::format_google_udm(alerts),
+            "ecs" => Self::format_elastic_ecs(alerts),
+            "qradar" => Self::format_qradar(alerts),
+            _ => serde_json::to_string(alerts).unwrap_or_else(|_| "[]".into()),
+        }
+    }
+
     fn send_to_siem(&self, payload: &str) -> Result<(), String> {
         let content_type = match self.config.siem_type.as_str() {
             "elastic" => "application/x-ndjson",
@@ -1317,5 +1364,27 @@ mod tests {
         conn.update_config(new_cfg);
         assert!(conn.config().enabled);
         assert_eq!(conn.config().siem_type, "elastic");
+    }
+
+    #[test]
+    fn syslog_rfc5424_format() {
+        let alerts = vec![make_alert()];
+        let output = SiemConnector::format_syslog_rfc5424(&alerts);
+        // PRI = 20*8 + 2 = 162 for critical
+        assert!(output.starts_with("<162>1 "));
+        assert!(output.contains("SentinelEdge"));
+        assert!(output.contains("[wardex@48710"));
+        assert!(output.contains("score="));
+    }
+
+    #[test]
+    fn export_alerts_dispatches_correctly() {
+        let alerts = vec![make_alert()];
+        let cef = SiemConnector::export_alerts(&alerts, "cef");
+        assert!(cef.starts_with("CEF:0|"));
+        let syslog = SiemConnector::export_alerts(&alerts, "syslog");
+        assert!(syslog.contains("<162>1 "));
+        let json = SiemConnector::export_alerts(&alerts, "json");
+        assert!(json.starts_with('['));
     }
 }

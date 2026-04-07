@@ -2,6 +2,31 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.43.0] — Malware Detection, Threat Hunting & Platform Hardening
+
+### Added
+- **Malware hash database** (`malware_signatures.rs`) — In-memory threat intel DB with ~48 built-in SHA256/MD5 hashes across ransomware, trojan, spyware, rootkit, worm, adware, and cryptominer families. Supports import from JSON/CSV. API: `GET /api/malware/stats`, `GET /api/malware/recent`, `POST /api/malware/signatures/import`.
+- **Malware scanner** (`malware_scanner.rs`) — Orchestrates hash DB + YARA engine for file scanning with verdict classification (malicious/suspicious/clean). API: `POST /api/scan/buffer`, `POST /api/scan/hash`.
+- **Community YARA rules** (`rules/yara/malware.json`) — 30 YARA-format detection rules for malware families (Emotet, Cobalt Strike, Mimikatz, WannaCry, etc.).
+- **Threat hunting DSL** — KQL-like query language with recursive descent parser, field aliases (process, src, dst, cmd), wildcard matching, AND/OR/NOT operators. API: `POST /api/hunt`.
+- **SIEM export engine** — Multi-format alert export: CEF, LEEF, Syslog RFC 5424, Microsoft Sentinel, Google UDM, Elastic ECS, QRadar, JSON. API: `GET /api/export/alerts?format=`.
+- **Compliance report generator** — Full-framework evaluation for CIS v8, PCI-DSS v4, SOC 2 Type II, and NIST CSF 2.0 with Markdown rendering, status icons, and remediation actions. API: `GET /api/compliance/report`, `GET /api/compliance/summary`.
+- **Playbook execution engine** — Full step dispatch for 11 step types (RunAction, Notify, Enrich, Conditional, Parallel, Wait, Escalate, CreateCase, Approval, CollectEvidence, Contain) with on_failure jump and template variable substitution. API: `POST /api/playbooks/run`.
+- **Alert deduplication** — Time-window incident merging with configurable cross-device and max-merge settings. API: `GET /api/alerts/dedup`.
+- **API usage analytics** (`api_analytics.rs`) — Per-endpoint request tracking with count, error rate, latency percentiles (p95), and top-endpoint summary. API: `GET /api/analytics`.
+- **OpenTelemetry-compatible tracing** — OtelSpan with trace/span IDs, parent chaining, OTLP JSON export, and TraceCollector with ring buffer and stats. API: `GET /api/traces`.
+- **Backup encryption** — AES-256-GCM encryption/decryption for backup data with passphrase-derived keys. API: `POST /api/backup/encrypt`, `POST /api/backup/decrypt`.
+- **Detection rules CRUD** — List and add custom YARA rules via API. API: `GET /api/detection/rules`, `POST /api/detection/rules`.
+- **TypeScript SDK** (`sdk/typescript/`) — Full typed client with 20+ methods covering all API endpoints, AbortController timeout support, and TypeScript interfaces for all response types.
+- **Homebrew formula** (`deploy/homebrew/wardex.rb`) — Multi-platform (macOS ARM/Intel, Linux x86_64) installation with service integration.
+- **Admin console — 5 new tabs**: Hunt (KQL-like threat hunting + SIEM export download), Compliance (framework scores + executive summary), Analytics (API request metrics + top endpoints), Traces (OpenTelemetry span viewer), Rules (detection rule inventory).
+
+### Improved
+- **Systemd hardening** — 20+ additional security directives: SystemCallFilter allowlist, CapabilityBoundingSet, IP address filtering, memory/CPU limits, WatchdogSec, ProtectProc, UMask 0077.
+- **Python SDK** — 14 new methods: hunt, export_alerts, compliance_report/summary, run_playbook, dedup_alerts, api_analytics, traces, backup_encrypt/decrypt, detection_rules, add_detection_rule.
+- **Admin console API client** — 14 new endpoint functions for all v0.43.0 features.
+- **Server auth gates** — 12 new authenticated endpoint entries protecting all new API routes.
+
 ## [0.42.0] — Detection Expansion, Unified Asset Inventory & SOC Workflow Overhaul
 
 ### Added

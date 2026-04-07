@@ -1,0 +1,20 @@
+{
+  "name": "@wardex/sdk",
+  "version": "0.43.0",
+  "description": "TypeScript SDK for Wardex SentinelEdge XDR platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "license": "BSL-1.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pinkysworld/Wardex.git",
+    "directory": "sdk/typescript"
+  }
+}

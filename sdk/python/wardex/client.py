@@ -480,3 +480,102 @@ class WardexClient:
 
     def suggest_investigation(self, alert_reasons: list[str]) -> list[dict[str, Any]]:
         return self._post("/api/investigations/suggest", {"alert_reasons": alert_reasons})
+
+    # ── malware detection / AV scanning ──────────────────────────────
+
+    def scan_buffer(self, data: bytes, filename: str = "upload") -> dict[str, Any]:
+        import base64
+        payload = {"data": base64.b64encode(data).decode(), "filename": filename}
+        return self._post("/api/scan/buffer", payload)
+
+    def scan_hash(self, hash_value: str) -> dict[str, Any] | None:
+        return self._post("/api/scan/hash", {"hash": hash_value})
+
+    def malware_stats(self) -> dict[str, Any]:
+        return self._get("/api/malware/stats")
+
+    def malware_recent(self) -> list[dict[str, Any]]:
+        return self._get("/api/malware/recent")
+
+    def malware_import(self, data: str) -> dict[str, Any]:
+        return self._post("/api/malware/signatures/import", data)
+
+    # ── threat hunting ───────────────────────────────────────────────
+
+    def hunt(self, query: str) -> dict[str, Any]:
+        return self._post("/api/hunt", {"query": query})
+
+    # ── SIEM export ──────────────────────────────────────────────────
+
+    def export_alerts(self, fmt: str = "json") -> str:
+        return self._get(f"/api/export/alerts?format={fmt}")
+
+    # ── compliance ───────────────────────────────────────────────────
+
+    def compliance_report(self, framework: str | None = None) -> Any:
+        path = "/api/compliance/report"
+        if framework:
+            path += f"?framework={framework}"
+        return self._get(path)
+
+    def compliance_summary(self) -> dict[str, Any]:
+        return self._get("/api/compliance/summary")
+
+    # ── playbook run ─────────────────────────────────────────────────
+
+    def run_playbook(
+        self,
+        playbook_id: str,
+        alert_id: str | None = None,
+        variables: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"playbook_id": playbook_id}
+        if alert_id:
+            payload["alert_id"] = alert_id
+        if variables:
+            payload["variables"] = variables
+        return self._post("/api/playbooks/run", payload)
+
+    # ── alert deduplication ──────────────────────────────────────────
+
+    def dedup_alerts(self) -> list[dict[str, Any]]:
+        return self._get("/api/alerts/dedup")
+
+    # ── API analytics ────────────────────────────────────────────────
+
+    def api_analytics(self) -> dict[str, Any]:
+        return self._get("/api/analytics")
+
+    # ── OpenTelemetry traces ─────────────────────────────────────────
+
+    def traces(self) -> dict[str, Any]:
+        return self._get("/api/traces")
+
+    # ── backup encryption ────────────────────────────────────────────
+
+    def backup_encrypt(self, data: str, passphrase: str) -> dict[str, Any]:
+        return self._post("/api/backup/encrypt", {"data": data, "passphrase": passphrase})
+
+    def backup_decrypt(self, data: str, passphrase: str) -> dict[str, Any]:
+        return self._post("/api/backup/decrypt", {"data": data, "passphrase": passphrase})
+
+    # ── detection rules ──────────────────────────────────────────────
+
+    def detection_rules(self) -> dict[str, Any]:
+        return self._get("/api/detection/rules")
+
+    def add_detection_rule(
+        self,
+        name: str,
+        pattern: str,
+        rule_type: str = "yara",
+        severity: str = "medium",
+        description: str = "",
+    ) -> dict[str, Any]:
+        return self._post("/api/detection/rules", {
+            "type": rule_type,
+            "name": name,
+            "pattern": pattern,
+            "severity": severity,
+            "description": description,
+        })

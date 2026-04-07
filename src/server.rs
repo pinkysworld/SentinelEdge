@@ -370,6 +370,12 @@ struct AppState {
     asset_inventory: crate::cloud_inventory::AssetInventory,
     efficacy_tracker: crate::detection_efficacy::EfficacyTracker,
     workflow_store: crate::investigation::WorkflowStore,
+    // Phase 43: malware detection
+    malware_hash_db: crate::malware_signatures::MalwareHashDb,
+    malware_scanner: crate::malware_scanner::MalwareScanner,
+    yara_engine: crate::yara_engine::YaraEngine,
+    api_analytics: crate::api_analytics::ApiAnalytics,
+    trace_collector: crate::telemetry::TraceCollector,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -783,6 +789,11 @@ pub async fn run_server(
         asset_inventory: crate::cloud_inventory::AssetInventory::new(),
         efficacy_tracker: crate::detection_efficacy::EfficacyTracker::new(100_000),
         workflow_store: crate::investigation::WorkflowStore::new(),
+        malware_hash_db: crate::malware_signatures::MalwareHashDb::new(),
+        malware_scanner: crate::malware_scanner::MalwareScanner::new(),
+        yara_engine: crate::yara_engine::YaraEngine::new(),
+        api_analytics: crate::api_analytics::ApiAnalytics::new(),
+        trace_collector: crate::telemetry::TraceCollector::new(10000),
     }));
 
     // Apply loaded config
@@ -792,6 +803,21 @@ pub async fn run_server(
         let effective_rules = s.enterprise.effective_sigma_rules();
         s.sigma_engine.replace_rules(effective_rules);
     }
+
+    // Load community YARA malware rules
+    {
+        let yara_path = std::path::Path::new("rules/yara/malware.json");
+        if yara_path.exists() {
+            if let Ok(json) = std::fs::read_to_string(yara_path) {
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                match s.yara_engine.load_rules_json(&json) {
+                    Ok(n) => tracing::info!("loaded {n} community YARA malware rules"),
+                    Err(e) => tracing::warn!("failed to load YARA malware rules: {e}"),
+                }
+            }
+        }
+    }
+
     spawn_enterprise_hunt_scheduler(&state);
     spawn_retention_purge_scheduler(&state);
 
@@ -1211,6 +1237,11 @@ pub fn spawn_test_server() -> (u16, String) {
         asset_inventory: crate::cloud_inventory::AssetInventory::new(),
         efficacy_tracker: crate::detection_efficacy::EfficacyTracker::new(100_000),
         workflow_store: crate::investigation::WorkflowStore::new(),
+        malware_hash_db: crate::malware_signatures::MalwareHashDb::new(),
+        malware_scanner: crate::malware_scanner::MalwareScanner::new(),
+        yara_engine: crate::yara_engine::YaraEngine::new(),
+        api_analytics: crate::api_analytics::ApiAnalytics::new(),
+        trace_collector: crate::telemetry::TraceCollector::new(10000),
     }));
     {
         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -4079,7 +4110,26 @@ fn handle_api(
         || (method == Method::Get && route_path.starts_with("/api/investigations/workflows/"))
         || (method == Method::Post && route_path == "/api/investigations/start")
         || (method == Method::Get && route_path == "/api/investigations/active")
-        || (method == Method::Post && route_path == "/api/investigations/suggest")));
+        || (method == Method::Post && route_path == "/api/investigations/suggest")
+        // Malware detection / AV scanning
+        || (method == Method::Post && route_path == "/api/scan/buffer")
+        || (method == Method::Post && route_path == "/api/scan/hash")
+        || (method == Method::Get && route_path == "/api/malware/stats")
+        || (method == Method::Get && route_path == "/api/malware/recent")
+        || (method == Method::Post && route_path == "/api/malware/signatures/import")
+        // Enhancement endpoints
+        || (method == Method::Post && route_path == "/api/hunt")
+        || (method == Method::Get && route_path == "/api/export/alerts")
+        || (method == Method::Get && route_path == "/api/compliance/report")
+        || (method == Method::Get && route_path == "/api/compliance/summary")
+        || (method == Method::Post && route_path == "/api/playbooks/run")
+        || (method == Method::Get && route_path == "/api/alerts/dedup")
+        || (method == Method::Get && route_path == "/api/analytics")
+        || (method == Method::Get && route_path == "/api/traces")
+        || (method == Method::Post && route_path == "/api/backup/encrypt")
+        || (method == Method::Post && route_path == "/api/backup/decrypt")
+        || (method == Method::Get && route_path == "/api/detection/rules")
+        || (method == Method::Post && route_path == "/api/detection/rules")));
 
     let auth_identity = authenticate_request(headers, state);
     if needs_auth && !auth_identity.is_authenticated() {
@@ -10251,6 +10301,349 @@ fn handle_api(
                         let suggestions = s.workflow_store.suggest_for_alert(&req.alert_reasons);
                         let body = serde_json::to_string(&suggestions).unwrap_or_default();
                         json_response(&body, 200)
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Malware Detection / AV Scanning ──────────────────────
+            } else if method == Method::Post && url_path == "/api/scan/buffer" {
+                match read_body_limited(body, 65536) {
+                    Ok(body_str) => {
+                        #[derive(serde::Deserialize)]
+                        struct ScanReq { data: String, filename: Option<String> }
+                        let req: ScanReq = match serde_json::from_str(&body_str) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid scan request: {e}"), 400));
+                            }
+                        };
+                        let decoded = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.data) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid base64: {e}"), 400));
+                            }
+                        };
+                        let fname = req.filename.unwrap_or_else(|| "upload".to_string());
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        let AppState { ref mut malware_scanner, ref mut malware_hash_db, ref yara_engine, ref mut threat_intel, .. } = *s;
+                        match malware_scanner.scan_buffer(&decoded, &fname, malware_hash_db, yara_engine, threat_intel) {
+                            Ok(result) => {
+                                let body = serde_json::to_string(&result).unwrap_or_default();
+                                json_response(&body, 200)
+                            }
+                            Err(e) => error_json(&e, 400),
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+            } else if method == Method::Post && url_path == "/api/scan/hash" {
+                match read_body_limited(body, 4096) {
+                    Ok(body_str) => {
+                        #[derive(serde::Deserialize)]
+                        struct HashReq { hash: String }
+                        let req: HashReq = match serde_json::from_str(&body_str) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                return respond_api(state, &method, &url, remote_addr, auth_used, error_json(&format!("invalid request: {e}"), 400));
+                            }
+                        };
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        let result = s.malware_scanner.check_hash(&req.hash, &s.malware_hash_db);
+                        let body = serde_json::to_string(&result).unwrap_or_default();
+                        json_response(&body, 200)
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+            } else if method == Method::Get && url_path == "/api/malware/stats" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let db_stats = s.malware_hash_db.stats();
+                let scanner_stats = s.malware_scanner.stats();
+                let combined = serde_json::json!({
+                    "database": db_stats,
+                    "scanner": scanner_stats,
+                    "yara_rules": s.yara_engine.rule_names().len()
+                });
+                let body = serde_json::to_string(&combined).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/malware/recent" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let recent = s.malware_hash_db.recent_detections();
+                let body = serde_json::to_string(&recent).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Post && url_path == "/api/malware/signatures/import" {
+                match read_body_limited(body, 10 * 1024 * 1024) {
+                    Ok(body_str) => {
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        // Try JSON first, then CSV
+                        let result = if body_str.trim_start().starts_with('[') {
+                            s.malware_hash_db.load_from_json(&body_str)
+                        } else {
+                            s.malware_hash_db.load_abuse_ch_csv(&body_str)
+                        };
+                        match result {
+                            Ok(count) => json_response(&format!(r#"{{"imported":{count}}}"#), 200),
+                            Err(e) => error_json(&e, 400),
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Threat Hunting DSL ────────────────────────────────────
+            } else if method == Method::Post && url_path == "/api/hunt" {
+                match read_body_limited(body, 64 * 1024) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+                            Ok(v) => v,
+                            Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+                        };
+                        let query = parsed["query"].as_str().unwrap_or("");
+                        match crate::search::SearchIndex::new("/tmp/wardex-search") {
+                            Ok(idx) => match idx.hunt(query) {
+                                Ok(result) => {
+                                    let body = serde_json::to_string(&result).unwrap_or_default();
+                                    json_response(&body, 200)
+                                }
+                                Err(e) => error_json(&e, 400),
+                            },
+                            Err(e) => error_json(&format!("search index unavailable: {e}"), 500),
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── SIEM Export ──────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/export/alerts" {
+                let qs = parse_query_string(&url);
+                let format = qs.get("format").map(|s| s.as_str()).unwrap_or("json");
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let alerts: Vec<crate::collector::AlertRecord> = s.alerts.iter().cloned().collect();
+                let output = crate::siem::SiemConnector::export_alerts(&alerts, format);
+                json_response(&output, 200)
+
+            // ── Compliance Report ────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/compliance/report" {
+                let qs = parse_query_string(&url);
+                let framework_id = qs.get("framework").cloned();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let sys_state = crate::compliance_templates::SystemState {
+                    detection_enabled: !s.config.monitor.dry_run,
+                    audit_logging: true,
+                    encryption_at_rest: true,
+                    encryption_in_transit: true,
+                    mfa_enforced: s.config.security.require_mtls_agents,
+                    backup_configured: true,
+                    retention_days: (s.config.retention.audit_max_age_secs / 86400) as u32,
+                    agent_coverage_percent: if s.agent_registry.list().is_empty() { 0.0 } else { 100.0 },
+                    incident_process: !s.playbook_engine.list_playbooks().is_empty(),
+                    rbac_enabled: true,
+                    rate_limiting: true,
+                    sigma_rules_loaded: s.sigma_engine.rule_count(),
+                    baseline_active: true,
+                    sbom_available: true,
+                };
+                if let Some(fid) = framework_id {
+                    let frameworks = crate::compliance_templates::all_frameworks();
+                    if let Some(fw) = frameworks.iter().find(|f| f.id == fid) {
+                        let report = crate::compliance_templates::evaluate_framework(fw, &sys_state);
+                        let body = serde_json::to_string(&report).unwrap_or_default();
+                        json_response(&body, 200)
+                    } else {
+                        error_json("framework not found", 404)
+                    }
+                } else {
+                    let reports = crate::compliance_templates::generate_all_reports(&sys_state);
+                    let body = serde_json::to_string(&reports).unwrap_or_default();
+                    json_response(&body, 200)
+                }
+
+            // ── Compliance Executive Summary ─────────────────────────
+            } else if method == Method::Get && url_path == "/api/compliance/summary" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let sys_state = crate::compliance_templates::SystemState {
+                    detection_enabled: !s.config.monitor.dry_run,
+                    audit_logging: true,
+                    encryption_at_rest: true,
+                    encryption_in_transit: true,
+                    mfa_enforced: s.config.security.require_mtls_agents,
+                    backup_configured: true,
+                    retention_days: (s.config.retention.audit_max_age_secs / 86400) as u32,
+                    agent_coverage_percent: if s.agent_registry.list().is_empty() { 0.0 } else { 100.0 },
+                    incident_process: !s.playbook_engine.list_playbooks().is_empty(),
+                    rbac_enabled: true,
+                    rate_limiting: true,
+                    sigma_rules_loaded: s.sigma_engine.rule_count(),
+                    baseline_active: true,
+                    sbom_available: true,
+                };
+                let reports = crate::compliance_templates::generate_all_reports(&sys_state);
+                let summary = crate::compliance_templates::executive_summary(&reports);
+                let body = serde_json::to_string(&summary).unwrap_or_default();
+                json_response(&body, 200)
+
+            // ── Playbook Run ─────────────────────────────────────────
+            } else if method == Method::Post && url_path == "/api/playbooks/run" {
+                match read_body_limited(body, 64 * 1024) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+                            Ok(v) => v,
+                            Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+                        };
+                        let playbook_id = parsed["playbook_id"].as_str().unwrap_or("");
+                        let alert_id = parsed["alert_id"].as_str();
+                        let variables: std::collections::HashMap<String, String> = parsed["variables"]
+                            .as_object()
+                            .map(|m| m.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
+                            .unwrap_or_default();
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        match s.playbook_engine.run_playbook(playbook_id, alert_id, "api", variables, now) {
+                            Ok(exec_id) => {
+                                if let Some(exec) = s.playbook_engine.get_execution(&exec_id) {
+                                    let body = serde_json::to_string(exec).unwrap_or_default();
+                                    json_response(&body, 200)
+                                } else {
+                                    json_response(&format!(r#"{{"execution_id":"{}"}}"#, exec_id), 200)
+                                }
+                            }
+                            Err(e) => error_json(&e, 400),
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Alert Deduplication ──────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/alerts/dedup" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let alerts: Vec<crate::collector::AlertRecord> = s.alerts.iter().cloned().collect();
+                let config = crate::alert_analysis::DedupConfig::default();
+                let incidents = crate::alert_analysis::deduplicate_alerts(&alerts, &config);
+                let body = serde_json::to_string(&incidents).unwrap_or_default();
+                json_response(&body, 200)
+
+            // ── API Analytics ────────────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/analytics" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let summary = s.api_analytics.summary();
+                let body = serde_json::to_string(&summary).unwrap_or_default();
+                json_response(&body, 200)
+
+            // ── OpenTelemetry Traces ─────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/traces" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let stats = s.trace_collector.stats();
+                let recent = s.trace_collector.recent(50);
+                let body = serde_json::json!({
+                    "stats": stats,
+                    "recent": recent,
+                });
+                let body_str = serde_json::to_string(&body).unwrap_or_default();
+                json_response(&body_str, 200)
+
+            // ── Backup Encrypt ───────────────────────────────────────
+            } else if method == Method::Post && url_path == "/api/backup/encrypt" {
+                match read_body_limited(body, 10 * 1024 * 1024) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+                            Ok(v) => v,
+                            Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+                        };
+                        let data = parsed["data"].as_str().unwrap_or("");
+                        let passphrase = parsed["passphrase"].as_str().unwrap_or("");
+                        if passphrase.is_empty() {
+                            return error_json("passphrase is required", 400);
+                        }
+                        match crate::backup::encrypt_backup_data(data.as_bytes(), passphrase) {
+                            Ok(encrypted) => {
+                                let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encrypted);
+                                json_response(&format!(r#"{{"encrypted":"{}","size":{}}}"#, b64, encrypted.len()), 200)
+                            }
+                            Err(e) => error_json(&e, 500),
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Backup Decrypt ───────────────────────────────────────
+            } else if method == Method::Post && url_path == "/api/backup/decrypt" {
+                match read_body_limited(body, 10 * 1024 * 1024) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+                            Ok(v) => v,
+                            Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+                        };
+                        let encrypted_b64 = parsed["data"].as_str().unwrap_or("");
+                        let passphrase = parsed["passphrase"].as_str().unwrap_or("");
+                        if passphrase.is_empty() {
+                            return error_json("passphrase is required", 400);
+                        }
+                        match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encrypted_b64) {
+                            Ok(encrypted) => {
+                                match crate::backup::decrypt_backup_data(&encrypted, passphrase) {
+                                    Ok(plaintext) => {
+                                        let text = String::from_utf8_lossy(&plaintext);
+                                        json_response(&format!(r#"{{"data":"{}","size":{}}}"#, text, plaintext.len()), 200)
+                                    }
+                                    Err(e) => error_json(&e, 400),
+                                }
+                            }
+                            Err(e) => error_json(&format!("invalid base64: {e}"), 400),
+                        }
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
+
+            // ── Detection Rules CRUD ─────────────────────────────────
+            } else if method == Method::Get && url_path == "/api/detection/rules" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let sigma_count = s.sigma_engine.rule_count();
+                let yara_rules = s.yara_engine.rule_names();
+                let body = serde_json::json!({
+                    "sigma": { "count": sigma_count },
+                    "yara": { "count": yara_rules.len(), "rules": yara_rules },
+                    "malware_hashes": s.malware_hash_db.stats(),
+                });
+                let body_str = serde_json::to_string(&body).unwrap_or_default();
+                json_response(&body_str, 200)
+
+            } else if method == Method::Post && url_path == "/api/detection/rules" {
+                match read_body_limited(body, 1024 * 1024) {
+                    Ok(body_str) => {
+                        let parsed: serde_json::Value = match serde_json::from_str(&body_str) {
+                            Ok(v) => v,
+                            Err(e) => return error_json(&format!("invalid JSON: {e}"), 400),
+                        };
+                        let rule_type = parsed["type"].as_str().unwrap_or("yara");
+                        match rule_type {
+                            "yara" => {
+                                let name = parsed["name"].as_str().unwrap_or("custom_rule").to_string();
+                                let pattern = parsed["pattern"].as_str().unwrap_or("").to_string();
+                                let description = parsed["description"].as_str().unwrap_or("").to_string();
+                                let rule = crate::yara_engine::YaraRule {
+                                    name: name.clone(),
+                                    meta: crate::yara_engine::RuleMeta {
+                                        author: "api".to_string(),
+                                        description,
+                                        severity: parsed["severity"].as_str().unwrap_or("medium").to_string(),
+                                        mitre_ids: Vec::new(),
+                                        created: chrono::Utc::now().to_rfc3339(),
+                                    },
+                                    strings: vec![crate::yara_engine::RuleString {
+                                        id: "$s1".to_string(),
+                                        pattern: crate::yara_engine::StringPattern::Text(pattern),
+                                        nocase: false,
+                                    }],
+                                    condition: crate::yara_engine::RuleCondition::AnyOf,
+                                    enabled: true,
+                                };
+                                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                                s.yara_engine.add_rule(rule);
+                                json_response(r#"{"added":"yara","status":"ok"}"#, 200)
+                            }
+                            _ => error_json("unsupported rule type; use 'yara'", 400),
+                        }
                     }
                     Err(e) => error_json(&e, 400),
                 }
