@@ -26,6 +26,16 @@ All notable changes to Wardex are documented in this file.
 - **Python SDK** — 14 new methods: hunt, export_alerts, compliance_report/summary, run_playbook, dedup_alerts, api_analytics, traces, backup_encrypt/decrypt, detection_rules, add_detection_rule.
 - **Admin console API client** — 14 new endpoint functions for all v0.43.0 features.
 - **Server auth gates** — 12 new authenticated endpoint entries protecting all new API routes.
+- **Fuzz testing** — 3 fuzz targets (csv_parse, jsonl_parse, yara_load) with weekly CI job using cargo-fuzz.
+- **Admin console test suite** — 26 Vitest unit tests covering API client, auth/theme/toast hooks, and App rendering.
+- **Admin console linting** — ESLint 9 flat config with React plugins and Prettier integration.
+- **Frontend CI** — Automated lint and test job for admin-console in GitHub Actions.
+- **Coverage threshold** — cargo-tarpaulin `--fail-under 70` enforced in CI.
+- **Semver compliance** — cargo-semver-checks job in CI with graceful baseline fallback.
+- **Container scanning** — Trivy image scanning (CRITICAL/HIGH) in release pipeline.
+- **OpenAPI enrichment** — Rate-limit headers (429), concrete response examples on 8 endpoints.
+- **Module-level rustdoc** — Added `//!` documentation to 11 previously undocumented source modules.
+- **Production unwrap removal** — Replaced production `unwrap()` calls in analyst.rs and multi_tenant.rs with safe alternatives.
 
 ## [0.42.0] — Detection Expansion, Unified Asset Inventory & SOC Workflow Overhaul
 

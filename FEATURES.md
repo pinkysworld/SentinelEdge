@@ -152,15 +152,17 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 
 ## Product posture
 
-- 113 Rust source modules
-- ~230 API paths
-- 1088 lib tests + 163 integration tests, all passing
+- 116 Rust source modules
+- 161 documented API paths
+- 1161 lib tests + 184 integration tests, all passing
+- 26 admin-console unit tests (Vitest)
 - Production hardening score: 98% (58/59 controls)
 - GitHub Actions release packaging for Linux, macOS, and Windows
+- CI quality gates: cargo-tarpaulin (70% threshold), cargo-semver-checks, fuzz testing, frontend lint+test
 
 ## Operator entry points
 
-- `cargo run -- serve` for the live control plane
+- `cargo run` for the live control plane
 - `http://localhost:8080/admin/` for the embedded browser console
 - `docs/` for architecture, deployment, runbooks, and status
 - GitHub Releases for packaged builds

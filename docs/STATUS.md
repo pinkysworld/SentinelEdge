@@ -119,6 +119,11 @@ Wardex is now positioned as a professional XDR/SIEM control plane rather than an
 - **Homebrew formula** — Multi-platform installation with service integration
 - **Admin console** — 5 new tabs: Hunt, Compliance, Analytics, Traces, Rules
 - **Code review hardening** — Crypto fixes (random nonce/salt), O(1) ring buffers, input validation, JSON injection fixes
+- **Fuzz testing infrastructure** — 3 fuzz targets (csv_parse, jsonl_parse, yara_load) with weekly CI job
+- **Admin console test suite** — 26 Vitest unit tests with ESLint 9 + Prettier, automated in CI
+- **CI quality gates** — 70% coverage threshold, cargo-semver-checks, Trivy container scanning
+- **OpenAPI enrichment** — Rate-limit headers (429 responses), concrete examples on 8 endpoints
+- **Module-level rustdoc** — `//!` documentation added to 11 source modules
 
 ## Recently shipped (v0.42.0)
 
