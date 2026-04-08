@@ -1,3 +1,5 @@
+//! Device enforcement actions (throttle, quarantine, rollback) driven by policy decisions.
+
 use serde::{Deserialize, Serialize};
 
 use crate::policy::{PolicyDecision, ResponseAction};

@@ -1,3 +1,5 @@
+//! Agent-side HTTP client: enrollment, heartbeats, alert forwarding, and policy polling.
+
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -1,3 +1,5 @@
+//! Anomaly detection engine using EWMA baselines over telemetry signals to produce anomaly scores.
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

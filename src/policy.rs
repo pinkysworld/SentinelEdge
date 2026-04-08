@@ -1,3 +1,5 @@
+//! Threat-level classification and response-action mapping for anomaly signals.
+
 use serde::{Deserialize, Serialize};
 
 use crate::detector::AnomalySignal;

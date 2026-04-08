@@ -1,3 +1,5 @@
+//! Persisted telemetry baselines for the anomaly detector (JSON serialization).
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;

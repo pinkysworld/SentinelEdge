@@ -1,3 +1,5 @@
+//! Tamper-evident audit log with SHA-256 hash-chaining and HMAC-signed checkpoints.
+
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io;

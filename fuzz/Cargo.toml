@@ -1,0 +1,33 @@
+[package]
+name = "wardex-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.wardex]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "csv_parse"
+path = "fuzz_targets/csv_parse.rs"
+doc = false
+
+[[bin]]
+name = "jsonl_parse"
+path = "fuzz_targets/jsonl_parse.rs"
+doc = false
+
+[[bin]]
+name = "yara_load"
+path = "fuzz_targets/yara_load.rs"
+doc = false

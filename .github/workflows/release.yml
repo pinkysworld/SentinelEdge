@@ -127,9 +127,32 @@ jobs:
       - name: Lint Helm chart
         run: helm lint deploy/helm/wardex/
 
+  # ── Container image vulnerability scan ───────────────────────────────
+  container-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        run: docker build -t wardex:scan .
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: wardex:scan
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
   release:
     name: Publish GitHub Release
-    needs: [build, sbom, helm-lint]
+    needs: [build, sbom, helm-lint, container-scan]
     runs-on: ubuntu-latest
     if: always() && needs.build.result != 'cancelled'
 

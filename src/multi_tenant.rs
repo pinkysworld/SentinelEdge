@@ -211,9 +211,15 @@ impl MultiTenantManager {
             .ok_or_else(|| "usage not found".to_string())?;
         ctx.check_device_limit(usage.devices)?;
 
-        let tenant_mut = self.tenants.get_mut(tenant_id).unwrap();
+        let tenant_mut = self
+            .tenants
+            .get_mut(tenant_id)
+            .ok_or_else(|| "tenant not found".to_string())?;
         tenant_mut.device_ids.push(device_id.to_string());
-        let usage_mut = self.usage.get_mut(tenant_id).unwrap();
+        let usage_mut = self
+            .usage
+            .get_mut(tenant_id)
+            .ok_or_else(|| "usage not found".to_string())?;
         usage_mut.devices += 1;
         Ok(())
     }

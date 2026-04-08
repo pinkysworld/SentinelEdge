@@ -362,7 +362,7 @@ export default function LiveMonitor() {
               <JsonDetails data={analysisResult} label="Full analysis breakdown" />
             </div>
           ) : (
-            <div className="empty">Click "Run Analysis" to analyze current alert patterns</div>
+            <div className="empty">Click &quot;Run Analysis&quot; to analyze current alert patterns</div>
           )}
         </div>
       )}

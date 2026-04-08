@@ -1,3 +1,5 @@
+//! Wardex application entry point: CLI parsing, runtime setup, and subcommand dispatch.
+
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process;

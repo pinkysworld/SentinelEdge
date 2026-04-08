@@ -1,3 +1,5 @@
+//! Runtime configuration: workspace discovery, `wardex.toml` loading, and settings structs.
+
 use crate::siem::{SiemConfig, TaxiiConfig};
 
 use serde::{Deserialize, Serialize};

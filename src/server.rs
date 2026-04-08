@@ -1,3 +1,5 @@
+//! Axum-based HTTP API server serving REST endpoints, the admin console, and static assets.
+
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,3 +1,5 @@
+//! AES-256-GCM encrypted backup and restore with passphrase-derived keys.
+
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

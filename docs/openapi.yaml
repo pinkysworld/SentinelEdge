@@ -34,6 +34,35 @@ components:
           type: string
       required: [error]
 
+    RateLimitError:
+      type: object
+      properties:
+        error: { type: string, example: rate limit exceeded }
+        retry_after_secs: { type: integer, example: 30 }
+
+  headers:
+    X-RateLimit-Limit:
+      description: Maximum requests allowed in the current window
+      schema: { type: integer, example: 600 }
+    X-RateLimit-Remaining:
+      description: Requests remaining in the current window
+      schema: { type: integer, example: 594 }
+    X-RateLimit-Reset:
+      description: UTC epoch seconds when the window resets
+      schema: { type: integer, example: 1712592000 }
+
+  responses:
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
+        X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
+        X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+        Retry-After: { description: Seconds until next allowed request, schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RateLimitError" }
+
     StatusManifest:
       type: object
       properties:
@@ -237,6 +266,12 @@ paths:
                   version: { type: string }
                   uptime: { type: string }
                   platform: { type: string }
+              example:
+                status: ok
+                version: "0.43.0"
+                uptime: "4h 12m 3s"
+                platform: aarch64-apple-darwin
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /api/status:
     get:
@@ -248,6 +283,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StatusManifest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /api/endpoints:
     get:
@@ -442,6 +478,18 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Alert" }
+              example:
+                - timestamp: "2026-04-08T12:00:00Z"
+                  score: 87.5
+                  level: critical
+                  action: quarantine
+                  reasons: ["auth_failures spike", "beacon pattern detected"]
+                - timestamp: "2026-04-08T11:55:00Z"
+                  score: 42.1
+                  level: elevated
+                  action: alert
+                  reasons: ["cpu_load anomaly"]
+        "429": { $ref: "#/components/responses/TooManyRequests" }
     delete:
       tags: [Alerts]
       summary: Clear all alerts
@@ -483,6 +531,14 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Agent" }
+              example:
+                - agent_id: a1b2c3d4
+                  hostname: prod-web-01
+                  platform: x86_64-unknown-linux-musl
+                  version: "0.43.0"
+                  status: healthy
+                  last_heartbeat: "2026-04-08T12:01:30Z"
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /api/agents/enroll:
     post:
@@ -1987,6 +2043,9 @@ paths:
                 properties:
                   verdict: { type: string, enum: [malicious, suspicious, clean] }
                   matches: { type: array, items: { type: string } }
+              example:
+                verdict: malicious
+                matches: ["YARA:Trojan_GenericKD", "HASH:sha256_match"]
 
   /api/scan/hash:
     post:
@@ -2024,6 +2083,16 @@ paths:
       responses:
         "200":
           description: Hunt results
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                hits: 3
+                results:
+                  - timestamp: "2026-04-08T10:22:00Z"
+                    source: endpoint-01
+                    match: "process == svchost.exe"
         "400":
           description: Invalid or empty query
 
@@ -2043,6 +2112,14 @@ paths:
       responses:
         "200":
           description: Exported alerts in the requested format
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                format: cef
+                count: 12
+                data: "CEF:0|Wardex|XDR|0.43.0|100|Auth Failures Spike|8|src=10.0.1.5 dst=10.0.1.1"
         "400":
           description: Unsupported export format
 
@@ -2062,6 +2139,19 @@ paths:
       responses:
         "200":
           description: Compliance report with control status, score, and remediation actions
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                framework: nist-csf-2
+                score: 78.5
+                controls_passed: 31
+                controls_total: 40
+                findings:
+                  - control: PR.AC-1
+                    status: fail
+                    remediation: "Enable MFA on all admin accounts"
         "404":
           description: Framework not found
 
@@ -2094,6 +2184,16 @@ paths:
       responses:
         "200":
           description: Execution result with execution_id and step outcomes
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                execution_id: exec-a1b2c3
+                playbook_id: isolate-host
+                status: completed
+                steps_completed: 4
+                steps_total: 4
         "400":
           description: Empty playbook_id or execution error
 

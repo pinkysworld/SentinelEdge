@@ -232,7 +232,7 @@ export default function Settings() {
                   <>
                     <button className={`btn btn-sm ${editMode === 'form' ? 'btn-primary' : ''}`} onClick={() => {
                       setEditMode('form');
-                      if (configText) { try { setStructuredConfig(JSON.parse(configText)); } catch {} }
+                      if (configText) { try { setStructuredConfig(JSON.parse(configText)); } catch { /* ignore parse errors */ } }
                     }}>Form</button>
                     <button className={`btn btn-sm ${editMode === 'json' ? 'btn-primary' : ''}`} onClick={() => {
                       setEditMode('json');

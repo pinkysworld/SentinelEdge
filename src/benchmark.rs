@@ -1,3 +1,5 @@
+//! Detector accuracy benchmarks: precision, recall, F1, and per-signal contribution attribution.
+
 use std::collections::BTreeMap;
 
 use crate::detector::AnomalyDetector;

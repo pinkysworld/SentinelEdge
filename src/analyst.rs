@@ -123,7 +123,8 @@ impl CaseStore {
         self.next_id += 1;
         self.cases.push(case);
         self.persist();
-        self.cases.last().unwrap()
+        // SAFETY: we just pushed, so last() is always Some
+        self.cases.last().expect("cases: just pushed")
     }
 
     pub fn get(&self, id: u64) -> Option<&Case> {
