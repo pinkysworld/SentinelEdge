@@ -20,7 +20,7 @@ rand = "0.8"
 ureq = { version = "2", default-features = false, features = ["json"] }
 ctrlc = "3"
 rusqlite = { version = "0.31", features = ["bundled"] }
-notify = "6"
+notify = "8"
 flate2 = "1"
 log = "0.4"
 env_logger = "0.11"
