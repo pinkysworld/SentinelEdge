@@ -7,7 +7,15 @@
 FROM rust:1.85-bookworm AS builder
 
 WORKDIR /build
+
+# Cache dependency build: copy manifests first, build with a dummy main
 COPY Cargo.toml Cargo.lock* ./
+COPY build.rs ./
+RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
+    && cargo build --release --features tls 2>/dev/null || true \
+    && rm -rf src
+
+# Now copy real source and rebuild (dependencies already cached)
 COPY src/ src/
 COPY site/ site/
 COPY examples/ examples/

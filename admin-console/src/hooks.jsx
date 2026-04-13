@@ -148,23 +148,31 @@ export function useApi(fn, deps = [], opts = {}) {
   const { skip = false } = opts;
   const fnRef = useRef(fn);
   useEffect(() => { fnRef.current = fn; });
+  const controllerRef = useRef(null);
 
   const load = useCallback(async () => {
     if (skip) { setLoading(false); return; }
+    if (controllerRef.current) controllerRef.current.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
     setLoading(true);
     setError(null);
     try {
-      const result = await fnRef.current();
-      setData(result);
+      const result = await fnRef.current({ signal: controller.signal });
+      if (!controller.signal.aborted) setData(result);
     } catch (e) {
-      setError(e);
+      if (!controller.signal.aborted) setError(e);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, skip]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    return () => { if (controllerRef.current) controllerRef.current.abort(); };
+  }, []);
 
   return { data, loading, error, reload: load };
 }

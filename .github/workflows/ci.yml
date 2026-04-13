@@ -213,12 +213,17 @@ jobs:
           sha256sum wardex > wardex.sha256
           echo "Binary attestation manifest:"
           cat wardex.sha256
+      - name: Generate SBOM
+        run: |
+          cargo install cargo-cyclonedx --locked 2>/dev/null || true
+          cargo cyclonedx --format json --output-cdx || echo "SBOM generation skipped"
       - name: Upload attestation
         uses: actions/upload-artifact@v4
         with:
           name: binary-attestation
           path: |
             target/release/wardex.sha256
+            bom.json
 
   typescript-sdk:
     runs-on: ubuntu-latest

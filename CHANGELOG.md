@@ -2,6 +2,35 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.49.0] — Resilience, Observability & Build Hardening
+
+### Security
+- **Fix email attachment `.unwrap()` panic** — `dots.last().unwrap()` in attachment double-extension detection replaced with `if let Some(...)` guard, preventing panic on dotless filenames.
+- **Mutex lock-poisoning resilience** — All `.lock().unwrap()` calls in `rbac.rs` (8) and `response.rs` (10) replaced with `.lock().unwrap_or_else(|e| e.into_inner())`, preventing cascading panics after a thread panic.
+- **Content Security Policy** — Added CSP `<meta>` tag to admin console restricting script/style/connect/font/object sources; `object-src 'none'`, `base-uri 'self'`.
+- **GraphQL pagination caps** — Alerts, events, and hunts GraphQL resolvers now enforce `.min(1000)` upper bound, preventing denial-of-service via unbounded page sizes.
+
+### API
+- **AbortController in useApi hook** — React `useApi` hook now creates an `AbortController` per request, aborting in-flight fetches on re-call and unmount to prevent state updates on stale responses.
+- **OpenAPI spec 0.49.0** — Spec version bumped from 0.47.0 to 0.49.0.
+
+### Observability
+- **Audit logging for response & playbook actions** — `response_request`, `response_approve`, and `playbook_execute` handlers now emit structured `[AUDIT]` log lines with request ID, actor, and target.
+- **Vault cache lock warning** — Poisoned Vault secret cache lock now logs `[WARN]` instead of silently bypassing cache.
+
+### Admin console
+- **20 new component tests** — ErrorBoundary (3), Tooltip (4), Skeleton (4), DashboardWidget (5), SearchPalette (4). Total: 53 vitest tests.
+
+### Code quality
+- **3 new Rust tests** — Dotless attachment no-panic, double-extension detection, poisoned-mutex resilience. Total: 1323.
+
+### Deployment
+- **.dockerignore** — Excludes `target/`, `.git/`, `node_modules/`, `docs/`, `fuzz/`, `sdk/`, and build artifacts from Docker context.
+- **Dockerfile layer caching** — Dependency-only build layer caches `cargo build --release` before copying source, reducing rebuild times.
+- **SBOM generation** — CI binary-attestation job now produces CycloneDX SBOM (`bom.json`) alongside SHA-256 checksums.
+- **SDK version sync** — Python SDK and TypeScript SDK aligned to 0.49.0.
+- **Helm chart 0.49.0** — appVersion updated to 0.49.0.
+
 ## [0.48.0] — Security, Quality & Developer Experience
 
 ### Security

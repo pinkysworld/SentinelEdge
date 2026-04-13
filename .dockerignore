@@ -1,0 +1,42 @@
+# Build artifacts
+target/
+target-release-arm64/
+target-release-x86_64/
+release/
+output/
+
+# Version control
+.git/
+.gitignore
+
+# IDE / Editor
+.vscode/
+*.code-workspace
+
+# Node.js
+admin-console/node_modules/
+admin-console/output/
+admin-console/test-results/
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Development files
+fuzz/
+benches/
+demo/
+sdk/
+test-results/
+var/
+
+# Miscellaneous
+*.py
+deny.toml
+Dockerfile
+docker-compose.yml
+.dockerignore

@@ -290,7 +290,7 @@ impl ResponseOrchestrator {
 
         let id = request.id.clone();
         self.record_audit(&request);
-        self.requests.lock().unwrap().push(request);
+        self.requests.lock().unwrap_or_else(|e| e.into_inner()).push(request);
         Ok(id)
     }
 
@@ -300,7 +300,7 @@ impl ResponseOrchestrator {
         request_id: &str,
         record: ApprovalRecord,
     ) -> Result<ApprovalStatus, String> {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = self.requests.lock().unwrap_or_else(|e| e.into_inner());
         let req = requests
             .iter_mut()
             .find(|r| r.id == request_id)
@@ -360,7 +360,7 @@ impl ResponseOrchestrator {
     pub fn pending_requests(&self) -> Vec<ResponseRequest> {
         self.requests
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .filter(|r| r.status == ApprovalStatus::Pending)
             .cloned()
@@ -369,14 +369,14 @@ impl ResponseOrchestrator {
 
     /// Get all requests.
     pub fn all_requests(&self) -> Vec<ResponseRequest> {
-        self.requests.lock().unwrap().clone()
+        self.requests.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Get a request by ID.
     pub fn get_request(&self, id: &str) -> Option<ResponseRequest> {
         self.requests
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .find(|r| r.id == id)
             .cloned()
@@ -384,7 +384,7 @@ impl ResponseOrchestrator {
 
     /// Expire pending requests past SLA.
     pub fn expire_stale(&self, now_epoch: u64) {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = self.requests.lock().unwrap_or_else(|e| e.into_inner());
         for req in requests.iter_mut() {
             if req.status == ApprovalStatus::Pending {
                 // Try RFC3339 first, then fall back to plain epoch
@@ -404,11 +404,11 @@ impl ResponseOrchestrator {
 
     /// Immutable audit ledger entries.
     pub fn audit_ledger(&self) -> Vec<ResponseAuditEntry> {
-        self.audit_ledger.lock().unwrap().clone()
+        self.audit_ledger.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn record_audit(&self, req: &ResponseRequest) {
-        self.audit_ledger.lock().unwrap().push(ResponseAuditEntry {
+        self.audit_ledger.lock().unwrap_or_else(|e| e.into_inner()).push(ResponseAuditEntry {
             request_id: req.id.clone(),
             action: format!("{:?}", req.action),
             target_hostname: req.target.hostname.clone(),
@@ -421,7 +421,7 @@ impl ResponseOrchestrator {
     }
 
     fn record_audit_inner(&self, req: &ResponseRequest) {
-        self.audit_ledger.lock().unwrap().push(ResponseAuditEntry {
+        self.audit_ledger.lock().unwrap_or_else(|e| e.into_inner()).push(ResponseAuditEntry {
             request_id: req.id.clone(),
             action: format!("{:?}", req.action),
             target_hostname: req.target.hostname.clone(),
@@ -443,7 +443,7 @@ impl ResponseOrchestrator {
 
     /// Execute approved requests, optionally narrowing to a specific request id.
     pub fn execute_approved_matching(&self, request_id: Option<&str>) -> Vec<String> {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = self.requests.lock().unwrap_or_else(|e| e.into_inner());
         let mut executed = Vec::new();
         let mut executed_reqs = Vec::new();
         for req in requests.iter_mut() {

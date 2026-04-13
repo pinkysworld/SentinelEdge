@@ -4493,7 +4493,7 @@ fn handle_api(
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
-                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50).min(1000) as usize;
                                 let alerts: Vec<serde_json::Value> = s.alerts.iter().take(limit).enumerate().map(|(i, a)| {
                                     serde_json::json!({ "id": format!("alert-{i}"), "level": a.level, "timestamp": a.timestamp, "device_id": a.hostname, "score": a.score, "reasons": a.reasons, "status": "open" })
                                 }).collect();
@@ -4523,7 +4523,7 @@ fn handle_api(
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
-                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100).min(1000) as usize;
                                 let events: Vec<serde_json::Value> = s.event_store.recent_events(limit).iter().map(|e| {
                                     serde_json::json!({ "timestamp": e.received_at, "device_id": e.agent_id, "event_type": e.alert.level, "data": e.alert.reasons })
                                 }).collect();
@@ -4534,7 +4534,7 @@ fn handle_api(
                             let st = st.clone();
                             move |args| {
                                 let s = st.lock().unwrap_or_else(|e| e.into_inner());
-                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20).min(1000) as usize;
                                 let hunts: Vec<serde_json::Value> = s.enterprise.hunts().iter().take(limit).map(|h| {
                                     serde_json::json!({ "id": h.id, "name": h.name, "status": if h.enabled { "active" } else { "disabled" }, "matches": 0, "created_at": h.created_at })
                                 }).collect();
@@ -8090,6 +8090,7 @@ fn handle_api(
                             asset_tags,
                         };
                         let now = chrono::Utc::now().to_rfc3339();
+                        let audit_user = requested_by.clone();
                         let request_record = ResponseRequest {
                             id: next_response_request_id(),
                             action,
@@ -8109,6 +8110,7 @@ fn handle_api(
                         let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.response_orchestrator.submit(request_record) {
                             Ok(request_id) => {
+                                eprintln!("[AUDIT] response_request submitted id={request_id} by={audit_user} hostname={hostname} dry_run={dry_run}");
                                 let stored = s.response_orchestrator.get_request(&request_id);
                                 match stored {
                                     Some(request_entry) => json_response(
@@ -8195,6 +8197,7 @@ fn handle_api(
 
                         match status {
                             Ok(status) => {
+                                eprintln!("[AUDIT] response_approve request={request_id} decision={decision:?} by={approver}");
                                 let remediation_decision = match decision {
                                     ResponseApprovalDecision::Approve => {
                                         RemediationDecision::Approved
@@ -9446,10 +9449,13 @@ fn handle_api(
                             .playbook_engine
                             .start_execution(pb_id, alert_id, &executed_by, now)
                         {
-                            Some(eid) => json_response(
-                                &serde_json::json!({"execution_id": eid}).to_string(),
-                                200,
-                            ),
+                            Some(eid) => {
+                                eprintln!("[AUDIT] playbook_execute id={pb_id} execution={eid} by={executed_by} alert={}", alert_id.unwrap_or("none"));
+                                json_response(
+                                    &serde_json::json!({"execution_id": eid}).to_string(),
+                                    200,
+                                )
+                            }
                             None => error_json("playbook not found or disabled", 404),
                         }
                     }

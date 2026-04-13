@@ -277,10 +277,12 @@ impl EmailAnalyzer {
             // Double extension (e.g., report.pdf.exe)
             let dots: Vec<_> = lower.match_indices('.').collect();
             if dots.len() >= 2 {
-                let last_ext = &lower[dots.last().unwrap().0..];
-                if DANGEROUS_EXTENSIONS.contains(&last_ext) {
-                    risk += 0.8;
-                    att_indicators.push("double extension with dangerous final extension".into());
+                if let Some(&(last_dot_pos, _)) = dots.last() {
+                    let last_ext = &lower[last_dot_pos..];
+                    if DANGEROUS_EXTENSIONS.contains(&last_ext) {
+                        risk += 0.8;
+                        att_indicators.push("double extension with dangerous final extension".into());
+                    }
                 }
             }
 
@@ -465,5 +467,33 @@ mod tests {
         let input = make_input("colleague@company.com", "Meeting notes", "spf=pass; dkim=pass; dmarc=pass");
         let report = EmailAnalyzer::analyze(&input);
         assert!(report.phishing_score < 0.1, "score={}", report.phishing_score);
+    }
+
+    #[test]
+    fn attachment_without_dots_does_not_panic() {
+        let mut input = make_input("user@example.com", "File attached", "spf=pass");
+        input.attachments.push(AttachmentInfo {
+            filename: "README".into(),
+            content_type: Some("application/octet-stream".into()),
+            sha256: None,
+            size_bytes: Some(100),
+        });
+        // Should not panic even though filename has no dots
+        let report = EmailAnalyzer::analyze(&input);
+        assert!(report.phishing_score >= 0.0);
+    }
+
+    #[test]
+    fn double_extension_detected() {
+        let mut input = make_input("attacker@phish.com", "Invoice", "");
+        input.attachments.push(AttachmentInfo {
+            filename: "invoice.pdf.exe".into(),
+            content_type: Some("application/octet-stream".into()),
+            sha256: None,
+            size_bytes: Some(500),
+        });
+        let report = EmailAnalyzer::analyze(&input);
+        assert!(!report.attachment_findings.is_empty());
+        assert!(report.attachment_findings[0].risk_score > 0.5);
     }
 }

@@ -155,8 +155,8 @@ impl RbacStore {
 
     /// Register a user. The token should be pre-hashed for production.
     pub fn add_user(&self, user: User) {
-        let mut users = self.users.lock().unwrap();
-        let mut tokens = self.tokens.lock().unwrap();
+        let mut users = self.users.lock().unwrap_or_else(|e| e.into_inner());
+        let mut tokens = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
 
         let token = user.token_hash.clone();
         let username = user.username.clone();
@@ -170,9 +170,9 @@ impl RbacStore {
 
     /// Remove a user.
     pub fn remove_user(&self, username: &str) -> bool {
-        let mut users = self.users.lock().unwrap();
+        let mut users = self.users.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(user) = users.remove(username) {
-            self.tokens.lock().unwrap().remove(&user.token_hash);
+            self.tokens.lock().unwrap_or_else(|e| e.into_inner()).remove(&user.token_hash);
             true
         } else {
             false
@@ -181,8 +181,8 @@ impl RbacStore {
 
     /// Authenticate by token, returning the user if valid.
     pub fn authenticate(&self, token: &str) -> Option<User> {
-        let users = self.users.lock().unwrap();
-        let tokens = self.tokens.lock().unwrap();
+        let users = self.users.lock().unwrap_or_else(|e| e.into_inner());
+        let tokens = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
         let username = tokens.get(token)?;
         let user = users.get(username)?;
         if user.enabled {
@@ -220,15 +220,15 @@ impl RbacStore {
     }
 
     pub fn get_user(&self, username: &str) -> Option<User> {
-        self.users.lock().unwrap().get(username).cloned()
+        self.users.lock().unwrap_or_else(|e| e.into_inner()).get(username).cloned()
     }
 
     pub fn list_users(&self) -> Vec<User> {
-        self.users.lock().unwrap().values().cloned().collect()
+        self.users.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect()
     }
 
     pub fn update_role(&self, username: &str, role: Role) -> bool {
-        if let Some(user) = self.users.lock().unwrap().get_mut(username) {
+        if let Some(user) = self.users.lock().unwrap_or_else(|e| e.into_inner()).get_mut(username) {
             user.role = role;
             true
         } else {
@@ -237,7 +237,7 @@ impl RbacStore {
     }
 
     pub fn disable_user(&self, username: &str) -> bool {
-        if let Some(user) = self.users.lock().unwrap().get_mut(username) {
+        if let Some(user) = self.users.lock().unwrap_or_else(|e| e.into_inner()).get_mut(username) {
             user.enabled = false;
             true
         } else {
@@ -246,7 +246,7 @@ impl RbacStore {
     }
 
     pub fn enable_user(&self, username: &str) -> bool {
-        if let Some(user) = self.users.lock().unwrap().get_mut(username) {
+        if let Some(user) = self.users.lock().unwrap_or_else(|e| e.into_inner()).get_mut(username) {
             user.enabled = true;
             true
         } else {
@@ -932,5 +932,29 @@ mod tests {
                 .check_api_access("analyst-token", "POST", "/api/investigation/graph")
                 .is_allowed()
         );
+    }
+
+    #[test]
+    fn store_survives_poisoned_mutex() {
+        let store = std::sync::Arc::new(setup_store());
+        // Poison the mutex by panicking while holding the lock
+        let s2 = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = s2.users.lock().unwrap();
+            panic!("intentional poison");
+        })
+        .join();
+        // Operations should still succeed despite poisoned lock
+        assert!(store.authenticate("admin-token").is_some());
+        assert_eq!(store.list_users().len(), 4);
+        store.add_user(User {
+            username: "new-user".into(),
+            role: Role::Viewer,
+            token_hash: "new-token".into(),
+            enabled: true,
+            created_at: "now".into(),
+            tenant_id: None,
+        });
+        assert_eq!(store.list_users().len(), 5);
     }
 }

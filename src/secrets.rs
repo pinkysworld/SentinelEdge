@@ -210,6 +210,8 @@ impl SecretsResolver {
                     return Ok(cached.value.clone());
                 }
             }
+        } else {
+            eprintln!("[WARN] Vault secret cache lock poisoned — bypassing cache for {vault_ref}");
         }
 
         // Parse vault://mount/path#key
