@@ -176,7 +176,7 @@ GROUP BY tenant_id, hour, severity"#,
 
     /// Number of events currently buffered.
     pub fn buffer_len(&self) -> usize {
-        self.buffer.lock().unwrap().len()
+        self.buffer.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Total events inserted since start.

@@ -1,8 +1,21 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+/** Strip the CSP meta tag during development so Vite HMR inline scripts work. */
+function stripCspInDev() {
+  return {
+    name: 'strip-csp-dev',
+    transformIndexHtml(html, ctx) {
+      if (ctx.server) {
+        return html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*\/?>\n?/, '');
+      }
+      return html;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), stripCspInDev()],
   root: '.',
   base: '/admin/',
   build: {

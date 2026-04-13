@@ -3,12 +3,26 @@
 
 let _token = '';
 let _baseUrl = '';
+let _pendingSignal = null;
 
 export function setToken(t) { _token = t; }
 export function getToken() { return _token; }
 export function setBaseUrl(u) { _baseUrl = u; }
 
+/**
+ * Set a request-scoped AbortSignal. The signal is captured synchronously
+ * by request() before the first await, then cleared. Safe for concurrent
+ * useApi hooks because JS is single-threaded.
+ */
+export function withSignal(signal, fn) {
+  _pendingSignal = signal;
+  const result = fn();
+  _pendingSignal = null;
+  return result;
+}
+
 async function request(method, path, body, opts = {}) {
+  const signal = opts.signal || _pendingSignal;
   const headers = {};
   if (_token) headers['Authorization'] = 'Bearer ' + _token;
   if (body && typeof body === 'object') {
@@ -18,7 +32,7 @@ async function request(method, path, body, opts = {}) {
     headers['Content-Type'] = 'application/json';
   }
   const url = _baseUrl + path;
-  const res = await fetch(url, { method, headers, body, signal: opts.signal });
+  const res = await fetch(url, { method, headers, body, signal });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     const err = new Error(`${res.status} ${res.statusText}`);

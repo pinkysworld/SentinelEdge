@@ -600,7 +600,7 @@ paths:
                 - agent_id: a1b2c3d4
                   hostname: prod-web-01
                   platform: x86_64-unknown-linux-musl
-                  version: "0.43.0"
+                  version: "0.49.0"
                   status: healthy
                   last_heartbeat: "2026-04-08T12:01:30Z"
         "429": { $ref: "#/components/responses/TooManyRequests" }

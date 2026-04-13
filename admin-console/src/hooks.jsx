@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
-import { setToken, getToken, authCheck, authSession, wsConnect, wsDisconnect, wsPoll } from './api.js';
+import { setToken, getToken, authCheck, authSession, wsConnect, wsDisconnect, wsPoll, withSignal } from './api.js';
 
 // ── Auth Context ─────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ export function useApi(fn, deps = [], opts = {}) {
     setLoading(true);
     setError(null);
     try {
-      const result = await fnRef.current({ signal: controller.signal });
+      const result = await withSignal(controller.signal, () => fnRef.current());
       if (!controller.signal.aborted) setData(result);
     } catch (e) {
       if (!controller.signal.aborted) setError(e);

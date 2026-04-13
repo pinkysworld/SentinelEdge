@@ -41,15 +41,15 @@ describe('SearchPalette', () => {
     );
     const input = screen.getByPlaceholderText(/search/i);
     fireEvent.keyDown(input, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledWith(false);
   });
 
   it('closes on backdrop click', () => {
     const { container } = render(
       <SearchPalette open={true} onClose={onClose} onNavigate={onNavigate} />
     );
-    const overlay = container.querySelector('.search-overlay') || container.firstChild;
+    const overlay = container.querySelector('.search-palette-overlay');
     if (overlay) fireEvent.click(overlay);
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledWith(false);
   });
 });

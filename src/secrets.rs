@@ -267,6 +267,8 @@ impl SecretsResolver {
                     fetched_at: now,
                 },
             );
+        } else {
+            eprintln!("[WARN] Vault secret cache lock poisoned — cannot cache {vault_ref}");
         }
 
         Ok(value)

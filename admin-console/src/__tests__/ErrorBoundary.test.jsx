@@ -52,6 +52,7 @@ describe('ErrorBoundary', () => {
         <Child />
       </ErrorBoundary>
     );
+    expect(screen.getByText('Recovered')).toBeInTheDocument();
     spy.mockRestore();
   });
 });

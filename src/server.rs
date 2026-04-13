@@ -8110,7 +8110,8 @@ fn handle_api(
                         let s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.response_orchestrator.submit(request_record) {
                             Ok(request_id) => {
-                                eprintln!("[AUDIT] response_request submitted id={request_id} by={audit_user} hostname={hostname} dry_run={dry_run}");
+                                let safe_host: String = hostname.chars().filter(|c| !c.is_control()).collect();
+                                eprintln!("[AUDIT] response_request submitted id={request_id} by={audit_user} hostname={safe_host} dry_run={dry_run}");
                                 let stored = s.response_orchestrator.get_request(&request_id);
                                 match stored {
                                     Some(request_entry) => json_response(

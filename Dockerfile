@@ -12,7 +12,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 COPY build.rs ./
 RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
-    && cargo build --release --features tls 2>/dev/null || true \
+    && cargo build --release --features tls 2>&1 | tail -5 || true \
     && rm -rf src
 
 # Now copy real source and rebuild (dependencies already cached)

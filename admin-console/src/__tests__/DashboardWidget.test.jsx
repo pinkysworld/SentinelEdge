@@ -22,9 +22,9 @@ describe('DashboardWidget', () => {
     expect(screen.getByText('Visible content')).toBeInTheDocument();
 
     // Find and click the collapse toggle
-    const toggleBtn = screen.getByText('▾') || screen.getByText('▸');
+    const toggleBtn = screen.queryByText('▾') || screen.getByText('▸');
     fireEvent.click(toggleBtn);
-    // Content should be hidden after collapse
+    expect(screen.queryByText('Visible content')).not.toBeInTheDocument();
   });
 
   it('starts collapsed when collapsed prop is true', () => {
