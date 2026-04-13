@@ -32,6 +32,25 @@ impl Default for DecayConfig {
     }
 }
 
+impl DecayConfig {
+    /// Validate configuration parameters. Returns an error message if invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.half_life_days.is_finite() || self.half_life_days <= 0.0 {
+            return Err(format!(
+                "half_life_days must be a positive finite number, got {}",
+                self.half_life_days
+            ));
+        }
+        if !self.min_confidence.is_finite() || self.min_confidence < 0.0 || self.min_confidence > 1.0 {
+            return Err(format!(
+                "min_confidence must be between 0.0 and 1.0, got {}",
+                self.min_confidence
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Result of a decay pass.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecayResult {
@@ -46,6 +65,18 @@ pub struct DecayResult {
 /// Apply confidence decay to all IoCs in the store.
 pub fn apply_decay(store: &mut ThreatIntelStore, config: &DecayConfig) -> DecayResult {
     if !config.enabled {
+        return DecayResult {
+            iocs_processed: 0,
+            iocs_decayed: 0,
+            iocs_removed: 0,
+            avg_confidence_before: 0.0,
+            avg_confidence_after: 0.0,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+    }
+
+    if let Err(e) = config.validate() {
+        eprintln!("[ioc_decay] invalid config, skipping decay: {e}");
         return DecayResult {
             iocs_processed: 0,
             iocs_decayed: 0,
@@ -221,5 +252,78 @@ mod tests {
         let preview = preview_decay(&ioc, &config);
         // Old enough that confidence should be significantly reduced
         assert!(preview < 0.9);
+    }
+
+    #[test]
+    fn validate_rejects_zero_half_life() {
+        let config = DecayConfig {
+            half_life_days: 0.0,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_nan_half_life() {
+        let config = DecayConfig {
+            half_life_days: f64::NAN,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_infinite_half_life() {
+        let config = DecayConfig {
+            half_life_days: f64::INFINITY,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_negative_half_life() {
+        let config = DecayConfig {
+            half_life_days: -10.0,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_invalid_min_confidence() {
+        let config = DecayConfig {
+            min_confidence: f32::NAN,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+
+        let config2 = DecayConfig {
+            min_confidence: 1.5,
+            ..Default::default()
+        };
+        assert!(config2.validate().is_err());
+    }
+
+    #[test]
+    fn validate_accepts_default() {
+        assert!(DecayConfig::default().validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_config_skips_decay() {
+        let mut store = ThreatIntelStore::new();
+        let now = chrono::Utc::now().to_rfc3339();
+        store.add_ioc(make_ioc("10.0.0.5", &now, 0.9));
+
+        let config = DecayConfig {
+            half_life_days: 0.0,
+            ..Default::default()
+        };
+        let result = apply_decay(&mut store, &config);
+        assert_eq!(result.iocs_processed, 0);
+        // IoC should be untouched
+        assert_eq!(store.all_iocs().len(), 1);
+        assert!((store.all_iocs()[0].confidence - 0.9).abs() < 0.001);
     }
 }

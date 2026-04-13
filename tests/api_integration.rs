@@ -1796,6 +1796,59 @@ fn viewer_and_analyst_roles_can_access_operator_read_flows() {
 }
 
 #[test]
+fn rbac_user_reissue_returns_random_token_and_invalidates_old_one() {
+    let (port, token) = spawn_test_server();
+
+    let first: serde_json::Value = ureq::post(&format!("{}/api/rbac/users", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({
+            "username": "viewer-rotate",
+            "role": "viewer"
+        }))
+        .expect("create initial viewer")
+        .into_json()
+        .unwrap();
+    let first_token = first["token"].as_str().unwrap().to_string();
+    assert_eq!(first_token.len(), 64);
+    assert!(first_token.chars().all(|c| c.is_ascii_hexdigit()));
+    assert!(!first_token.starts_with("tok-"));
+
+    let first_status = ureq::get(&format!("{}/api/status", base(port)))
+        .set("Authorization", &auth_header(&first_token))
+        .call()
+        .expect("viewer status with first token");
+    assert_eq!(first_status.status(), 200);
+
+    let second: serde_json::Value = ureq::post(&format!("{}/api/rbac/users", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({
+            "username": "viewer-rotate",
+            "role": "viewer"
+        }))
+        .expect("reissue viewer")
+        .into_json()
+        .unwrap();
+    let second_token = second["token"].as_str().unwrap().to_string();
+    assert_eq!(second_token.len(), 64);
+    assert!(second_token.chars().all(|c| c.is_ascii_hexdigit()));
+    assert_ne!(first_token, second_token);
+
+    match ureq::get(&format!("{}/api/status", base(port)))
+        .set("Authorization", &auth_header(&first_token))
+        .call()
+    {
+        Err(ureq::Error::Status(401, _)) => {}
+        other => panic!("expected first token to be invalidated, got {other:?}"),
+    }
+
+    let second_status = ureq::get(&format!("{}/api/status", base(port)))
+        .set("Authorization", &auth_header(&second_token))
+        .call()
+        .expect("viewer status with second token");
+    assert_eq!(second_status.status(), 200);
+}
+
+#[test]
 fn malformed_dynamic_paths_return_404() {
     let (port, token) = spawn_test_server();
     for path in [

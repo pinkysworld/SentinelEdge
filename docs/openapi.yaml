@@ -6,7 +6,7 @@ info:
     All mutating endpoints and sensitive monitoring endpoints require
     Bearer token authentication via the `Authorization` header.
     Agent-facing enrollment and heartbeat endpoints bypass admin auth.
-  version: "0.43.0"
+  version: "0.47.0"
   contact:
     name: Wardex Project
   license:
@@ -32,7 +32,11 @@ components:
       properties:
         error:
           type: string
-      required: [error]
+        code:
+          type: string
+          description: Machine-readable error code
+          enum: [VALIDATION_ERROR, AUTH_REQUIRED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, RATE_LIMITED, INTERNAL_ERROR, SERVICE_UNAVAILABLE, ERROR]
+      required: [error, code]
 
     RateLimitError:
       type: object
@@ -268,9 +272,70 @@ paths:
                   platform: { type: string }
               example:
                 status: ok
-                version: "0.43.0"
+                version: "0.47.0"
                 uptime: "4h 12m 3s"
                 platform: aarch64-apple-darwin
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/fleet/health:
+    get:
+      tags: [Fleet]
+      summary: Bulk fleet health summary
+      operationId: getFleetHealth
+      responses:
+        "200":
+          description: Fleet health stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_agents: { type: integer }
+                  online: { type: integer }
+                  status: { type: string, enum: [healthy, degraded, critical] }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/feature-flags:
+    get:
+      tags: [Configuration]
+      summary: List all runtime feature flags
+      operationId: listFeatureFlags
+      responses:
+        "200":
+          description: Feature flag registry
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    enabled: { type: boolean }
+                    rollout_pct: { type: integer, minimum: 0, maximum: 100 }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/feature-flags/{name}:
+    put:
+      tags: [Configuration]
+      summary: Update a feature flag
+      operationId: updateFeatureFlag
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                rollout_pct: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        "200":
+          description: Flag updated
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /api/status:

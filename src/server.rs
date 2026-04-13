@@ -169,6 +169,10 @@ impl RateLimiter {
             ("api-write", self.write_max_per_minute)
         };
 
+        if limit == 0 {
+            return true;
+        }
+
         let entry = self
             .buckets
             .entry(format!("{ip}:{bucket_suffix}"))
@@ -779,7 +783,12 @@ pub async fn run_server(
     // Derive spool encryption key from env var or fall back to token-derived key
     let spool_key = std::env::var("WARDEX_SPOOL_KEY")
         .map(|k| sha2::Sha256::digest(k.as_bytes()))
-        .unwrap_or_else(|_| sha2::Sha256::digest(format!("spool-key-{token}").as_bytes()));
+        .unwrap_or_else(|_| {
+            eprintln!("  WARNING: WARDEX_SPOOL_KEY not set — spool key derived from admin token.");
+            eprintln!("           Rotating the token will make existing spool data unreadable.");
+            eprintln!("           Set WARDEX_SPOOL_KEY to a persistent secret for production use.");
+            sha2::Sha256::digest(format!("spool-key-{token}").as_bytes())
+        });
 
     let state = Arc::new(Mutex::new(AppState {
         detector: AnomalyDetector::default(),
@@ -1168,7 +1177,7 @@ pub async fn run_server(
                         )
                         .header("Access-Control-Max-Age", "86400")
                         .body(Body::empty())
-                        .unwrap();
+                        .unwrap_or_else(|_| Response::new(Body::empty()));
                 }
 
                 if url.starts_with("/api/") {
@@ -1434,7 +1443,7 @@ pub fn spawn_test_server() -> (u16, String) {
                                     "Content-Type, Authorization",
                                 )
                                 .body(Body::empty())
-                                .unwrap();
+                                .unwrap_or_else(|_| Response::new(Body::empty()));
                         }
 
                         if url.starts_with("/api/") {
@@ -1700,30 +1709,58 @@ fn security_headers(
         .header("X-Permitted-Cross-Domain-Policies", "none")
 }
 
+fn safe_body(builder: axum::http::response::Builder, body: Body) -> Response<Body> {
+    builder.body(body).unwrap_or_else(|_| {
+        Response::builder()
+            .status(500)
+            .body(Body::from("internal server error"))
+            .expect("fallback response must build")
+    })
+}
+
 fn json_response(body: &str, status: u16) -> Response<Body> {
-    security_headers(Response::builder().status(status))
-        .header("Content-Type", "application/json")
-        .body(Body::from(body.to_owned()))
-        .unwrap()
+    safe_body(
+        security_headers(Response::builder().status(status))
+            .header("Content-Type", "application/json"),
+        Body::from(body.to_owned()),
+    )
 }
 
 fn error_json(message: &str, status: u16) -> Response<Body> {
-    let body = format!(r#"{{"error":"{}"}}"#, message.replace('"', "\\\""));
+    let code = match status {
+        400 => "VALIDATION_ERROR",
+        401 => "AUTH_REQUIRED",
+        403 => "FORBIDDEN",
+        404 => "NOT_FOUND",
+        409 => "CONFLICT",
+        413 => "PAYLOAD_TOO_LARGE",
+        429 => "RATE_LIMITED",
+        500 => "INTERNAL_ERROR",
+        503 => "SERVICE_UNAVAILABLE",
+        _ => "ERROR",
+    };
+    let body = format!(
+        r#"{{"error":"{}","code":"{}"}}"#,
+        message.replace('"', "\\\""),
+        code
+    );
     json_response(&body, status)
 }
 
 fn text_response(body: &str, status: u16) -> Response<Body> {
-    security_headers(Response::builder().status(status))
-        .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from(body.to_owned()))
-        .unwrap()
+    safe_body(
+        security_headers(Response::builder().status(status))
+            .header("Content-Type", "text/plain; charset=utf-8"),
+        Body::from(body.to_owned()),
+    )
 }
 
 fn csv_response(body: &str, status: u16) -> Response<Body> {
-    security_headers(Response::builder().status(status))
-        .header("Content-Type", "text/csv; charset=utf-8")
-        .body(Body::from(body.to_owned()))
-        .unwrap()
+    safe_body(
+        security_headers(Response::builder().status(status))
+            .header("Content-Type", "text/csv; charset=utf-8"),
+        Body::from(body.to_owned()),
+    )
 }
 
 fn recent_alerts_json(
@@ -1885,9 +1922,9 @@ fn respond_api(
         );
     }
     let (mut parts, body) = response.into_parts();
-    parts
-        .headers
-        .insert("X-Request-Id", req_id.parse().unwrap());
+    if let Ok(hv) = req_id.parse() {
+        parts.headers.insert("X-Request-Id", hv);
+    }
     Response::from_parts(parts, body)
 }
 
@@ -7071,7 +7108,7 @@ fn handle_api(
                     "Content-Type, Authorization",
                 )
                 .body(Body::empty())
-                .unwrap()
+                .unwrap_or_else(|_| Response::new(Body::empty()))
         }
 
         // ── Sigma Detection Engine ────────────────────────────────
@@ -7672,8 +7709,7 @@ fn handle_api(
                                 "service" | "ServiceAccount" => Role::ServiceAccount,
                                 _ => Role::Viewer,
                             };
-                            let token =
-                                format!("tok-{}-{}", username, chrono::Utc::now().timestamp());
+                            let token = generate_token();
                             let user = User {
                                 username: username.clone(),
                                 role,
@@ -8725,7 +8761,7 @@ fn handle_api(
                                     .header("X-Frame-Options", "DENY")
                                     .header("Cache-Control", "no-store")
                                     .body(Body::from(data))
-                                    .unwrap()
+                                    .unwrap_or_else(|_| Response::new(Body::from("error")))
                             }
                             None => error_json("report not found", 404),
                         }
@@ -8770,7 +8806,7 @@ fn handle_api(
                         .header("Content-Type", "application/octet-stream")
                         .header("Access-Control-Allow-Origin", cors_origin())
                         .body(Body::from(data))
-                        .unwrap(),
+                        .unwrap_or_else(|_| Response::new(Body::from("error"))),
                     Err(e) => error_json(&e, 404),
                 }
             } else if method == Method::Get
@@ -11370,42 +11406,50 @@ fn handle_analyze(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
 
     match samples {
         Ok(samples) if !samples.is_empty() => {
+            let total = samples.len();
             let result = runtime::execute(&samples);
             let report = JsonReport::from_run_result(&result);
             let json = match serde_json::to_string_pretty(&report) {
                 Ok(j) => j,
                 Err(e) => return error_json(&format!("serialization error: {e}"), 500),
             };
-            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-            // Update the live detector baseline with the analyzed samples
-            for (sample, report) in samples.iter().zip(result.reports.iter()) {
-                let pre = s
-                    .detector
-                    .snapshot()
-                    .and_then(|snap| {
-                        serde_json::to_vec(&snap)
-                            .map_err(|e| log::error!("proof pre-snapshot serialization error: {e}"))
-                            .ok()
-                    })
-                    .unwrap_or_default();
-                s.detector.evaluate(sample);
-                let post = s
-                    .detector
-                    .snapshot()
-                    .and_then(|snap| {
-                        serde_json::to_vec(&snap)
-                            .map_err(|e| {
-                                log::error!("proof post-snapshot serialization error: {e}")
-                            })
-                            .ok()
-                    })
-                    .unwrap_or_default();
-                s.proofs.record("baseline_update", &pre, &post);
-                s.device.apply_decision(&report.decision);
-                s.replay.push(*sample);
+            // Process in chunks to reduce lock hold time for large batches
+            let chunk_size = 200;
+            for chunk_start in (0..total).step_by(chunk_size) {
+                let chunk_end = (chunk_start + chunk_size).min(total);
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                for i in chunk_start..chunk_end {
+                    let sample = &samples[i];
+                    let report_entry = &result.reports[i];
+                    let pre = s
+                        .detector
+                        .snapshot()
+                        .and_then(|snap| {
+                            serde_json::to_vec(&snap)
+                                .map_err(|e| {
+                                    log::error!("proof pre-snapshot serialization error: {e}")
+                                })
+                                .ok()
+                        })
+                        .unwrap_or_default();
+                    s.detector.evaluate(sample);
+                    let post = s
+                        .detector
+                        .snapshot()
+                        .and_then(|snap| {
+                            serde_json::to_vec(&snap)
+                                .map_err(|e| {
+                                    log::error!("proof post-snapshot serialization error: {e}")
+                                })
+                                .ok()
+                        })
+                        .unwrap_or_default();
+                    s.proofs.record("baseline_update", &pre, &post);
+                    s.device.apply_decision(&report_entry.decision);
+                    s.replay.push(*sample);
+                }
+                s.last_report = Some(report.clone());
             }
-            s.last_report = Some(report);
-            drop(s);
             json_response(&json, 200)
         }
         Ok(_) => error_json("no samples in request body", 400),
@@ -13187,24 +13231,26 @@ fn content_type_for_path(path: &str) -> &'static str {
 
 fn serve_embedded(content: &[u8], content_type: &str) -> Response<Body> {
     let origin = cors_origin();
-    Response::builder()
-        .status(200)
-        .header("Content-Type", content_type)
-        .header("Access-Control-Allow-Origin", origin)
-        .header("X-Content-Type-Options", "nosniff")
-        .header("X-Frame-Options", "DENY")
-        .header("Cache-Control", cache_policy(content_type))
-        .body(Body::from(content.to_vec()))
-        .unwrap()
+    safe_body(
+        Response::builder()
+            .status(200)
+            .header("Content-Type", content_type)
+            .header("Access-Control-Allow-Origin", origin)
+            .header("X-Content-Type-Options", "nosniff")
+            .header("X-Frame-Options", "DENY")
+            .header("Cache-Control", cache_policy(content_type)),
+        Body::from(content.to_vec()),
+    )
 }
 
 fn redirect_response(location: &str) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::PERMANENT_REDIRECT)
-        .header("Location", location)
-        .header("Cache-Control", "no-cache")
-        .body(Body::empty())
-        .unwrap()
+    safe_body(
+        Response::builder()
+            .status(StatusCode::PERMANENT_REDIRECT)
+            .header("Location", location)
+            .header("Cache-Control", "no-cache"),
+        Body::empty(),
+    )
 }
 
 fn contains_parent_dir(path: &str) -> bool {
@@ -13284,15 +13330,16 @@ fn serve_static(url: &str, site_dir: &Path) -> Response<Body> {
         match fs::read(&file_path) {
             Ok(data) => {
                 let origin = cors_origin();
-                Response::builder()
-                    .status(200)
-                    .header("Content-Type", content_type)
-                    .header("Access-Control-Allow-Origin", origin)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .header("X-Frame-Options", "DENY")
-                    .header("Cache-Control", cache_policy(content_type))
-                    .body(Body::from(data))
-                    .unwrap()
+                safe_body(
+                    Response::builder()
+                        .status(200)
+                        .header("Content-Type", content_type)
+                        .header("Access-Control-Allow-Origin", origin)
+                        .header("X-Content-Type-Options", "nosniff")
+                        .header("X-Frame-Options", "DENY")
+                        .header("Cache-Control", cache_policy(content_type)),
+                    Body::from(data),
+                )
             }
             Err(_) => error_json("read error", 500),
         }
@@ -13392,6 +13439,17 @@ mod tests {
         assert!(limiter.check("127.0.0.1", &Method::Get, "/site/styles.css"));
         assert!(limiter.check("127.0.0.1", &Method::Get, "/site/app.js"));
         assert!(!limiter.check("127.0.0.1", &Method::Get, "/site/index.html"));
+    }
+
+    #[test]
+    fn rate_limiter_zero_limits_disable_throttling() {
+        let mut limiter = RateLimiter::new(0, 0);
+
+        for _ in 0..10 {
+            assert!(limiter.check("127.0.0.1", &Method::Get, "/api/status"));
+            assert!(limiter.check("127.0.0.1", &Method::Post, "/api/config/reload"));
+            assert!(limiter.check("127.0.0.1", &Method::Get, "/admin/assets/index.js"));
+        }
     }
 
     #[test]
@@ -14087,5 +14145,79 @@ mod tests {
 
         assert_eq!(playbook_executor(&auth), "analyst-2");
         assert_eq!(live_response_operator(&auth), "analyst-2");
+    }
+
+    #[test]
+    fn error_json_includes_structured_code() {
+        let resp = error_json("not found", 404);
+        assert_eq!(resp.status(), 404);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let bytes = rt.block_on(axum::body::to_bytes(resp.into_body(), 1_000_000)).unwrap();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        let v: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(v["code"], "NOT_FOUND");
+        assert_eq!(v["error"], "not found");
+    }
+
+    #[test]
+    fn error_json_codes_for_common_statuses() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let cases = [
+            (400, "VALIDATION_ERROR"),
+            (401, "AUTH_REQUIRED"),
+            (403, "FORBIDDEN"),
+            (429, "RATE_LIMITED"),
+            (500, "INTERNAL_ERROR"),
+        ];
+        for (status, expected_code) in cases {
+            let resp = error_json("msg", status);
+            let bytes = rt.block_on(axum::body::to_bytes(resp.into_body(), 1_000_000)).unwrap();
+            let body = std::str::from_utf8(&bytes).unwrap();
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(v["code"].as_str().unwrap(), expected_code, "status {status}");
+        }
+    }
+
+    #[test]
+    fn safe_body_fallback_on_invalid_status() {
+        // Status 0 is invalid — safe_body should return 500 fallback
+        let r = safe_body(Response::builder().status(0), Body::empty());
+        assert_eq!(r.status(), 500);
+    }
+
+    #[test]
+    fn contains_parent_dir_detects_traversal() {
+        assert!(contains_parent_dir("../etc/passwd"));
+        assert!(contains_parent_dir("foo/../../bar"));
+        assert!(!contains_parent_dir("foo/bar/baz"));
+        assert!(!contains_parent_dir("normal.json"));
+    }
+
+    #[test]
+    fn case_store_canonicalizes_path() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("wardex_test_cases_canon.json");
+        let store = crate::analyst::CaseStore::new(&path.to_string_lossy());
+        // Store should have loaded without panic
+        assert_eq!(store.list().len(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn incident_store_canonicalizes_path() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("wardex_test_incidents_canon.json");
+        let store = crate::incident::IncidentStore::new(&path.to_string_lossy());
+        assert_eq!(store.list().len(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn report_store_canonicalizes_path() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("wardex_test_reports_canon.json");
+        let store = crate::report::ReportStore::new(&path.to_string_lossy());
+        assert_eq!(store.list().len(), 0);
+        let _ = std::fs::remove_file(&path);
     }
 }

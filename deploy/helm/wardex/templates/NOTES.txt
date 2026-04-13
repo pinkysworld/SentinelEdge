@@ -1,0 +1,23 @@
+Wardex has been deployed to your cluster.
+
+1. Get the application URL:
+{{- if .Values.ingress.enabled }}
+  {{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ . }}
+  {{- end }}
+{{- else }}
+  kubectl port-forward svc/{{ include "wardex.fullname" . }} 9077:9077 -n {{ .Release.Namespace }}
+  echo "Visit http://localhost:9077"
+{{- end }}
+
+2. Check the deployment status:
+  kubectl get pods -l app.kubernetes.io/name=wardex -n {{ .Release.Namespace }}
+
+3. View logs:
+  kubectl logs -l app.kubernetes.io/name=wardex -n {{ .Release.Namespace }} -f
+
+4. Verify health:
+  kubectl exec -it deploy/{{ include "wardex.fullname" . }} -n {{ .Release.Namespace }} -- /app/wardex status-json
+
+5. Access the admin console at the application URL above.
+   The API token is printed in the pod logs on first start.

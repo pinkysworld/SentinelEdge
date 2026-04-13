@@ -155,10 +155,17 @@ impl RbacStore {
 
     /// Register a user. The token should be pre-hashed for production.
     pub fn add_user(&self, user: User) {
+        let mut users = self.users.lock().unwrap();
+        let mut tokens = self.tokens.lock().unwrap();
+
         let token = user.token_hash.clone();
         let username = user.username.clone();
-        self.users.lock().unwrap().insert(username.clone(), user);
-        self.tokens.lock().unwrap().insert(token, username);
+
+        if let Some(existing) = users.insert(username.clone(), user) {
+            tokens.remove(&existing.token_hash);
+        }
+
+        tokens.insert(token, username);
     }
 
     /// Remove a user.
@@ -458,7 +465,8 @@ pub fn endpoint_permission(method: &str, path: &str) -> Permission {
         ("DELETE", "/api/dlq") => Permission::ManageConfig,
 
         // Reports
-        (_, p) if p.starts_with("/api/reports") => Permission::ViewReports,
+        ("GET", p) if p.starts_with("/api/reports") => Permission::ViewReports,
+        (_, p) if p.starts_with("/api/reports") => Permission::ManageConfig,
 
         // Export
         (_, p) if p.starts_with("/api/export") => Permission::ExportData,
@@ -651,6 +659,27 @@ mod tests {
     }
 
     #[test]
+    fn replacing_user_invalidates_old_token() {
+        let store = setup_store();
+
+        store.add_user(User {
+            username: "viewer".into(),
+            role: Role::Analyst,
+            token_hash: "viewer-token-new".into(),
+            enabled: true,
+            created_at: "later".into(),
+            tenant_id: None,
+        });
+
+        assert!(store.authenticate("viewer-token").is_none());
+        let user = store
+            .authenticate("viewer-token-new")
+            .expect("replacement token should authenticate");
+        assert_eq!(user.username, "viewer");
+        assert_eq!(user.role, Role::Analyst);
+    }
+
+    #[test]
     fn list_users() {
         let store = setup_store();
         let users = store.list_users();
@@ -690,6 +719,14 @@ mod tests {
         assert_eq!(
             endpoint_permission("GET", "/api/report"),
             Permission::ViewReports
+        );
+        assert_eq!(
+            endpoint_permission("GET", "/api/reports/42"),
+            Permission::ViewReports
+        );
+        assert_eq!(
+            endpoint_permission("DELETE", "/api/reports/42"),
+            Permission::ManageConfig
         );
         assert_eq!(
             endpoint_permission("GET", "/api/auth/check"),
@@ -782,6 +819,22 @@ mod tests {
         assert_eq!(
             endpoint_permission("POST", "/api/content/rules/SE-001/promote"),
             Permission::PromoteRules
+        );
+    }
+
+    #[test]
+    fn report_deletes_require_admin_level_access() {
+        let store = setup_store();
+
+        assert!(
+            !store
+                .check_api_access("viewer-token", "DELETE", "/api/reports/42")
+                .is_allowed()
+        );
+        assert!(
+            store
+                .check_api_access("admin-token", "DELETE", "/api/reports/42")
+                .is_allowed()
         );
     }
 

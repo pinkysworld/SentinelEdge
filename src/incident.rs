@@ -43,10 +43,23 @@ pub struct IncidentStore {
 
 impl IncidentStore {
     pub fn new(store_path: &str) -> Self {
+        // Canonicalize parent directory to prevent path-traversal
+        let safe_path = if let Some(parent) = Path::new(store_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+            match parent.canonicalize() {
+                Ok(canon) => canon
+                    .join(Path::new(store_path).file_name().unwrap_or_default())
+                    .to_string_lossy()
+                    .to_string(),
+                Err(_) => store_path.to_string(),
+            }
+        } else {
+            store_path.to_string()
+        };
         let mut store = IncidentStore {
             incidents: Vec::new(),
             next_id: 1,
-            store_path: store_path.to_string(),
+            store_path: safe_path,
         };
         store.load();
         store

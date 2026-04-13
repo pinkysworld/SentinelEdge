@@ -2,6 +2,36 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.47.0] — Production Readiness & Hardening
+
+### Security
+- **Path-traversal hardening** — CaseStore, IncidentStore, and ReportStore canonicalize parent directories, blocking `../` escape attempts.
+- **Response-builder panic safety** — Replaced 12+ `.unwrap()` calls on `Response::builder().body()` with a `safe_body()` helper that falls back to HTTP 500.
+- **Request-ID header-parse safety** — Graceful `if let Ok` instead of `.unwrap()` when inserting the `X-Request-Id` response header.
+- **Spool key separation warning** — Prints startup warning when `WARDEX_SPOOL_KEY` environment variable is not set.
+
+### API
+- **Structured error codes** — `error_json()` now returns `{"error":"…","code":"…"}` with machine-readable codes: `VALIDATION_ERROR`, `AUTH_REQUIRED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `RATE_LIMITED`, `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE`.
+- **OpenAPI spec sync** — Version bumped to 0.47.0; added `code` field to Error schema, `/api/fleet/health` and `/api/feature-flags` endpoints.
+
+### Performance
+- **Chunked ingest processing** — `handle_analyze` processes samples in 200-item chunks, releasing the lock between chunks to reduce contention.
+
+### Validation
+- **DecayConfig f64 validation** — `validate()` method checks `half_life_days` (>0, finite) and `min_confidence` (0.0–1.0, finite); `apply_decay()` short-circuits on invalid config.
+
+### Deployment
+- **K8s container hardening** — `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, tmpfs `/tmp` volume. Image tag updated to 0.46.0.
+- **Helm NOTES.txt** — Post-install instructions: URL, status, logs, health verification.
+- **Helm test** — `test-connection.yaml` pod that verifies `/api/health` reachability.
+
+### Admin console
+- **Draft autosave** — `useDraftAutosave(key, initialValue)` hook with 500 ms debounced localStorage persistence.
+- **TypeScript types** — Shared type definitions (`types.ts`) for AlertRecord, AgentIdentity, Case, Incident, FeatureFlag, FleetHealth, ApiError, Toast, DraftState.
+
+### Testing
+- **17 new tests** — 7 in `ioc_decay` (validation boundary values), 7 in `server` (error codes, safe_body fallback, path-traversal, store canonicalization), 3 in `server` (error code mapping).
+
 ## [0.46.0] — Hardening, Distribution & Observability
 
 ### Security
