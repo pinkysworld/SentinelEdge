@@ -1,20 +1,22 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useAuth, useTheme, useRole, useApi } from './hooks.jsx';
 import * as api from './api.js';
-import Dashboard from './components/Dashboard.jsx';
-import LiveMonitor from './components/LiveMonitor.jsx';
-import ThreatDetection from './components/ThreatDetection.jsx';
-import FleetAgents from './components/FleetAgents.jsx';
-import SecurityPolicy from './components/SecurityPolicy.jsx';
-import SOCWorkbench from './components/SOCWorkbench.jsx';
-import Infrastructure from './components/Infrastructure.jsx';
-import ReportsExports from './components/ReportsExports.jsx';
-import Settings from './components/Settings.jsx';
-import HelpDocs from './components/HelpDocs.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import SearchPalette from './components/SearchPalette.jsx';
 import NotificationToast from './components/NotificationToast.jsx';
 import OnboardingWizard from './components/OnboardingWizard.jsx';
+
+const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
+const LiveMonitor = lazy(() => import('./components/LiveMonitor.jsx'));
+const ThreatDetection = lazy(() => import('./components/ThreatDetection.jsx'));
+const FleetAgents = lazy(() => import('./components/FleetAgents.jsx'));
+const SecurityPolicy = lazy(() => import('./components/SecurityPolicy.jsx'));
+const SOCWorkbench = lazy(() => import('./components/SOCWorkbench.jsx'));
+const Infrastructure = lazy(() => import('./components/Infrastructure.jsx'));
+const ReportsExports = lazy(() => import('./components/ReportsExports.jsx'));
+const Settings = lazy(() => import('./components/Settings.jsx'));
+const HelpDocs = lazy(() => import('./components/HelpDocs.jsx'));
 
 const SECTIONS = [
   { id: 'dashboard',        path: '/',                 label: 'Dashboard',        icon: '📊', minRole: 'viewer' },
@@ -193,16 +195,16 @@ export default function App() {
             </div>
           ) : (
             <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/monitor" element={<LiveMonitor />} />
-              <Route path="/detection" element={<RequireRole minRole="analyst"><ThreatDetection /></RequireRole>} />
-              <Route path="/fleet" element={<FleetAgents />} />
-              <Route path="/policy" element={<RequireRole minRole="analyst"><SecurityPolicy /></RequireRole>} />
-              <Route path="/soc" element={<RequireRole minRole="analyst"><SOCWorkbench /></RequireRole>} />
-              <Route path="/infrastructure" element={<RequireRole minRole="analyst"><Infrastructure /></RequireRole>} />
-              <Route path="/reports" element={<ReportsExports />} />
-              <Route path="/settings" element={<RequireRole minRole="admin"><Settings /></RequireRole>} />
-              <Route path="/help" element={<HelpDocs />} />
+              <Route path="/" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><Dashboard /></Suspense></ErrorBoundary>} />
+              <Route path="/monitor" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><LiveMonitor /></Suspense></ErrorBoundary>} />
+              <Route path="/detection" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><ThreatDetection /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/fleet" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><FleetAgents /></Suspense></ErrorBoundary>} />
+              <Route path="/policy" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><SecurityPolicy /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/soc" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><SOCWorkbench /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/infrastructure" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><Infrastructure /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/reports" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><ReportsExports /></Suspense></ErrorBoundary>} />
+              <Route path="/settings" element={<ErrorBoundary><RequireRole minRole="admin"><Suspense fallback={<div className="loading">Loading…</div>}><Settings /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/help" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><HelpDocs /></Suspense></ErrorBoundary>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           )}

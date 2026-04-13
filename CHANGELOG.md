@@ -2,6 +2,32 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.48.0] — Security, Quality & Developer Experience
+
+### Security
+- **Constant-time enrollment token comparison** — `ct_eq()` XOR-based comparison prevents timing side-channel attacks on enrollment tokens.
+- **Remove production .unwrap() in Sigma parser** — Replaced two `split_once(':').unwrap()` calls with `let Some(...) else { continue }` guards, preventing panics on malformed Sigma rules.
+- **Session persistence across restarts** — `SessionStore` now supports file-backed persistence with atomic `.tmp` + rename writes; sessions survive server restarts.
+
+### API
+- **Standardized pagination** — `/api/events`, `/api/cases`, and `/api/agents` now accept `limit`/`offset` query parameters and return `{"items":[], "total":N, "limit":N, "offset":N}` envelope responses (default limit 100, cap 1000; agents default 200).
+
+### Admin console
+- **Code splitting / lazy routes** — All 10 page components loaded via `React.lazy()` with per-route `<Suspense>` fallbacks; Vite `manualChunks` splits vendor (react, react-dom, react-router-dom) and charts (recharts) bundles.
+- **Route-level error boundaries** — Each route wrapped with `<ErrorBoundary>` + `<Suspense>` for graceful failure isolation.
+- **7 new frontend tests** — Connect button state, auth error display, skip-to-content a11y link, theme toggle, unknown route redirect, welcome message (33 total).
+- **CI format check** — Added `npm run format:check` step to frontend CI pipeline.
+
+### Code quality
+- **Extract hardcoded constants** — `DEFAULT_SESSION_TIMEOUT_SECS` (1800) in `live_response.rs`; `PENDING_STATE_TTL_SECS` (600) and `DEFAULT_TOKEN_EXPIRY_SECS` (3600) in `oidc.rs`.
+- **11 new Rust tests** — `ct_eq` correctness (5), session persistence round-trip + error resilience (3), Sigma malformed-YAML handling (1), OIDC constants (1), live-response default timeout (1). Total: 1320.
+
+### Deployment
+- **SDK version sync** — Python SDK and TypeScript SDK both aligned to 0.48.0.
+- **Helm chart 0.48.0** — appVersion 0.47.0; K8s deployment and values.yaml image tags updated to 0.47.0.
+- **Network policy egress** — Added HTTPS (port 443) for threat intel feeds/webhooks and syslog/SIEM forwarding (ports 514, 6514).
+- **Roadmap baseline** — Updated stale roadmap baseline from v0.42.0 to v0.47.0.
+
 ## [0.47.0] — Production Readiness & Hardening
 
 ### Security

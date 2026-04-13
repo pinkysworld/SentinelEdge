@@ -45,3 +45,13 @@ spec:
       ports:
         - protocol: TCP
           port: 9078
+    # HTTPS — threat intel feeds, webhook notifications, external APIs
+    - ports:
+        - protocol: TCP
+          port: 443
+    # Syslog / SIEM forwarding
+    - ports:
+        - protocol: TCP
+          port: 514
+        - protocol: TCP
+          port: 6514

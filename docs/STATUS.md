@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.47.0`
+- **Version:** `0.48.0`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 128 Rust source modules
 - **API contract:** 174 documented OpenAPI paths
-- **Verification:** 1483 automated tests (1457 Rust + 26 vitest) plus live Playwright end-to-end coverage
+- **Verification:** 1353 automated tests (1320 Rust + 33 vitest) plus live Playwright end-to-end coverage
 - **Production hardening:** 98% (58/59 controls implemented)
 
 ## Shipped in the current platform

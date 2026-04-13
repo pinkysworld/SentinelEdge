@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider, RoleProvider, ThemeProvider, ToastProvider } from '../hooks.jsx';
 import App from '../App.jsx';
@@ -52,5 +53,60 @@ describe('App', () => {
     renderApp();
     // Check that navigation labels exist
     expect(screen.getAllByText('Dashboard').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('disables Connect button when token input is empty', () => {
+    renderApp();
+    const btn = screen.getByText('Connect');
+    expect(btn).toBeDisabled();
+  });
+
+  it('enables Connect button when token is entered', async () => {
+    renderApp();
+    const input = screen.getByPlaceholderText('API token');
+    await userEvent.type(input, 'my-secret-token');
+    expect(screen.getByText('Connect')).not.toBeDisabled();
+  });
+
+  it('shows auth error on failed connection', async () => {
+    global.fetch.mockImplementation(() => Promise.resolve({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: { get: () => null },
+      json: async () => ({}),
+      text: async () => '{"error":"unauthorized"}',
+    }));
+    renderApp();
+    const input = screen.getByPlaceholderText('API token');
+    await userEvent.type(input, 'bad-token');
+    await userEvent.click(screen.getByText('Connect'));
+    await waitFor(() => {
+      expect(screen.getByText(/Authentication failed/)).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
+  it('displays skip-to-content link for accessibility', () => {
+    renderApp();
+    const skipLink = screen.getByText('Skip to main content');
+    expect(skipLink).toBeInTheDocument();
+    expect(skipLink.getAttribute('href')).toBe('#main-content');
+  });
+
+  it('renders theme toggle button', () => {
+    renderApp();
+    const themeBtn = screen.getByTitle(/mode/i);
+    expect(themeBtn).toBeInTheDocument();
+  });
+
+  it('navigates to unknown route and redirects to /', () => {
+    renderApp('/nonexistent');
+    // Should redirect to dashboard
+    expect(screen.getAllByText('Dashboard').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders welcome message when unauthenticated', () => {
+    renderApp();
+    expect(screen.getByText('Welcome to Wardex Admin Console')).toBeInTheDocument();
   });
 });

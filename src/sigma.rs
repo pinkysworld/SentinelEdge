@@ -515,7 +515,7 @@ fn parse_yaml_to_json(yaml: &str) -> Result<serde_json::Value, String> {
             in_sub_map = false;
             sub_key = None;
 
-            let (key, val) = trimmed.split_once(':').unwrap();
+            let Some((key, val)) = trimmed.split_once(':') else { continue };
             let key = key.trim().to_string();
             let val = val.trim();
             if val.is_empty() {
@@ -535,7 +535,7 @@ fn parse_yaml_to_json(yaml: &str) -> Result<serde_json::Value, String> {
                 list.push(parse_yaml_scalar(val));
             }
         } else if indent > 0 && trimmed.contains(':') && !trimmed.starts_with('-') {
-            let (k, v) = trimmed.split_once(':').unwrap();
+            let Some((k, v)) = trimmed.split_once(':') else { continue };
             let k = k.trim().to_string();
             let v = v.trim();
 
@@ -2045,5 +2045,16 @@ mod tests {
             matches.iter().any(|m| m.rule_id == "SE-005"),
             "Should detect suspicious TLD via kernel event bridge"
         );
+    }
+
+    #[test]
+    fn parse_yaml_handles_lines_without_colon() {
+        // Lines without ':' should be silently skipped, not panic
+        let yaml = "title: Test Rule\nthis-line-has-no-colon\nstatus: test\n";
+        let result = parse_yaml_to_json(yaml);
+        assert!(result.is_ok(), "should not panic on colon-less lines");
+        let obj = result.unwrap();
+        assert_eq!(obj["title"], "Test Rule");
+        assert_eq!(obj["status"], "test");
     }
 }

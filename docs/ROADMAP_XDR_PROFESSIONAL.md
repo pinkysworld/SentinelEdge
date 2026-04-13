@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.42.0` delivers the current enterprise control-plane slice:
+`v0.47.0` delivers the current enterprise control-plane slice:
 
 - SOC Workbench for queue, cases, investigation, guided workflows, and response
 - detection engineering with hunts, rule lifecycle, suppressions, efficacy tracking, and MITRE coverage

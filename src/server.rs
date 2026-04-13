@@ -6006,8 +6006,14 @@ fn handle_api(
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let agents = s.agent_registry.list();
-            let payload = agents
+            let params = parse_query_string(&url);
+            let limit = params.get("limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(200).min(1000);
+            let offset = params.get("offset").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+            let total = agents.len();
+            let payload: Vec<_> = agents
                 .iter()
+                .skip(offset)
+                .take(limit)
                 .map(|agent| {
                     agent_summary_json(
                         agent,
@@ -6016,7 +6022,8 @@ fn handle_api(
                     )
                 })
                 .collect::<Vec<_>>();
-            match serde_json::to_string(&payload) {
+            let body = serde_json::json!({"agents": payload, "total": total, "limit": limit, "offset": offset});
+            match serde_json::to_string(&body) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
@@ -6027,8 +6034,14 @@ fn handle_api(
         (Method::Get, "/api/events") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let query = parse_event_query(&url);
-            let events = filtered_events(&s.event_store, &query);
-            match serde_json::to_string(&events) {
+            let all_events = filtered_events(&s.event_store, &query);
+            let params = parse_query_string(&url);
+            let limit = params.get("limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(100).min(1000);
+            let offset = params.get("offset").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+            let total = all_events.len();
+            let paged: Vec<_> = all_events.into_iter().skip(offset).take(limit).collect();
+            let body = serde_json::json!({"events": paged, "total": total, "limit": limit, "offset": offset});
+            match serde_json::to_string(&body) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
@@ -7749,16 +7762,22 @@ fn handle_api(
         // ── Analyst Console: Cases ─────────────────────────────────
         (Method::Get, "/api/cases") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let params = parse_query_string(&url);
             let status = url_param(&url, "status");
             let priority = url_param(&url, "priority");
             let assignee = url_param(&url, "assignee");
+            let limit = params.get("limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(100).min(1000);
+            let offset = params.get("offset").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
             let cases = s.case_store.list_filtered(
                 status.as_deref(),
                 priority.as_deref(),
                 assignee.as_deref(),
             );
+            let total = cases.len();
             let items: Vec<serde_json::Value> = cases
                 .iter()
+                .skip(offset)
+                .take(limit)
                 .map(|c| {
                     serde_json::json!({
                         "id": c.id, "title": c.title, "status": format!("{:?}", c.status),
@@ -7770,7 +7789,7 @@ fn handle_api(
                 })
                 .collect();
             json_response(
-                &serde_json::json!({"cases": items, "total": items.len()}).to_string(),
+                &serde_json::json!({"cases": items, "total": total, "limit": limit, "offset": offset}).to_string(),
                 200,
             )
         }

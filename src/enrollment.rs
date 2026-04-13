@@ -5,6 +5,20 @@ use std::path::Path;
 
 use crate::config::MonitorScopeSettings;
 
+/// Constant-time string equality to prevent timing side-channel attacks on tokens.
+fn ct_eq(a: &str, b: &str) -> bool {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 /// Unique agent identity assigned during enrollment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentIdentity {
@@ -168,11 +182,11 @@ impl AgentRegistry {
 
     /// Enroll a new agent.
     pub fn enroll(&mut self, req: &EnrollRequest) -> Result<EnrollResponse, String> {
-        // Validate token
+        // Validate token — constant-time comparison to prevent timing attacks.
         let token_entry = self
             .tokens
             .iter_mut()
-            .find(|t| t.token == req.enrollment_token && t.is_valid());
+            .find(|t| ct_eq(&t.token, &req.enrollment_token) && t.is_valid());
         match token_entry {
             Some(t) => {
                 t.consume();
@@ -519,5 +533,31 @@ mod tests {
         let restored: EnrollmentToken = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.expires_at, token.expires_at);
         assert_eq!(restored.max_uses, 2);
+    }
+
+    #[test]
+    fn ct_eq_matching_strings() {
+        assert!(ct_eq("abc123", "abc123"));
+    }
+
+    #[test]
+    fn ct_eq_different_strings_same_length() {
+        assert!(!ct_eq("abc123", "abc124"));
+    }
+
+    #[test]
+    fn ct_eq_different_lengths() {
+        assert!(!ct_eq("short", "longer"));
+    }
+
+    #[test]
+    fn ct_eq_empty_strings() {
+        assert!(ct_eq("", ""));
+    }
+
+    #[test]
+    fn ct_eq_one_empty() {
+        assert!(!ct_eq("", "notempty"));
+        assert!(!ct_eq("notempty", ""));
     }
 }

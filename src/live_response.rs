@@ -174,9 +174,12 @@ pub struct LiveResponseEngine {
     next_cmd_id: u64,
 }
 
+/// Default live-response session timeout in seconds (30 minutes).
+pub const DEFAULT_SESSION_TIMEOUT_SECS: u64 = 1800;
+
 impl Default for LiveResponseEngine {
     fn default() -> Self {
-        Self::new(1800) // 30 min default timeout
+        Self::new(DEFAULT_SESSION_TIMEOUT_SECS)
     }
 }
 
@@ -602,5 +605,12 @@ mod tests {
     fn windows_has_wevtutil() {
         let cmds = default_allowed_commands(&LiveResponsePlatform::Windows);
         assert!(cmds.iter().any(|c| c.name == "wevtutil"));
+    }
+
+    #[test]
+    fn default_session_timeout_is_30_minutes() {
+        assert_eq!(DEFAULT_SESSION_TIMEOUT_SECS, 1800);
+        let engine = LiveResponseEngine::default();
+        assert_eq!(engine.default_timeout_secs, DEFAULT_SESSION_TIMEOUT_SECS);
     }
 }

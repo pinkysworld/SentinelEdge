@@ -10,6 +10,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Maximum age in seconds for pending OIDC authorization states (10 minutes).
+const PENDING_STATE_TTL_SECS: u64 = 600;
+
+/// Default token expiry in seconds when the IdP does not provide one.
+const DEFAULT_TOKEN_EXPIRY_SECS: u64 = 3600;
+
 // ── OIDC Configuration ───────────────────────────────────────────────────────
 
 /// OpenID Connect provider configuration.
@@ -196,7 +202,7 @@ impl OidcProvider {
             .as_secs();
 
         // Purge stale pending states older than 10 minutes
-        self.pending_states.retain(|_, pa| now - pa.created_at < 600);
+        self.pending_states.retain(|_, pa| now - pa.created_at < PENDING_STATE_TTL_SECS);
 
         self.pending_states.insert(
             state.clone(),
@@ -235,7 +241,7 @@ impl OidcProvider {
             .as_secs();
 
         // Expire states older than 10 minutes
-        if now - pending.created_at > 600 {
+        if now - pending.created_at > PENDING_STATE_TTL_SECS {
             return Err("Authorization state expired".into());
         }
 
@@ -269,7 +275,7 @@ impl OidcProvider {
         let role = self.resolve_role(&user_info);
 
         let session_id = generate_random_string(48);
-        let expires_in = token_resp.expires_in.unwrap_or(3600);
+        let expires_in = token_resp.expires_in.unwrap_or(DEFAULT_TOKEN_EXPIRY_SECS);
 
         let session = SsoSession {
             session_id: session_id.clone(),
@@ -305,7 +311,7 @@ impl OidcProvider {
             .unwrap_or_default()
             .as_secs();
         self.sessions.retain(|_, s| s.expires_at > now);
-        self.pending_states.retain(|_, pa| now - pa.created_at < 600);
+        self.pending_states.retain(|_, pa| now - pa.created_at < PENDING_STATE_TTL_SECS);
     }
 
     /// Invalidate/logout a session.
@@ -679,5 +685,11 @@ mod tests {
         let config = test_config();
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("test-secret"));
+    }
+
+    #[test]
+    fn constants_have_expected_values() {
+        assert_eq!(PENDING_STATE_TTL_SECS, 600);
+        assert_eq!(DEFAULT_TOKEN_EXPIRY_SECS, 3600);
     }
 }

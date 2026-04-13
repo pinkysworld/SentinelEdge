@@ -61,7 +61,7 @@ pub struct TokenResponse {
 // ── Session ─────────────────────────────────────────────────────
 
 /// A user session created after successful authentication.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     pub user_id: String,
     pub email: String,
@@ -70,15 +70,50 @@ pub struct Session {
     pub expires_at: DateTime<Utc>,
 }
 
-/// Thread-safe in-memory session store.
+/// Thread-safe session store with optional file-backed persistence.
 pub struct SessionStore {
     sessions: Mutex<HashMap<String, Session>>,
+    store_path: Option<String>,
 }
 
 impl SessionStore {
     pub fn new() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
+            store_path: None,
+        }
+    }
+
+    /// Create a session store that persists to disk at the given path.
+    pub fn with_persistence(path: &str) -> Self {
+        let store = Self {
+            sessions: Mutex::new(HashMap::new()),
+            store_path: Some(path.to_string()),
+        };
+        store.load();
+        store
+    }
+
+    /// Load sessions from disk, discarding any expired entries.
+    fn load(&self) {
+        let Some(ref path) = self.store_path else { return };
+        let Ok(data) = std::fs::read_to_string(path) else { return };
+        let Ok(map) = serde_json::from_str::<HashMap<String, Session>>(&data) else { return };
+        let now = Utc::now();
+        let valid: HashMap<String, Session> = map.into_iter().filter(|(_, s)| s.expires_at > now).collect();
+        let mut store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        *store = valid;
+    }
+
+    /// Persist current sessions to disk (best-effort).
+    fn save(&self) {
+        let Some(ref path) = self.store_path else { return };
+        let store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if let Ok(json) = serde_json::to_string(&*store) {
+            let tmp = format!("{path}.tmp");
+            if std::fs::write(&tmp, &json).is_ok() {
+                let _ = std::fs::rename(&tmp, path);
+            }
         }
     }
 
@@ -100,6 +135,8 @@ impl SessionStore {
 
         let mut store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         store.insert(session_id.clone(), session);
+        drop(store);
+        self.save();
         session_id
     }
 
@@ -120,14 +157,21 @@ impl SessionStore {
     /// Destroy a session. Returns `true` if it existed.
     pub fn destroy_session(&self, id: &str) -> bool {
         let mut store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        store.remove(id).is_some()
+        let existed = store.remove(id).is_some();
+        drop(store);
+        if existed { self.save(); }
+        existed
     }
 
     /// Remove all expired sessions.
     pub fn cleanup_expired(&self) {
         let mut store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let before = store.len();
         let now = Utc::now();
         store.retain(|_, s| s.expires_at > now);
+        let changed = store.len() != before;
+        drop(store);
+        if changed { self.save(); }
     }
 }
 
@@ -143,7 +187,7 @@ impl AuthManager {
     pub fn new(config: OidcConfig) -> Self {
         Self {
             config,
-            sessions: SessionStore::new(),
+            sessions: SessionStore::with_persistence("var/sessions.json"),
         }
     }
 
@@ -367,5 +411,45 @@ mod tests {
     fn validate_session_cookie_invalid() {
         let mgr = AuthManager::new(test_config());
         assert!(mgr.validate_session_cookie("bogus-cookie").is_none());
+    }
+
+    #[test]
+    fn session_persistence_round_trip() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("wardex_test_sessions.json");
+        let path_str = path.to_string_lossy().to_string();
+
+        // Create store with a session, which triggers save
+        {
+            let store = SessionStore::with_persistence(&path_str);
+            store.create_session("u1", "u1@example.com", "admin", 8);
+        }
+
+        // Load into a new store and verify the session survived
+        let store2 = SessionStore::with_persistence(&path_str);
+        let sessions = store2.sessions.lock().unwrap();
+        assert_eq!(sessions.len(), 1);
+        let session = sessions.values().next().unwrap();
+        assert_eq!(session.email, "u1@example.com");
+        assert_eq!(session.role, "admin");
+        drop(sessions);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn session_load_missing_file_no_panic() {
+        let store = SessionStore::with_persistence("/tmp/wardex_nonexistent_sessions.json");
+        assert!(store.sessions.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn session_load_invalid_json_no_panic() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("wardex_test_bad_sessions.json");
+        std::fs::write(&path, "not valid json {{{").unwrap();
+        let store = SessionStore::with_persistence(&path.to_string_lossy());
+        assert!(store.sessions.lock().unwrap().is_empty());
+        let _ = std::fs::remove_file(&path);
     }
 }
