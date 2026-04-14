@@ -82,7 +82,7 @@ function StructuredInspector({ data, depth = 0 }) {
     return (
       <div className="inspector-stack">
         {visibleItems.map((item, index) => (
-          <details key={index} className="inspector-section" open={depth === 0 && index < 2}>
+          <details key={item?.id ?? `item-${index}`} className="inspector-section" open={depth === 0 && index < 2}>
             <summary>
               Item {index + 1}
               <span>{itemPreview(item)}</span>
@@ -158,7 +158,7 @@ export function SummaryGrid({ data, exclude = [], limit = 12, emptyMessage = 'No
         {data.slice(0, Math.max(0, limit - 1)).map((value, index) => {
           const preview = previewObject(value);
           return (
-            <div key={index} className="summary-card">
+            <div key={value?.id ?? `grid-${index}`} className="summary-card">
               <div className="summary-label">Item {index + 1}</div>
               <div className="summary-value">{formatValue(value)}</div>
               {preview && preview.length > 0 && (

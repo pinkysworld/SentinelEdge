@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import requests
+from urllib.parse import quote
 
 from wardex.exceptions import (
     AuthenticationError,
@@ -175,7 +176,6 @@ class WardexClient:
         return self._get("/api/alerts", limit=limit, offset=offset)
 
     def get_alert(self, alert_id: str) -> dict[str, Any]:
-        from urllib.parse import quote
         return self._get(f"/api/alerts/{quote(alert_id, safe='')}")
 
     def ack_alert(self, alert_id: str) -> dict[str, Any]:
@@ -196,7 +196,6 @@ class WardexClient:
         return self._get("/api/incidents", limit=limit, offset=offset)
 
     def get_incident(self, incident_id: str) -> dict[str, Any]:
-        from urllib.parse import quote
         return self._get(f"/api/incidents/{quote(incident_id, safe='')}")
 
     def create_incident(self, title: str, severity: str, description: str = "") -> dict[str, Any]:
@@ -236,7 +235,6 @@ class WardexClient:
             "note": note,
             "author": author,
         }
-        from urllib.parse import quote
         return self._post(f"/api/incidents/{quote(incident_id, safe='')}/update", {k: v for k, v in body.items() if v is not None})
 
     # ── fleet ─────────────────────────────────────────────────────────────
@@ -245,11 +243,9 @@ class WardexClient:
         return self._get("/api/agents")
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
-        from urllib.parse import quote
         return self._get(f"/api/agents/{quote(agent_id, safe='')}/details")
 
     def get_agent_activity(self, agent_id: str) -> dict[str, Any]:
-        from urllib.parse import quote
         return self._get(f"/api/agents/{quote(agent_id, safe='')}/activity")
 
     def isolate_agent(
@@ -464,7 +460,6 @@ class WardexClient:
         return self._get("/api/efficacy/summary")
 
     def efficacy_rule(self, rule_id: str) -> dict[str, Any]:
-        from urllib.parse import quote
         return self._get(f"/api/efficacy/rule/{quote(rule_id, safe='')}")
 
     # ── investigation workflows ───────────────────────────────────────
@@ -473,7 +468,6 @@ class WardexClient:
         return self._get("/api/investigations/workflows")
 
     def investigation_workflow(self, workflow_id: str) -> dict[str, Any]:
-        from urllib.parse import quote
         return self._get(f"/api/investigations/workflows/{quote(workflow_id, safe='')}")
 
     def start_investigation(self, workflow_id: str, analyst: str, case_id: str | None = None) -> dict[str, Any]:

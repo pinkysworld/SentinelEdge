@@ -8790,7 +8790,7 @@ fn handle_api(
                     Some(id) => {
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         if s.report_store.delete(id) {
-                            json_response(&serde_json::json!({"status":"deleted"}).to_string(), 200)
+                            json_response(r#"{"status":"deleted"}"#, 204)
                         } else {
                             error_json("report not found", 404)
                         }
@@ -10962,7 +10962,7 @@ fn handle_api(
                 let feed_id = &url_path["/api/feeds/".len()..];
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 if s.feed_engine.remove_source(feed_id) {
-                    json_response(r#"{"deleted":true}"#, 200)
+                    json_response(r#"{"deleted":true}"#, 204)
                 } else {
                     error_json("feed source not found", 404)
                 }
@@ -11039,7 +11039,7 @@ fn handle_api(
                 let pb_id = &url_path["/api/playbook-dsl/".len()..];
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 if s.playbook_dsl.delete(pb_id) {
-                    json_response(r#"{"deleted":true}"#, 200)
+                    json_response(r#"{"deleted":true}"#, 204)
                 } else {
                     error_json("playbook not found", 404)
                 }
@@ -11129,7 +11129,7 @@ fn handle_api(
                 let qid = &url_path["/api/quarantine/".len()..];
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 if s.quarantine_store.delete(qid) {
-                    json_response(r#"{"deleted":true}"#, 200)
+                    json_response(r#"{"deleted":true}"#, 204)
                 } else {
                     error_json("quarantine entry not found", 404)
                 }
