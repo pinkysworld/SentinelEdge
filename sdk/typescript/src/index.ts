@@ -245,6 +245,16 @@ export class WardexClient {
         throw new WardexError(msg, resp.status, text);
       }
 
+      const ct = resp.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        const text = await resp.text().catch(() => "");
+        throw new WardexError(
+          `Expected JSON response, got ${ct || "unknown"}`,
+          resp.status,
+          text
+        );
+      }
+
       return (await resp.json()) as T;
     } finally {
       clearTimeout(timer);

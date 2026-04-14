@@ -120,6 +120,11 @@ impl SiemConnector {
 
     /// Queue an alert for batch pushing to SIEM.
     pub fn queue_alert(&mut self, alert: &AlertRecord) {
+        const MAX_PENDING: usize = 10_000;
+        if self.pending.len() >= MAX_PENDING {
+            eprintln!("[WARN] SIEM alert queue full ({MAX_PENDING}), dropping oldest");
+            self.pending.drain(..self.pending.len() / 2);
+        }
         self.pending.push(alert.clone());
         if self.pending.len() >= self.config.batch_size
             && let Err(e) = self.flush()
@@ -130,6 +135,11 @@ impl SiemConnector {
 
     /// Queue a log record for batch pushing to SIEM.
     pub fn queue_log(&mut self, log: &crate::log_collector::LogRecord) {
+        const MAX_PENDING: usize = 10_000;
+        if self.pending_logs.len() >= MAX_PENDING {
+            eprintln!("[WARN] SIEM log queue full ({MAX_PENDING}), dropping oldest");
+            self.pending_logs.drain(..self.pending_logs.len() / 2);
+        }
         self.pending_logs.push(log.clone());
         if self.pending_logs.len() >= self.config.batch_size {
             if let Err(e) = self.flush_logs() {
