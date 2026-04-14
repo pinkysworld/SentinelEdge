@@ -9,7 +9,7 @@ services:
     image: wardex:latest
     container_name: wardex
     ports:
-      - "8080:8080"
+      - "8080:9077"
     volumes:
       - wardex-data:/app/var
     restart: unless-stopped

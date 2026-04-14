@@ -250,8 +250,8 @@ pub fn quantize_model(name: &str, weights: &[f64], bit_width: u8) -> QuantizedMo
     let mae = total_error / weights.len().max(1) as f64;
     let accuracy_loss = mae / range * 100.0;
 
-    let original_size = weights.len() * 8; // 64-bit floats
-    let quantized_size = weights.len() * bit_width as usize / 8;
+    let original_size = weights.len().saturating_mul(8); // 64-bit floats
+    let quantized_size = weights.len().saturating_mul(bit_width as usize) / 8;
     let compression = original_size as f64 / quantized_size.max(1) as f64;
 
     QuantizedModel {

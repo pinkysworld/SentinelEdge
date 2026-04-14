@@ -71,7 +71,7 @@ impl IncidentStore {
             && let Ok(content) = std::fs::read_to_string(path)
             && let Ok(incidents) = serde_json::from_str::<Vec<Incident>>(&content)
         {
-            self.next_id = incidents.iter().map(|i| i.id).max().unwrap_or(0) + 1;
+            self.next_id = incidents.iter().map(|i| i.id).max().unwrap_or(0).saturating_add(1);
             self.incidents = incidents;
         }
     }
@@ -84,7 +84,9 @@ impl IncidentStore {
         if let Ok(json) = serde_json::to_string_pretty(&self.incidents) {
             let tmp = format!("{}.tmp", self.store_path);
             if std::fs::write(&tmp, &json).is_ok() {
-                let _ = std::fs::rename(&tmp, path);
+                if let Err(e) = std::fs::rename(&tmp, path) {
+                    eprintln!("[WARN] incident persist rename failed: {e}");
+                }
             }
         }
     }
