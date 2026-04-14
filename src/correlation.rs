@@ -206,7 +206,7 @@ pub fn detect_credential_spray(
         let mut i = 0;
         while i < sorted.len() {
             let window_start = sorted[i].timestamp_epoch;
-            let window_end = window_start + window_secs;
+            let window_end = window_start.saturating_add(window_secs);
 
             let mut agents: HashSet<&str> = HashSet::new();
             let mut ips: HashSet<&str> = HashSet::new();

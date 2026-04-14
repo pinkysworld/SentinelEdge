@@ -50,7 +50,7 @@ spec:
           {{- end }}
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /api/healthz/live
               port: http
             failureThreshold: 10
             periodSeconds: 5
