@@ -593,6 +593,182 @@ pub struct EventStoreStats {
     pub pending_docs: u64,
 }
 
+// ── Hunt Aggregation DSL ─────────────────────────────────────────────────────
+
+/// Aggregation functions supported in the hunt DSL via pipe operator.
+/// Example: `process_name:mimikatz | count by device_id`
+/// Example: `severity:critical | count_distinct user_name`
+/// Example: `src_ip:10.* | top 5 dst_ip`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HuntAggregation {
+    Count { group_by: Option<String> },
+    CountDistinct { field: String },
+    Top { n: usize, field: String },
+    Min { field: String },
+    Max { field: String },
+    Values { field: String },
+}
+
+/// Result of a hunt aggregation query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HuntAggregationResult {
+    pub query: String,
+    pub aggregation: String,
+    pub total_matching: u64,
+    pub buckets: Vec<HuntAggBucket>,
+    pub scalar: Option<String>,
+    pub took_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HuntAggBucket {
+    pub key: String,
+    pub count: u64,
+}
+
+/// Parse a pipe-separated aggregation from a hunt query.
+/// Returns (filter_part, aggregation) if a pipe is found.
+fn parse_hunt_pipe(input: &str) -> (String, Option<HuntAggregation>) {
+    if let Some(idx) = input.find('|') {
+        let filter = input[..idx].trim().to_string();
+        let agg_part = input[idx + 1..].trim().to_lowercase();
+        let tokens: Vec<&str> = agg_part.split_whitespace().collect();
+
+        let agg = match tokens.first().map(|s| *s) {
+            Some("count") => {
+                if tokens.len() >= 3 && tokens[1] == "by" {
+                    Some(HuntAggregation::Count { group_by: Some(tokens[2].to_string()) })
+                } else {
+                    Some(HuntAggregation::Count { group_by: None })
+                }
+            }
+            Some("count_distinct") => {
+                tokens.get(1).map(|f| HuntAggregation::CountDistinct { field: f.to_string() })
+            }
+            Some("top") => {
+                if tokens.len() >= 3 {
+                    let n = tokens[1].parse::<usize>().unwrap_or(10);
+                    Some(HuntAggregation::Top { n, field: tokens[2].to_string() })
+                } else {
+                    None
+                }
+            }
+            Some("min") => tokens.get(1).map(|f| HuntAggregation::Min { field: f.to_string() }),
+            Some("max") => tokens.get(1).map(|f| HuntAggregation::Max { field: f.to_string() }),
+            Some("values") => tokens.get(1).map(|f| HuntAggregation::Values { field: f.to_string() }),
+            _ => None,
+        };
+        (filter, agg)
+    } else {
+        (input.to_string(), None)
+    }
+}
+
+impl SearchIndex {
+    /// Execute a hunt query with optional pipe aggregation.
+    /// Supports: `process_name:mimikatz | count by device_id`
+    pub fn hunt_aggregate(&self, input: &str) -> Result<HuntAggregationResult, String> {
+        let start = std::time::Instant::now();
+        let (filter_part, aggregation) = parse_hunt_pipe(input);
+
+        let predicate = if filter_part.is_empty() || filter_part == "*" {
+            None
+        } else {
+            Some(parse_hunt_query(&filter_part)?)
+        };
+
+        let docs = self.documents.lock().unwrap_or_else(|e| e.into_inner());
+
+        let matching: Vec<&SearchDocument> = docs.iter().filter(|doc| {
+            match &predicate {
+                Some(pred) => evaluate_predicate(pred, doc),
+                None => true,
+            }
+        }).collect();
+
+        let total_matching = matching.len() as u64;
+
+        let agg = match aggregation {
+            Some(ref a) => a.clone(),
+            None => HuntAggregation::Count { group_by: None },
+        };
+
+        let (buckets, scalar) = match &agg {
+            HuntAggregation::Count { group_by: None } => {
+                (vec![], Some(total_matching.to_string()))
+            }
+            HuntAggregation::Count { group_by: Some(field) } => {
+                let mut groups: HashMap<String, u64> = HashMap::new();
+                for doc in &matching {
+                    let key = field_value(doc, field);
+                    *groups.entry(if key.is_empty() { "(empty)".into() } else { key }).or_insert(0) += 1;
+                }
+                let mut buckets: Vec<HuntAggBucket> = groups.into_iter()
+                    .map(|(key, count)| HuntAggBucket { key, count }).collect();
+                buckets.sort_by(|a, b| b.count.cmp(&a.count));
+                (buckets, None)
+            }
+            HuntAggregation::CountDistinct { field } => {
+                let unique: std::collections::HashSet<String> = matching.iter()
+                    .map(|d| field_value(d, field))
+                    .filter(|v| !v.is_empty())
+                    .collect();
+                (vec![], Some(unique.len().to_string()))
+            }
+            HuntAggregation::Top { n, field } => {
+                let mut groups: HashMap<String, u64> = HashMap::new();
+                for doc in &matching {
+                    let key = field_value(doc, field);
+                    if !key.is_empty() {
+                        *groups.entry(key).or_insert(0) += 1;
+                    }
+                }
+                let mut buckets: Vec<HuntAggBucket> = groups.into_iter()
+                    .map(|(key, count)| HuntAggBucket { key, count }).collect();
+                buckets.sort_by(|a, b| b.count.cmp(&a.count));
+                buckets.truncate(*n);
+                (buckets, None)
+            }
+            HuntAggregation::Min { field } => {
+                let val = matching.iter().map(|d| field_value(d, field)).filter(|v| !v.is_empty()).min();
+                (vec![], val)
+            }
+            HuntAggregation::Max { field } => {
+                let val = matching.iter().map(|d| field_value(d, field)).filter(|v| !v.is_empty()).max();
+                (vec![], val)
+            }
+            HuntAggregation::Values { field } => {
+                let unique: std::collections::HashSet<String> = matching.iter()
+                    .map(|d| field_value(d, field))
+                    .filter(|v| !v.is_empty())
+                    .collect();
+                let buckets: Vec<HuntAggBucket> = unique.into_iter()
+                    .map(|key| HuntAggBucket { key, count: 1 }).collect();
+                (buckets, None)
+            }
+        };
+
+        let agg_desc = match &agg {
+            HuntAggregation::Count { group_by: Some(f) } => format!("count by {f}"),
+            HuntAggregation::Count { group_by: None } => "count".into(),
+            HuntAggregation::CountDistinct { field } => format!("count_distinct {field}"),
+            HuntAggregation::Top { n, field } => format!("top {n} {field}"),
+            HuntAggregation::Min { field } => format!("min {field}"),
+            HuntAggregation::Max { field } => format!("max {field}"),
+            HuntAggregation::Values { field } => format!("values {field}"),
+        };
+
+        Ok(HuntAggregationResult {
+            query: input.into(),
+            aggregation: agg_desc,
+            total_matching,
+            buckets,
+            scalar,
+            took_ms: start.elapsed().as_secs_f64() * 1000.0,
+        })
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -785,5 +961,43 @@ mod tests {
         assert!(wildcard_match("10.0.*", "10.0.0.5"));
         assert!(wildcard_match("*.exe", "mimikatz.exe"));
         assert!(!wildcard_match("10.1.*", "10.0.0.5"));
+    }
+
+    #[test]
+    fn test_hunt_aggregate_count() {
+        let idx = make_index();
+        let r = idx.hunt_aggregate("* | count").unwrap();
+        assert_eq!(r.total_matching, 2);
+        assert_eq!(r.scalar.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn test_hunt_aggregate_count_by() {
+        let idx = make_index();
+        let r = idx.hunt_aggregate("* | count by device_id").unwrap();
+        assert_eq!(r.total_matching, 2);
+        assert!(!r.buckets.is_empty());
+    }
+
+    #[test]
+    fn test_hunt_aggregate_count_distinct() {
+        let idx = make_index();
+        let r = idx.hunt_aggregate("* | count_distinct process_name").unwrap();
+        assert_eq!(r.scalar.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn test_hunt_aggregate_top() {
+        let idx = make_index();
+        let r = idx.hunt_aggregate("* | top 5 src_ip").unwrap();
+        assert!(r.buckets.len() <= 5);
+    }
+
+    #[test]
+    fn test_hunt_pipe_with_filter() {
+        let idx = make_index();
+        let r = idx.hunt_aggregate("process:mimikatz | count by src_ip").unwrap();
+        assert_eq!(r.total_matching, 1);
+        assert_eq!(r.buckets.len(), 1);
     }
 }

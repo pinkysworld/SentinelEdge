@@ -390,6 +390,7 @@ struct AppState {
     // XDR fleet management
     agent_registry: AgentRegistry,
     event_store: EventStore,
+    clickhouse_store: Option<crate::storage_clickhouse::ClickHouseStorage>,
     policy_store: PolicyStore,
     update_manager: UpdateManager,
     remote_deployments: HashMap<String, AgentDeployment>,
@@ -890,6 +891,10 @@ pub async fn run_server(
         server_start: std::time::Instant::now(),
         agent_registry: AgentRegistry::new("var/agents.json"),
         event_store: EventStore::with_persistence(10_000, "var/events.json"),
+        clickhouse_store: initial_config.clickhouse.as_ref().map(|cfg| {
+            log::info!("[STORAGE] ClickHouse backend enabled: {}/{}", cfg.url, cfg.database);
+            crate::storage_clickhouse::ClickHouseStorage::new(cfg.clone())
+        }),
         policy_store: PolicyStore::new(),
         update_manager: UpdateManager::new("var/updates"),
         remote_deployments: load_remote_deployments("var/deployments.json"),
@@ -1371,6 +1376,7 @@ pub fn spawn_test_server() -> (u16, String) {
             1000,
             state_root.join("events.json").to_string_lossy().to_string(),
         ),
+        clickhouse_store: None,
         policy_store: PolicyStore::new(),
         update_manager: UpdateManager::new(&state_root.join("updates").to_string_lossy()),
         remote_deployments: load_remote_deployments(
@@ -10072,12 +10078,21 @@ fn handle_api(
                 }
             } else if method == Method::Get && url_path == "/api/storage/stats" {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
-                match s.storage.with(|store| Ok(store.stats())) {
-                    Ok(stats) => {
-                        json_response(&serde_json::to_string(&stats).unwrap_or_default(), 200)
+                let mut stats_json = match s.storage.with(|store| Ok(store.stats())) {
+                    Ok(stats) => serde_json::to_value(&stats).unwrap_or_default(),
+                    Err(_) => serde_json::json!({}),
+                };
+                // Append ClickHouse status if configured
+                if let Some(ref ch) = s.clickhouse_store {
+                    if let Some(obj) = stats_json.as_object_mut() {
+                        obj.insert("clickhouse_enabled".into(), serde_json::json!(true));
+                        obj.insert("clickhouse_url".into(), serde_json::json!(ch.config().url));
+                        obj.insert("clickhouse_database".into(), serde_json::json!(ch.config().database));
+                        obj.insert("clickhouse_buffer_len".into(), serde_json::json!(ch.buffer_len()));
+                        obj.insert("clickhouse_total_inserted".into(), serde_json::json!(ch.total_inserted()));
                     }
-                    Err(e) => error_json(e.safe_message(), 500),
                 }
+                json_response(&stats_json.to_string(), 200)
             } else if method == Method::Get && url_path == "/api/storage/agents" {
                 let query = parse_query_string(&url);
                 let tenant = query.get("tenant_id").map(|s| s.as_str());
@@ -11000,12 +11015,25 @@ fn handle_api(
                             return error_json("query cannot be empty", 400);
                         }
                         match crate::search::SearchIndex::new("/tmp/wardex-search") {
-                            Ok(idx) => match idx.hunt(query) {
-                                Ok(result) => {
-                                    let body = serde_json::to_string(&result).unwrap_or_default();
-                                    json_response(&body, 200)
+                            Ok(idx) => {
+                                // Support pipe aggregation syntax
+                                if query.contains('|') {
+                                    match idx.hunt_aggregate(query) {
+                                        Ok(result) => {
+                                            let body = serde_json::to_string(&result).unwrap_or_default();
+                                            json_response(&body, 200)
+                                        }
+                                        Err(e) => error_json(&e, 400),
+                                    }
+                                } else {
+                                    match idx.hunt(query) {
+                                        Ok(result) => {
+                                            let body = serde_json::to_string(&result).unwrap_or_default();
+                                            json_response(&body, 200)
+                                        }
+                                        Err(e) => error_json(&e, 400),
+                                    }
                                 }
-                                Err(e) => error_json(&e, 400),
                             },
                             Err(e) => error_json(&format!("search index unavailable: {e}"), 500),
                         }
@@ -12845,6 +12873,26 @@ fn handle_event_ingest(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Bo
         })
         .sum();
     let result = s.event_store.ingest(&batch);
+    // Dual-write to ClickHouse when configured
+    if let Some(ref ch) = s.clickhouse_store {
+        let ch_events: Vec<crate::storage_clickhouse::StoredEvent> = batch.events.iter().map(|a| {
+            crate::storage_clickhouse::StoredEvent {
+                timestamp: chrono::Utc::now(),
+                tenant_id: "default".into(),
+                event_class: 1000,
+                severity: (a.score.min(255.0) as u8),
+                device_id: a.hostname.clone(),
+                user_name: String::new(),
+                process_name: a.action.clone(),
+                src_ip: String::new(),
+                dst_ip: String::new(),
+                raw_json: serde_json::to_string(a).unwrap_or_default(),
+            }
+        }).collect();
+        if let Err(e) = crate::storage_clickhouse::EventStore::insert_events(ch, &ch_events) {
+            log::warn!("[CLICKHOUSE] dual-write failed: {e}");
+        }
+    }
     let newly_ingested = s.event_store.recent_events(batch.events.len());
 
     for event in &newly_ingested {

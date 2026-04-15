@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -288,6 +288,8 @@ export function downloadCsv(rows, filename) {
 }
 
 export function SideDrawer({ open, title, subtitle, onClose, actions, children }) {
+  const panelRef = useRef(null);
+
   useEffect(() => {
     if (!open) return;
     const handleKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -295,10 +297,34 @@ export function SideDrawer({ open, title, subtitle, onClose, actions, children }
     return () => document.removeEventListener('keydown', handleKey);
   }, [open, onClose]);
 
+  // Focus trap: keep Tab cycling within the drawer
+  useEffect(() => {
+    if (!open || !panelRef.current) return;
+    const panel = panelRef.current;
+    const focusable = () => panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const first = focusable()[0];
+    if (first) first.focus();
+
+    const trapFocus = (e) => {
+      if (e.key !== 'Tab') return;
+      const els = focusable();
+      if (els.length === 0) return;
+      const firstEl = els[0];
+      const lastEl = els[els.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      } else {
+        if (document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+      }
+    };
+    panel.addEventListener('keydown', trapFocus);
+    return () => panel.removeEventListener('keydown', trapFocus);
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className="drawer-overlay" onClick={onClose}>
-      <aside className="drawer-panel" onClick={(event) => event.stopPropagation()}>
+      <aside className="drawer-panel" ref={panelRef} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
         <div className="drawer-header">
           <div>
             <div className="drawer-title">{title}</div>
@@ -316,6 +342,8 @@ export function SideDrawer({ open, title, subtitle, onClose, actions, children }
 }
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', tone = 'danger', onConfirm, onCancel }) {
+  const dialogRef = useRef(null);
+
   useEffect(() => {
     if (!open) return;
     const handleKey = (event) => {
@@ -325,11 +353,35 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', 
     return () => document.removeEventListener('keydown', handleKey);
   }, [open, onCancel]);
 
+  // Focus trap
+  useEffect(() => {
+    if (!open || !dialogRef.current) return;
+    const dialog = dialogRef.current;
+    const focusable = () => dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const first = focusable()[0];
+    if (first) first.focus();
+
+    const trapFocus = (e) => {
+      if (e.key !== 'Tab') return;
+      const els = focusable();
+      if (els.length === 0) return;
+      const firstEl = els[0];
+      const lastEl = els[els.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      } else {
+        if (document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+      }
+    };
+    dialog.addEventListener('keydown', trapFocus);
+    return () => dialog.removeEventListener('keydown', trapFocus);
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-dialog" onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <div className="confirm-dialog" ref={dialogRef} onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
         <div className="confirm-dialog-header">
           <h3 id="confirm-dialog-title">{title}</h3>
         </div>

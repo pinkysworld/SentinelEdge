@@ -110,7 +110,7 @@ export default function SearchPalette({ open, onClose, onNavigate }) {
 
   return (
     <div className="search-palette-overlay" onClick={() => onClose?.(false)}>
-      <div className="search-palette" onClick={e => e.stopPropagation()}>
+      <div className="search-palette" role="dialog" aria-modal="true" aria-label="Global search" onClick={e => e.stopPropagation()}>
         <div className="search-palette-input-wrap">
           <span className="search-palette-icon" aria-hidden="true">⌕</span>
           <input

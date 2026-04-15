@@ -235,14 +235,15 @@ export function useDraftAutosave(key, initialValue) {
 // ── useWebSocket hook (long-poll fallback) ───────────────────
 
 /**
- * Real-time event stream via server-side EventBus polling.
- * Connects on mount, disconnects on unmount.
- * Returns { events, connected, clientCount }.
+ * Real-time event stream via native WebSocket with long-poll fallback.
+ * Attempts WebSocket first; if unavailable, falls back to EventBus polling.
+ * Returns { events, connected, clearEvents }.
  */
 export function useWebSocket(pollIntervalMs = 2000) {
   const [events, setEvents] = useState([]);
   const [connected, setConnected] = useState(false);
   const subscriberIdRef = useRef(null);
+  const wsRef = useRef(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -250,8 +251,71 @@ export function useWebSocket(pollIntervalMs = 2000) {
     let pollTimer = null;
     let retryDelay = 2000;
     let retryTimer = null;
+    let usingNativeWs = false;
 
-    const connect = async () => {
+    const tryNativeWebSocket = () => {
+      try {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${proto}//${window.location.host}/ws/events`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (!mountedRef.current) { ws.close(); return; }
+          usingNativeWs = true;
+          setConnected(true);
+          retryDelay = 2000;
+        };
+
+        ws.onmessage = (e) => {
+          if (!mountedRef.current) return;
+          try {
+            const data = JSON.parse(e.data);
+            const newEvents = Array.isArray(data) ? data : [data];
+            setEvents(prev => [...newEvents, ...prev].slice(0, 500));
+          } catch { /* ignore malformed frames */ }
+        };
+
+        ws.onerror = () => {
+          // WebSocket not available — fall back to polling
+          if (!usingNativeWs) {
+            ws.close();
+            wsRef.current = null;
+            fallbackToPolling();
+          }
+        };
+
+        ws.onclose = () => {
+          if (!mountedRef.current) return;
+          setConnected(false);
+          wsRef.current = null;
+          if (usingNativeWs) {
+            // Was connected via WS — try to reconnect
+            const delay = Math.min(retryDelay, 30000);
+            retryDelay = Math.min(retryDelay * 2, 30000);
+            retryTimer = setTimeout(tryNativeWebSocket, delay);
+          }
+        };
+
+        // If WebSocket doesn't connect within 3s, fall back
+        setTimeout(() => {
+          if (!usingNativeWs && wsRef.current?.readyState !== WebSocket.OPEN) {
+            wsRef.current?.close();
+            wsRef.current = null;
+            fallbackToPolling();
+          }
+        }, 3000);
+      } catch {
+        fallbackToPolling();
+      }
+    };
+
+    const fallbackToPolling = () => {
+      if (usingNativeWs || !mountedRef.current) return;
+      connectPolling();
+    };
+
+    const connectPolling = async () => {
       try {
         const result = await wsConnect();
         if (!mountedRef.current) return;
@@ -267,7 +331,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
           setConnected(false);
           const delay = Math.min(retryDelay, 30000);
           retryDelay = Math.min(retryDelay * 2, 30000);
-          retryTimer = setTimeout(connect, delay);
+          retryTimer = setTimeout(connectPolling, delay);
         }
       }
     };
@@ -282,25 +346,26 @@ export function useWebSocket(pollIntervalMs = 2000) {
             setEvents(prev => [...newEvents, ...prev].slice(0, 500));
           }
         } catch {
-          // Connection lost — attempt reconnect with backoff
           if (mountedRef.current) {
             setConnected(false);
             subscriberIdRef.current = null;
             clearInterval(pollTimer);
             const delay = Math.min(retryDelay, 30000);
             retryDelay = Math.min(retryDelay * 2, 30000);
-            retryTimer = setTimeout(connect, delay);
+            retryTimer = setTimeout(connectPolling, delay);
           }
         }
       }, pollIntervalMs);
     };
 
-    connect();
+    // Try native WebSocket first
+    tryNativeWebSocket();
 
     return () => {
       mountedRef.current = false;
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       if (subscriberIdRef.current != null) {
         wsDisconnect(subscriberIdRef.current).catch(() => {});
       }

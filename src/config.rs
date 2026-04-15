@@ -208,6 +208,8 @@ pub struct Config {
     pub tracing: TracingSettings,
     #[serde(default)]
     pub server: ServerSettings,
+    #[serde(default)]
+    pub clickhouse: Option<crate::storage_clickhouse::ClickHouseConfig>,
 }
 
 /// Security-related settings for token management and session control.

@@ -2,6 +2,35 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.51.0] — ClickHouse, EDR Blocking, WASM Tutorial & Platform Polish
+
+### Storage
+- **ClickHouse dual-write** — Event ingestion now optionally writes to ClickHouse in parallel with the built-in store; configurable via `[clickhouse]` in wardex.toml.
+- **ClickHouse status** — `/api/storage/stats` reports ClickHouse connection status, buffer length, and total inserted rows.
+
+### Detection & Analytics
+- **Search DSL aggregations** — Hunt queries now support pipe operators (`|`) with 7 aggregation types: `count`, `count by <field>`, `count_distinct <field>`, `top N <field>`, `min`, `max`, `values`.
+- **EDR behavioral blocking engine** — New `edr_blocking` module with real-time process scoring, memory corruption detection (ROP chains, heap spray, shellcode), exploit mitigation heuristics, allowlisting, and 9 tests.
+
+### Admin Console
+- **Native WebSocket push** — `useWebSocket` hook now connects via native WebSocket (`/ws/events`) with automatic fallback to polling; exponential backoff reconnect, 3s timeout for WS upgrade.
+- **Response progress bars** — SOCWorkbench response requests table now shows per-step progress bars, step counts, ETA, failure detail, and rollback indicators for running playbooks.
+- **Accessibility focus traps** — SideDrawer, ConfirmDialog, and SearchPalette now implement focus trapping (Tab/Shift-Tab cycling), `role="dialog"`, `aria-modal="true"`, and auto-focus on open.
+
+### Documentation
+- **WASM extension tutorial** — Step-by-step guide for building detector and response plugins as Wasm modules, with complete Rust examples, deployment instructions, and troubleshooting table.
+- **Expanded site resources** — Documentation site now links to WASM tutorial, SDK guide, and threat model.
+
+### Packaging & Distribution
+- **Homebrew formula** — Updated to v0.51.0.
+- **Debian packaging** — Added `[package.metadata.deb]` config to Cargo.toml for `cargo-deb` builds with systemd service, rules, and binary assets.
+
+### Infrastructure
+- **OpenAPI spec 0.51.0** — Version bumped.
+- **Helm chart 0.51.0** — Chart and app version bumped.
+- **TypeScript SDK 0.51.0** — Version bumped.
+- **Python SDK 0.51.0** — Version bumped.
+
 ## [0.50.0] — Advanced Detection, UEBA Dashboard & SDK Expansion
 
 ### Detection

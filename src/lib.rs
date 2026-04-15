@@ -39,6 +39,7 @@ pub mod feed_ingestion;
 pub mod ioc_decay;
 pub mod poisoning;
 pub mod process_scoring;
+pub mod edr_blocking;
 
 // ── Collection & Ingestion ───────────────────────────────────────────────────
 pub mod collector;

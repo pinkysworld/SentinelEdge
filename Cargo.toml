@@ -1,6 +1,6 @@
 [package]
 name = "wardex"
-version = "0.50.0"
+version = "0.51.0"
 edition = "2024"
 rust-version = "1.85.0"
 build = "build.rs"
@@ -68,3 +68,18 @@ all = { level = "warn", priority = -1 }
 too_many_arguments = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+
+[package.metadata.deb]
+maintainer = "Wardex Team <support@wardex.dev>"
+copyright = "2025, Wardex Team"
+license-file = ["LICENSE", "0"]
+extended-description = "SentinelEdge XDR — AI-powered endpoint detection, response, fleet operations, and SIEM for private-cloud environments."
+section = "net"
+priority = "optional"
+depends = "$auto"
+assets = [
+  ["target/release/wardex", "usr/bin/", "755"],
+  ["rules/**/*", "usr/share/wardex/rules/", "644"],
+  ["deploy/wardex.service", "lib/systemd/system/", "644"],
+]
+conf-files = ["/etc/wardex/wardex.toml"]

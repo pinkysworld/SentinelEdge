@@ -505,19 +505,57 @@ export default function SOCWorkbench() {
                 return reqs.length > 0 ? (
                   <div className="table-wrap">
                     <table>
-                      <thead><tr><th>ID</th><th>Type</th><th>Target</th><th>Status</th><th>Requested</th></tr></thead>
+                      <thead><tr><th>ID</th><th>Type</th><th>Target</th><th>Status</th><th>Progress</th><th>Requested</th></tr></thead>
                       <tbody>
-                        {reqs.map((r, i) => (
-                          <tr key={i}>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.id || i}</td>
-                            <td>{r.type || r.action || '—'}</td>
-                            <td>{r.target || r.host || '—'}</td>
-                            <td><span className={`badge ${r.status === 'completed' ? 'badge-ok' : 'badge-warn'}`}>{r.status || '—'}</span></td>
-                            <td>{r.requested_at || r.timestamp || '—'}</td>
-                          </tr>
-                        ))}
+                        {reqs.map((r, i) => {
+                          const steps = r.steps || [];
+                          const completedSteps = steps.filter(s => s.status === 'completed' || s.status === 'done').length;
+                          const failedSteps = steps.filter(s => s.status === 'failed' || s.status === 'error').length;
+                          const totalSteps = steps.length || r.total_steps || 0;
+                          const pct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : (r.status === 'completed' ? 100 : 0);
+                          const statusClass = r.status === 'completed' ? 'badge-ok' : failedSteps > 0 ? 'badge-err' : r.status === 'running' ? 'badge-info' : 'badge-warn';
+                          return (
+                            <tr key={i}>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.id || i}</td>
+                              <td>{r.type || r.action || '—'}</td>
+                              <td>{r.target || r.host || '—'}</td>
+                              <td><span className={`badge ${statusClass}`}>{r.status || '—'}</span></td>
+                              <td style={{ minWidth: 140 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <div style={{ flex: 1, height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{ width: `${pct}%`, height: '100%', background: failedSteps > 0 ? 'var(--danger, #e74c3c)' : 'var(--primary)', borderRadius: 3, transition: 'width 0.3s ease' }} />
+                                  </div>
+                                  <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{totalSteps > 0 ? `${completedSteps}/${totalSteps}` : `${pct}%`}</span>
+                                </div>
+                                {r.eta && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>ETA: {r.eta}</div>}
+                              </td>
+                              <td>{r.requested_at || r.timestamp || '—'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
+                    {/* Per-step execution detail for in-progress/failed requests */}
+                    {reqs.filter(r => (r.steps?.length > 0) && (r.status === 'running' || r.status === 'failed')).map((r, ri) => (
+                      <div key={ri} style={{ marginTop: 12, padding: 12, background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Playbook Steps — {r.type || r.action} → {r.target || r.host}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {r.steps.map((step, si) => (
+                            <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 0' }}>
+                              <span style={{ width: 18, textAlign: 'center' }}>
+                                {step.status === 'completed' || step.status === 'done' ? '✓' : step.status === 'failed' || step.status === 'error' ? '✗' : step.status === 'running' ? '⟳' : '○'}
+                              </span>
+                              <span style={{ flex: 1, fontWeight: step.status === 'running' ? 600 : 400 }}>{step.name || step.label || `Step ${si + 1}`}</span>
+                              {step.duration && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{step.duration}</span>}
+                              {(step.status === 'failed' || step.status === 'error') && step.error && (
+                                <span style={{ fontSize: 11, color: 'var(--danger, #e74c3c)' }}>{step.error}</span>
+                              )}
+                              {step.rollback && <span className="badge badge-warn" style={{ fontSize: 10 }}>rolled back</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : <div className="empty">No response requests</div>;
               })()}
