@@ -1,36 +1,38 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useId } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 
 function ToggleSwitch({ label, checked, onChange, description }) {
+  const toggleId = useId();
   return (
-    <div
-      role="switch"
-      aria-checked={checked}
-      tabIndex={0}
-      onClick={() => onChange(!checked)}
-      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!checked); } }}
-      style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 0' }}
-    >
-      <div
-        style={{ width: 40, height: 22, borderRadius: 11, background: checked ? 'var(--primary)' : 'var(--border)', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
-        <div style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: checked ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
-      </div>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 500 }}>{label}</div>
-        {description && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{description}</div>}
-      </div>
-    </div>
+    <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 0' }}>
+      <button
+        id={toggleId}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!checked); } }}
+        style={{ width: 40, height: 22, borderRadius: 11, background: checked ? 'var(--primary)' : 'var(--border)', position: 'relative', transition: 'background .2s', flexShrink: 0, border: 'none', padding: 0 }}
+      >
+        <span style={{ width: 18, height: 18, borderRadius: 9, background: '#fff', position: 'absolute', top: 2, left: checked ? 20 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+      </button>
+      <span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span>
+        {description && <span style={{ display: 'block', fontSize: 11, color: 'var(--text-secondary)' }}>{description}</span>}
+      </span>
+    </label>
   );
 }
 
 function NumberInput({ label, value, onChange, min, max, step, unit, description }) {
+  const inputId = useId();
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{label}</div>
+      <label htmlFor={inputId} style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{label}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input type="number" value={value ?? ''} onChange={e => onChange(Number(e.target.value))}
+        <input id={inputId} name={label.toLowerCase().replace(/\s+/g, '_')} type="number" value={value ?? ''} onChange={e => { const n = Number(e.target.value); onChange(Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))); }}
           min={min} max={max} step={step || 1}
           style={{ width: 90, padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
         {unit && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{unit}</span>}
@@ -41,10 +43,11 @@ function NumberInput({ label, value, onChange, min, max, step, unit, description
 }
 
 function TextInput({ label, value, onChange, placeholder, description }) {
+  const inputId = useId();
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{label}</div>
-      <input type="text" value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+      <label htmlFor={inputId} style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{label}</label>
+      <input id={inputId} name={label.toLowerCase().replace(/\s+/g, '_')} type="text" value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         style={{ width: '100%', maxWidth: 400, padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
       {description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{description}</div>}
     </div>
@@ -72,6 +75,7 @@ export default function Settings() {
   const { data: storageStats, reload: rStats } = useApi(api.storageStats);
   const [configEditing, setConfigEditing] = useState(false);
   const [configText, setConfigText] = useState('');
+  const [jsonError, setJsonError] = useState(null);
   const [structuredConfig, setStructuredConfig] = useState(null);
   const [editMode, setEditMode] = useState('form'); // 'form' or 'json'
   const [savedSnapshot, setSavedSnapshot] = useState(null);
@@ -92,7 +96,7 @@ export default function Settings() {
     if (config && !configEditing) {
       const parsed = typeof config === 'string' ? (() => { try { return JSON.parse(config); } catch { return null; } })() : config;
       if (parsed) {
-        setStructuredConfig(JSON.parse(JSON.stringify(parsed)));
+        setStructuredConfig(structuredClone(parsed));
         setSavedSnapshot(JSON.stringify(parsed, null, 2));
       }
     }
@@ -101,7 +105,7 @@ export default function Settings() {
   const startEdit = () => {
     const parsed = typeof config === 'string' ? (() => { try { return JSON.parse(config); } catch { return null; } })() : config;
     if (parsed) {
-      setStructuredConfig(JSON.parse(JSON.stringify(parsed)));
+      setStructuredConfig(structuredClone(parsed));
       setSavedSnapshot(JSON.stringify(parsed, null, 2));
     }
     setConfigText(typeof config === 'string' ? config : JSON.stringify(config, null, 2));
@@ -110,7 +114,7 @@ export default function Settings() {
 
   const updateField = (path, value) => {
     setStructuredConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev));
+      const next = structuredClone(prev);
       const keys = path.split('.');
       let obj = next;
       for (let i = 0; i < keys.length - 1; i++) {
@@ -199,6 +203,16 @@ export default function Settings() {
     return Object.entries(flags);
   }, [flags]);
 
+  useEffect(() => {
+    if (!configEditing || !configDiff) return undefined;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [configDiff, configEditing]);
+
   // Default config values for reset
   const DEFAULTS = {
     collection_interval_secs: 15,
@@ -212,7 +226,7 @@ export default function Settings() {
   const resetToDefaults = () => {
     if (!confirm('Reset configuration to default values?')) return;
     setStructuredConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev));
+      const next = structuredClone(prev);
       Object.entries(DEFAULTS).forEach(([k, v]) => { if (k in next) next[k] = v; });
       return next;
     });
@@ -257,7 +271,17 @@ export default function Settings() {
             {configEditing ? (
               editMode === 'json' ? (
                 <div>
-                  <textarea className="form-textarea" style={{ height: 300 }} value={configText} onChange={e => setConfigText(e.target.value)} />
+                  {configDiff && (
+                    <div className="error-box" style={{ marginBottom: 12, background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--warning)' }}>
+                      Unsaved changes are in progress. Leaving the page or closing the tab will discard them.
+                    </div>
+                  )}
+                  <textarea className="form-textarea" style={{ height: 300, borderColor: jsonError ? 'var(--danger, #ef4444)' : undefined }} value={configText} onChange={e => {
+                    const v = e.target.value;
+                    setConfigText(v);
+                    try { JSON.parse(v); setJsonError(null); } catch (err) { setJsonError(err.message); }
+                  }} />
+                  {jsonError && <div style={{ fontSize: 11, color: 'var(--danger, #ef4444)', marginTop: 4 }}>⚠ {jsonError}</div>}
                   <div className="btn-group" style={{ marginTop: 8 }}>
                     <button className="btn btn-primary" onClick={saveConfig}>Save</button>
                     <button className="btn" onClick={() => setConfigEditing(false)}>Cancel</button>
@@ -265,6 +289,11 @@ export default function Settings() {
                 </div>
               ) : structuredConfig ? (
                 <div>
+                  {configDiff && (
+                    <div className="error-box" style={{ marginBottom: 12, background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--warning)' }}>
+                      Unsaved changes are in progress. Save or cancel before leaving this screen.
+                    </div>
+                  )}
                   {/* Structured form for common fields */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, padding: '12px 0' }}>
                     <div className="card" style={{ padding: 14 }}>

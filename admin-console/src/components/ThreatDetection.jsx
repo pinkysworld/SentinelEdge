@@ -1,557 +1,552 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import { JsonDetails, SummaryGrid } from './operator.jsx';
-import RuleEditor from './RuleEditor.jsx';
+import { JsonDetails, SummaryGrid, SideDrawer, formatDateTime, formatRelativeTime } from './operator.jsx';
+
+const SAVED_VIEWS = [
+  { id: 'noisy', label: 'Noisy', match: (rule, ctx) => (rule.last_test_match_count || 0) >= 5 || ctx.suppressionCount[rule.id] > 0 },
+  { id: 'recent', label: 'Recently Tuned', match: (rule) => !!rule.last_test_at || !!rule.last_promotion_at },
+  { id: 'review', label: 'Needs Review', match: (rule) => !rule.last_test_at || ['draft', 'test'].includes(rule.lifecycle) },
+  { id: 'disabled', label: 'Disabled', match: (rule) => rule.enabled === false || rule.lifecycle === 'deprecated' },
+  { id: 'suppressed', label: 'Suppressed', match: (rule, ctx) => ctx.suppressionCount[rule.id] > 0 },
+];
+
+const lifecycleTone = (lifecycle) => {
+  if (lifecycle === 'active') return 'badge-ok';
+  if (lifecycle === 'canary' || lifecycle === 'test') return 'badge-warn';
+  if (lifecycle === 'deprecated' || lifecycle === 'rolled_back') return 'badge-err';
+  return 'badge-info';
+};
+
+const severityTone = (value) => {
+  if (value === 'critical' || value === 'high') return 'badge-err';
+  if (value === 'medium' || value === 'elevated') return 'badge-warn';
+  return 'badge-info';
+};
 
 export default function ThreatDetection() {
   const toast = useToast();
-  const [tab, setTab] = useState('overview');
-  const { data: profile, reload: rProfile } = useApi(api.detectionProfile);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { data: profile } = useApi(api.detectionProfile);
   const { data: summary } = useApi(api.detectionSummary);
-  const { data: sigma } = useApi(api.sigmaRules);
-  const { data: sigmaStats } = useApi(api.sigmaStats);
-  const { data: enforcement } = useApi(api.enforcementStatus);
-  const { data: tiStatus } = useApi(api.threatIntelStatus);
-  const { data: tiStats } = useApi(api.threatIntelStats);
-  const { data: deception } = useApi(api.deceptionStatus);
-  const { data: sideChannel } = useApi(api.sideChannelStatus);
-  const { data: mitre } = useApi(api.mitreCoverage);
-  const { data: heatmap } = useApi(api.mitreHeatmap);
-  const { data: checks } = useApi(api.checkpoints);
-  const { data: weights } = useApi(api.detectionWeights);
-  const { data: fpStats, reload: rFP } = useApi(api.fpFeedbackStats);
-  const { data: contentRulesData } = useApi(api.contentRules);
+  const { data: weights, reload: reloadWeights } = useApi(api.detectionWeights);
+  const { data: fpStats } = useApi(api.fpFeedbackStats);
+  const { data: contentRulesData, reload: reloadRules } = useApi(api.contentRules);
   const { data: packsData } = useApi(api.contentPacks);
-  const { data: huntList, reload: rHunts } = useApi(api.hunts);
-  const { data: suppressList, reload: rSuppress } = useApi(api.suppressions);
-  const [huntForm, setHuntForm] = useState({ name: '', severity: 'medium', threshold: 1, text: '' });
-  const [suppressForm, setSuppressForm] = useState({ name: '', rule_id: '', hostname: '', severity: '', text: '' });
-  const [showHuntForm, setShowHuntForm] = useState(false);
-  const [showSuppressForm, setShowSuppressForm] = useState(false);
-  const [tuningRule, setTuningRule] = useState(null);
-  const [tuneValue, setTuneValue] = useState(0.5);
+  const { data: huntsData } = useApi(api.hunts);
+  const { data: suppressionsData, reload: reloadSuppressions } = useApi(api.suppressions);
+  const { data: mitreCoverage } = useApi(api.mitreCoverageAlt);
+  const [testResult, setTestResult] = useState(null);
+  const [drawerMode, setDrawerMode] = useState(null);
+  const [weightInput, setWeightInput] = useState('0.50');
+  const [suppressionForm, setSuppressionForm] = useState({
+    name: '',
+    justification: 'Operator suppression',
+    severity: '',
+    text: '',
+  });
 
-  const handleProfileChange = async (name) => {
-    try {
-      await api.setDetectionProfile({ profile: name });
-      toast(`Profile set to ${name}`, 'success');
-      rProfile();
-    } catch { toast('Failed to set profile', 'error'); }
+  const allRules = Array.isArray(contentRulesData?.rules) ? contentRulesData.rules : [];
+  const packs = Array.isArray(packsData?.packs) ? packsData.packs : [];
+  const hunts = Array.isArray(huntsData?.hunts) ? huntsData.hunts : [];
+  const suppressions = Array.isArray(suppressionsData?.suppressions) ? suppressionsData.suppressions : [];
+  const suppressionCount = suppressions.reduce((acc, suppression) => {
+    if (suppression.rule_id) acc[suppression.rule_id] = (acc[suppression.rule_id] || 0) + 1;
+    return acc;
+  }, {});
+
+  const queue = searchParams.get('queue') || 'noisy';
+  const query = searchParams.get('q') || '';
+  const ownerFilter = searchParams.get('owner') || 'all';
+  const selectedRuleId = searchParams.get('rule');
+  const tuneOpen = searchParams.get('tune') === '1';
+
+  const filteredRules = allRules.filter((rule) => {
+    const savedView = SAVED_VIEWS.find((item) => item.id === queue);
+    const queueMatch = savedView ? savedView.match(rule, { suppressionCount }) : true;
+    const q = query.trim().toLowerCase();
+    const searchMatch = !q
+      || String(rule.title || '').toLowerCase().includes(q)
+      || String(rule.id || '').toLowerCase().includes(q)
+      || String(rule.description || '').toLowerCase().includes(q);
+    const ownerMatch = ownerFilter === 'all' || String(rule.owner || 'system') === ownerFilter;
+    return queueMatch && searchMatch && ownerMatch;
+  });
+
+  const selectedRule = filteredRules.find((rule) => rule.id === selectedRuleId)
+    || allRules.find((rule) => rule.id === selectedRuleId)
+    || filteredRules[0]
+    || allRules[0]
+    || null;
+
+  useEffect(() => {
+    if (!selectedRule || selectedRule.id === selectedRuleId) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('rule', selectedRule.id);
+    setSearchParams(next, { replace: true });
+  }, [selectedRule, selectedRuleId, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!selectedRule) return;
+    const initialWeight = weights?.weights?.[selectedRule.id] ?? weights?.[selectedRule.id] ?? 0.5;
+    setWeightInput(Number(initialWeight).toFixed(2));
+    setSuppressionForm((form) => ({
+      ...form,
+      name: `Suppress ${selectedRule.title || selectedRule.id}`,
+      severity: selectedRule.severity_mapping || '',
+    }));
+  }, [selectedRule, weights]);
+
+  const openDrawer = (mode) => {
+    const next = new URLSearchParams(searchParams);
+    if (!selectedRule) return;
+    next.set('rule', selectedRule.id);
+    if (mode === 'tune') next.set('tune', '1');
+    else next.delete('tune');
+    setSearchParams(next, { replace: true });
+    setDrawerMode(mode);
   };
 
-  const heatmapCells = Array.isArray(heatmap) ? heatmap : [];
+  const closeDrawer = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('tune');
+    setSearchParams(next, { replace: true });
+    setDrawerMode(null);
+  };
+
+  const saveWeight = async () => {
+    if (!selectedRule) return;
+    const parsed = Number(weightInput);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast('Enter a valid weight greater than zero.', 'error');
+      return;
+    }
+    try {
+      await api.setDetectionWeights({ rule_id: selectedRule.id, weight: parsed });
+      toast('Detection weight updated.', 'success');
+      reloadWeights();
+      closeDrawer();
+    } catch {
+      toast('Unable to save detection weight.', 'error');
+    }
+  };
+
+  const testRule = async () => {
+    if (!selectedRule) return;
+    try {
+      const result = await api.contentRuleTest(selectedRule.id);
+      setTestResult(result?.result || result);
+      toast('Rule test completed.', 'success');
+      reloadRules();
+    } catch {
+      toast('Rule test failed.', 'error');
+    }
+  };
+
+  const promoteRule = async (target) => {
+    if (!selectedRule) return;
+    try {
+      await api.contentRulePromote(selectedRule.id, { target_status: target, reason: `Promoted from workspace to ${target}` });
+      toast(`Rule moved to ${target}.`, 'success');
+      reloadRules();
+    } catch {
+      toast('Rule promotion failed.', 'error');
+    }
+  };
+
+  const rollbackRule = async () => {
+    if (!selectedRule) return;
+    try {
+      await api.contentRuleRollback(selectedRule.id);
+      toast('Rule rolled back.', 'success');
+      reloadRules();
+    } catch {
+      toast('Rule rollback failed.', 'error');
+    }
+  };
+
+  const disableRule = async () => {
+    if (!selectedRule) return;
+    try {
+      await api.createContentRule({
+        ...selectedRule,
+        id: selectedRule.id,
+        builtin: selectedRule.builtin,
+        enabled: false,
+        query: selectedRule.query,
+      });
+      toast('Rule disabled.', 'success');
+      reloadRules();
+    } catch {
+      toast('Rule disable failed.', 'error');
+    }
+  };
+
+  const createSuppression = async () => {
+    if (!selectedRule) return;
+    try {
+      await api.createSuppression({
+        name: suppressionForm.name,
+        rule_id: selectedRule.id,
+        severity: suppressionForm.severity || undefined,
+        text: suppressionForm.text || undefined,
+        justification: suppressionForm.justification,
+      });
+      toast('Suppression saved.', 'success');
+      reloadSuppressions();
+      closeDrawer();
+    } catch {
+      toast('Failed to save suppression.', 'error');
+    }
+  };
+
+  const packNames = (selectedRule?.pack_ids || []).map((packId) => packs.find((pack) => pack.id === packId)?.name || packId);
+  const relatedHunts = hunts.filter((hunt) => {
+    const text = `${hunt.name || ''} ${JSON.stringify(hunt.query || {})}`.toLowerCase();
+    return selectedRule && (text.includes(String(selectedRule.id).toLowerCase()) || text.includes(String(selectedRule.title || '').toLowerCase()));
+  });
+  const fpEntries = Object.entries(fpStats || {}).filter(([, value]) => value && typeof value === 'object');
+  const fpPreview = fpEntries.slice(0, 3).map(([pattern, value]) => ({ pattern, ratio: value.fp_ratio ?? value.ratio ?? value.suppression_weight ?? '—' }));
+
+  const queueCounts = SAVED_VIEWS.reduce((acc, item) => {
+    acc[item.id] = allRules.filter((rule) => item.match(rule, { suppressionCount })).length;
+    return acc;
+  }, {});
+  const owners = ['all', ...new Set(allRules.map((rule) => rule.owner || 'system'))];
 
   return (
     <div>
-      <div className="tabs">
-        {['overview', 'sigma', 'mitre', 'threat-intel', 'hunts', 'tuning', 'rule-editor'].map(t => (
-          <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t.replace(/-/g, ' ').replace(/^\w/, c => c.toUpperCase())}
-          </button>
-        ))}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header">
+          <div>
+            <div className="card-title">Detection Engineering Workspace</div>
+            <div className="hint">Triage noisy rules, validate changes, and move detections through lifecycle gates without inline edits.</div>
+          </div>
+          <div className="btn-group">
+            {['aggressive', 'balanced', 'quiet'].map((option) => (
+              <button
+                key={option}
+                className={`btn btn-sm ${profile?.profile === option ? 'btn-primary' : ''}`}
+                onClick={() => api.setDetectionProfile({ profile: option }).then(() => toast(`Profile set to ${option}.`, 'success')).catch(() => toast('Unable to update profile.', 'error'))}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="summary-grid">
+          <div className="summary-card">
+            <div className="summary-label">Active Profile</div>
+            <div className="summary-value">{profile?.profile || '—'}</div>
+            <div className="summary-meta">Threshold multiplier {profile?.threshold_multiplier ?? '—'}</div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-label">Rules In Workspace</div>
+            <div className="summary-value">{allRules.length}</div>
+            <div className="summary-meta">{filteredRules.length} currently in the active queue</div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-label">Coverage</div>
+            <div className="summary-value">{mitreCoverage?.coverage_pct != null ? `${mitreCoverage.coverage_pct}%` : '—'}</div>
+            <div className="summary-meta">{mitreCoverage?.covered_techniques ?? '—'} techniques covered</div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-label">Pending Suppressions</div>
+            <div className="summary-value">{suppressions.filter((item) => item.active !== false).length}</div>
+            <div className="summary-meta">Live exceptions currently shaping rule outcomes</div>
+          </div>
+        </div>
+        {summary && <JsonDetails data={summary} label="Detection summary details" />}
       </div>
 
-      {tab === 'overview' && (
-        <>
-          {/* Tuning Profile */}
+      <div className="triage-layout">
+        <section className="triage-list">
           <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <span className="card-title">Detection Tuning Profile</span>
-              <div className="btn-group">
-                {['aggressive', 'balanced', 'quiet'].map(p => (
-                  <button key={p} className={`btn btn-sm ${profile?.profile === p ? 'btn-primary' : ''}`}
-                          onClick={() => handleProfileChange(p)}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {profile && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-                <div><span className="metric-label">Active Profile</span><div className="metric-value" style={{ fontSize: 20 }}>{profile.profile}</div></div>
-                <div><span className="metric-label">Threshold Multiplier</span><div className="metric-value" style={{ fontSize: 20 }}>{profile.threshold_multiplier}</div></div>
-                <div><span className="metric-label">Learn Threshold</span><div className="metric-value" style={{ fontSize: 20 }}>{profile.learn_threshold}</div></div>
-              </div>
-            )}
-          </div>
-
-          {/* Detection Summary */}
-          <div className="card-grid">
-            <div className="card">
-              <div className="card-title">Enforcement</div>
-              <div style={{ marginTop: 12 }}>
-                <SummaryGrid data={enforcement} limit={8} />
-              </div>
-            </div>
-            <div className="card">
-              <div className="card-title">Side Channel</div>
-              <div style={{ marginTop: 12 }}>
-                <SummaryGrid data={sideChannel} limit={8} />
-              </div>
-            </div>
-            <div className="card">
-              <div className="card-title">Deception Engine</div>
-              <div style={{ marginTop: 12 }}>
-                <SummaryGrid data={deception} limit={8} />
-              </div>
+            <div className="card-title" style={{ marginBottom: 12 }}>Rule Queues</div>
+            <div className="chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {SAVED_VIEWS.map((item) => (
+                <button
+                  key={item.id}
+                  className={`filter-chip-button ${queue === item.id ? 'active' : ''}`}
+                  onClick={() => {
+                    const next = new URLSearchParams(searchParams);
+                    next.set('queue', item.id);
+                    next.delete('rule');
+                    setSearchParams(next, { replace: true });
+                  }}
+                >
+                  {item.label} ({queueCounts[item.id] || 0})
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>Quick Actions</div>
-            <div className="btn-group">
-              <button className="btn" onClick={async () => { try { await api.runDemo(); toast('Demo started', 'success'); } catch { toast('Failed', 'error'); } }}>Run Demo</button>
-              <button className="btn" onClick={async () => { try { await api.resetBaseline(); toast('Baseline reset', 'success'); } catch { toast('Failed', 'error'); } }}>Reset Baseline</button>
-              <button className="btn" onClick={async () => { try { await api.checkpoint(); toast('Checkpoint created', 'success'); } catch { toast('Failed', 'error'); } }}>Create Checkpoint</button>
-              <button className="btn" onClick={async () => { try { await api.alertsSample({}); toast('Sample alert created', 'success'); } catch { toast('Failed', 'error'); } }}>Generate Sample Alert</button>
-            </div>
-          </div>
-
-          {summary && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>Detection Summary</div>
-              <SummaryGrid data={summary} limit={12} />
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === 'sigma' && (
-        <>
-          <div className="card-grid">
-            <div className="card metric"><div className="metric-label">Total Rules</div><div className="metric-value">{sigmaStats?.total_rules ?? sigmaStats?.total ?? '—'}</div></div>
-            <div className="card metric"><div className="metric-label">Active</div><div className="metric-value">{sigmaStats?.active ?? '—'}</div></div>
-            <div className="card metric"><div className="metric-label">Categories</div><div className="metric-value">{sigmaStats?.categories ?? '—'}</div></div>
-          </div>
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>Sigma Rules</div>
-            {(() => {
-              const rules = sigma?.rules || (Array.isArray(sigma) ? sigma : []);
-              if (!sigma) return <div className="empty">No rules loaded</div>;
-              return rules.length > 0 ? (
-                <>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Title</th><th>Level</th><th>Status</th><th>ID</th><th>Tune</th></tr></thead>
-                      <tbody>
-                        {rules.slice(0, 50).map((rule, index) => (
-                          <tr key={rule.id || index}>
-                            <td>{rule.title || 'Untitled rule'}{rule._custom_weight != null && <span className="badge badge-info" style={{ marginLeft: 6 }}>tuned</span>}</td>
-                            <td>{rule.level || '—'}</td>
-                            <td><span className={`badge ${rule.status === 'enabled' || rule.status === 'active' ? 'badge-ok' : 'badge-warn'}`}>{rule.status || 'unknown'}</span></td>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{rule.id || '—'}</td>
-                            <td>
-                              {tuningRule === (rule.id || index) ? (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <input type="range" min="0.1" max="1.0" step="0.05" value={tuneValue}
-                                    onChange={e => setTuneValue(parseFloat(e.target.value))} style={{ width: 80 }} />
-                                  <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', minWidth: 30 }}>{tuneValue.toFixed(2)}</span>
-                                  <button className="btn btn-sm btn-primary" onClick={async () => {
-                                    try {
-                                      await api.setDetectionWeights({ rule_id: rule.id, weight: tuneValue });
-                                      toast(`Weight set to ${tuneValue.toFixed(2)}`, 'success');
-                                      rule._custom_weight = tuneValue;
-                                      setTuningRule(null);
-                                    } catch { toast('Failed to save weight', 'error'); }
-                                  }}>Save</button>
-                                  <button className="btn btn-sm" onClick={() => setTuningRule(null)}>✕</button>
-                                </div>
-                              ) : (
-                                <button className="btn btn-sm" onClick={() => { setTuningRule(rule.id || index); setTuneValue(rule._custom_weight ?? 0.5); }}>Tune</button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <JsonDetails data={sigma} />
-                </>
-              ) : (
-                <>
-                  <SummaryGrid data={sigma} limit={10} />
-                  <JsonDetails data={sigma} />
-                </>
-              );
-            })()}
-          </div>
-          {contentRulesData && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>Content Rules</div>
-              {(() => {
-                const rules = contentRulesData?.rules || [];
-                return rules.length > 0 ? (
-                  <>
-                    <div className="table-wrap">
-                      <table>
-                        <thead><tr><th>Title</th><th>Kind</th><th>Owner</th><th>Enabled</th></tr></thead>
-                        <tbody>
-                          {rules.slice(0, 25).map((rule, index) => (
-                            <tr key={rule.id || index}>
-                              <td>{rule.title || rule.name || 'Untitled'}</td>
-                              <td>{rule.kind || 'native'}</td>
-                              <td>{rule.owner || '—'}</td>
-                              <td><span className={`badge ${rule.enabled !== false ? 'badge-ok' : 'badge-warn'}`}>{rule.enabled !== false ? 'Yes' : 'No'}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <JsonDetails data={contentRulesData} />
-                  </>
-                ) : (
-                  <>
-                    <SummaryGrid data={contentRulesData} limit={10} />
-                    <JsonDetails data={contentRulesData} />
-                  </>
-                );
-              })()}
-            </div>
-          )}
-          {packsData && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>Content Packs</div>
-              {(() => {
-                const packs = packsData?.packs || [];
-                return packs.length > 0 ? (
-                  <>
-                    <div className="table-wrap">
-                      <table>
-                        <thead><tr><th>Pack</th><th>Rules</th><th>Status</th></tr></thead>
-                        <tbody>
-                          {packs.slice(0, 25).map((pack, index) => (
-                            <tr key={pack.id || pack.name || index}>
-                              <td>{pack.name || pack.id || 'Untitled pack'}</td>
-                              <td>{Array.isArray(pack.rule_ids) ? pack.rule_ids.length : pack.rule_count ?? '—'}</td>
-                              <td><span className={`badge ${pack.enabled !== false ? 'badge-ok' : 'badge-warn'}`}>{pack.enabled !== false ? 'Enabled' : 'Disabled'}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <JsonDetails data={packsData} />
-                  </>
-                ) : (
-                  <>
-                    <SummaryGrid data={packsData} limit={10} />
-                    <JsonDetails data={packsData} />
-                  </>
-                );
-              })()}
-            </div>
-          )}
-          {suppressList && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-header">
-                <span className="card-title">Active Suppressions ({suppressList?.count ?? (suppressList?.suppressions || []).length})</span>
-                <button className="btn btn-sm" onClick={() => setTab('hunts')}>Manage →</button>
-              </div>
-              {(() => {
-                const sups = suppressList?.suppressions || (Array.isArray(suppressList) ? suppressList : []);
-                return sups.length === 0 ? <div className="empty">No active suppressions</div> : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Name</th><th>Rule</th><th>Host</th><th>Severity</th></tr></thead>
-                      <tbody>
-                        {sups.slice(0, 10).map((s, i) => (
-                          <tr key={i}><td>{s.name || '—'}</td><td style={{ fontSize: 12 }}>{s.rule_id || '—'}</td><td>{s.hostname || '—'}</td><td>{s.severity || '—'}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === 'mitre' && (
-        <>
-          {mitre && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">MITRE ATT&CK Coverage</span>
-                <span className="badge badge-info">{mitre.covered_techniques ?? '—'} / {mitre.total_techniques ?? '—'} techniques</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
-                <div><span className="metric-label">Coverage</span><div className="metric-value" style={{ fontSize: 20 }}>{mitre.coverage_pct ?? '—'}%</div></div>
-                <div><span className="metric-label">Gaps</span><div className="metric-value" style={{ fontSize: 20 }}>{mitre.gaps?.length ?? '—'}</div></div>
-                <div><span className="metric-label">Tactics</span><div className="metric-value" style={{ fontSize: 20 }}>{mitre.by_tactic ? Object.keys(mitre.by_tactic).length : '—'}</div></div>
-              </div>
-              {mitre.by_tactic && (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Tactic</th><th>Covered</th><th>Total</th><th>Coverage</th></tr></thead>
-                    <tbody>
-                      {Object.entries(mitre.by_tactic).map(([tac, info]) => (
-                        <tr key={tac}>
-                          <td>{tac}</td>
-                          <td>{typeof info === 'object' ? info.covered : info}</td>
-                          <td>{typeof info === 'object' ? info.total : '—'}</td>
-                          <td>{typeof info === 'object' && info.total ? `${Math.round(info.covered / info.total * 100)}%` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-          {heatmapCells.length > 0 && (
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>Technique Heatmap</div>
-              <div className="heatmap-grid">
-                {heatmapCells.map((c, i) => (
-                  <div key={i} className={`heatmap-cell heat-${Math.min(c.count || c.coverage || 0, 3)}`}
-                       title={`${c.technique_id || c.id}: ${c.name || ''}\nSources: ${c.count || c.sources || 0}`}>
-                    {c.technique_id || c.id || ''}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === 'threat-intel' && (
-        <>
-          <div className="card-grid">
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>Threat Intel Status</div>
-              <SummaryGrid data={tiStatus} limit={10} />
-              <JsonDetails data={tiStatus} />
-            </div>
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>Enrichment Stats</div>
-              <SummaryGrid data={tiStats} limit={10} />
-              <JsonDetails data={tiStats} />
-            </div>
-          </div>
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>Actions</div>
-            <div className="btn-group">
-              <button className="btn" onClick={async () => {
-                try { const r = await api.threatIntelPurge({ ttl_days: 90 }); toast(`Purged ${r.purged} expired IoCs`, 'success'); } catch { toast('Purge failed', 'error'); }
-              }}>Purge Expired (90d)</button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {tab === 'hunts' && (
-        <div>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <span className="card-title">Threat Hunts ({(huntList?.hunts || huntList || []).length})</span>
-              <button className="btn btn-sm btn-primary" onClick={() => setShowHuntForm(!showHuntForm)}>
-                {showHuntForm ? 'Cancel' : '+ New Hunt'}
-              </button>
-            </div>
-            {showHuntForm && (
-              <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)', marginBottom: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Name</label>
-                  <input type="text" value={huntForm.name} onChange={e => setHuntForm(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Hunt name" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Severity</label>
-                  <select value={huntForm.severity} onChange={e => setHuntForm(p => ({ ...p, severity: e.target.value }))}
-                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
-                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Threshold</label>
-                  <input type="number" value={huntForm.threshold} onChange={e => setHuntForm(p => ({ ...p, threshold: Number(e.target.value) }))}
-                    min={1} style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Search Text</label>
-                  <input type="text" value={huntForm.text} onChange={e => setHuntForm(p => ({ ...p, text: e.target.value }))}
-                    placeholder="Search pattern" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                  <button className="btn btn-primary" onClick={async () => {
-                    if (!huntForm.name) { toast('Name required', 'error'); return; }
-                    try {
-                      await api.createHunt({ name: huntForm.name, severity: huntForm.severity, threshold: huntForm.threshold, text: huntForm.text || undefined });
-                      toast('Hunt created', 'success');
-                      setShowHuntForm(false);
-                      setHuntForm({ name: '', severity: 'medium', threshold: 1, text: '' });
-                      rHunts();
-                    } catch { toast('Failed to create hunt', 'error'); }
-                  }}>Create</button>
-                </div>
-              </div>
-            )}
-            {(() => {
-              const hunts = huntList?.hunts || (Array.isArray(huntList) ? huntList : []);
-              return hunts.length === 0 ? <div className="empty">No hunts defined</div> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Name</th><th>Severity</th><th>Owner</th><th>Enabled</th><th>Threshold</th><th>Last Run</th><th>Actions</th></tr></thead>
-                    <tbody>
-                      {hunts.map((h, i) => (
-                        <tr key={h.id || i}>
-                          <td style={{ fontWeight: 600 }}>{h.name}</td>
-                          <td><span className={`sev-${(h.severity || 'medium').toLowerCase()}`}>{h.severity}</span></td>
-                          <td>{h.owner || '—'}</td>
-                          <td><span className={`badge ${h.enabled ? 'badge-ok' : 'badge-warn'}`}>{h.enabled ? 'Yes' : 'No'}</span></td>
-                          <td>{h.threshold}</td>
-                          <td style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{h.last_run_at || '—'}</td>
-                          <td>
-                            <button className="btn btn-sm" onClick={async () => {
-                              try { await api.runHunt(h.id); toast('Hunt executed', 'success'); rHunts(); } catch { toast('Run failed', 'error'); }
-                            }}>Run</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Suppression Management */}
           <div className="card">
-            <div className="card-header">
-              <span className="card-title">Suppression Rules ({suppressList?.count ?? (suppressList?.suppressions || []).length})</span>
-              <button className="btn btn-sm btn-primary" onClick={() => setShowSuppressForm(!showSuppressForm)}>
-                {showSuppressForm ? 'Cancel' : '+ New Suppression'}
-              </button>
-            </div>
-            {showSuppressForm && (
-              <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)', marginBottom: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Name</label>
-                  <input type="text" value={suppressForm.name} onChange={e => setSuppressForm(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Suppression name" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Rule ID (optional)</label>
-                  <input type="text" value={suppressForm.rule_id} onChange={e => setSuppressForm(p => ({ ...p, rule_id: e.target.value }))}
-                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Hostname (optional)</label>
-                  <input type="text" value={suppressForm.hostname} onChange={e => setSuppressForm(p => ({ ...p, hostname: e.target.value }))}
-                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Severity (optional)</label>
-                  <select value={suppressForm.severity} onChange={e => setSuppressForm(p => ({ ...p, severity: e.target.value }))}
-                    style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
-                    <option value="">Any</option><option value="low">Low</option><option value="medium">Medium</option><option value="elevated">Elevated</option><option value="critical">Critical</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Text match</label>
-                  <input type="text" value={suppressForm.text} onChange={e => setSuppressForm(p => ({ ...p, text: e.target.value }))}
-                    placeholder="Pattern to suppress" style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                  <button className="btn btn-primary" onClick={async () => {
-                    if (!suppressForm.name) { toast('Name required', 'error'); return; }
-                    try {
-                      const body = { name: suppressForm.name };
-                      if (suppressForm.rule_id) body.rule_id = suppressForm.rule_id;
-                      if (suppressForm.hostname) body.hostname = suppressForm.hostname;
-                      if (suppressForm.severity) body.severity = suppressForm.severity;
-                      if (suppressForm.text) body.text = suppressForm.text;
-                      await api.createSuppression(body);
-                      toast('Suppression created', 'success');
-                      setShowSuppressForm(false);
-                      setSuppressForm({ name: '', rule_id: '', hostname: '', severity: '', text: '' });
-                      rSuppress();
-                    } catch { toast('Failed', 'error'); }
-                  }}>Create</button>
-                </div>
+            <div className="triage-toolbar">
+              <div className="triage-toolbar-group">
+                <input
+                  className="form-input triage-search"
+                  value={query}
+                  onChange={(event) => {
+                    const next = new URLSearchParams(searchParams);
+                    if (event.target.value) next.set('q', event.target.value);
+                    else next.delete('q');
+                    setSearchParams(next, { replace: true });
+                  }}
+                  placeholder="Search rules, IDs, or descriptions"
+                  aria-label="Search rules"
+                />
+                <select
+                  className="form-select"
+                  value={ownerFilter}
+                  onChange={(event) => {
+                    const next = new URLSearchParams(searchParams);
+                    if (event.target.value === 'all') next.delete('owner');
+                    else next.set('owner', event.target.value);
+                    setSearchParams(next, { replace: true });
+                  }}
+                  aria-label="Filter by owner"
+                >
+                  {owners.map((owner) => <option key={owner} value={owner}>{owner === 'all' ? 'All owners' : owner}</option>)}
+                </select>
               </div>
-            )}
-            {(() => {
-              const sups = suppressList?.suppressions || (Array.isArray(suppressList) ? suppressList : []);
-              return sups.length === 0 ? <div className="empty">No suppressions</div> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>ID</th><th>Name</th><th>Rule</th><th>Host</th><th>Severity</th><th>Active</th></tr></thead>
-                    <tbody>
-                      {sups.map((s, i) => (
-                        <tr key={s.id || i}>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{s.id || i}</td>
-                          <td>{s.name || '—'}</td>
-                          <td style={{ fontSize: 12 }}>{s.rule_id || '—'}</td>
-                          <td>{s.hostname || '—'}</td>
-                          <td>{s.severity ? <span className={`sev-${s.severity}`}>{s.severity}</span> : '—'}</td>
-                          <td><span className={`badge ${s.active !== false ? 'badge-ok' : 'badge-warn'}`}>{s.active !== false ? 'Active' : 'Inactive'}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
+              <div className="triage-toolbar-group">
+                <button className="btn btn-sm" onClick={reloadRules}>Refresh</button>
+                <button className="btn btn-sm btn-primary" onClick={testRule} disabled={!selectedRule}>Test Selected</button>
+              </div>
+            </div>
+
+            <div className="sticky-bulk-bar">
+              <span className="hint">Queue focuses noisy, recently changed, and suppressed detections first.</span>
+            </div>
+
+            <div className="split-list-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Rule</th>
+                    <th>Owner</th>
+                    <th>ATT&CK</th>
+                    <th>Noise</th>
+                    <th>Lifecycle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRules.length === 0 ? (
+                    <tr><td colSpan="5"><div className="empty" style={{ padding: 24 }}>No rules match this queue and filter scope.</div></td></tr>
+                  ) : filteredRules.map((rule) => (
+                    <tr
+                      key={rule.id}
+                      className={selectedRule?.id === rule.id ? 'row-active' : ''}
+                      onClick={() => {
+                        const next = new URLSearchParams(searchParams);
+                        next.set('rule', rule.id);
+                        setSearchParams(next, { replace: true });
+                      }}
+                      onMouseEnter={() => {
+                        const next = new URLSearchParams(searchParams);
+                        next.set('rule', rule.id);
+                        setSearchParams(next, { replace: true });
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td>
+                        <div className="row-primary">{rule.title || rule.id}</div>
+                        <div className="row-secondary">{rule.description || 'No rule narrative available.'}</div>
+                      </td>
+                      <td>{rule.owner || 'system'}</td>
+                      <td>{Array.isArray(rule.attack) ? rule.attack.length : 0} mappings</td>
+                      <td>
+                        <span className={`badge ${severityTone((rule.last_test_match_count || 0) >= 5 ? 'high' : 'low')}`}>
+                          {(rule.last_test_match_count || 0)} hits
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${lifecycleTone(rule.lifecycle)}`}>{rule.lifecycle || 'draft'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        </section>
 
-      {tab === 'tuning' && (
-        <>
-          {weights && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>Detection Weights</div>
-              <SummaryGrid data={weights} limit={12} />
-              <JsonDetails data={weights} />
-            </div>
-          )}
-          {fpStats && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>False Positive Feedback</div>
-              {Array.isArray(fpStats) && fpStats.length > 0 ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Pattern</th><th>Total</th><th>FPs</th><th>FP Ratio</th><th>Suppression</th></tr></thead>
-                    <tbody>
-                      {fpStats.map((f, i) => (
-                        <tr key={i}>
-                          <td>{f.pattern}</td>
-                          <td>{f.total_marked}</td>
-                          <td>{f.false_positives}</td>
-                          <td>{(f.fp_ratio * 100).toFixed(1)}%</td>
-                          <td>{f.suppression_weight?.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        <aside className="triage-detail">
+          <div className="card">
+            {!selectedRule ? <div className="empty">Select a rule to inspect lifecycle, validation, and related suppressions.</div> : (
+              <>
+                <div className="detail-hero">
+                  <div>
+                    <div className="detail-hero-title">{selectedRule.title || selectedRule.id}</div>
+                    <div className="detail-hero-copy">{selectedRule.description || 'This rule needs a clearer analyst-facing summary before rollout.'}</div>
+                  </div>
+                  <span className={`badge ${lifecycleTone(selectedRule.lifecycle)}`}>{selectedRule.lifecycle || 'draft'}</span>
                 </div>
-              ) : (
-                <>
-                  <SummaryGrid data={fpStats} limit={10} />
-                  <JsonDetails data={fpStats} />
-                </>
-              )}
-            </div>
-          )}
-          {checks && (
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>Checkpoints</div>
-              <SummaryGrid data={checks} exclude={['timestamps', 'device_states']} limit={10} />
-              <JsonDetails data={checks} />
-            </div>
-          )}
-        </>
-      )}
 
-      {tab === 'rule-editor' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>Detection Rule Editor</div>
-          <RuleEditor onRuleCreated={() => toast('Rule created — detection engine updated', 'success')} />
+                <div className="chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                  <span className={`badge ${selectedRule.enabled === false ? 'badge-err' : 'badge-ok'}`}>{selectedRule.enabled === false ? 'Disabled' : 'Enabled'}</span>
+                  <span className="badge badge-info">{selectedRule.kind || 'sigma'}</span>
+                  <span className="badge badge-info">Owner: {selectedRule.owner || 'system'}</span>
+                  <span className={`badge ${severityTone(selectedRule.severity_mapping || 'low')}`}>{selectedRule.severity_mapping || 'severity inherited'}</span>
+                </div>
+
+                <div className="btn-group" style={{ marginTop: 16 }}>
+                  <button className="btn btn-sm btn-primary" onClick={testRule}>Test</button>
+                  <button className="btn btn-sm" onClick={() => { setDrawerMode('tune'); openDrawer('tune'); }}>Tune</button>
+                  <button className="btn btn-sm" onClick={() => setDrawerMode('suppress')}>Suppress</button>
+                  <button className="btn btn-sm" onClick={() => promoteRule('canary')}>Promote</button>
+                  <button className="btn btn-sm" onClick={rollbackRule}>Rollback</button>
+                  <button className="btn btn-sm btn-danger" onClick={disableRule}>Disable</button>
+                </div>
+
+                <div className="summary-grid" style={{ marginTop: 16 }}>
+                  <div className="summary-card">
+                    <div className="summary-label">Last Test</div>
+                    <div className="summary-value">{selectedRule.last_test_at ? formatRelativeTime(selectedRule.last_test_at) : 'Never'}</div>
+                    <div className="summary-meta">{selectedRule.last_test_at ? formatDateTime(selectedRule.last_test_at) : 'Run a validation replay before promotion.'}</div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Validation Hits</div>
+                    <div className="summary-value">{selectedRule.last_test_match_count || 0}</div>
+                    <div className="summary-meta">Replay hit count from the most recent rule test.</div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Suppressions</div>
+                    <div className="summary-value">{suppressionCount[selectedRule.id] || 0}</div>
+                    <div className="summary-meta">Active exceptions tied directly to this rule.</div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Content Packs</div>
+                    <div className="summary-value">{packNames.length}</div>
+                    <div className="summary-meta">{packNames.slice(0, 2).join(' • ') || 'No pack membership recorded.'}</div>
+                  </div>
+                </div>
+
+                <div className="detail-callout" style={{ marginTop: 16 }}>
+                  <strong>MITRE impact</strong>
+                  <div style={{ marginTop: 6 }}>
+                    {Array.isArray(selectedRule.attack) && selectedRule.attack.length > 0
+                      ? selectedRule.attack.map((attack) => `${attack.technique_name || attack.technique_id} (${attack.tactic || 'mapped tactic'})`).join(' • ')
+                      : 'No ATT&CK mapping is attached yet. Add one before broad promotion so analysts understand coverage intent.'}
+                  </div>
+                </div>
+
+                <div className="card" style={{ marginTop: 16, padding: 16, background: 'var(--bg)' }}>
+                  <div className="card-title" style={{ marginBottom: 10 }}>Validation and Context</div>
+                  {testResult ? (
+                    <div className="summary-grid">
+                      <div className="summary-card">
+                        <div className="summary-label">Tested At</div>
+                        <div className="summary-value">{formatRelativeTime(testResult.tested_at)}</div>
+                        <div className="summary-meta">{formatDateTime(testResult.tested_at)}</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="summary-label">Visible Matches</div>
+                        <div className="summary-value">{testResult.match_count}</div>
+                        <div className="summary-meta">{testResult.summary}</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="summary-label">Suppressed Matches</div>
+                        <div className="summary-value">{testResult.suppressed_count}</div>
+                        <div className="summary-meta">Hidden by active suppressions or exceptions.</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="hint">Run a rule test to preview impact before tuning or promotion.</div>
+                  )}
+                </div>
+
+                <div className="card" style={{ marginTop: 16, padding: 16, background: 'var(--bg)' }}>
+                  <div className="card-title" style={{ marginBottom: 10 }}>False-Positive Signals</div>
+                  {fpPreview.length === 0 ? (
+                    <div className="hint">False-positive feedback will appear here once analysts label alert outcomes.</div>
+                  ) : fpPreview.map((entry) => (
+                    <div key={entry.pattern} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 13 }}>{entry.pattern}</span>
+                      <span className="badge badge-info">ratio {entry.ratio}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="card" style={{ marginTop: 16, padding: 16, background: 'var(--bg)' }}>
+                  <div className="card-title" style={{ marginBottom: 10 }}>Related Workflow Links</div>
+                  <div className="summary-grid">
+                    <div className="summary-card">
+                      <div className="summary-label">Saved Hunts</div>
+                      <div className="summary-value">{relatedHunts.length}</div>
+                      <div className="summary-meta">{relatedHunts[0]?.name || 'No hunt references found for this rule.'}</div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-label">Promotion State</div>
+                      <div className="summary-value">{selectedRule.last_promotion_at ? formatRelativeTime(selectedRule.last_promotion_at) : 'Pending'}</div>
+                      <div className="summary-meta">{selectedRule.last_promotion_at ? formatDateTime(selectedRule.last_promotion_at) : 'No promotion event recorded yet.'}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <JsonDetails data={selectedRule} label="Rule metadata and raw query" />
+                {testResult && <JsonDetails data={testResult} label="Rule test result JSON" />}
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      <SideDrawer
+        open={drawerMode === 'tune' || tuneOpen}
+        title={selectedRule ? `Tune ${selectedRule.title || selectedRule.id}` : 'Tune rule'}
+        subtitle="Move weighting changes into a side panel so validation and save actions are harder to trigger accidentally."
+        onClose={closeDrawer}
+        actions={<button className="btn btn-sm btn-primary" onClick={saveWeight}>Save Weight</button>}
+      >
+        <div className="form-group">
+          <label className="form-label" htmlFor="rule-weight">Detection Weight</label>
+          <input
+            id="rule-weight"
+            className="form-input"
+            type="number"
+            min="0.05"
+            max="5"
+            step="0.05"
+            value={weightInput}
+            onChange={(event) => setWeightInput(event.target.value)}
+          />
+          <div className="hint">Preview the likely blast radius using the latest test match count before committing.</div>
         </div>
-      )}
+        <SummaryGrid data={{
+          current_profile: profile?.profile,
+          last_test_match_count: selectedRule?.last_test_match_count || 0,
+          live_suppressions: suppressionCount[selectedRule?.id] || 0,
+          recommendation: (selectedRule?.last_test_match_count || 0) >= 5 ? 'Reduce noise before promotion' : 'Ready for canary validation',
+        }} limit={4} />
+      </SideDrawer>
+
+      <SideDrawer
+        open={drawerMode === 'suppress'}
+        title={selectedRule ? `Suppress ${selectedRule.title || selectedRule.id}` : 'Suppress rule'}
+        subtitle="Capture intent and scope explicitly so exceptions remain understandable later."
+        onClose={closeDrawer}
+        actions={<button className="btn btn-sm btn-primary" onClick={createSuppression}>Save Suppression</button>}
+      >
+        <div className="form-group">
+          <label className="form-label" htmlFor="suppression-name">Name</label>
+          <input id="suppression-name" className="form-input" value={suppressionForm.name} onChange={(event) => setSuppressionForm((form) => ({ ...form, name: event.target.value }))} />
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="suppression-justification">Justification</label>
+          <textarea id="suppression-justification" className="form-textarea" value={suppressionForm.justification} onChange={(event) => setSuppressionForm((form) => ({ ...form, justification: event.target.value }))} />
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="suppression-text">Match Text Filter</label>
+          <input id="suppression-text" className="form-input" value={suppressionForm.text} onChange={(event) => setSuppressionForm((form) => ({ ...form, text: event.target.value }))} />
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="suppression-severity">Severity</label>
+          <input id="suppression-severity" className="form-input" value={suppressionForm.severity} onChange={(event) => setSuppressionForm((form) => ({ ...form, severity: event.target.value }))} />
+        </div>
+      </SideDrawer>
     </div>
   );
 }

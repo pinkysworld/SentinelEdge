@@ -1,5 +1,14 @@
 import React, { useEffect } from 'react';
 
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat(undefined, {
+  numeric: 'auto',
+});
+
 export function formatLabel(key) {
   return String(key)
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -16,6 +25,33 @@ export function formatValue(value) {
   if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`;
   if (typeof value === 'object') return `${Object.keys(value).length} fields`;
   return String(value);
+}
+
+export function formatDateTime(value) {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return DATE_TIME_FORMATTER.format(date);
+}
+
+export function formatRelativeTime(value) {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const deltaMs = date.getTime() - Date.now();
+  const absSeconds = Math.round(Math.abs(deltaMs) / 1000);
+  if (absSeconds < 60) return RELATIVE_TIME_FORMATTER.format(Math.round(deltaMs / 1000), 'second');
+  const absMinutes = Math.round(absSeconds / 60);
+  if (absMinutes < 60) return RELATIVE_TIME_FORMATTER.format(Math.round(deltaMs / 60000), 'minute');
+  const absHours = Math.round(absMinutes / 60);
+  if (absHours < 24) return RELATIVE_TIME_FORMATTER.format(Math.round(deltaMs / 3600000), 'hour');
+  return RELATIVE_TIME_FORMATTER.format(Math.round(deltaMs / 86400000), 'day');
+}
+
+export function formatNumber(value, options) {
+  if (value == null || value === '') return '—';
+  if (typeof value !== 'number') return String(value);
+  return new Intl.NumberFormat(undefined, options).format(value);
 }
 
 function previewObject(value) {
@@ -275,6 +311,34 @@ export function SideDrawer({ open, title, subtitle, onClose, actions, children }
         </div>
         <div className="drawer-body">{children}</div>
       </aside>
+    </div>
+  );
+}
+
+export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', tone = 'danger', onConfirm, onCancel }) {
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (event) => {
+      if (event.key === 'Escape') onCancel?.();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div className="confirm-overlay" onClick={onCancel}>
+      <div className="confirm-dialog" onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+        <div className="confirm-dialog-header">
+          <h3 id="confirm-dialog-title">{title}</h3>
+        </div>
+        <p className="confirm-dialog-body">{message}</p>
+        <div className="confirm-dialog-actions">
+          <button className="btn btn-sm" onClick={onCancel}>{cancelLabel}</button>
+          <button className={`btn btn-sm ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
     </div>
   );
 }

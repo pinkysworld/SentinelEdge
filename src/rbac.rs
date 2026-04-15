@@ -284,6 +284,8 @@ pub fn endpoint_permission(method: &str, path: &str) -> Permission {
 
         // Status, reports, and operator overviews
         ("GET", "/api/auth/check") => Permission::ViewSupport,
+        ("GET", "/api/auth/session") => Permission::ViewSupport,
+        ("POST", "/api/auth/logout") => Permission::ViewSupport,
         ("GET", "/api/status") => Permission::ViewDashboard,
         ("GET", "/api/report") => Permission::ViewReports,
         ("GET", "/api/workbench/overview") => Permission::ViewIncidents,
@@ -467,6 +469,10 @@ pub fn endpoint_permission(method: &str, path: &str) -> Permission {
         // Reports
         ("GET", p) if p.starts_with("/api/reports") => Permission::ViewReports,
         (_, p) if p.starts_with("/api/reports") => Permission::ManageConfig,
+        (_, "/api/report-templates") => Permission::ViewReports,
+        (_, "/api/report-runs") => Permission::ViewReports,
+        (_, "/api/report-schedules") => Permission::ViewReports,
+        ("GET", "/api/inbox") | ("POST", "/api/inbox/ack") => Permission::ViewSupport,
 
         // Export
         (_, p) if p.starts_with("/api/export") => Permission::ExportData,
@@ -730,6 +736,14 @@ mod tests {
         );
         assert_eq!(
             endpoint_permission("GET", "/api/auth/check"),
+            Permission::ViewSupport
+        );
+        assert_eq!(
+            endpoint_permission("GET", "/api/auth/session"),
+            Permission::ViewSupport
+        );
+        assert_eq!(
+            endpoint_permission("POST", "/api/auth/logout"),
             Permission::ViewSupport
         );
         assert_eq!(

@@ -143,6 +143,7 @@ pub mod multi_tenant;
 pub mod enterprise;
 pub mod feature_flags;
 pub mod notifications;
+pub mod support;
 
 // ── Kernel & System ──────────────────────────────────────────────────────────
 pub mod kernel_events;

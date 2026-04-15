@@ -1,4 +1,5 @@
 use wardex::agent_client::AgentClient;
+use wardex::auth::SessionStore;
 use wardex::config::Config;
 use wardex::server::spawn_test_server;
 
@@ -473,6 +474,67 @@ fn auth_check_with_valid_token_returns_ok() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["status"], "ok");
+}
+
+#[test]
+fn auth_session_accepts_sso_session_token_and_logout_revokes_it() {
+    let (port, _token) = spawn_test_server();
+    let session_path = format!("/tmp/wardex_test_{port}/sessions.json");
+    let store = SessionStore::with_persistence(&session_path);
+    let session_id = store.create_session("sso-user", "sso@example.com", "analyst", 8);
+
+    let resp = ureq::get(&format!("{}/api/auth/session", base(port)))
+        .set("Authorization", &auth_header(&session_id))
+        .call()
+        .expect("auth session with SSO token");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["authenticated"], true);
+    assert_eq!(body["role"], "analyst");
+    assert_eq!(body["user_id"], "sso-user");
+
+    let logout = ureq::post(&format!("{}/api/auth/logout", base(port)))
+        .set("Authorization", &auth_header(&session_id))
+        .call()
+        .expect("logout SSO session");
+    assert_eq!(logout.status(), 200);
+    let logout_body: serde_json::Value = logout.into_json().unwrap();
+    assert_eq!(logout_body["logged_out"], true);
+    assert_eq!(logout_body["session_revoked"], true);
+
+    match ureq::get(&format!("{}/api/auth/session", base(port)))
+        .set("Authorization", &auth_header(&session_id))
+        .call()
+    {
+        Err(ureq::Error::Status(401, _)) => {}
+        other => panic!("expected 401 after SSO logout, got {other:?}"),
+    }
+}
+
+#[test]
+fn sso_login_returns_503_when_not_configured() {
+    let (port, _token) = spawn_test_server();
+    match ureq::get(&format!("{}/api/auth/sso/login", base(port))).call() {
+        Err(ureq::Error::Status(503, response)) => {
+            let body: serde_json::Value = response.into_json().unwrap();
+            assert_eq!(body["error"], "SSO login flow is not configured");
+        }
+        other => panic!("expected 503 for unconfigured SSO login, got {other:?}"),
+    }
+}
+
+#[test]
+fn sso_callback_returns_503_when_not_configured() {
+    let (port, _token) = spawn_test_server();
+    match ureq::post(&format!("{}/api/auth/sso/callback", base(port)))
+        .send_json(serde_json::json!({"code": "test-code", "state": "test-state"}))
+    {
+        Err(ureq::Error::Status(503, response)) => {
+            let body: serde_json::Value = response.into_json().unwrap();
+            assert_eq!(body["error"], "SSO login flow is not configured");
+        }
+        other => panic!("expected 503 for unconfigured SSO callback, got {other:?}"),
+    }
 }
 
 // ── GET /api/fleet/status ──────────────────────────────────────
@@ -1868,6 +1930,18 @@ fn malformed_dynamic_paths_return_404() {
             Err(ureq::Error::Status(404, _)) => {}
             other => panic!("expected 404 for {path}, got {other:?}"),
         }
+    }
+}
+
+#[test]
+fn prefix_aliases_do_not_match_exact_asset_search_route() {
+    let (port, token) = spawn_test_server();
+    match ureq::get(&format!("{}/api/assets/searching?q=host", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+    {
+        Err(ureq::Error::Status(404, _)) => {}
+        other => panic!("expected 404 for /api/assets/searching, got {other:?}"),
     }
 }
 

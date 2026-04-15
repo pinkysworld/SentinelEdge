@@ -107,3 +107,61 @@ groups:
         annotations:
           summary: "Detection pipeline p95 latency above 5s"
           description: "Detection pipeline latency is {{ $value }}ms."
+
+      # ── Spool & Storage ──────────────────────────────────────────────
+
+      - alert: WardexSpoolDepthHigh
+        expr: wardex_spool_depth > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Spool queue depth exceeds 5000"
+          description: "Spool depth is {{ $value }}, indicating backpressure or delivery failure."
+
+      - alert: WardexSpoolDepthCritical
+        expr: wardex_spool_depth > 9000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Spool queue near capacity (>9000)"
+          description: "Spool depth is {{ $value }}. Risk of data loss if capacity (10000) is reached."
+
+      - alert: WardexStorageUsageHigh
+        expr: wardex_storage_used_bytes / wardex_storage_total_bytes > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Wardex storage usage above 85%"
+          description: "Storage usage is {{ $value | humanizePercentage }}."
+
+      - alert: WardexStorageUsageCritical
+        expr: wardex_storage_used_bytes / wardex_storage_total_bytes > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Wardex storage usage above 95%"
+          description: "Storage is nearly full at {{ $value | humanizePercentage }}. Immediate action required."
+
+      # ── Key Rotation & Audit ─────────────────────────────────────────
+
+      - alert: WardexKeyRotationStale
+        expr: time() - wardex_last_key_rotation_timestamp > 7200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Key rotation overdue (>2 hours since last rotation)"
+          description: "Last key rotation was {{ $value | humanizeDuration }} ago."
+
+      - alert: WardexAuditLogSyncFailure
+        expr: increase(wardex_audit_log_sync_errors_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Audit log sync errors detected"
+          description: "{{ $value }} audit log sync errors in the last 10 minutes."

@@ -5,9 +5,9 @@ import SearchPalette from '../components/SearchPalette';
 // Mock the API module
 vi.mock('../api', () => ({
   alerts: vi.fn().mockResolvedValue([]),
+  incidents: vi.fn().mockResolvedValue([]),
   agents: vi.fn().mockResolvedValue([]),
   detectionRules: vi.fn().mockResolvedValue([]),
-  quarantineList: vi.fn().mockResolvedValue([]),
   feeds: vi.fn().mockResolvedValue([]),
 }));
 

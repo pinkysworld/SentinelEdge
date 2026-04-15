@@ -4,7 +4,7 @@ replicaCount: 2
 
 image:
   repository: wardex
-  tag: "0.49.0"
+  tag: "0.50.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -25,6 +25,9 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
   fsGroup: 1000
+
+# Shutdown grace period — should match WARDEX_SHUTDOWN_TIMEOUT_SECS (default 30)
+terminationGracePeriodSeconds: 30
 
 containerSecurityContext:
   allowPrivilegeEscalation: false

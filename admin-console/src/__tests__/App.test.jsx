@@ -63,7 +63,7 @@ describe('App', () => {
 
   it('enables Connect button when token is entered', async () => {
     renderApp();
-    const input = screen.getByPlaceholderText('API token');
+    const input = screen.getAllByPlaceholderText('Paste API token…')[0];
     await userEvent.type(input, 'my-secret-token');
     expect(screen.getByText('Connect')).not.toBeDisabled();
   });
@@ -78,7 +78,7 @@ describe('App', () => {
       text: async () => '{"error":"unauthorized"}',
     }));
     renderApp();
-    const input = screen.getByPlaceholderText('API token');
+    const input = screen.getAllByPlaceholderText('Paste API token…')[0];
     await userEvent.type(input, 'bad-token');
     await userEvent.click(screen.getByText('Connect'));
     await waitFor(() => {

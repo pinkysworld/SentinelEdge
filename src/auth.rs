@@ -5,6 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Mutex;
 
 // ── Auth mode ───────────────────────────────────────────────────
@@ -105,11 +106,21 @@ impl SessionStore {
         *store = valid;
     }
 
+    /// Reload sessions from disk, replacing the in-memory view.
+    pub fn reload(&self) {
+        self.load();
+    }
+
     /// Persist current sessions to disk (best-effort).
     fn save(&self) {
         let Some(ref path) = self.store_path else { return };
         let store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if let Ok(json) = serde_json::to_string(&*store) {
+            if let Some(parent) = Path::new(path).parent() {
+                if !parent.as_os_str().is_empty() && std::fs::create_dir_all(parent).is_err() {
+                    return;
+                }
+            }
             let tmp = format!("{path}.tmp");
             if std::fs::write(&tmp, &json).is_ok() {
                 let _ = std::fs::rename(&tmp, path);
@@ -150,6 +161,8 @@ impl SessionStore {
             }
             // Expired — remove it.
             store.remove(id);
+            drop(store);
+            self.save();
         }
         None
     }
@@ -199,14 +212,14 @@ impl AuthManager {
         rng.fill(&mut nonce_buf);
         let nonce = hex::encode(nonce_buf);
 
-        let scope = self.config.scopes.join("+");
+        let scope = self.config.scopes.join(" ");
         let url = format!(
             "{}/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}",
             self.config.issuer.trim_end_matches('/'),
-            self.config.client_id,
-            self.config.redirect_uri,
-            scope,
-            nonce,
+            url_encode_component(&self.config.client_id),
+            url_encode_component(&self.config.redirect_uri),
+            url_encode_component(&scope),
+            url_encode_component(&nonce),
         );
         (url, nonce)
     }
@@ -252,6 +265,23 @@ impl AuthManager {
         }
         best.unwrap_or("viewer").to_string()
     }
+}
+
+fn url_encode_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() * 3);
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(char::from(b"0123456789ABCDEF"[(byte >> 4) as usize]));
+                out.push(char::from(b"0123456789ABCDEF"[(byte & 0x0F) as usize]));
+            }
+        }
+    }
+    out
 }
 
 // ── Tests ───────────────────────────────────────────────────────
@@ -379,10 +409,25 @@ mod tests {
         assert!(url.starts_with("https://idp.example.com/authorize?"));
         assert!(url.contains("response_type=code"));
         assert!(url.contains("client_id=wardex-console"));
-        assert!(url.contains("redirect_uri=https://wardex.local/callback"));
-        assert!(url.contains("scope=openid+profile+email+groups"));
+        assert!(url.contains("redirect_uri=https%3A%2F%2Fwardex.local%2Fcallback"));
+        assert!(url.contains("scope=openid%20profile%20email%20groups"));
         assert!(url.contains(&format!("state={}", nonce)));
         assert_eq!(nonce.len(), 32); // 16 bytes hex-encoded
+    }
+
+    #[test]
+    fn build_auth_url_encodes_special_characters() {
+        let mut cfg = test_config();
+        cfg.client_id = "wardex console".into();
+        cfg.redirect_uri = "https://wardex.local/callback?tenant=acme&next=/admin".into();
+        cfg.scopes = vec!["openid".into(), "profile email".into()];
+
+        let mgr = AuthManager::new(cfg);
+        let (url, _) = mgr.build_auth_url();
+
+        assert!(url.contains("client_id=wardex%20console"));
+        assert!(url.contains("redirect_uri=https%3A%2F%2Fwardex.local%2Fcallback%3Ftenant%3Dacme%26next%3D%2Fadmin"));
+        assert!(url.contains("scope=openid%20profile%20email"));
     }
 
     // ── Exchange code placeholder ───────────────────────────────
@@ -451,5 +496,22 @@ mod tests {
         let store = SessionStore::with_persistence(&path.to_string_lossy());
         assert!(store.sessions.lock().unwrap().is_empty());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn session_persistence_creates_missing_parent_directories() {
+        let root = std::env::temp_dir().join(format!("wardex_sessions_nested_{}", std::process::id()));
+        let path = root.join("nested").join("sessions.json");
+        let path_str = path.to_string_lossy().to_string();
+
+        {
+            let store = SessionStore::with_persistence(&path_str);
+            store.create_session("u9", "u9@example.com", "admin", 8);
+        }
+
+        assert!(path.exists());
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

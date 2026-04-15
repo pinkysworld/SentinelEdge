@@ -24,7 +24,7 @@ use wardex::telemetry::TelemetrySample;
 fn main() {
     env_logger::init();
 
-    // Global panic hook: log panics to stderr instead of crashing silently.
+    // Global panic hook: log panics to stderr and attempt to flush critical state.
     // Prevents unhandled panics from poisoning shared mutexes without logging.
     std::panic::set_hook(Box::new(|info| {
         let location = info
@@ -39,6 +39,19 @@ fn main() {
             "unknown panic".to_string()
         };
         eprintln!("[PANIC]{location}: {payload}");
+        // Attempt to flush stderr and write a crash marker for recovery on restart
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+        let crash_info = format!(
+            "{{\"panic\":\"{}\",\"location\":\"{}\",\"timestamp\":\"{}\"}}\n",
+            payload.replace('"', "\\\""),
+            location.trim(),
+            chrono::Utc::now().to_rfc3339(),
+        );
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("var/crash.log")
+            .and_then(|mut f| std::io::Write::write_all(&mut f, crash_info.as_bytes()));
     }));
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");

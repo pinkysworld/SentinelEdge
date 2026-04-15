@@ -21,14 +21,14 @@ describe('Skeleton', () => {
 
   it('SkeletonCard renders with specified height', () => {
     const { container } = render(<SkeletonCard height={120} />);
-    const div = container.firstChild;
+    const div = container.querySelector('.skeleton');
     expect(div).toBeInTheDocument();
     expect(div.style.height).toBe('120px');
   });
 
   it('SkeletonCard defaults to 80px height', () => {
     const { container } = render(<SkeletonCard />);
-    const div = container.firstChild;
+    const div = container.querySelector('.skeleton');
     expect(div.style.height).toBe('80px');
   });
 });

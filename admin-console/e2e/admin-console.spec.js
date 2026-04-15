@@ -603,3 +603,127 @@ test.describe('Responsive Layout', () => {
     await expect(page.locator('main')).toBeVisible();
   });
 });
+
+// ════════════════════════════════════════════════════════════
+// 19. API ERROR RECOVERY
+// ════════════════════════════════════════════════════════════
+
+test.describe('API Error Recovery', () => {
+  test('dashboard recovers after API failure', async ({ page }) => {
+    await login(page);
+    await expect(page.locator('text=Security Overview')).toBeVisible({ timeout: 15000 });
+    // Simulate offline
+    await page.route('**/api/**', route => route.abort());
+    // Click refresh — should not crash
+    const refreshBtn = page.locator('button:has-text("Refresh")');
+    if (await refreshBtn.isVisible()) {
+      await refreshBtn.click();
+      await page.waitForTimeout(2000);
+      // Page should still be rendered (error boundary or graceful degradation)
+      await expect(page.locator('main')).toBeVisible();
+    }
+    // Restore network
+    await page.unroute('**/api/**');
+  });
+
+  test('live monitor handles 500 errors gracefully', async ({ page }) => {
+    await login(page);
+    await page.locator('button[title="Live Monitor"]').click();
+    await expect(page.locator('h1:has-text("Live Monitor")')).toBeVisible();
+    // Intercept alerts API with 500 error
+    await page.route('**/api/alerts', route => route.fulfill({ status: 500, body: 'Internal Server Error' }));
+    await page.locator('button:has-text("Refresh")').click();
+    await page.waitForTimeout(2000);
+    // Should not crash — page still visible
+    await expect(page.locator('main')).toBeVisible();
+    await page.unroute('**/api/alerts');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// 20. BULK OPERATIONS
+// ════════════════════════════════════════════════════════════
+
+test.describe('Bulk Operations', () => {
+  test('bulk action controls appear when alerts selected', async ({ page }) => {
+    await login(page);
+    await page.locator('button[title="Live Monitor"]').click();
+    await expect(page.locator('h1:has-text("Live Monitor")')).toBeVisible();
+    // Check if select-all checkbox exists
+    const selectAll = page.locator('input[type="checkbox"]').first();
+    if (await selectAll.isVisible({ timeout: 5000 })) {
+      await selectAll.check();
+      // Bulk action dropdown should appear
+      await expect(page.locator('text=selected')).toBeVisible({ timeout: 5000 });
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// 21. KEYBOARD NAVIGATION
+// ════════════════════════════════════════════════════════════
+
+test.describe('Keyboard Navigation', () => {
+  test('keyboard shortcuts navigate sections', async ({ page }) => {
+    await login(page);
+    // Press 'm' to go to Monitor
+    await page.keyboard.press('m');
+    await expect(page.locator('h1:has-text("Live Monitor")')).toBeVisible();
+    // Press 'd' to go to Dashboard
+    await page.keyboard.press('d');
+    await expect(page.locator('h1:has-text("Dashboard")')).toBeVisible();
+    // Press 'f' to go to Fleet
+    await page.keyboard.press('f');
+    await expect(page.locator('h1:has-text("Fleet & Agents")')).toBeVisible();
+  });
+
+  test('? key opens shortcuts help', async ({ page }) => {
+    await login(page);
+    await page.keyboard.press('?');
+    await expect(page.locator('text=Keyboard Shortcuts')).toBeVisible();
+    // Close it
+    await page.locator('button:has-text("✕")').click();
+    await expect(page.locator('text=Keyboard Shortcuts')).not.toBeVisible();
+  });
+
+  test('skip-to-content link is keyboard accessible', async ({ page }) => {
+    await login(page);
+    // Tab to the skip link
+    await page.keyboard.press('Tab');
+    const skipLink = page.locator('a:has-text("Skip to main content")');
+    // Should be focusable (exists in DOM even if visually hidden)
+    await expect(skipLink).toHaveAttribute('href', '#main-content');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// 22. ACCESSIBILITY BASICS
+// ════════════════════════════════════════════════════════════
+
+test.describe('Accessibility', () => {
+  test('ARIA roles present on key elements', async ({ page }) => {
+    await login(page);
+    // Sidebar navigation
+    await expect(page.locator('aside[role="navigation"]')).toBeVisible();
+    // Main content area
+    await expect(page.locator('main[role="main"]')).toBeVisible();
+    // Top bar banner
+    await expect(page.locator('header[role="banner"]')).toBeVisible();
+  });
+
+  test('live monitor tabs have ARIA tablist role', async ({ page }) => {
+    await login(page);
+    await page.locator('button[title="Live Monitor"]').click();
+    await expect(page.locator('h1:has-text("Live Monitor")')).toBeVisible();
+    await expect(page.locator('[role="tablist"]')).toBeVisible();
+    const activeTabs = page.locator('[role="tab"][aria-selected="true"]');
+    await expect(activeTabs).toHaveCount(1);
+  });
+
+  test('search palette has combobox ARIA', async ({ page }) => {
+    await login(page);
+    await page.keyboard.press('Meta+k');
+    await expect(page.locator('[role="combobox"]')).toBeVisible();
+    await expect(page.locator('[role="combobox"]')).toHaveAttribute('aria-label', 'Global search');
+  });
+});

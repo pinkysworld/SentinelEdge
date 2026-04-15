@@ -2,6 +2,35 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.50.0] — Advanced Detection, UEBA Dashboard & SDK Expansion
+
+### Detection
+- **JA3/JA4 TLS fingerprinting** — NDR engine now extracts and matches JA3/JA4 hashes against known-bad C2 fingerprint database; rare fingerprints flagged automatically.
+- **Deep Packet Inspection anomalies** — Port/protocol mismatch detection (e.g. non-HTTP traffic on port 80, non-DNS on port 53) via new `detect_dpi_anomalies()` method.
+- **Entropy-based exfiltration detection** — High-entropy payload analysis for DNS/HTTP/TLS tunneling with configurable threshold (default 7.5).
+- **Self-signed certificate detection** — Automatic flagging of TLS connections using self-signed certificates with issuer/subject/SNI metadata.
+- **5 new NDR tests** — known_bad_ja3_detected, rare_ja3_flagged, dpi_mismatch_detected, high_entropy_detected, self_signed_cert_detected.
+
+### Admin console
+- **UEBA Dashboard** — New page with risky entity scoring, anomaly feed (impossible travel, unusual login time, anomalous access), peer group baselines, entity detail with timeline spark bars.
+- **NDR Dashboard** — Network detection visualization with 5 tabs (overview, TLS, DPI, entropy, certs), top talkers, protocol distribution, JA3/JA4 anomaly tables.
+- **Email Security** — Quarantine management with release/delete actions, email header analysis tool, phishing score badges, policy configuration viewer.
+- **Attack Graph** — Canvas-based force-directed graph for lateral movement and kill-chain visualization with node type coloring, risk rings, edge type annotations, and click-to-inspect detail panel.
+- **4 new routes** — `/ueba`, `/ndr`, `/email-security`, `/attack-graph` with role-gated access (analyst+).
+- **Keyboard shortcuts** — `u` (UEBA), `n` (NDR), `e` (Email Security), `a` (Attack Graph).
+
+### API
+- **18 new API client functions** — UEBA (risky entities, anomalies, peer groups, entity, timeline), NDR (TLS/DPI/entropy anomalies, self-signed certs, top talkers, protocol distribution), Email Security (quarantine CRUD, stats, policies, analyze).
+- **OpenAPI spec 0.50.0** — Version bumped.
+
+### SDKs
+- **TypeScript SDK** — 30+ new methods: UEBA, NDR, email security, incidents, fleet, policy, assets, vulnerability, container, response actions, telemetry, threat intel, campaigns. Coverage ~60% of API.
+- **Python SDK** — 18 new methods: UEBA (risky entities, anomalies, peer groups, entity, timeline), NDR (TLS/DPI/entropy anomalies, self-signed certs, top talkers, protocol distribution), email security (analyze, quarantine, stats, policies), campaigns.
+
+### Deployment
+- **Helm chart 0.50.0** — appVersion and image tag updated.
+- **SDK version sync** — Python SDK, TypeScript SDK, and Helm chart aligned to 0.50.0.
+
 ## [0.49.0] — Resilience, Observability & Build Hardening
 
 ### Security

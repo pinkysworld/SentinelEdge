@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 
@@ -99,6 +99,29 @@ function SyntaxLine({ lineNum, text }) {
   );
 }
 
+function validateRule(text, fmt) {
+  const errors = [];
+  if (!text.trim()) {
+    errors.push('Rule content is empty');
+    return errors;
+  }
+  if (fmt === 'sigma') {
+    if (!text.includes('title:')) errors.push('Missing "title:" field');
+    if (!text.includes('detection:')) errors.push('Missing "detection:" section');
+    if (!text.includes('condition:') && !text.includes('condition :')) errors.push('Missing "condition:" field');
+    if (!text.includes('level:')) errors.push('Missing "level:" field');
+  } else if (fmt === 'yara') {
+    if (!text.includes('rule ')) errors.push('Missing "rule" declaration');
+    if (!text.includes('condition:')) errors.push('Missing "condition:" section');
+    const opens = (text.match(/{/g) || []).length;
+    const closes = (text.match(/}/g) || []).length;
+    if (opens !== closes) errors.push(`Unbalanced braces: ${opens} open, ${closes} close`);
+  } else if (fmt === 'json') {
+    try { JSON.parse(text); } catch (e) { errors.push(`Invalid JSON: ${e.message}`); }
+  }
+  return errors;
+}
+
 export default function RuleEditor({ onRuleCreated }) {
   const toast = useToast();
   const { data: existingRules, reload: rRules } = useApi(api.detectionRules);
@@ -108,46 +131,68 @@ export default function RuleEditor({ onRuleCreated }) {
   const [validationErrors, setValidationErrors] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
-  const validate = useCallback((text, fmt) => {
-    const errors = [];
-    if (!text.trim()) {
-      errors.push('Rule content is empty');
-      return errors;
-    }
+  // ── Undo/Redo history ──
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const savedContent = useRef(RULE_TEMPLATES.sigma);
+  const isDirty = content !== savedContent.current;
+  const contentRef = useRef(content);
+  const formatRef = useRef(format);
+  contentRef.current = content;
+  formatRef.current = format;
 
-    if (fmt === 'sigma') {
-      if (!text.includes('title:')) errors.push('Missing "title:" field');
-      if (!text.includes('detection:')) errors.push('Missing "detection:" section');
-      if (!text.includes('condition:') && !text.includes('condition :')) errors.push('Missing "condition:" field');
-      if (!text.includes('level:')) errors.push('Missing "level:" field');
-    } else if (fmt === 'yara') {
-      if (!text.includes('rule ')) errors.push('Missing "rule" declaration');
-      if (!text.includes('condition:')) errors.push('Missing "condition:" section');
-      const opens = (text.match(/{/g) || []).length;
-      const closes = (text.match(/}/g) || []).length;
-      if (opens !== closes) errors.push(`Unbalanced braces: ${opens} open, ${closes} close`);
-    } else if (fmt === 'json') {
-      try { JSON.parse(text); } catch (e) { errors.push(`Invalid JSON: ${e.message}`); }
-    }
-
-    return errors;
+  const pushUndo = useCallback((prev) => {
+    undoStack.current.push(prev);
+    if (undoStack.current.length > 100) undoStack.current.shift();
+    redoStack.current = [];
   }, []);
+
+  const undo = useCallback(() => {
+    if (!undoStack.current.length) return;
+    redoStack.current.push(contentRef.current);
+    if (redoStack.current.length > 100) redoStack.current.shift();
+    const prev = undoStack.current.pop();
+    setContent(prev);
+    setValidationErrors(validateRule(prev, formatRef.current));
+  }, []);
+
+  const redo = useCallback(() => {
+    if (!redoStack.current.length) return;
+    undoStack.current.push(contentRef.current);
+    const next = redoStack.current.pop();
+    setContent(next);
+    setValidationErrors(validateRule(next, formatRef.current));
+  }, []);
+
+  // Keyboard shortcuts for undo/redo (stable handler — no deps on content/format)
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
 
   const handleContentChange = useCallback((e) => {
+    pushUndo(contentRef.current);
     const text = e.target.value;
     setContent(text);
-    setValidationErrors(validate(text, format));
-  }, [format, validate]);
+    setValidationErrors(validateRule(text, formatRef.current));
+  }, [pushUndo]);
 
   const handleFormatChange = useCallback((newFormat) => {
+    pushUndo(contentRef.current);
     setFormat(newFormat);
-    setContent(RULE_TEMPLATES[newFormat] || '');
+    const tpl = RULE_TEMPLATES[newFormat] || '';
+    setContent(tpl);
+    savedContent.current = tpl;
     setValidationErrors([]);
     setEditingId(null);
-  }, []);
+  }, [pushUndo]);
 
   const handleSave = useCallback(async () => {
-    const errors = validate(content, format);
+    const errors = validateRule(content, format);
     setValidationErrors(errors);
     if (errors.length > 0) {
       toast('Fix validation errors before saving', 'error');
@@ -158,6 +203,7 @@ export default function RuleEditor({ onRuleCreated }) {
     try {
       await api.addDetectionRule({ format, content, id: editingId || undefined });
       toast('Rule saved successfully', 'success');
+      savedContent.current = content;
       rRules();
       onRuleCreated?.();
       setEditingId(null);
@@ -166,7 +212,7 @@ export default function RuleEditor({ onRuleCreated }) {
     } finally {
       setSaving(false);
     }
-  }, [content, format, editingId, validate, toast, rRules, onRuleCreated]);
+  }, [content, format, editingId, toast, rRules, onRuleCreated]);
 
   const handleEdit = useCallback((rule) => {
     setContent(rule.content || rule.text || JSON.stringify(rule, null, 2));
@@ -194,6 +240,11 @@ export default function RuleEditor({ onRuleCreated }) {
             </button>
           ))}
         </div>
+        <div className="btn-group">
+          <button className="btn btn-sm" onClick={undo} disabled={!undoStack.current.length} title="Undo (⌘Z)">↩ Undo</button>
+          <button className="btn btn-sm" onClick={redo} disabled={!redoStack.current.length} title="Redo (⌘Y)">↪ Redo</button>
+        </div>
+        {isDirty && <span style={{ fontSize: 11, color: 'var(--warning)', fontWeight: 600 }}>● Unsaved changes</span>}
         <div className="btn-group">
           <button
             className="btn btn-sm btn-primary"

@@ -73,6 +73,20 @@ Open a GitHub issue with:
 - **TypeScript/JavaScript**: ESLint + Prettier (admin console and SDK).
 - **Python**: Ruff for linting.
 
+### Frontend Development
+
+When changing the admin console (`admin-console/`):
+
+1. Run the dev server: `cd admin-console && npm run dev`
+2. The dev server proxies `/api` to `http://127.0.0.1:8080` — start the backend first with `cargo run`.
+3. All new components should include a unit test in `src/__tests__/`.
+4. Use the shared test utilities in `src/__tests__/test-utils.js` for mocking and render wrappers.
+5. Add ARIA attributes to interactive elements (see existing patterns in `LiveMonitor.jsx` and `SearchPalette.jsx`).
+6. Run `npm run lint && npm run format:check && npm test -- --run` before submitting.
+7. For E2E tests, install Playwright: `npx playwright install chromium` then `npx playwright test`.
+8. Route components are lazy-loaded via `React.lazy()` in `App.jsx`.
+9. State management uses React Context — see `hooks.jsx` for `useAuth`, `useRole`, `useTheme`, `useToast`, `useApi`.
+
 ### Commit Messages
 
 Use conventional commit format:

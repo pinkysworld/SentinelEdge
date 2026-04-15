@@ -394,6 +394,195 @@ export class WardexClient {
   async dedupAlerts(): Promise<unknown[]> {
     return this.request("GET", "/api/alerts/dedup");
   }
+
+  // ── UEBA ─────────────────────────────────────────────────────────
+
+  async uebaRiskyEntities(): Promise<unknown[]> {
+    return this.request("GET", "/api/ueba/risky-entities");
+  }
+
+  async uebaAnomalies(limit?: number): Promise<unknown[]> {
+    return this.request("GET", `/api/ueba/anomalies?limit=${limit ?? 50}`);
+  }
+
+  async uebaPeerGroups(): Promise<unknown[]> {
+    return this.request("GET", "/api/ueba/peer-groups");
+  }
+
+  async uebaEntity(entityId: string): Promise<unknown> {
+    return this.request("GET", `/api/ueba/entity/${encodeURIComponent(entityId)}`);
+  }
+
+  async uebaTimeline(entityId: string, hours?: number): Promise<unknown[]> {
+    return this.request("GET", `/api/ueba/timeline/${encodeURIComponent(entityId)}?hours=${hours ?? 24}`);
+  }
+
+  // ── NDR ──────────────────────────────────────────────────────────
+
+  async ndrReport(): Promise<unknown> {
+    return this.request("GET", "/api/ndr/report");
+  }
+
+  async ndrIngest(netflow: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", "/api/ndr/netflow", netflow);
+  }
+
+  async ndrTlsAnomalies(): Promise<unknown[]> {
+    return this.request("GET", "/api/ndr/tls-anomalies");
+  }
+
+  async ndrDpiAnomalies(): Promise<unknown[]> {
+    return this.request("GET", "/api/ndr/dpi-anomalies");
+  }
+
+  async ndrEntropyAnomalies(): Promise<unknown[]> {
+    return this.request("GET", "/api/ndr/entropy-anomalies");
+  }
+
+  async ndrSelfSignedCerts(): Promise<unknown[]> {
+    return this.request("GET", "/api/ndr/self-signed-certs");
+  }
+
+  async ndrTopTalkers(limit?: number): Promise<unknown[]> {
+    return this.request("GET", `/api/ndr/top-talkers?limit=${limit ?? 20}`);
+  }
+
+  async ndrProtocolDistribution(): Promise<unknown> {
+    return this.request("GET", "/api/ndr/protocol-distribution");
+  }
+
+  // ── Email Security ───────────────────────────────────────────────
+
+  async emailAnalyze(headers: string): Promise<unknown> {
+    return this.request("POST", "/api/email/analyze", { headers });
+  }
+
+  async emailQuarantine(limit?: number): Promise<unknown[]> {
+    return this.request("GET", `/api/email/quarantine?limit=${limit ?? 50}`);
+  }
+
+  async emailQuarantineRelease(messageId: string): Promise<unknown> {
+    return this.request("POST", `/api/email/quarantine/${encodeURIComponent(messageId)}/release`);
+  }
+
+  async emailQuarantineDelete(messageId: string): Promise<unknown> {
+    return this.request("DELETE", `/api/email/quarantine/${encodeURIComponent(messageId)}`);
+  }
+
+  async emailStats(): Promise<unknown> {
+    return this.request("GET", "/api/email/stats");
+  }
+
+  async emailPolicies(): Promise<unknown[]> {
+    return this.request("GET", "/api/email/policies");
+  }
+
+  // ── Incidents ────────────────────────────────────────────────────
+
+  async listIncidents(): Promise<unknown[]> {
+    return this.request("GET", "/api/incidents");
+  }
+
+  async getIncident(incidentId: string): Promise<unknown> {
+    return this.request("GET", `/api/incidents/${encodeURIComponent(incidentId)}`);
+  }
+
+  async createIncident(title: string, severity: string, summary?: string): Promise<unknown> {
+    return this.request("POST", "/api/incidents", { title, severity, summary: summary ?? "" });
+  }
+
+  // ── Fleet ────────────────────────────────────────────────────────
+
+  async listAgents(): Promise<unknown[]> {
+    return this.request("GET", "/api/agents");
+  }
+
+  async getAgent(agentId: string): Promise<unknown> {
+    return this.request("GET", `/api/agents/${encodeURIComponent(agentId)}/details`);
+  }
+
+  // ── Policy ───────────────────────────────────────────────────────
+
+  async currentPolicy(): Promise<unknown> {
+    return this.request("GET", "/api/policy/current");
+  }
+
+  async publishPolicy(policy: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", "/api/policy/publish", policy);
+  }
+
+  // ── Assets ───────────────────────────────────────────────────────
+
+  async assets(): Promise<unknown[]> {
+    return this.request("GET", "/api/assets");
+  }
+
+  async assetsSummary(): Promise<unknown> {
+    return this.request("GET", "/api/assets/summary");
+  }
+
+  async upsertAsset(asset: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", "/api/assets/upsert", asset);
+  }
+
+  // ── Vulnerability ────────────────────────────────────────────────
+
+  async vulnerabilityScan(): Promise<unknown> {
+    return this.request("GET", "/api/vulnerability/scan");
+  }
+
+  async vulnerabilitySummary(): Promise<unknown> {
+    return this.request("GET", "/api/vulnerability/summary");
+  }
+
+  // ── Container ────────────────────────────────────────────────────
+
+  async containerAlerts(): Promise<unknown[]> {
+    return this.request("GET", "/api/container/alerts");
+  }
+
+  async containerStats(): Promise<unknown> {
+    return this.request("GET", "/api/container/stats");
+  }
+
+  // ── Response Actions ─────────────────────────────────────────────
+
+  async requestResponseAction(action: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", "/api/response/request", action);
+  }
+
+  async approveResponseAction(requestId: string, approve: boolean = true): Promise<unknown> {
+    return this.request("POST", "/api/response/approve", {
+      request_id: requestId,
+      decision: approve ? "approve" : "deny",
+    });
+  }
+
+  async executeApprovedActions(requestId?: string): Promise<unknown> {
+    return this.request("POST", "/api/response/execute", requestId ? { request_id: requestId } : {});
+  }
+
+  // ── Telemetry ────────────────────────────────────────────────────
+
+  async ingestEvents(agentId: string, events: Record<string, unknown>[]): Promise<unknown> {
+    return this.request("POST", "/api/events", { agent_id: agentId, events });
+  }
+
+  // ── Threat Intel ─────────────────────────────────────────────────
+
+  async threatIntelStatus(): Promise<unknown> {
+    return this.request("GET", "/api/threat-intel/status");
+  }
+
+  async addIoc(ioc: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", "/api/threat-intel/ioc", ioc);
+  }
+
+  // ── Campaigns ────────────────────────────────────────────────────
+
+  async campaigns(): Promise<unknown> {
+    return this.request("GET", "/api/campaigns");
+  }
 }
 
 export default WardexClient;

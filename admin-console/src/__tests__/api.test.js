@@ -3,7 +3,7 @@ import * as api from '../api.js';
 
 // Stub global fetch
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+globalThis.fetch = mockFetch;
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -152,6 +152,18 @@ describe('GET endpoints', () => {
     await api.complianceReport();
     expect(mockFetch.mock.calls[0][0]).toBe('/api/compliance/report');
   });
+
+  it('reportRuns() calls /api/report-runs', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ runs: [] }));
+    await api.reportRuns();
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/report-runs');
+  });
+
+  it('inbox() calls /api/inbox', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ items: [] }));
+    await api.inbox();
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/inbox');
+  });
 });
 
 // ── POST endpoints ───────────────────────────────────────────
@@ -182,5 +194,18 @@ describe('POST endpoints', () => {
     await api.runPlaybook({ playbook_id: 'isolate-host' });
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.playbook_id).toBe('isolate-host');
+  });
+
+  it('contentRuleTest() posts to the rule test endpoint', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ status: 'tested' }));
+    await api.contentRuleTest('rule-1');
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/content/rules/rule-1/test');
+  });
+
+  it('createReportRun() posts report run payload', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ status: 'created' }));
+    await api.createReportRun({ kind: 'executive_status', scope: 'global' });
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/report-runs');
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).kind).toBe('executive_status');
   });
 });

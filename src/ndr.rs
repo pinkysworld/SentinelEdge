@@ -24,6 +24,36 @@ pub struct NetFlowRecord {
     pub duration_ms: u64,
     pub hostname: String,
     pub is_encrypted: bool,
+    /// JA3 TLS client fingerprint hash (32-char hex MD5).
+    #[serde(default)]
+    pub ja3_hash: Option<String>,
+    /// JA3S TLS server fingerprint hash.
+    #[serde(default)]
+    pub ja3s_hash: Option<String>,
+    /// JA4 next-gen TLS fingerprint (protocol_version + ciphers + extensions).
+    #[serde(default)]
+    pub ja4_fingerprint: Option<String>,
+    /// TLS Server Name Indication (SNI).
+    #[serde(default)]
+    pub tls_sni: Option<String>,
+    /// TLS certificate issuer CN.
+    #[serde(default)]
+    pub tls_issuer: Option<String>,
+    /// TLS certificate subject CN.
+    #[serde(default)]
+    pub tls_subject: Option<String>,
+    /// TLS protocol version (e.g. "TLSv1.3").
+    #[serde(default)]
+    pub tls_version: Option<String>,
+    /// Whether the TLS certificate is self-signed.
+    #[serde(default)]
+    pub tls_self_signed: bool,
+    /// Shannon entropy of the payload (0.0–8.0).
+    #[serde(default)]
+    pub payload_entropy: Option<f32>,
+    /// DPI-detected application protocol (e.g. "HTTP/2", "SSH", "DNS-over-HTTPS").
+    #[serde(default)]
+    pub dpi_protocol: Option<String>,
 }
 
 // ── Configuration ───────────────────────────────────────────────
@@ -110,7 +140,76 @@ pub struct NdrReport {
     pub connections_per_second: f32,
     /// DNS threat analysis results.
     pub dns_threats: Vec<crate::dns_threat::DnsThreatReport>,
+    /// JA3/JA4 TLS fingerprint anomalies.
+    pub tls_anomalies: Vec<TlsFingerprintAnomaly>,
+    /// DPI protocol mismatches.
+    pub dpi_anomalies: Vec<DpiAnomaly>,
+    /// High-entropy encrypted traffic sessions (potential C2/exfil).
+    pub entropy_anomalies: Vec<EntropyAnomaly>,
+    /// Self-signed certificate detections.
+    pub self_signed_certs: Vec<SelfSignedCert>,
 }
+
+/// TLS fingerprint anomaly detection (JA3/JA4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsFingerprintAnomaly {
+    pub ja3_hash: String,
+    pub ja4_fingerprint: String,
+    pub src_addr: String,
+    pub dst_addr: String,
+    pub dst_port: u16,
+    pub tls_sni: String,
+    pub tls_version: String,
+    pub risk_score: f32,
+    pub reason: String,
+    pub flow_count: usize,
+}
+
+/// DPI protocol mismatch anomaly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DpiAnomaly {
+    pub src_addr: String,
+    pub dst_addr: String,
+    pub dst_port: u16,
+    pub expected_protocol: String,
+    pub detected_protocol: String,
+    pub risk_score: f32,
+    pub flow_count: usize,
+}
+
+/// High-entropy payload anomaly (potential encrypted C2 or data exfiltration).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntropyAnomaly {
+    pub src_addr: String,
+    pub dst_addr: String,
+    pub dst_port: u16,
+    pub avg_entropy: f32,
+    pub total_bytes: u64,
+    pub flow_count: usize,
+    pub risk_score: f32,
+}
+
+/// Self-signed TLS certificate detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelfSignedCert {
+    pub dst_addr: String,
+    pub dst_port: u16,
+    pub tls_sni: String,
+    pub tls_issuer: String,
+    pub tls_subject: String,
+    pub flow_count: usize,
+    pub risk_score: f32,
+}
+
+/// Known-malicious JA3 hashes (commonly seen in C2 frameworks).
+const KNOWN_BAD_JA3: &[&str] = &[
+    "51c64c77e60f3980eea90869b68c58a8", // CobaltStrike default
+    "72a589da586844d7f0818ce684948eea", // Metasploit Meterpreter
+    "e7d705a3286e19ea42f587b344ee6865", // Empire default
+    "6734f37431670b3ab4292b8f60f29984", // Trickbot default
+    "4d7a28d6f2263ed61de88ca66eb011e3", // Sliver C2
+    "b32309a26951912be7dba376398abc3b", // PoshC2 default
+];
 
 // ── NDR Engine ──────────────────────────────────────────────────
 
@@ -172,6 +271,10 @@ impl NdrEngine {
         let unusual_destinations = self.detect_unusual_destinations();
         let protocol_anomalies = self.detect_protocol_anomalies();
         let encrypted_traffic = self.compute_encrypted_stats();
+        let tls_anomalies = self.detect_tls_anomalies();
+        let dpi_anomalies = self.detect_dpi_anomalies();
+        let entropy_anomalies = self.detect_entropy_anomalies();
+        let self_signed_certs = self.detect_self_signed_certs();
 
         let external_dests: std::collections::HashSet<&str> = self.flows.iter()
             .filter(|f| self.is_external(&f.dst_addr))
@@ -200,6 +303,10 @@ impl NdrEngine {
             unique_external_destinations: external_dests.len(),
             connections_per_second: (cps * 100.0).round() / 100.0,
             dns_threats: Vec::new(),
+            tls_anomalies,
+            dpi_anomalies,
+            entropy_anomalies,
+            self_signed_certs,
         }
     }
 
@@ -304,6 +411,173 @@ impl NdrEngine {
             total_bytes,
         }
     }
+
+    /// Detect TLS fingerprint anomalies using JA3/JA4 hashes.
+    fn detect_tls_anomalies(&self) -> Vec<TlsFingerprintAnomaly> {
+        let mut anomalies = Vec::new();
+        let mut ja3_groups: HashMap<String, Vec<&NetFlowRecord>> = HashMap::new();
+
+        for f in &self.flows {
+            if let Some(ref ja3) = f.ja3_hash {
+                ja3_groups.entry(ja3.clone()).or_default().push(f);
+            }
+        }
+
+        for (ja3, flows) in &ja3_groups {
+            // Check against known-malicious JA3 hashes
+            if KNOWN_BAD_JA3.contains(&ja3.as_str()) {
+                if let Some(first) = flows.first() {
+                    anomalies.push(TlsFingerprintAnomaly {
+                        ja3_hash: ja3.clone(),
+                        ja4_fingerprint: first.ja4_fingerprint.clone().unwrap_or_default(),
+                        src_addr: first.src_addr.clone(),
+                        dst_addr: first.dst_addr.clone(),
+                        dst_port: first.dst_port,
+                        tls_sni: first.tls_sni.clone().unwrap_or_default(),
+                        tls_version: first.tls_version.clone().unwrap_or_default(),
+                        risk_score: 9.0,
+                        reason: format!("Known malicious JA3 fingerprint: {ja3}"),
+                        flow_count: flows.len(),
+                    });
+                }
+            }
+
+            // Flag rare JA3 fingerprints (seen in < 3 flows with external destinations)
+            if flows.len() <= 2 {
+                let has_external = flows.iter().any(|f| self.is_external(&f.dst_addr));
+                if has_external {
+                    if let Some(first) = flows.first() {
+                        anomalies.push(TlsFingerprintAnomaly {
+                            ja3_hash: ja3.clone(),
+                            ja4_fingerprint: first.ja4_fingerprint.clone().unwrap_or_default(),
+                            src_addr: first.src_addr.clone(),
+                            dst_addr: first.dst_addr.clone(),
+                            dst_port: first.dst_port,
+                            tls_sni: first.tls_sni.clone().unwrap_or_default(),
+                            tls_version: first.tls_version.clone().unwrap_or_default(),
+                            risk_score: 4.0,
+                            reason: format!("Rare JA3 fingerprint seen in only {} flow(s)", flows.len()),
+                            flow_count: flows.len(),
+                        });
+                    }
+                }
+            }
+        }
+
+        anomalies.sort_by(|a, b| b.risk_score.total_cmp(&a.risk_score));
+        anomalies
+    }
+
+    /// Detect DPI protocol mismatches (e.g. SSH on port 443).
+    fn detect_dpi_anomalies(&self) -> Vec<DpiAnomaly> {
+        let port_to_dpi: HashMap<u16, &str> = HashMap::from([
+            (80, "HTTP"), (443, "HTTPS"), (22, "SSH"), (53, "DNS"),
+            (25, "SMTP"), (110, "POP3"), (143, "IMAP"), (993, "IMAPS"),
+            (3306, "MySQL"), (5432, "PostgreSQL"), (6379, "Redis"),
+        ]);
+
+        let mut mismatches: HashMap<(String, String, u16, String), usize> = HashMap::new();
+
+        for f in &self.flows {
+            if let Some(ref dpi_proto) = f.dpi_protocol {
+                if let Some(expected) = port_to_dpi.get(&f.dst_port) {
+                    let dpi_upper = dpi_proto.to_uppercase();
+                    let exp_upper = expected.to_uppercase();
+                    if !dpi_upper.starts_with(&exp_upper) && !exp_upper.starts_with(&dpi_upper) {
+                        let key = (f.src_addr.clone(), f.dst_addr.clone(), f.dst_port, dpi_proto.clone());
+                        *mismatches.entry(key).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+
+        let mut anomalies: Vec<DpiAnomaly> = mismatches.into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .map(|((src, dst, port, detected), count)| {
+                let expected = port_to_dpi.get(&port).unwrap_or(&"unknown").to_string();
+                DpiAnomaly {
+                    src_addr: src,
+                    dst_addr: dst,
+                    dst_port: port,
+                    expected_protocol: expected,
+                    detected_protocol: detected,
+                    risk_score: (((count as f32).ln() + 1.0) * 3.0).min(10.0),
+                    flow_count: count,
+                }
+            })
+            .collect();
+
+        anomalies.sort_by(|a, b| b.risk_score.total_cmp(&a.risk_score));
+        anomalies
+    }
+
+    /// Detect high-entropy encrypted sessions (potential C2 or exfiltration).
+    fn detect_entropy_anomalies(&self) -> Vec<EntropyAnomaly> {
+        // Group external encrypted flows by (src, dst, port)
+        let mut groups: HashMap<(&str, &str, u16), (f64, u64, usize)> = HashMap::new();
+
+        for f in &self.flows {
+            if let Some(entropy) = f.payload_entropy {
+                if self.is_external(&f.dst_addr) && entropy > 7.5 {
+                    let entry = groups.entry((&f.src_addr, &f.dst_addr, f.dst_port))
+                        .or_insert((0.0, 0, 0));
+                    entry.0 += entropy as f64;
+                    entry.1 += f.bytes_sent + f.bytes_received;
+                    entry.2 += 1;
+                }
+            }
+        }
+
+        let mut anomalies: Vec<EntropyAnomaly> = groups.into_iter()
+            .filter(|(_, (_, _, count))| *count >= 3)
+            .map(|((src, dst, port), (entropy_sum, bytes, count))| {
+                let avg_entropy = (entropy_sum / count as f64) as f32;
+                let risk = ((avg_entropy - 7.0) * 5.0 + (count as f32).ln()).min(10.0);
+                EntropyAnomaly {
+                    src_addr: src.to_string(),
+                    dst_addr: dst.to_string(),
+                    dst_port: port,
+                    avg_entropy: (avg_entropy * 100.0).round() / 100.0,
+                    total_bytes: bytes,
+                    flow_count: count,
+                    risk_score: (risk * 100.0).round() / 100.0,
+                }
+            })
+            .collect();
+
+        anomalies.sort_by(|a, b| b.risk_score.total_cmp(&a.risk_score));
+        anomalies
+    }
+
+    /// Detect self-signed TLS certificates.
+    fn detect_self_signed_certs(&self) -> Vec<SelfSignedCert> {
+        let mut seen: HashMap<(&str, u16), (&NetFlowRecord, usize)> = HashMap::new();
+
+        for f in &self.flows {
+            if f.tls_self_signed {
+                let entry = seen.entry((&f.dst_addr, f.dst_port)).or_insert((f, 0));
+                entry.1 += 1;
+            }
+        }
+
+        let mut certs: Vec<SelfSignedCert> = seen.into_iter()
+            .map(|((addr, port), (flow, count))| {
+                let is_external = self.is_external(addr);
+                SelfSignedCert {
+                    dst_addr: addr.to_string(),
+                    dst_port: port,
+                    tls_sni: flow.tls_sni.clone().unwrap_or_default(),
+                    tls_issuer: flow.tls_issuer.clone().unwrap_or_default(),
+                    tls_subject: flow.tls_subject.clone().unwrap_or_default(),
+                    flow_count: count,
+                    risk_score: if is_external { 6.0 } else { 2.0 },
+                }
+            })
+            .collect();
+
+        certs.sort_by(|a, b| b.risk_score.total_cmp(&a.risk_score));
+        certs
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────
@@ -326,7 +600,25 @@ mod tests {
             duration_ms: 1000,
             hostname: "test-host".into(),
             is_encrypted: port == 443,
+            ja3_hash: None,
+            ja3s_hash: None,
+            ja4_fingerprint: None,
+            tls_sni: None,
+            tls_issuer: None,
+            tls_subject: None,
+            tls_version: None,
+            tls_self_signed: false,
+            payload_entropy: None,
+            dpi_protocol: None,
         }
+    }
+
+    fn make_tls_flow(src: &str, dst: &str, ja3: &str) -> NetFlowRecord {
+        let mut f = make_flow(src, dst, 443, 1000);
+        f.ja3_hash = Some(ja3.into());
+        f.tls_sni = Some("example.com".into());
+        f.tls_version = Some("TLSv1.3".into());
+        f
     }
 
     #[test]
@@ -356,5 +648,63 @@ mod tests {
         assert!(!engine.is_external("10.0.0.1"));
         assert!(!engine.is_external("192.168.1.1"));
         assert!(!engine.is_external("127.0.0.1"));
+    }
+
+    #[test]
+    fn known_bad_ja3_detected() {
+        let mut engine = NdrEngine::default();
+        engine.record_flow(make_tls_flow("10.0.0.5", "8.8.4.4", "51c64c77e60f3980eea90869b68c58a8"));
+        let report = engine.analyze();
+        assert!(!report.tls_anomalies.is_empty());
+        assert!(report.tls_anomalies[0].risk_score >= 9.0);
+        assert!(report.tls_anomalies[0].reason.contains("malicious"));
+    }
+
+    #[test]
+    fn rare_ja3_flagged() {
+        let mut engine = NdrEngine::default();
+        engine.record_flow(make_tls_flow("10.0.0.5", "1.2.3.4", "deadbeef00000000deadbeef00000000"));
+        let report = engine.analyze();
+        let rare: Vec<_> = report.tls_anomalies.iter().filter(|a| a.reason.contains("Rare")).collect();
+        assert!(!rare.is_empty());
+    }
+
+    #[test]
+    fn dpi_mismatch_detected() {
+        let mut engine = NdrEngine::default();
+        for _ in 0..3 {
+            let mut f = make_flow("10.0.0.1", "8.8.8.8", 443, 500);
+            f.dpi_protocol = Some("SSH".into());
+            engine.record_flow(f);
+        }
+        let report = engine.analyze();
+        assert!(!report.dpi_anomalies.is_empty());
+        assert_eq!(report.dpi_anomalies[0].detected_protocol, "SSH");
+    }
+
+    #[test]
+    fn high_entropy_detected() {
+        let mut engine = NdrEngine::default();
+        for _ in 0..5 {
+            let mut f = make_flow("10.0.0.1", "5.6.7.8", 443, 2000);
+            f.payload_entropy = Some(7.9);
+            engine.record_flow(f);
+        }
+        let report = engine.analyze();
+        assert!(!report.entropy_anomalies.is_empty());
+        assert!(report.entropy_anomalies[0].avg_entropy > 7.5);
+    }
+
+    #[test]
+    fn self_signed_cert_detected() {
+        let mut engine = NdrEngine::default();
+        let mut f = make_flow("10.0.0.1", "9.8.7.6", 443, 500);
+        f.tls_self_signed = true;
+        f.tls_issuer = Some("Evil CA".into());
+        f.tls_subject = Some("evil.com".into());
+        engine.record_flow(f);
+        let report = engine.analyze();
+        assert!(!report.self_signed_certs.is_empty());
+        assert!(report.self_signed_certs[0].risk_score > 0.0);
     }
 }

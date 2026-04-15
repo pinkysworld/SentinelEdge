@@ -95,6 +95,7 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
     localStorage.setItem('wardex_theme', dark ? 'dark' : 'light');
   }, [dark]);
 
@@ -124,11 +125,11 @@ export function ToastProvider({ children }) {
   }, []);
 
   return (
-    <ToastContext.Provider value={toast}>
-      {children}
-      <div className="toast-container">
+      <ToastContext.Provider value={toast}>
+        {children}
+      <div className="toast-container" aria-live="polite" aria-atomic="false">
         {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.kind}`}>
+          <div key={t.id} className={`toast toast-${t.kind}`} role="status">
             {t.message}
           </div>
         ))}

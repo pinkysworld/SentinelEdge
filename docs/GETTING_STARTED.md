@@ -74,6 +74,52 @@ cargo test
 
 The current release passes 1345 automated tests (1161 lib + 184 integration) across unit and integration coverage, including API regression coverage for hunts, content lifecycle, suppressions, entity pivots, incident storyline, governance, and supportability.
 
+## Frontend development (admin-console)
+
+The admin console is a React SPA in `admin-console/`.
+
+### Setup
+
+```bash
+cd admin-console
+npm ci
+```
+
+### Development
+
+Start the Rust backend first (the dev server proxies API calls to it):
+
+```bash
+# Terminal 1: backend
+cargo run
+
+# Terminal 2: frontend dev server
+cd admin-console
+npm run dev
+```
+
+The frontend dev server runs on `http://localhost:5173/admin/` and proxies all `/api` requests to `http://127.0.0.1:8080`.
+
+Paste the admin token (printed by the backend or written to `var/.wardex_token`) into the login form.
+
+### Testing
+
+```bash
+# Unit tests (Vitest)
+npm test -- --run
+
+# Lint + format check
+npm run lint && npm run format:check
+
+# E2E tests (requires running backend)
+npx playwright install chromium
+npx playwright test
+```
+
+### Environment variables
+
+No special environment variables are required for frontend development. The proxy configuration in `vite.config.js` handles API routing automatically.
+
 ## Live validation helpers
 
 - `python3 tests/live_test.py` exercises the live HTTP server paths.

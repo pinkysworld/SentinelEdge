@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
  * DashboardWidget — draggable, collapsible, removable dashboard widget wrapper.
  * Uses HTML5 Drag and Drop API (no external deps).
  */
-export default function DashboardWidget({ id, title, children, collapsed: defaultCollapsed = false, onRemove, onMove }) {
+export default function DashboardWidget({ id, title, children, collapsed: defaultCollapsed = false, onRemove, onMove, paused, onTogglePause }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [dragging, setDragging] = useState(false);
   const ref = useRef(null);
@@ -48,6 +48,17 @@ export default function DashboardWidget({ id, title, children, collapsed: defaul
         <span className="widget-grip" aria-hidden="true">⠿</span>
         <span className="widget-title">{title}</span>
         <div className="widget-controls">
+          {onTogglePause && (
+            <button
+              className="btn-icon"
+              onClick={() => onTogglePause(id)}
+              aria-label={paused ? `Resume ${title} auto-refresh` : `Pause ${title} auto-refresh`}
+              title={paused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+              style={{ fontSize: 12, opacity: paused ? 1 : 0.5 }}
+            >
+              {paused ? '⏸' : '▶'}
+            </button>
+          )}
           <button
             className="btn-icon widget-collapse"
             onClick={() => setCollapsed(c => !c)}
@@ -86,7 +97,11 @@ export function useWidgetLayout(defaultOrder, storageKey = 'wardex_widget_layout
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge any new widgets from defaultOrder that aren't in saved layout
+          const missing = defaultOrder.filter(id => !parsed.includes(id));
+          return missing.length > 0 ? [...parsed, ...missing] : parsed;
+        }
       }
     } catch { /* ignore */ }
     return defaultOrder;

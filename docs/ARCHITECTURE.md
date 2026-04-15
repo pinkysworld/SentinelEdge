@@ -192,6 +192,78 @@ The codebase has completed all 14 phases (0–13) of the backlog. Here is how th
 - **R40 Privacy-Preserving Incident Forensics**
   - Privacy-preserving forensic evidence handling with field redaction and k-anonymity (Phase 12).
 
+## Frontend architecture (admin-console)
+
+The admin console is a single-page React application served from the `/admin/` path.
+
+### Stack
+
+- **React 19** with React Router for client-side routing
+- **Vite** for dev server, HMR, and production builds
+- **Vitest** + Testing Library for unit tests; **Playwright** for E2E
+- **Recharts** for dashboard visualisations
+
+### Component tree
+
+```
+App
+├─ AuthProvider          (token auth, auto-reconnect from localStorage)
+│  └─ RoleProvider       (admin/analyst/viewer derived from /api/auth/session)
+│     └─ ThemeProvider   (dark/light mode, persisted to localStorage)
+│        └─ ToastProvider (notification system with timed dismissal)
+│           ├─ Sidebar   (role-filtered nav, collapsible, keyboard shortcuts)
+│           ├─ TopBar    (version badge, search trigger, auth form / badge)
+│           └─ Routes    (each wrapped in ErrorBoundary + Suspense)
+│              ├─ Dashboard         (lazy, 15+ widget API calls via useApi)
+│              ├─ LiveMonitor       (lazy, alert stream/grouped/processes tabs)
+│              ├─ ThreatDetection   (lazy, analyst+ role)
+│              ├─ FleetAgents       (lazy)
+│              ├─ SecurityPolicy    (lazy, analyst+ role)
+│              ├─ SOCWorkbench      (lazy, analyst+ role)
+│              ├─ Infrastructure    (lazy, analyst+ role)
+│              ├─ ReportsExports    (lazy)
+│              ├─ Settings          (lazy, admin role)
+│              └─ HelpDocs          (lazy)
+├─ SearchPalette         (⌘K global search across alerts, agents, rules)
+├─ NotificationToast     (WebSocket-driven alert toasts)
+└─ OnboardingWizard      (first-visit guided tour)
+```
+
+### State management
+
+All state management uses React Context + `useReducer`/`useState`:
+
+| Context | Purpose | Persistence |
+|---------|---------|-------------|
+| `AuthContext` | Token, `authenticated` flag, `connect()`/`disconnect()` | `localStorage` |
+| `RoleContext` | Current role (`viewer`/`analyst`/`admin`) | None (fetched on auth) |
+| `ThemeContext` | Dark mode toggle | `localStorage` |
+| `ToastContext` | Notification queue with auto-dismiss | In-memory |
+
+### API client (`api.js`)
+
+A unified `request()` helper sends all HTTP calls with:
+- Bearer token in `Authorization` header (auto-set via `setToken()`)
+- Error objects carrying `status` and `body` for catch-block dispatch
+- `withSignal()` wrapper for AbortController integration
+
+~160 endpoint functions organised by domain (auth, health, alerts, agents, cases, playbooks, compliance, export, hunting, etc.).
+
+### `useApi` hook
+
+The primary data-fetching hook provides `{ data, loading, error, reload }`:
+- Automatically cancels in-flight requests on unmount or re-fetch
+- Supports `skip` option for conditional fetching
+- Error state enables per-widget error display
+
+### Code splitting
+
+Vite `manualChunks` splits the bundle into:
+- `vendor` — React, React DOM, React Router
+- `charts` — Recharts
+
+All route components are `React.lazy()` loaded. The dev server proxies `/api` to the backend at `http://127.0.0.1:8080`.
+
 ## Design principle
 
 The code stays explicit about scope:

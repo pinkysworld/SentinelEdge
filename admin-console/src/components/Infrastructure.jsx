@@ -1,708 +1,394 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import { JsonDetails, SummaryGrid } from './operator.jsx';
+import { JsonDetails, SummaryGrid, formatDateTime, formatRelativeTime } from './operator.jsx';
+
+const TABS = ['overview', 'assets', 'exposure', 'integrity', 'observability'];
+const SAVED_VIEWS = [
+  { id: 'critical', label: 'Critical Assets', match: (item) => item.priority === 'critical' || item.severity === 'critical' },
+  { id: 'certs', label: 'Certificate Issues', match: (item) => item.type === 'certificate' },
+  { id: 'containers', label: 'Container Risks', match: (item) => item.type === 'container' },
+  { id: 'drifted', label: 'Drifted Systems', match: (item) => item.type === 'drift' },
+];
+
+function normalizeAssets(assetSummary, vulnSummary, certSummary, certAlerts, malwareRecent, drift, containerStats) {
+  const items = [];
+  const baseAssets = assetSummary?.assets || assetSummary?.items || assetSummary?.resources || [];
+  baseAssets.forEach((asset, index) => {
+    items.push({
+      id: asset.id || asset.asset_id || asset.name || `asset-${index}`,
+      title: asset.name || asset.hostname || asset.id || `Asset ${index + 1}`,
+      subtitle: asset.cloud || asset.account || asset.platform || asset.region || 'Tracked asset',
+      type: asset.kind || asset.asset_type || 'asset',
+      status: asset.status || asset.health || 'tracked',
+      severity: asset.severity || 'medium',
+      priority: asset.priority || 'medium',
+      evidence: asset,
+    });
+  });
+
+  const vulnerabilities = vulnSummary?.findings || vulnSummary?.assets || vulnSummary?.items || [];
+  vulnerabilities.forEach((finding, index) => {
+    items.push({
+      id: finding.id || finding.asset_id || `vuln-${index}`,
+      title: finding.asset_name || finding.hostname || finding.package || `Vulnerability ${index + 1}`,
+      subtitle: finding.cve || finding.summary || 'Vulnerability finding',
+      type: 'vulnerability',
+      status: finding.status || 'open',
+      severity: finding.severity || 'high',
+      priority: finding.severity === 'critical' ? 'critical' : 'high',
+      evidence: finding,
+    });
+  });
+
+  const certificates = certAlerts?.alerts || certSummary?.certificates || certSummary?.items || [];
+  certificates.forEach((certificate, index) => {
+    items.push({
+      id: certificate.id || certificate.common_name || `cert-${index}`,
+      title: certificate.common_name || certificate.subject || `Certificate ${index + 1}`,
+      subtitle: certificate.expires_at || certificate.issuer || 'Certificate issue',
+      type: 'certificate',
+      status: certificate.status || (certificate.days_remaining <= 14 ? 'expiring' : 'tracked'),
+      severity: certificate.days_remaining <= 7 ? 'critical' : 'medium',
+      priority: certificate.days_remaining <= 7 ? 'critical' : 'medium',
+      evidence: certificate,
+    });
+  });
+
+  const malwareItems = malwareRecent?.matches || malwareRecent?.recent || malwareRecent?.items || [];
+  malwareItems.forEach((entry, index) => {
+    items.push({
+      id: entry.id || entry.hash || `malware-${index}`,
+      title: entry.file || entry.hash || `Malware finding ${index + 1}`,
+      subtitle: entry.hostname || entry.signature || 'Recent malware activity',
+      type: 'malware',
+      status: entry.status || 'detected',
+      severity: entry.severity || 'high',
+      priority: entry.severity === 'critical' ? 'critical' : 'high',
+      evidence: entry,
+    });
+  });
+
+  const driftChanges = drift?.changes || drift?.drifts || [];
+  driftChanges.forEach((change, index) => {
+    items.push({
+      id: change.id || change.path || `drift-${index}`,
+      title: change.path || change.file || `Drift change ${index + 1}`,
+      subtitle: change.type || change.detected || 'Configuration drift',
+      type: 'drift',
+      status: change.type || 'changed',
+      severity: change.type === 'removed' ? 'high' : 'medium',
+      priority: 'medium',
+      evidence: change,
+    });
+  });
+
+  const containers = containerStats?.containers || containerStats?.images || containerStats?.items || [];
+  containers.forEach((container, index) => {
+    items.push({
+      id: container.id || container.image || `container-${index}`,
+      title: container.name || container.image || `Container ${index + 1}`,
+      subtitle: container.runtime || container.namespace || 'Container risk',
+      type: 'container',
+      status: container.status || 'running',
+      severity: container.severity || 'medium',
+      priority: container.severity === 'critical' ? 'critical' : 'medium',
+      evidence: container,
+    });
+  });
+
+  return items;
+}
 
 export default function Infrastructure() {
   const toast = useToast();
-  const [tab, setTab] = useState('monitor');
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: monSt } = useApi(api.monitorStatus);
-  const { data: corrData } = useApi(api.correlation);
-  const { data: drift } = useApi(api.driftStatus);
-  const { data: fp } = useApi(api.fingerprintStatus);
-  const { data: causal } = useApi(api.causalGraph);
+  const { data: drift, reload: reloadDrift } = useApi(api.driftStatus);
   const { data: threads } = useApi(api.threadsStatus);
-  const { data: energy } = useApi(api.energyStatus);
-  const { data: tenants } = useApi(api.tenantsCount);
-  const { data: patchData } = useApi(api.patches);
-  const { data: mesh } = useApi(api.meshHealth);
-  const { data: tls } = useApi(api.tlsStatus);
   const { data: slo } = useApi(api.sloStatus);
   const { data: deps } = useApi(api.systemDeps);
-  const { data: hostApps, reload: rApps } = useApi(api.hostApps);
-  const { data: hostInv } = useApi(api.hostInventory);
-  const { data: vulnSummary, reload: rVuln } = useApi(api.vulnerabilitySummary);
-  const { data: ndrData, reload: rNdr } = useApi(api.ndrReport);
-  const { data: containerSt, reload: rContainer } = useApi(api.containerStats);
-  const { data: containerAlerts } = useApi(api.containerAlerts);
-  const { data: certSummary, reload: rCerts } = useApi(api.certsSummary);
+  const { data: vulnSummary, reload: reloadVuln } = useApi(api.vulnerabilitySummary);
+  const { data: ndrData } = useApi(api.ndrReport);
+  const { data: containerSt, reload: reloadContainers } = useApi(api.containerStats);
+  const { data: certSummary, reload: reloadCerts } = useApi(api.certsSummary);
   const { data: certAlerts } = useApi(api.certsAlerts);
-  const { data: assetSummary, reload: rAssets } = useApi(api.assetsSummary);
-  const [assetSearch, setAssetSearch] = useState('');
-  const [assetResults, setAssetResults] = useState(null);
-  const { data: malwareStatsData, reload: rMalware } = useApi(api.malwareStats);
-  const { data: malwareRecentData } = useApi(api.malwareRecent);
-  const [scanHash, setScanHash] = useState('');
-  const [scanResult, setScanResult] = useState(null);
-  const { data: compData, reload: rComp } = useApi(api.complianceSummary);
-  const { data: analyticsData, reload: rAnalytics } = useApi(api.apiAnalytics);
-  const { data: tracesData, reload: rTraces } = useApi(api.traces);
-  const { data: rulesData, reload: rRules } = useApi(api.detectionRules);
-  const [huntQuery, setHuntQuery] = useState('');
-  const [huntResult, setHuntResult] = useState(null);
-  const [exportFmt, setExportFmt] = useState('cef');
+  const { data: assetSummary, reload: reloadAssets } = useApi(api.assetsSummary);
+  const { data: malwareStatsData } = useApi(api.malwareStats);
+  const { data: malwareRecentData, reload: reloadMalware } = useApi(api.malwareRecent);
+  const { data: compData } = useApi(api.complianceSummary);
+  const { data: analyticsData } = useApi(api.apiAnalytics);
+  const { data: tracesData } = useApi(api.traces);
+
+  const activeTab = TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'overview';
+  const savedView = searchParams.get('view') || 'critical';
+  const query = searchParams.get('q') || '';
+  const typeFilter = searchParams.get('type') || 'all';
+  const assets = normalizeAssets(assetSummary, vulnSummary, certSummary, certAlerts, malwareRecentData, drift, containerSt);
+  const filteredAssets = assets.filter((item) => {
+    const view = SAVED_VIEWS.find((entry) => entry.id === savedView);
+    const viewMatch = view ? view.match(item) : true;
+    const search = query.trim().toLowerCase();
+    const searchMatch = !search
+      || String(item.title).toLowerCase().includes(search)
+      || String(item.subtitle).toLowerCase().includes(search)
+      || String(item.id).toLowerCase().includes(search);
+    const typeMatch = typeFilter === 'all' || item.type === typeFilter;
+    return viewMatch && searchMatch && typeMatch;
+  });
+  const selectedAssetId = searchParams.get('asset');
+  const selectedAsset = filteredAssets.find((item) => item.id === selectedAssetId)
+    || assets.find((item) => item.id === selectedAssetId)
+    || filteredAssets[0]
+    || assets[0]
+    || null;
+
+  useEffect(() => {
+    if (!selectedAsset || selectedAsset.id === selectedAssetId) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('asset', selectedAsset.id);
+    setSearchParams(next, { replace: true });
+  }, [selectedAsset, selectedAssetId, searchParams, setSearchParams]);
+
+  const counts = {
+    critical: assets.filter((item) => item.priority === 'critical').length,
+    vulnerabilities: assets.filter((item) => item.type === 'vulnerability').length,
+    certificates: assets.filter((item) => item.type === 'certificate').length,
+    drifted: assets.filter((item) => item.type === 'drift').length,
+    containers: assets.filter((item) => item.type === 'container').length,
+    malware: assets.filter((item) => item.type === 'malware').length,
+  };
+
+  const updateParams = (changes) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value == null || value === '' || value === 'all') next.delete(key);
+      else next.set(key, value);
+    });
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div>
-      <div className="tabs">
-        {['monitor', 'correlation', 'drift', 'energy', 'mesh', 'system', 'inventory', 'vulnerabilities', 'ndr', 'containers', 'certificates', 'assets', 'malware', 'hunt', 'compliance', 'analytics', 'traces', 'rules'].map(t => (
-          <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+      <div className="tabs" style={{ flexWrap: 'wrap' }}>
+        {TABS.map((tab) => (
+          <button key={tab} className={`tab ${activeTab === tab ? 'active' : ''}`} onClick={() => updateParams({ tab })}>
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
 
-      {tab === 'monitor' && (
-        <div className="card-grid">
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Monitor Status</div>
-            {monSt ? <><SummaryGrid data={monSt} limit={12} /><JsonDetails data={monSt} /></> : <div className="empty">Loading...</div>}
+      {activeTab === 'overview' && (
+        <>
+          <div className="card-grid">
+            <div className="card metric"><div className="metric-label">Critical Assets</div><div className="metric-value">{counts.critical}</div><div className="metric-sub">Assets or findings that should be triaged first</div></div>
+            <div className="card metric"><div className="metric-label">Exposure Queue</div><div className="metric-value">{counts.vulnerabilities + counts.certificates + counts.containers}</div><div className="metric-sub">Vulnerabilities, certificates, and container risks</div></div>
+            <div className="card metric"><div className="metric-label">Integrity Queue</div><div className="metric-value">{counts.drifted + counts.malware}</div><div className="metric-sub">Drift and malware findings that need narrative review</div></div>
+            <div className="card metric"><div className="metric-label">Observability Health</div><div className="metric-value">{slo?.health_gate || monSt?.health_gate || '—'}</div><div className="metric-sub">Threads, APIs, and monitoring systems</div></div>
           </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Fingerprint</div>
-            {fp ? <><SummaryGrid data={fp} limit={10} /><JsonDetails data={fp} /></> : <div className="empty">Loading...</div>}
-          </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Causal Graph</div>
-            {causal ? <><SummaryGrid data={causal} limit={10} /><JsonDetails data={causal} /></> : <div className="empty">Loading...</div>}
-          </div>
-        </div>
-      )}
 
-      {tab === 'correlation' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>Correlation Engine</div>
-          {corrData ? (
-            <>
-              <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-                {Object.entries(corrData).filter(([, v]) => typeof v !== 'object').map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 12px', background: 'var(--bg)', borderRadius: 6, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{String(v)}</div>
-                  </div>
-                ))}
-              </div>
-              {(() => {
-                const rules = corrData.rules || corrData.correlations || (Array.isArray(corrData) ? corrData : []);
-                return rules.length > 0 ? (
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Rule</th><th>Window</th><th>Matches</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {(Array.isArray(rules) ? rules : []).map((r, i) => (
-                          <tr key={i}>
-                            <td style={{ fontWeight: 600 }}>{r.name || r.rule || '—'}</td>
-                            <td>{r.window || r.time_window || '—'}</td>
-                            <td>{r.matches ?? r.hits ?? '—'}</td>
-                            <td><span className={`badge ${r.active !== false ? 'badge-ok' : 'badge-warn'}`}>{r.active !== false ? 'Active' : 'Disabled'}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null;
-              })()}
-            </>
-          ) : <div className="empty">Loading...</div>}
-        </div>
-      )}
-
-      {tab === 'drift' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Configuration Drift</span>
-            <button className="btn btn-sm btn-primary" onClick={async () => {
-              try { await api.driftReset(); toast('Drift baseline reset', 'success'); } catch { toast('Failed', 'error'); }
-            }}>Reset Baseline</button>
-          </div>
-          {drift ? (
-            <>
-              <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-                {Object.entries(drift).filter(([, v]) => typeof v !== 'object' || v === null).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 12px', background: 'var(--bg)', borderRadius: 6, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v ?? '—')}</div>
-                  </div>
-                ))}
-              </div>
-              {(() => {
-                const changes = drift.changes || drift.drifts || (Array.isArray(drift) ? drift : []);
-                return Array.isArray(changes) && changes.length > 0 ? (
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>File / Path</th><th>Type</th><th>Detected</th></tr></thead>
-                      <tbody>
-                        {changes.map((c, i) => (
-                          <tr key={i}>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{c.path || c.file || '—'}</td>
-                            <td><span className={`badge ${c.type === 'added' ? 'badge-ok' : c.type === 'removed' ? 'badge-err' : 'badge-warn'}`}>{c.type || '—'}</span></td>
-                            <td>{c.detected || c.timestamp || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : <div className="empty" style={{ marginTop: 8 }}>No drift detected</div>;
-              })()}
-            </>
-          ) : <div className="empty">Loading...</div>}
-        </div>
-      )}
-
-      {tab === 'energy' && (
-        <div className="card-grid">
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Energy Status</div>
-            {energy ? <><SummaryGrid data={energy} limit={12} /><JsonDetails data={energy} /></> : <div className="empty">Loading...</div>}
-          </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Tenants</div>
-            {tenants ? <><SummaryGrid data={tenants} limit={10} /><JsonDetails data={tenants} /></> : <div className="empty">Loading...</div>}
-          </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Patches</div>
-            {(() => {
-              const ptch = patchData?.patches || (Array.isArray(patchData) ? patchData : []);
-              if (!patchData) return <div className="empty">Loading...</div>;
-              return ptch.length > 0 ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Patch</th><th>Version</th><th>Status</th><th>Date</th></tr></thead>
-                    <tbody>
-                      {ptch.map((p, i) => (
-                        <tr key={i}>
-                          <td>{p.name || p.id || '—'}</td>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.version || '—'}</td>
-                          <td><span className={`badge ${p.status === 'applied' ? 'badge-ok' : 'badge-warn'}`}>{p.status || '—'}</span></td>
-                          <td>{p.date || p.applied_at || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-                {Object.entries(patchData).map(([k, v]) => (
-                  <div key={k} style={{ padding: '6px 10px', background: 'var(--bg)', borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{k.replace(/_/g, ' ')}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
-                  </div>
-                ))}
-              </div>;
-            })()}
-            <JsonDetails data={patchData} />
-          </div>
-        </div>
-      )}
-
-      {tab === 'mesh' && (
-        <div className="card-grid">
-          <div className="card">
+          <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
-              <span className="card-title">Service Mesh</span>
-              <button className="btn btn-sm btn-primary" onClick={async () => {
-                try { await api.meshHeal(); toast('Mesh heal initiated', 'success'); } catch { toast('Failed', 'error'); }
-              }}>Heal</button>
+              <span className="card-title">Attention Queues</span>
+              <div className="btn-group">
+                <button className="btn btn-sm" onClick={() => updateParams({ tab: 'assets', view: 'critical' })}>Open Assets</button>
+                <button className="btn btn-sm" onClick={() => updateParams({ tab: 'exposure' })}>Review Exposure</button>
+                <button className="btn btn-sm" onClick={() => updateParams({ tab: 'integrity' })}>Review Integrity</button>
+              </div>
             </div>
-            {mesh ? <><SummaryGrid data={mesh} limit={10} /><JsonDetails data={mesh} /></> : <div className="empty">Loading...</div>}
+            <div className="summary-grid">
+              <div className="summary-card"><div className="summary-label">Vulnerable Assets</div><div className="summary-value">{counts.vulnerabilities}</div><div className="summary-meta">Use the asset explorer to pivot from a finding into the affected system.</div></div>
+              <div className="summary-card"><div className="summary-label">Expiring Certificates</div><div className="summary-value">{counts.certificates}</div><div className="summary-meta">Certificates are normalized into the same asset queue for quicker ownership checks.</div></div>
+              <div className="summary-card"><div className="summary-label">Drifted Systems</div><div className="summary-value">{counts.drifted}</div><div className="summary-meta">Raw subsystem details remain available below, but no longer drive the top-level IA.</div></div>
+              <div className="summary-card"><div className="summary-label">Recent Malware</div><div className="summary-value">{counts.malware}</div><div className="summary-meta">Recent detections feed the same sticky detail pane as infrastructure issues.</div></div>
+            </div>
           </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>TLS Status</div>
-            {tls ? <><SummaryGrid data={tls} limit={10} /><JsonDetails data={tls} /></> : <div className="empty">Loading...</div>}
+
+          <div className="card-grid">
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>Platform Overview</div>
+              <SummaryGrid data={monSt} limit={8} />
+              <JsonDetails data={monSt} label="Monitor status details" />
+            </div>
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>Compliance Snapshot</div>
+              <SummaryGrid data={compData} limit={8} />
+              <JsonDetails data={compData} label="Compliance detail" />
+            </div>
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>Dependencies and SLOs</div>
+              <SummaryGrid data={{ ...slo, dependency_count: deps?.dependencies?.length || deps?.deps?.length || 0 }} limit={8} />
+              <JsonDetails data={{ slo, deps, threads }} label="Observability detail" />
+            </div>
           </div>
-        </div>
+        </>
       )}
 
-      {tab === 'system' && (
-        <div className="card-grid">
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Threads</div>
-            {threads ? (
-              <>
-                <SummaryGrid data={threads} exclude={['subsystems']} limit={12} />
-                <JsonDetails data={threads?.subsystems} label="Subsystems" />
-              </>
-            ) : <div className="empty">Loading...</div>}
-          </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>SLO Status</div>
-            {slo ? <><SummaryGrid data={slo} limit={12} /><JsonDetails data={slo} /></> : <div className="empty">Loading...</div>}
-          </div>
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 12 }}>Dependencies</div>
-            {deps ? (
-              <>
-                {(() => {
-                  const depArr = deps.dependencies || deps.deps || (Array.isArray(deps) ? deps : []);
-                  const connectors = deps?.connectors?.items || [];
-                  return depArr.length > 0 ? (
-                    <>
-                      <div className="table-wrap">
-                        <table>
-                          <thead><tr><th>Name</th><th>Version</th><th>Status</th></tr></thead>
-                          <tbody>
-                            {(Array.isArray(depArr) ? depArr : []).map((d, i) => (
-                              <tr key={i}>
-                                <td style={{ fontWeight: 600 }}>{d.name || '—'}</td>
-                                <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{d.version || '—'}</td>
-                                <td><span className={`badge ${d.healthy !== false ? 'badge-ok' : 'badge-err'}`}>{d.healthy !== false ? 'OK' : 'Unhealthy'}</span></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <JsonDetails data={deps} />
-                    </>
-                  ) : (
-                    <>
-                      <SummaryGrid data={deps} exclude={['connectors', 'deployments', 'dependencies', 'deps']} limit={10} />
-                      {connectors.length > 0 && (
-                        <div style={{ marginTop: 16 }}>
-                          <div className="card-title" style={{ marginBottom: 8 }}>Connectors</div>
-                          <div className="table-wrap">
-                            <table>
-                              <thead><tr><th>Name</th><th>Kind</th><th>Status</th><th>Auth</th></tr></thead>
-                              <tbody>
-                                {connectors.slice(0, 12).map((item, index) => (
-                                  <tr key={item.id || index}>
-                                    <td>{item.name || item.id || '—'}</td>
-                                    <td>{item.kind || '—'}</td>
-                                    <td>{item.status || '—'}</td>
-                                    <td>{item.auth_mode || '—'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                      {deps?.deployments && (
-                        <div style={{ marginTop: 16 }}>
-                          <div className="card-title" style={{ marginBottom: 8 }}>Deployments</div>
-                          <SummaryGrid data={deps.deployments} limit={8} />
-                        </div>
-                      )}
-                      <JsonDetails data={deps} />
-                    </>
-                  );
-                })()}
-              </>
-            ) : <div className="empty">Loading...</div>}
-          </div>
-        </div>
-      )}
-
-      {tab === 'inventory' && (
-        <div>
-          {/* System inventory summary */}
-          {hostInv && (
+      {activeTab === 'assets' && (
+        <div className="triage-layout">
+          <section className="triage-list">
             <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>System Inventory</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                {hostInv.hardware && (
-                  <div className="card" style={{ padding: 12 }}>
-                    <div className="metric-label">Hardware</div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{hostInv.hardware.model || 'Unknown'}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{hostInv.hardware.cpu || '—'}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>RAM: {hostInv.hardware.memory || '—'}</div>
-                  </div>
-                )}
-                <div className="card" style={{ padding: 12 }}>
-                  <div className="metric-label">Software Packages</div>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{hostInv.software?.length ?? '—'}</div>
-                </div>
-                <div className="card" style={{ padding: 12 }}>
-                  <div className="metric-label">Services</div>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{hostInv.services?.length ?? '—'}</div>
-                </div>
-                <div className="card" style={{ padding: 12 }}>
-                  <div className="metric-label">Network Ports</div>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{hostInv.ports?.length ?? '—'}</div>
-                </div>
-                <div className="card" style={{ padding: 12 }}>
-                  <div className="metric-label">Users</div>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{hostInv.users?.length ?? '—'}</div>
-                </div>
+              <div className="card-title" style={{ marginBottom: 12 }}>Saved Views</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {SAVED_VIEWS.map((view) => (
+                  <button key={view.id} className={`filter-chip-button ${savedView === view.id ? 'active' : ''}`} onClick={() => updateParams({ view: view.id, asset: '' })}>
+                    {view.label}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* Installed apps */}
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Installed Applications ({hostApps?.count ?? '—'})</span>
-              <button className="btn btn-sm" onClick={rApps}>↻ Refresh</button>
-            </div>
-            {hostApps?.apps?.length > 0 ? (
-              <div className="table-wrap" style={{ maxHeight: 500, overflowY: 'auto' }}>
+            <div className="card">
+              <div className="triage-toolbar">
+                <div className="triage-toolbar-group">
+                  <input className="form-input triage-search" placeholder="Search assets, hosts, findings" value={query} onChange={(event) => updateParams({ q: event.target.value, asset: '' })} />
+                  <select className="form-select" value={typeFilter} onChange={(event) => updateParams({ type: event.target.value, asset: '' })}>
+                    <option value="all">All types</option>
+                    {[...new Set(assets.map((item) => item.type))].map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </div>
+                <div className="triage-toolbar-group">
+                  <button className="btn btn-sm" onClick={() => { reloadAssets(); reloadVuln(); reloadCerts(); reloadContainers(); reloadMalware(); }}>Refresh</button>
+                </div>
+              </div>
+
+              <div className="sticky-bulk-bar">
+                <span className="hint">Each row is normalized into one explorer so operators can move from host posture to evidence without changing screens.</span>
+              </div>
+
+              <div className="split-list-table">
                 <table>
-                  <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', zIndex: 1 }}>
-                    <tr><th>Application</th><th>Version</th><th>Bundle ID</th><th>Size (MB)</th><th>Last Modified</th></tr>
+                  <thead>
+                    <tr>
+                      <th>Entity</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Severity</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {hostApps.apps.map((app, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{app.name}</td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{app.version || '—'}</td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{app.bundle_id || '—'}</td>
-                        <td>{app.size_mb != null ? app.size_mb.toFixed(0) : '—'}</td>
-                        <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{app.last_modified || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <div className="empty">{hostApps?.message || 'No app data available (macOS only)'}</div>}
-          </div>
-
-          {/* Services list */}
-          {hostInv?.services?.length > 0 && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 8 }}>Services</div>
-              <div className="table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                <table>
-                  <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', zIndex: 1 }}>
-                    <tr><th>Service</th><th>Status</th></tr>
-                  </thead>
-                  <tbody>
-                    {hostInv.services.map((s, i) => (
-                      <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{typeof s === 'string' ? s : s.name || s.label || s.id || 'service'}</td>
-                        <td>{typeof s === 'object' ? s.status || '—' : '—'}</td>
+                    {filteredAssets.length === 0 ? (
+                      <tr><td colSpan="4"><div className="empty" style={{ padding: 24 }}>No assets match the current view.</div></td></tr>
+                    ) : filteredAssets.map((item) => (
+                      <tr key={item.id} className={selectedAsset?.id === item.id ? 'row-active' : ''} onClick={() => updateParams({ asset: item.id })} style={{ cursor: 'pointer' }}>
+                        <td>
+                          <div className="row-primary">{item.title}</div>
+                          <div className="row-secondary">{item.subtitle}</div>
+                        </td>
+                        <td>{item.type}</td>
+                        <td><span className={`badge ${item.status === 'expiring' || item.status === 'detected' ? 'badge-err' : 'badge-info'}`}>{item.status}</span></td>
+                        <td><span className={`badge ${item.severity === 'critical' || item.severity === 'high' ? 'badge-err' : 'badge-warn'}`}>{item.severity}</span></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-          )}
+          </section>
 
-          {/* Listening ports */}
-          {hostInv?.ports?.length > 0 && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-title" style={{ marginBottom: 8 }}>Listening Ports</div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Port</th><th>Protocol</th><th>Process</th></tr></thead>
-                  <tbody>
-                    {hostInv.ports.map((p, i) => (
-                      <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)' }}>{typeof p === 'string' ? p : p.port || p.address || p.endpoint || '—'}</td>
-                        <td>{typeof p === 'object' ? p.protocol || '—' : '—'}</td>
-                        <td>{typeof p === 'object' ? p.process || '—' : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'vulnerabilities' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Vulnerability Scanner</span>
-            <button className="btn btn-sm" onClick={rVuln}>↻ Refresh</button>
-          </div>
-          {vulnSummary ? <><SummaryGrid data={vulnSummary} limit={12} /><JsonDetails data={vulnSummary} /></> : <div className="empty">Loading...</div>}
-        </div>
-      )}
-
-      {tab === 'ndr' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Network Detection & Response</span>
-            <button className="btn btn-sm" onClick={rNdr}>↻ Refresh</button>
-          </div>
-          {ndrData ? <><SummaryGrid data={ndrData} limit={12} /><JsonDetails data={ndrData} /></> : <div className="empty">No network data yet. Ingest netflow via POST /api/ndr/netflow</div>}
-        </div>
-      )}
-
-      {tab === 'containers' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Container Security</span>
-            <button className="btn btn-sm" onClick={rContainer}>↻ Refresh</button>
-          </div>
-          {containerSt ? <SummaryGrid data={containerSt} limit={6} /> : <div className="empty">Loading...</div>}
-          {containerAlerts && Array.isArray(containerAlerts) && containerAlerts.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Recent Alerts</div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Time</th><th>Kind</th><th>Container</th><th>Severity</th><th>Message</th></tr></thead>
-                  <tbody>
-                    {containerAlerts.slice(0, 50).map((a, i) => (
-                      <tr key={i}>
-                        <td style={{ fontSize: 11 }}>{a.timestamp || '—'}</td>
-                        <td>{a.kind || '—'}</td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{a.container_id || '—'}</td>
-                        <td><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity || '—'}</span></td>
-                        <td>{a.message || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'certificates' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">TLS Certificate Monitor</span>
-            <button className="btn btn-sm" onClick={rCerts}>↻ Refresh</button>
-          </div>
-          {certSummary ? <SummaryGrid data={certSummary} limit={10} /> : <div className="empty">Loading...</div>}
-          {certAlerts && Array.isArray(certAlerts) && certAlerts.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Certificate Alerts</div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Domain</th><th>Issue</th><th>Days Left</th><th>Severity</th></tr></thead>
-                  <tbody>
-                    {certAlerts.map((a, i) => (
-                      <tr key={i}>
-                        <td>{a.domain || a.subject || '—'}</td>
-                        <td>{a.kind || a.issue || '—'}</td>
-                        <td>{a.days_remaining ?? '—'}</td>
-                        <td><span className={`sev-${(a.severity || 'medium').toLowerCase()}`}>{a.severity || '—'}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'assets' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Unified Asset Inventory</span>
-            <button className="btn btn-sm" onClick={rAssets}>↻ Refresh</button>
-          </div>
-          {assetSummary ? <SummaryGrid data={assetSummary} limit={12} /> : <div className="empty">Loading...</div>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, marginBottom: 12 }}>
-            <input type="text" placeholder="Search assets..." value={assetSearch} onChange={e => setAssetSearch(e.target.value)} className="auth-input" style={{ flex: 1 }} />
-            <button className="btn btn-sm btn-primary" onClick={async () => {
-              if (!assetSearch.trim()) return;
-              try { const r = await api.assetsSearch(assetSearch); setAssetResults(r); } catch { toast('Search failed', 'error'); }
-            }}>Search</button>
-          </div>
-          {assetResults && Array.isArray(assetResults) && (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Provider</th><th>Risk</th><th>Last Seen</th></tr></thead>
-                <tbody>
-                  {assetResults.map((a, i) => (
-                    <tr key={i}>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{a.id || '—'}</td>
-                      <td>{a.name || a.hostname || '—'}</td>
-                      <td>{a.asset_type || '—'}</td>
-                      <td>{a.provider || '—'}</td>
-                      <td>{a.risk_score != null ? a.risk_score.toFixed(2) : '—'}</td>
-                      <td>{a.last_seen || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {assetSummary && <JsonDetails data={assetSummary} />}
-        </div>
-      )}
-
-      {tab === 'malware' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Malware Detection / AV Scanning</span>
-            <button className="btn btn-sm" onClick={rMalware}>↻ Refresh</button>
-          </div>
-          {malwareStatsData && (
-            <div className="card-grid" style={{ marginBottom: 16 }}>
-              <div className="card"><div className="card-title">Hash Signatures</div><div className="big-number">{malwareStatsData.database?.total_hashes ?? '—'}</div></div>
-              <div className="card"><div className="card-title">YARA Rules</div><div className="big-number">{malwareStatsData.yara_rules ?? '—'}</div></div>
-              <div className="card"><div className="card-title">Total Scans</div><div className="big-number">{malwareStatsData.scanner?.total_scans ?? 0}</div></div>
-              <div className="card"><div className="card-title">Malicious</div><div className="big-number" style={{ color: 'var(--danger)' }}>{malwareStatsData.scanner?.malicious_count ?? 0}</div></div>
-              <div className="card"><div className="card-title">Suspicious</div><div className="big-number" style={{ color: 'var(--warning)' }}>{malwareStatsData.scanner?.suspicious_count ?? 0}</div></div>
-            </div>
-          )}
-          <h4 style={{ marginTop: 16 }}>Hash Lookup</h4>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input type="text" placeholder="SHA256 or MD5 hash..." value={scanHash} onChange={e => setScanHash(e.target.value)} className="auth-input" style={{ flex: 1 }} />
-            <button className="btn btn-sm btn-primary" onClick={async () => {
-              if (!scanHash.trim()) return;
-              try { const r = await api.scanHash({ hash: scanHash }); setScanResult(r); } catch { toast('Scan failed', 'error'); }
-            }}>Lookup</button>
-          </div>
-          {scanResult && <div className="card" style={{ marginBottom: 16 }}><JsonDetails data={scanResult} /></div>}
-          <h4>Recent Detections</h4>
-          {malwareRecentData && Array.isArray(malwareRecentData) && malwareRecentData.length > 0 ? (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>SHA256</th><th>Name</th><th>Family</th><th>Severity</th><th>Detected</th></tr></thead>
-                <tbody>
-                  {malwareRecentData.slice(-50).reverse().map((d, i) => (
-                    <tr key={i}>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{d.sha256?.substring(0, 16)}...</td>
-                      <td>{d.name || '—'}</td>
-                      <td>{d.family || '—'}</td>
-                      <td><span className={`badge badge-${d.severity === 'critical' ? 'err' : d.severity === 'high' ? 'warn' : 'info'}`}>{d.severity}</span></td>
-                      <td>{d.detected_at || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <div className="empty">No recent detections</div>}
-          {malwareStatsData && <JsonDetails data={malwareStatsData} />}
-        </div>
-      )}
-
-      {tab === 'hunt' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>Threat Hunting (KQL-like DSL)</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input type="text" placeholder='e.g. process:"powershell*" AND src:"10.*"' value={huntQuery} onChange={e => setHuntQuery(e.target.value)} className="auth-input" style={{ flex: 1 }} />
-            <button className="btn btn-sm btn-primary" onClick={async () => {
-              if (!huntQuery.trim()) return;
-              try { const r = await api.hunt(huntQuery); setHuntResult(r); } catch (err) { toast('Hunt failed: ' + (err.body || err.message), 'error'); }
-            }}>Hunt</button>
-          </div>
-          {huntResult && <JsonDetails data={huntResult} />}
-          <h4 style={{ marginTop: 16 }}>SIEM Export</h4>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <select value={exportFmt} onChange={e => setExportFmt(e.target.value)} className="auth-input" style={{ width: 140 }}>
-              {['cef', 'leef', 'syslog', 'sentinel', 'udm', 'ecs', 'qradar', 'json'].map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}
-            </select>
-            <button className="btn btn-sm btn-primary" onClick={async () => {
-              try {
-                const blob = await api.exportAlerts(exportFmt);
-                const text = typeof blob === 'string' ? blob : JSON.stringify(blob, null, 2);
-                const b = new Blob([text], { type: 'text/plain' });
-                const url = URL.createObjectURL(b);
-                const a = document.createElement('a'); a.href = url; a.download = `alerts.${exportFmt}`; a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-              } catch (err) { toast('Export failed', 'error'); }
-            }}>Download</button>
-          </div>
-        </div>
-      )}
-
-      {tab === 'compliance' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>Compliance Summary <button className="btn btn-sm" onClick={rComp}>↻</button></div>
-          {compData ? (
-            <>
-              {compData.frameworks && (
-                <div className="card-grid" style={{ marginBottom: 16 }}>
-                  {Object.entries(compData.frameworks).map(([name, info]) => (
-                    <div key={name} className="card">
-                      <div className="card-title">{name}</div>
-                      <div className="big-number" style={{ color: (typeof info === 'object' ? (info.score ?? 0) : (info ?? 0)) >= 80 ? 'var(--success)' : 'var(--warning)' }}>
-                        {typeof info === 'object' ? `${info.score ?? 0}%` : `${info ?? 0}%`}
-                      </div>
+          <aside className="triage-detail">
+            <div className="card">
+              {!selectedAsset ? <div className="empty">Select an asset to review posture, related evidence, and subsystem details.</div> : (
+                <>
+                  <div className="detail-hero">
+                    <div>
+                      <div className="detail-hero-title">{selectedAsset.title}</div>
+                      <div className="detail-hero-copy">{selectedAsset.subtitle}</div>
                     </div>
-                  ))}
-                </div>
+                    <span className={`badge ${selectedAsset.priority === 'critical' ? 'badge-err' : 'badge-info'}`}>{selectedAsset.type}</span>
+                  </div>
+                  <div className="summary-grid" style={{ marginTop: 16 }}>
+                    <div className="summary-card"><div className="summary-label">Status</div><div className="summary-value">{selectedAsset.status}</div><div className="summary-meta">Current posture for this entity.</div></div>
+                    <div className="summary-card"><div className="summary-label">Severity</div><div className="summary-value">{selectedAsset.severity}</div><div className="summary-meta">Derived from the owning subsystem.</div></div>
+                    <div className="summary-card"><div className="summary-label">Priority</div><div className="summary-value">{selectedAsset.priority}</div><div className="summary-meta">Controls queue ordering in saved views.</div></div>
+                    <div className="summary-card"><div className="summary-label">Explorer Scope</div><div className="summary-value">{savedView}</div><div className="summary-meta">URL-persisted view to share or revisit.</div></div>
+                  </div>
+                  <div className="btn-group" style={{ marginTop: 16 }}>
+                    <button className="btn btn-sm" onClick={() => updateParams({ tab: 'exposure' })}>Open Related Exposure</button>
+                    <button className="btn btn-sm" onClick={() => updateParams({ tab: 'integrity' })}>Open Integrity Context</button>
+                    <button className="btn btn-sm" onClick={() => updateParams({ tab: 'observability' })}>Open Telemetry Context</button>
+                  </div>
+                  <div className="detail-callout" style={{ marginTop: 16 }}>
+                    This sticky pane keeps technical evidence available while the left-hand list stays focused on scan speed. Raw subsystem payloads remain below for expert users.
+                  </div>
+                  <JsonDetails data={selectedAsset.evidence} label="Asset evidence and subsystem payload" />
+                </>
               )}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {activeTab === 'exposure' && (
+        <>
+          <div className="card-grid">
+            <div className="card"><div className="card-title" style={{ marginBottom: 12 }}>Vulnerability Summary</div><SummaryGrid data={vulnSummary} limit={10} /><JsonDetails data={vulnSummary} /></div>
+            <div className="card"><div className="card-title" style={{ marginBottom: 12 }}>Certificate Summary</div><SummaryGrid data={certSummary} limit={10} /><JsonDetails data={certSummary} /></div>
+            <div className="card"><div className="card-title" style={{ marginBottom: 12 }}>Container Risk</div><SummaryGrid data={containerSt} limit={10} /><JsonDetails data={containerSt} /></div>
+          </div>
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 12 }}>Exposure Narrative</div>
+            <div className="summary-grid">
+              <div className="summary-card"><div className="summary-label">Vulnerabilities</div><div className="summary-value">{counts.vulnerabilities}</div><div className="summary-meta">Use the asset explorer to pivot into a specific system or package owner.</div></div>
+              <div className="summary-card"><div className="summary-label">Certificate Issues</div><div className="summary-value">{counts.certificates}</div><div className="summary-meta">Expiring credentials are normalized into the same workflow as host risk.</div></div>
+              <div className="summary-card"><div className="summary-label">NDR Findings</div><div className="summary-value">{ndrData?.findings?.length || ndrData?.alerts?.length || 0}</div><div className="summary-meta">Network detections can be reviewed without opening a separate subsystem tab.</div></div>
+            </div>
+            <JsonDetails data={ndrData} label="Network detection details" />
+          </div>
+        </>
+      )}
+
+      {activeTab === 'integrity' && (
+        <>
+          <div className="card-grid">
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Configuration Drift</span>
+                <button className="btn btn-sm btn-primary" onClick={async () => { try { await api.driftReset(); reloadDrift(); toast('Drift baseline reset.', 'success'); } catch { toast('Unable to reset drift baseline.', 'error'); } }}>Reset Baseline</button>
+              </div>
+              <SummaryGrid data={drift} limit={10} />
+              <JsonDetails data={drift} />
+            </div>
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>Recent Malware</div>
+              <SummaryGrid data={{ ...malwareStatsData, recent_hits: counts.malware }} limit={10} />
+              <JsonDetails data={malwareRecentData} label="Recent malware evidence" />
+            </div>
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>Compliance Signals</div>
+              <SummaryGrid data={compData} limit={10} />
               <JsonDetails data={compData} />
-            </>
-          ) : <div className="empty">Loading...</div>}
-        </div>
+            </div>
+          </div>
+        </>
       )}
 
-      {tab === 'analytics' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>API Analytics <button className="btn btn-sm" onClick={rAnalytics}>↻</button></div>
-          {analyticsData ? (
-            <>
-              <div className="card-grid" style={{ marginBottom: 16 }}>
-                <div className="card"><div className="card-title">Total Requests</div><div className="big-number">{analyticsData.total_requests ?? 0}</div></div>
-                <div className="card"><div className="card-title">Error Rate</div><div className="big-number">{analyticsData.error_rate ?? '0%'}</div></div>
-                <div className="card"><div className="card-title">Endpoints</div><div className="big-number">{analyticsData.endpoint_count ?? 0}</div></div>
-              </div>
-              {analyticsData.top_endpoints && (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Endpoint</th><th>Requests</th><th>Errors</th><th>Avg Latency</th><th>P95 Latency</th></tr></thead>
-                    <tbody>
-                      {analyticsData.top_endpoints.map((ep, i) => (
-                        <tr key={i}><td>{ep.endpoint}</td><td>{ep.request_count}</td><td>{ep.error_count}</td><td>{ep.avg_latency_ms?.toFixed(1)}ms</td><td>{ep.p95_latency_ms?.toFixed(1)}ms</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <JsonDetails data={analyticsData} />
-            </>
-          ) : <div className="empty">Loading...</div>}
-        </div>
+      {activeTab === 'observability' && (
+        <>
+          <div className="card-grid">
+            <div className="card"><div className="card-title" style={{ marginBottom: 12 }}>Threads and Services</div><SummaryGrid data={threads} limit={10} /><JsonDetails data={threads} /></div>
+            <div className="card"><div className="card-title" style={{ marginBottom: 12 }}>Dependency Health</div><SummaryGrid data={deps} limit={10} /><JsonDetails data={deps} /></div>
+            <div className="card"><div className="card-title" style={{ marginBottom: 12 }}>API Analytics</div><SummaryGrid data={analyticsData} limit={10} /><JsonDetails data={analyticsData} /></div>
+          </div>
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 12 }}>Telemetry Detail</div>
+            <SummaryGrid data={{ trace_count: tracesData?.traces?.length || tracesData?.count || 0, generated_at: tracesData?.generated_at || null }} limit={4} />
+            <JsonDetails data={tracesData} label="Trace collector detail" />
+          </div>
+        </>
       )}
 
-      {tab === 'traces' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>OpenTelemetry Traces <button className="btn btn-sm" onClick={rTraces}>↻</button></div>
-          {tracesData ? (
-            <>
-              {tracesData.stats && (
-                <div className="card-grid" style={{ marginBottom: 16 }}>
-                  <div className="card"><div className="card-title">Total Spans</div><div className="big-number">{tracesData.stats.total_spans}</div></div>
-                  <div className="card"><div className="card-title">Error Spans</div><div className="big-number" style={{ color: 'var(--danger)' }}>{tracesData.stats.error_spans}</div></div>
-                  <div className="card"><div className="card-title">Avg Duration</div><div className="big-number">{tracesData.stats.avg_duration_ms?.toFixed(1)}ms</div></div>
-                </div>
-              )}
-              {tracesData.recent && tracesData.recent.length > 0 && (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Trace ID</th><th>Operation</th><th>Status</th><th>Duration</th></tr></thead>
-                    <tbody>
-                      {tracesData.recent.map((sp, i) => (
-                        <tr key={i}>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{sp.trace_id?.substring(0, 12)}...</td>
-                          <td>{sp.operation_name}</td>
-                          <td><span className={`badge badge-${sp.status === 'Error' ? 'err' : 'ok'}`}>{sp.status}</span></td>
-                          <td>{sp.end_time_ms && sp.start_time_ms ? `${sp.end_time_ms - sp.start_time_ms}ms` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <JsonDetails data={tracesData} />
-            </>
-          ) : <div className="empty">Loading...</div>}
-        </div>
-      )}
-
-      {tab === 'rules' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>Detection Rules <button className="btn btn-sm" onClick={rRules}>↻</button></div>
-          {rulesData ? (
-            <>
-              <div className="card-grid" style={{ marginBottom: 16 }}>
-                <div className="card"><div className="card-title">Sigma Rules</div><div className="big-number">{rulesData.sigma?.count ?? 0}</div></div>
-                <div className="card"><div className="card-title">YARA Rules</div><div className="big-number">{rulesData.yara?.count ?? 0}</div></div>
-                <div className="card"><div className="card-title">Malware Hashes</div><div className="big-number">{rulesData.malware_hashes?.total_hashes ?? 0}</div></div>
-              </div>
-              {rulesData.yara?.rules && (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>YARA Rule Name</th></tr></thead>
-                    <tbody>{rulesData.yara.rules.map((r, i) => <tr key={i}><td>{r}</td></tr>)}</tbody>
-                  </table>
-                </div>
-              )}
-              <JsonDetails data={rulesData} />
-            </>
-          ) : <div className="empty">Loading...</div>}
-        </div>
-      )}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-title" style={{ marginBottom: 12 }}>Technical Sections</div>
+        <div className="hint">Raw subsystem summaries stay available here so experts can drop down into the original data without turning the whole screen back into a tab wall.</div>
+        <JsonDetails data={{ assetSummary, vulnSummary, certSummary, certAlerts, drift, containerSt, malwareStatsData, malwareRecentData, monSt, deps, slo }} label="Expanded technical detail" />
+        {selectedAsset && (
+          <div className="hint" style={{ marginTop: 12 }}>
+            Current scope: {selectedAsset.title} • {selectedAsset.type} • {selectedAsset.evidence?.updated_at ? `Updated ${formatRelativeTime(selectedAsset.evidence.updated_at)}` : `Selected ${formatDateTime(new Date())}`}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

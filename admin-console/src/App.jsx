@@ -1,11 +1,42 @@
 import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
-import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { useAuth, useTheme, useRole, useApi } from './hooks.jsx';
+import { Routes, Route, useNavigate, useLocation, Navigate, NavLink, Link } from 'react-router-dom';
+import { useAuth, useTheme, useRole, useApi, useInterval } from './hooks.jsx';
 import * as api from './api.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import SearchPalette from './components/SearchPalette.jsx';
 import NotificationToast from './components/NotificationToast.jsx';
 import OnboardingWizard from './components/OnboardingWizard.jsx';
+
+// ── Recent Items (persisted in localStorage) ─────────────────
+const MAX_RECENT = 10;
+function useRecentItems() {
+  const [items, setItems] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('wardex_recent') || '[]'); } catch { return []; }
+  });
+  const add = useCallback((path, label) => {
+    setItems(prev => {
+      const next = [{ path, label, ts: Date.now() }, ...prev.filter(i => i.path !== path)].slice(0, MAX_RECENT);
+      localStorage.setItem('wardex_recent', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  return { items, add };
+}
+
+// ── Breadcrumbs ──────────────────────────────────────────────
+function Breadcrumbs({ sections, pathname }) {
+  const current = sections.find(s => s.path === pathname);
+  if (!current || current.path === '/') return null;
+  return (
+    <nav className="breadcrumbs" aria-label="Breadcrumb">
+      <ol style={{ display: 'flex', gap: 4, listStyle: 'none', margin: 0, padding: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+        <li><Link className="btn-link" to="/">Dashboard</Link></li>
+        <li aria-hidden="true" style={{ margin: '0 2px' }}>›</li>
+        <li aria-current="page" style={{ fontWeight: 600, color: 'var(--text)' }}>{current.label}</li>
+      </ol>
+    </nav>
+  );
+}
 
 const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
 const LiveMonitor = lazy(() => import('./components/LiveMonitor.jsx'));
@@ -17,18 +48,33 @@ const Infrastructure = lazy(() => import('./components/Infrastructure.jsx'));
 const ReportsExports = lazy(() => import('./components/ReportsExports.jsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
 const HelpDocs = lazy(() => import('./components/HelpDocs.jsx'));
+const UEBADashboard = lazy(() => import('./components/UEBADashboard.jsx'));
+const NDRDashboard = lazy(() => import('./components/NDRDashboard.jsx'));
+const EmailSecurity = lazy(() => import('./components/EmailSecurity.jsx'));
+const AttackGraph = lazy(() => import('./components/AttackGraph.jsx'));
 
 const SECTIONS = [
-  { id: 'dashboard',        path: '/',                 label: 'Dashboard',        icon: '📊', minRole: 'viewer' },
-  { id: 'live-monitor',     path: '/monitor',          label: 'Live Monitor',     icon: '🔴', minRole: 'viewer' },
-  { id: 'threat-detection', path: '/detection',        label: 'Threat Detection', icon: '🛡', minRole: 'analyst' },
-  { id: 'fleet-agents',     path: '/fleet',            label: 'Fleet & Agents',   icon: '🖥', minRole: 'viewer' },
-  { id: 'security-policy',  path: '/policy',           label: 'Security Policy',  icon: '📋', minRole: 'analyst' },
-  { id: 'soc-workbench',    path: '/soc',              label: 'SOC Workbench',    icon: '🔬', minRole: 'analyst' },
-  { id: 'infrastructure',   path: '/infrastructure',   label: 'Infrastructure',   icon: '⚙', minRole: 'analyst' },
-  { id: 'reports-exports',  path: '/reports',          label: 'Reports & Exports',icon: '📄', minRole: 'viewer' },
-  { id: 'settings',         path: '/settings',         label: 'Settings',         icon: '⚡', minRole: 'admin' },
-  { id: 'help-docs',        path: '/help',             label: 'Help & Docs',      icon: '❓', minRole: 'viewer' },
+  { id: 'dashboard',        path: '/',                 label: 'Dashboard',        shortLabel: 'DB', minRole: 'viewer' },
+  { id: 'live-monitor',     path: '/monitor',          label: 'Live Monitor',     shortLabel: 'LM', minRole: 'viewer' },
+  { id: 'threat-detection', path: '/detection',        label: 'Threat Detection', shortLabel: 'TD', minRole: 'analyst' },
+  { id: 'fleet-agents',     path: '/fleet',            label: 'Fleet & Agents',   shortLabel: 'FA', minRole: 'viewer' },
+  { id: 'security-policy',  path: '/policy',           label: 'Security Policy',  shortLabel: 'SP', minRole: 'analyst' },
+  { id: 'soc-workbench',    path: '/soc',              label: 'SOC Workbench',    shortLabel: 'SOC', minRole: 'analyst' },
+  { id: 'infrastructure',   path: '/infrastructure',   label: 'Infrastructure',   shortLabel: 'INF', minRole: 'analyst' },
+  { id: 'reports-exports',  path: '/reports',          label: 'Reports & Exports',shortLabel: 'REP', minRole: 'viewer' },
+  { id: 'settings',         path: '/settings',         label: 'Settings',         shortLabel: 'CFG', minRole: 'admin' },
+  { id: 'help-docs',        path: '/help',             label: 'Help & Docs',      shortLabel: 'DOC', minRole: 'viewer' },
+  { id: 'ueba',             path: '/ueba',             label: 'UEBA',             shortLabel: 'UBA', minRole: 'analyst' },
+  { id: 'ndr',              path: '/ndr',              label: 'NDR',              shortLabel: 'NDR', minRole: 'analyst' },
+  { id: 'email-security',   path: '/email-security',   label: 'Email Security',   shortLabel: 'EML', minRole: 'analyst' },
+  { id: 'attack-graph',     path: '/attack-graph',     label: 'Attack Graph',     shortLabel: 'ATK', minRole: 'analyst' },
+];
+
+const WORKFLOW_GROUPS = [
+  { id: 'monitor', label: 'Monitor', sections: ['dashboard', 'live-monitor', 'reports-exports'] },
+  { id: 'investigate', label: 'Investigate', sections: ['soc-workbench', 'threat-detection', 'infrastructure', 'ueba', 'ndr', 'attack-graph'] },
+  { id: 'respond', label: 'Respond', sections: ['fleet-agents', 'security-policy', 'email-security'] },
+  { id: 'manage', label: 'Manage', sections: ['settings', 'help-docs'] },
 ];
 
 const ROLE_LEVEL = { viewer: 0, analyst: 1, admin: 2 };
@@ -49,8 +95,11 @@ export default function App() {
   const { dark, toggle } = useTheme();
   const { role } = useRole();
   const { data: hp } = useApi(api.health);
+  const { data: inboxData, reload: reloadInbox } = useApi(api.inbox, [authenticated], { skip: !authenticated });
   const navigate = useNavigate();
   const location = useLocation();
+  const { items: recentItems, add: addRecent } = useRecentItems();
+  const [showRecent, setShowRecent] = useState(false);
 
   const [tokenInput, setTokenInput] = useState('');
   const [authError, setAuthError] = useState('');
@@ -59,42 +108,80 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem('wardex_onboarded'));
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
+  const [pinnedSections, setPinnedSections] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('wardex_pinned_sections') || '[]'); } catch { return []; }
+  });
+
+  // Track page visits for recent items
+  useEffect(() => {
+    const section = SECTIONS.find(s => s.path === location.pathname);
+    if (section) addRecent(section.path, section.label);
+    setShowInbox(false);
+  }, [location.pathname, addRecent]);
+
+  useInterval(() => {
+    if (authenticated) reloadInbox();
+  }, authenticated ? 30000 : null);
 
   // ── Global Keyboard Shortcuts ──
   useEffect(() => {
     const handler = (e) => {
       // Ignore if user is typing in an input/textarea
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-      switch (e.key) {
-        case '?': setShowShortcuts(s => !s); break;
+      const key = e.key.toLowerCase();
+      if (key === '?') { setShowShortcuts(s => !s); return; }
+      if (!authenticated) return;
+      switch (key) {
         case 'd': navigate('/'); break;
         case 'm': navigate('/monitor'); break;
         case 't': navigate('/detection'); break;
         case 'f': navigate('/fleet'); break;
         case 's': navigate('/soc'); break;
         case 'g': navigate('/settings'); break;
+        case 'u': navigate('/ueba'); break;
+        case 'n': navigate('/ndr'); break;
+        case 'e': navigate('/email-security'); break;
+        case 'a': navigate('/attack-graph'); break;
         default: break;
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
+  }, [navigate, authenticated]);
 
   const currentSection = SECTIONS.find(s => s.path === location.pathname) || SECTIONS[0];
+  const currentGroup = WORKFLOW_GROUPS.find((group) => group.sections.includes(currentSection.id));
+  const primaryDestination = role === 'admin'
+    ? { label: 'System Status', path: '/fleet', description: 'Fleet health, rollouts, and platform posture.' }
+    : role === 'analyst'
+      ? { label: 'My Queue', path: '/soc', description: 'Open investigations, queue pressure, and response work.' }
+      : { label: 'Live Monitor', path: '/monitor', description: 'Current alerts and system activity.' };
+  const scopeTokens = [
+    currentGroup?.label,
+    role === 'admin' ? 'Admin Workspace' : role === 'analyst' ? 'Analyst Workspace' : 'Viewer Workspace',
+    location.search ? `Scoped by ${location.search.replace(/^\?/, '').replace(/&/g, ' · ')}` : null,
+  ].filter(Boolean);
+  const inboxItems = Array.isArray(inboxData) ? inboxData : inboxData?.items || [];
+  const inboxPending = inboxItems.filter((item) => !item.acknowledged).length;
 
-  const handleNavigate = useCallback((path) => {
-    navigate(path);
-  }, [navigate]);
+  const togglePinnedSection = useCallback((sectionId) => {
+    setPinnedSections((prev) => {
+      const next = prev.includes(sectionId) ? prev.filter((id) => id !== sectionId) : [sectionId, ...prev].slice(0, 6);
+      localStorage.setItem('wardex_pinned_sections', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const copyShareLink = useCallback(() => {
-    const url = window.location.origin + location.pathname;
+    const url = window.location.origin + location.pathname + location.search;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(url).then(() => {
         setLinkCopied(true);
         setTimeout(() => setLinkCopied(false), 2000);
       });
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   const handleConnect = useCallback(async (e) => {
     e.preventDefault();
@@ -105,6 +192,17 @@ export default function App() {
 
   // Filter sidebar items by role
   const visibleSections = SECTIONS.filter(s => ROLE_LEVEL[role] >= ROLE_LEVEL[s.minRole]);
+  const pinnedVisibleSections = pinnedSections
+    .map((id) => visibleSections.find((section) => section.id === id))
+    .filter(Boolean);
+  const groupedSections = WORKFLOW_GROUPS
+    .map((group) => ({
+      ...group,
+      sections: group.sections
+        .map((id) => visibleSections.find((section) => section.id === id))
+        .filter(Boolean),
+    }))
+    .filter((group) => group.sections.length > 0);
 
   return (
     <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -112,36 +210,98 @@ export default function App() {
       {/* Sidebar */}
       <aside className="sidebar" role="navigation" aria-label="Main navigation">
         <div className="sidebar-header">
-          <span className="logo">🛡</span>
+          <span className="logo" aria-hidden="true">SE</span>
           {!sidebarCollapsed && <span className="brand">Wardex</span>}
-          <button className="btn-icon collapse-btn" onClick={() => setSidebarCollapsed(c => !c)} title="Toggle sidebar" aria-expanded={!sidebarCollapsed} aria-controls="sidebar-nav">
+          <button className="btn-icon collapse-btn" onClick={() => setSidebarCollapsed(c => !c)} title="Toggle sidebar" aria-label="Toggle sidebar" aria-expanded={!sidebarCollapsed} aria-controls="sidebar-nav">
             {sidebarCollapsed ? '→' : '←'}
           </button>
         </div>
         <nav className="sidebar-nav" id="sidebar-nav" aria-label="Page sections">
-          {visibleSections.map(s => (
-            <button
-              key={s.id}
-              className={`nav-item ${location.pathname === s.path ? 'active' : ''}`}
-              onClick={() => handleNavigate(s.path)}
-              title={s.label}
-              aria-current={location.pathname === s.path ? 'page' : undefined}
-            >
-              <span className="nav-icon" aria-hidden="true">{s.icon}</span>
-              {!sidebarCollapsed && <span className="nav-label">{s.label}</span>}
-            </button>
+          {!sidebarCollapsed && authenticated && (
+            <div className="sidebar-primary">
+              <div className="sidebar-group-title">Primary</div>
+              <NavLink className={({ isActive }) => `primary-destination ${isActive ? 'active' : ''}`} to={primaryDestination.path}>
+                <span className="primary-destination-label">{primaryDestination.label}</span>
+                <span className="primary-destination-copy">{primaryDestination.description}</span>
+              </NavLink>
+            </div>
+          )}
+          {!sidebarCollapsed && authenticated && pinnedVisibleSections.length > 0 && (
+            <div className="sidebar-group">
+              <div className="sidebar-group-title">Pinned Views</div>
+              {pinnedVisibleSections.map((section) => (
+                <NavLink
+                  key={section.id}
+                  className={({ isActive }) => `nav-item nav-item-pinned ${isActive ? 'active' : ''}`}
+                  to={section.path}
+                  title={section.label}
+                >
+                  <span className="nav-icon nav-icon-text" aria-hidden="true">{section.shortLabel}</span>
+                  <span className="nav-label">{section.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          )}
+          {groupedSections.map((group) => (
+            <div key={group.id} className="sidebar-group">
+              {!sidebarCollapsed && <div className="sidebar-group-title">{group.label}</div>}
+              {group.sections.map((section) => (
+                <div key={section.id} className="nav-item-shell">
+                  <NavLink
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    to={section.path}
+                    title={section.label}
+                    aria-current={location.pathname === section.path ? 'page' : undefined}
+                  >
+                    <span className="nav-icon nav-icon-text" aria-hidden="true">{section.shortLabel}</span>
+                    {!sidebarCollapsed && <span className="nav-label">{section.label}</span>}
+                  </NavLink>
+                  {!sidebarCollapsed && authenticated && (
+                    <button
+                      className={`pin-toggle ${pinnedSections.includes(section.id) ? 'active' : ''}`}
+                      type="button"
+                      onClick={() => togglePinnedSection(section.id)}
+                      aria-label={pinnedSections.includes(section.id) ? `Unpin ${section.label}` : `Pin ${section.label}`}
+                      title={pinnedSections.includes(section.id) ? 'Unpin' : 'Pin'}
+                    >
+                      ★
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           ))}
         </nav>
+        {/* Recent Items */}
+        {!sidebarCollapsed && authenticated && recentItems.length > 0 && (
+          <div className="sidebar-recent">
+            <button className="btn-link" onClick={() => setShowRecent(r => !r)} style={{ fontSize: 11, padding: '4px 12px', width: '100%', textAlign: 'left', opacity: 0.7 }}>
+              {showRecent ? '▾' : '▸'} Recent
+            </button>
+            {showRecent && (
+              <ul style={{ listStyle: 'none', margin: 0, padding: '0 8px', fontSize: 12 }}>
+                {recentItems.slice(0, 5).map(r => (
+                  <li key={r.path}>
+                    <NavLink className="btn-link nav-item recent-link" style={{ fontSize: 12, padding: '2px 8px', width: '100%', textAlign: 'left' }} to={r.path}>
+                      {r.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <div className="sidebar-footer">
           {authenticated && !sidebarCollapsed && (
             <span className="role-badge" title="Current role">{role}</span>
           )}
-          <button className="btn-icon" onClick={toggle} title={dark ? 'Light mode' : 'Dark mode'}>
+          <button className="btn-icon" onClick={toggle} title={dark ? 'Light mode' : 'Dark mode'} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
             {dark ? '☀' : '🌙'}
           </button>
           {authenticated && (
-            <button className="btn-icon" onClick={disconnect} title="Disconnect">🔌</button>
+            <button className="btn-icon" onClick={disconnect} title="Disconnect" aria-label="Disconnect">⎋</button>
           )}
+          <button className="shortcut-hint" type="button" title="Press ? for keyboard shortcuts" onClick={() => setShowShortcuts(true)}>⌘?</button>
         </div>
       </aside>
 
@@ -149,30 +309,102 @@ export default function App() {
       <main className="main" role="main" aria-label="Main content">
         {/* Top Bar */}
         <header className="topbar" role="banner">
-          <h1 className="topbar-title">{currentSection.label}</h1>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <h1 className="topbar-title">{currentSection.label}</h1>
+            <Breadcrumbs sections={SECTIONS} pathname={location.pathname} />
+          </div>
           <div className="topbar-right">
             {hp?.version && (
               <span className="version-badge" title="Wardex version">v{hp.version}</span>
             )}
             {authenticated && (
-              <button className="btn btn-sm" onClick={() => setSearchOpen(true)} title="Global search (⌘K)">
-                🔍 Search
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="btn btn-sm"
+                  type="button"
+                  onClick={() => setShowInbox((open) => !open)}
+                  aria-expanded={showInbox}
+                  aria-haspopup="dialog"
+                >
+                  Inbox{inboxPending > 0 ? ` (${inboxPending})` : ''}
+                </button>
+                {showInbox && (
+                  <div className="card" style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 360, zIndex: 20, padding: 0 }}>
+                    <div style={{ padding: 14, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div className="card-title">Operator Inbox</div>
+                        <div className="hint" style={{ marginTop: 4 }}>Persistent approvals, degraded feeds, and follow-up work.</div>
+                      </div>
+                      <button className="btn btn-sm" onClick={() => setShowInbox(false)}>Close</button>
+                    </div>
+                    <div style={{ maxHeight: 320, overflowY: 'auto', padding: 12, display: 'grid', gap: 10 }}>
+                      {inboxItems.length === 0 ? <div className="empty" style={{ padding: 20 }}>No active inbox items.</div> : inboxItems.map((item) => (
+                        <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, opacity: item.acknowledged ? 0.65 : 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 13 }}>{item.title}</div>
+                              <div className="hint" style={{ marginTop: 4 }}>{item.summary}</div>
+                            </div>
+                            <span className={`badge ${item.severity === 'high' ? 'badge-err' : item.severity === 'medium' ? 'badge-warn' : 'badge-info'}`}>{item.severity}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                            <button className="btn btn-sm btn-primary" onClick={() => { navigate(item.path); setShowInbox(false); }}>Open</button>
+                            {!item.acknowledged && (
+                              <button className="btn btn-sm" onClick={async () => { await api.ackInbox({ id: item.id }); reloadInbox(); }}>Acknowledge</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {authenticated && (
+              <button className="btn btn-sm" onClick={() => setSearchOpen(true)} title="Global search (⌘K)" aria-label="Open global search (⌘K)">
+                Search
+              </button>
+            )}
+            {authenticated && currentSection.path !== '/help' && (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  const params = new URLSearchParams(location.search);
+                  params.set('context', currentSection.id);
+                  navigate(`/help?${params.toString()}`);
+                }}
+                title="Open contextual help for this workspace"
+              >
+                Help For View
               </button>
             )}
             {authenticated && (
               <button className="btn btn-sm" onClick={copyShareLink} title="Copy shareable deep-link to clipboard">
-                {linkCopied ? '✓ Copied' : '🔗 Share Link'}
+                {linkCopied ? 'Copied' : 'Share Link'}
+              </button>
+            )}
+            {authenticated && (
+              <button
+                className={`btn btn-sm ${pinnedSections.includes(currentSection.id) ? 'btn-primary' : ''}`}
+                type="button"
+                onClick={() => togglePinnedSection(currentSection.id)}
+                aria-label={pinnedSections.includes(currentSection.id) ? `Unpin ${currentSection.label}` : `Pin ${currentSection.label}`}
+              >
+                {pinnedSections.includes(currentSection.id) ? 'Pinned' : 'Pin View'}
               </button>
             )}
             {!authenticated ? (
               <form className="auth-form" onSubmit={handleConnect}>
+                <label className="sr-only" htmlFor="api-token-input">API token</label>
                 <input
+                  id="api-token-input"
+                  name="api_token"
                   type="password"
-                  placeholder="API token"
+                  placeholder="Paste API token…"
                   value={tokenInput}
                   onChange={e => setTokenInput(e.target.value)}
                   className="auth-input"
-                  autoComplete="off"
+                  autoComplete="current-password"
                 />
                 <button type="submit" className="btn btn-primary" disabled={checking || !tokenInput}>
                   {checking ? 'Connecting…' : 'Connect'}
@@ -184,6 +416,20 @@ export default function App() {
             )}
           </div>
         </header>
+        {authenticated && (
+          <div className="scope-bar" aria-label="Current workspace scope">
+            <div className="scope-copy">
+              <span className="scope-title">{primaryDestination.label}</span>
+              <span className="scope-separator">•</span>
+              <span>{currentSection.label}</span>
+            </div>
+            <div className="scope-chips">
+              {scopeTokens.map((token) => (
+                <span key={token} className="scope-chip">{token}</span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Content */}
         <div className="content" id="main-content">
@@ -205,6 +451,10 @@ export default function App() {
               <Route path="/reports" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><ReportsExports /></Suspense></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><RequireRole minRole="admin"><Suspense fallback={<div className="loading">Loading…</div>}><Settings /></Suspense></RequireRole></ErrorBoundary>} />
               <Route path="/help" element={<ErrorBoundary><Suspense fallback={<div className="loading">Loading…</div>}><HelpDocs /></Suspense></ErrorBoundary>} />
+              <Route path="/ueba" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><UEBADashboard /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/ndr" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><NDRDashboard /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/email-security" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><EmailSecurity /></Suspense></RequireRole></ErrorBoundary>} />
+              <Route path="/attack-graph" element={<ErrorBoundary><RequireRole minRole="analyst"><Suspense fallback={<div className="loading">Loading…</div>}><AttackGraph /></Suspense></RequireRole></ErrorBoundary>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           )}
@@ -214,12 +464,13 @@ export default function App() {
         open={searchOpen}
         onClose={(v) => setSearchOpen(typeof v === 'boolean' ? v : false)}
         onNavigate={(item) => {
-          // Navigate to the appropriate section based on category
-          if (item.category === 'Alerts') navigate('/');
-          else if (item.category === 'Agents') navigate('/fleet');
-          else if (item.category === 'Detection Rules') navigate('/detection');
-          else if (item.category === 'Quarantine') navigate('/soc');
-          else if (item.category === 'Feed Sources') navigate('/infrastructure');
+          if (item.path) {
+            navigate(item.path);
+            return;
+          }
+          if (item.action === 'create-incident') navigate('/soc?intent=create-incident');
+          else if (item.action === 'open-quarantine') navigate('/soc?focus=quarantine');
+          else if (item.action === 'run-hunt') navigate('/detection?intent=run-hunt');
         }}
       />
       <NotificationToast />

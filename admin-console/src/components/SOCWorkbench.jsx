@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import ProcessDrawer from './ProcessDrawer.jsx';
@@ -6,6 +6,14 @@ import { JsonDetails, SummaryGrid, downloadData } from './operator.jsx';
 import InvestigationTimeline from './InvestigationTimeline.jsx';
 
 import PlaybookEditor from './PlaybookEditor.jsx';
+
+// ── Tab Groups ─────────────────────────────────────────────────
+const TAB_GROUPS = [
+  { label: 'Triage', tabs: ['overview', 'incidents', 'queue', 'entity'] },
+  { label: 'Investigate', tabs: ['cases', 'investigations', 'process-tree', 'timeline', 'investigation-timeline', 'campaigns'] },
+  { label: 'Respond', tabs: ['response', 'escalation', 'playbooks', 'rbac'] },
+  { label: 'Measure', tabs: ['efficacy'] },
+];
 
 // ── Investigation Checklist Templates ──────────────────────────
 const CHECKLIST_TEMPLATES = {
@@ -73,9 +81,9 @@ function CampaignGraph() {
         nodes.push(nodeMap[hostId]);
       }
     });
-    // edges between hosts in same campaign
-    for (let i = 0; i < hosts.length; i++) {
-      for (let j = i + 1; j < hosts.length; j++) {
+    // edges between hosts in same campaign (cap at 200 edges to prevent DOM bloat)
+    for (let i = 0; i < hosts.length && edges.length < 200; i++) {
+      for (let j = i + 1; j < hosts.length && edges.length < 200; j++) {
         const a = typeof hosts[i] === 'string' ? hosts[i] : hosts[i].host_id || hosts[i].agent_id;
         const b = typeof hosts[j] === 'string' ? hosts[j] : hosts[j].host_id || hosts[j].agent_id;
         if (nodeMap[a] && nodeMap[b]) {
@@ -116,7 +124,27 @@ function CampaignGraph() {
 
 export default function SOCWorkbench() {
   const toast = useToast();
-  const [tab, setTab] = useState('overview');
+
+  // Persist active tab in URL hash
+  const [tab, setTabRaw] = useState(() => {
+    const h = window.location.hash.replace('#', '');
+    return TAB_GROUPS.some(g => g.tabs.includes(h)) ? h : 'overview';
+  });
+  const setTab = useCallback((t) => {
+    setTabRaw(t);
+    window.location.hash = t;
+  }, []);
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.replace('#', '');
+      if (TAB_GROUPS.some(g => g.tabs.includes(h))) setTabRaw(h);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const toggleGroup = useCallback((label) => setCollapsedGroups(p => ({ ...p, [label]: !p[label] })), []);
+
   const { data: overview, reload: rOverview } = useApi(api.workbenchOverview);
   const { data: incList, reload: rInc } = useApi(api.incidents);
   const { data: caseList, reload: rCases } = useApi(api.cases);
@@ -151,9 +179,15 @@ export default function SOCWorkbench() {
   const [commentText, setCommentText] = useState('');
   const [caseComments, setCaseComments] = useState([]);
 
-  // ── Investigation Checklists ──
-  const [checklist, setChecklist] = useState([]);
-  const [checklistType, setChecklistType] = useState('');
+  // ── Investigation Checklists (persisted) ──
+  const [checklist, setChecklist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('wardex_checklist') || '[]'); } catch { return []; }
+  });
+  const [checklistType, setChecklistType] = useState(() => localStorage.getItem('wardex_checklist_type') || '');
+  useEffect(() => {
+    localStorage.setItem('wardex_checklist', JSON.stringify(checklist));
+    localStorage.setItem('wardex_checklist_type', checklistType);
+  }, [checklist, checklistType]);
 
   useInterval(() => { rOverview(); rQueue(); rEscActive(); }, 15000);
   useInterval(() => {
@@ -178,11 +212,24 @@ export default function SOCWorkbench() {
 
   return (
     <div>
-      <div className="tabs">
-        {['overview', 'incidents', 'cases', 'queue', 'response', 'escalation', 'investigations', 'playbooks', 'campaigns', 'efficacy', 'process-tree', 'entity', 'rbac', 'timeline', 'investigation-timeline'].map(t => (
-          <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t.replace(/-/g, ' ').replace(/^\w/, c => c.toUpperCase())}
-          </button>
+      <div className="tabs" style={{ flexWrap: 'wrap', gap: 0 }}>
+        {TAB_GROUPS.map(g => (
+          <div key={g.label} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+            <button
+              className="tab"
+              onClick={() => toggleGroup(g.label)}
+              style={{ fontWeight: 700, fontSize: 11, opacity: 0.6, padding: '4px 6px', minWidth: 'auto' }}
+              title={`${collapsedGroups[g.label] ? 'Expand' : 'Collapse'} ${g.label}`}
+            >
+              {collapsedGroups[g.label] ? '▸' : '▾'} {g.label}
+            </button>
+            {!collapsedGroups[g.label] && g.tabs.map(t => (
+              <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
+                {t.replace(/-/g, ' ').replace(/^\w/, c => c.toUpperCase())}
+              </button>
+            ))}
+            <span style={{ width: 8 }} />
+          </div>
         ))}
       </div>
 

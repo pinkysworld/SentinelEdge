@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -7,6 +8,7 @@ import ProcessDrawer from './ProcessDrawer.jsx';
 import DashboardWidget, { useWidgetLayout } from './DashboardWidget.jsx';
 import Tip from './Tooltip.jsx';
 import { SkeletonCard } from './Skeleton.jsx';
+import { formatDateTime, formatRelativeTime, formatNumber } from './operator.jsx';
 
 function Metric({ label, value, sub, accent, onClick, tip }) {
   return (
@@ -44,6 +46,7 @@ function alertNarrative(alert) {
 
 export default function Dashboard() {
   const toast = useToast();
+  const navigate = useNavigate();
   const { data: st, loading: l1, reload: r1 } = useApi(api.status);
   const { data: fleet, reload: r2 } = useApi(api.fleetDashboard);
   const { data: alertData, reload: r3 } = useApi(api.alerts);
@@ -74,7 +77,21 @@ export default function Dashboard() {
   const defaultWidgets = ['system-health', 'telemetry', 'threat-overview', 'charts', 'process-security', 'detection-engine', 'malware-ti', 'dns-threats', 'lifecycle', 'recent-alerts'];
   const { order, hidden, moveWidget, removeWidget, restoreWidget, resetLayout } = useWidgetLayout(defaultWidgets, 'dashboard');
 
+  // Per-widget auto-refresh toggle
+  const [pausedWidgets, setPausedWidgets] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('wardex_paused_widgets') || '[]')); } catch { return new Set(); }
+  });
+  const toggleWidgetRefresh = (widgetId) => {
+    setPausedWidgets(prev => {
+      const next = new Set(prev);
+      next.has(widgetId) ? next.delete(widgetId) : next.add(widgetId);
+      localStorage.setItem('wardex_paused_widgets', JSON.stringify([...next]));
+      return next;
+    });
+  };
+
   const reloadAll = async () => {
+    if (pausedWidgets.size >= defaultWidgets.length) return;
     setRefreshing(true);
     await Promise.allSettled([r1(), r2(), r3(), r4(), r5(), r6(), r7(), r8(), r9(), rPA(), rMW(), rGap(), rQR(), rLC(), rFD(), rDNS()]);
     setRefreshing(false);
@@ -86,9 +103,11 @@ export default function Dashboard() {
   useEffect(() => {
     if (!nocMode) return;
     const esc = (e) => { if (e.key === 'Escape') { document.exitFullscreen?.().catch(() => {}); setNocMode(false); } };
+    const onFullscreenChange = () => { if (!document.fullscreenElement) setNocMode(false); };
     window.addEventListener('keydown', esc);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
     const rotateId = setInterval(() => setNocWidget(p => p + 1), 30000);
-    return () => { window.removeEventListener('keydown', esc); clearInterval(rotateId); };
+    return () => { window.removeEventListener('keydown', esc); document.removeEventListener('fullscreenchange', onFullscreenChange); clearInterval(rotateId); };
   }, [nocMode]);
 
   const alertList = Array.isArray(alertData) ? alertData : alertData?.alerts || [];
@@ -145,6 +164,39 @@ export default function Dashboard() {
     ? null
     : filteredAlerts.find((a, i) => (a.id || a.alert_id || `alert-${i}`) === expandedAlert);
   const openProcess = (process) => setSelectedProcess(process ? { ...process } : null);
+  const staleAlerts = alertList.filter((alert) => {
+    const timestamp = new Date(alert.timestamp || alert.time || 0).getTime();
+    return timestamp > 0 && (Date.now() - timestamp) > 30 * 60 * 1000;
+  });
+  const priorityAlerts = [...alertList]
+    .sort((left, right) => {
+      const severityRank = { critical: 4, severe: 3, elevated: 2, high: 2, medium: 1, low: 0 };
+      return (severityRank[alertSeverity(right)] || 0) - (severityRank[alertSeverity(left)] || 0);
+    })
+    .slice(0, 5);
+  const situationCards = [
+    {
+      title: 'Critical Now',
+      value: formatNumber(critical),
+      detail: critical > 0 ? `${critical} alert${critical === 1 ? '' : 's'} need immediate review.` : 'No critical alerts are active.',
+      action: 'Open Live Monitor',
+      onAction: () => navigate('/monitor?sev=critical'),
+    },
+    {
+      title: 'Stale Untriaged',
+      value: formatNumber(staleAlerts.length),
+      detail: staleAlerts.length > 0 ? 'Older than 30 minutes and still visible in the queue.' : 'No alerts are waiting beyond the stale threshold.',
+      action: 'Open SOC Workbench',
+      onAction: () => navigate('/soc'),
+    },
+    {
+      title: 'Response Pending Approval',
+      value: formatNumber(respStats?.pending ?? 0),
+      detail: (respStats?.pending ?? 0) > 0 ? 'Response actions are waiting for operator approval.' : 'No response actions are blocked right now.',
+      action: 'Review Response',
+      onAction: () => navigate('/soc#response'),
+    },
+  ];
 
   if (l1) return <div style={{ padding: 20 }}><SkeletonCard height={60} /><SkeletonCard height={120} /><SkeletonCard height={80} /><SkeletonCard height={200} /></div>;
 
@@ -160,6 +212,43 @@ export default function Dashboard() {
           <button className="btn btn-sm" onClick={resetLayout} title="Reset widget layout">⊞ Reset Layout</button>
           <button className="btn btn-sm" onClick={() => { setNocMode(true); document.documentElement.requestFullscreen?.().catch(() => {}); }} title="NOC wall display (fullscreen)">📺 NOC</button>
         </div>
+      </div>
+
+      <div className="situation-grid">
+        {situationCards.map((card) => (
+          <article key={card.title} className="situation-card">
+            <div className="situation-eyebrow">{card.title}</div>
+            <div className="situation-value">{card.value}</div>
+            <p className="situation-copy">{card.detail}</p>
+            <button className="btn btn-sm btn-primary" onClick={card.onAction}>{card.action}</button>
+          </article>
+        ))}
+      </div>
+
+      <div className="card priority-stack">
+        <div className="card-header">
+          <span className="card-title">Priority Stack</span>
+          <span className="hint">Updated {formatRelativeTime(new Date())}</span>
+        </div>
+        {priorityAlerts.length === 0 ? (
+          <div className="empty">No alerts are waiting in the priority stack.</div>
+        ) : (
+          <div className="priority-stack-list">
+            {priorityAlerts.map((alert, index) => {
+              const alertId = alert.id || alert.alert_id || `priority-${index}`;
+              return (
+                <button key={alertId} type="button" className="priority-stack-item" onClick={() => setExpandedAlert(alertId)}>
+                  <div className="priority-stack-main">
+                    <span className={`badge ${alertSeverity(alert) === 'critical' ? 'badge-err' : 'badge-warn'}`}>{alertSeverity(alert)}</span>
+                    <span className="priority-stack-title">{alertCategory(alert)}</span>
+                  </div>
+                  <div className="priority-stack-copy">{alertNarrative(alert)}</div>
+                  <div className="priority-stack-meta">{formatRelativeTime(alert.timestamp || alert.time)} · {formatDateTime(alert.timestamp || alert.time)}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── NOC Wall Display ─────────── */}
@@ -190,8 +279,9 @@ export default function Dashboard() {
       })()}
 
       {order.map(wid => {
+        const widgetPaused = pausedWidgets.has(wid);
         if (wid === 'system-health') return (
-      <DashboardWidget key={wid} id={wid} title="System Health" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="System Health" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
       <div className="card-grid">
         <Metric label="System Status" value={hp?.status === 'ok' ? '✓ Healthy' : hp?.status || '—'} sub={`Uptime: ${st?.uptime || '—'}`} accent />
         <Metric label="Active Agents" value={fleet?.total_agents ?? fleet?.agents ?? '—'} sub={fleet?.online ? `${fleet.online} online` : undefined} />
@@ -201,7 +291,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'telemetry' && telemChart.length > 0) return (
-      <DashboardWidget key={wid} id={wid} title="System Telemetry" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="System Telemetry" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
           <div className="card" style={{ padding: '12px 8px', marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart data={telemChart}>
@@ -216,7 +306,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'threat-overview') return (
-      <DashboardWidget key={wid} id={wid} title="Threat Overview" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Threat Overview" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
       <div className="card-grid">
         <Metric label="Total Alerts" value={alertList.length} sub={`${critical} critical · ${elevated} elevated`} />
         <Metric label="Detection Profile" value={profile?.profile || '—'} sub={profile?.description} tip="Active anomaly detection sensitivity — aggressive, balanced, or quiet" />
@@ -226,7 +316,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'charts' && (alertTimeline.length > 0 || sevBreakdown.length > 0)) return (
-      <DashboardWidget key={wid} id={wid} title="Alert Charts" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Alert Charts" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
         <div className="card-grid" style={{ marginTop: 12, marginBottom: 16 }}>
           {alertTimeline.length > 0 && (
             <div className="card" style={{ padding: '12px 8px', gridColumn: sevBreakdown.length > 0 ? 'span 2' : 'span 3' }}>
@@ -260,7 +350,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'process-security' && procAnalysis) return (
-      <DashboardWidget key={wid} id={wid} title="Process Security" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Process Security" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <span className="card-title">
@@ -305,7 +395,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'detection-engine' && detSum) return (
-      <DashboardWidget key={wid} id={wid} title="Detection Engine" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Detection Engine" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header"><span className="card-title">Detection Summary</span></div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, padding: '12px 0' }}>
@@ -320,7 +410,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'malware-ti') return (
-      <DashboardWidget key={wid} id={wid} title="Malware & Threat Intelligence" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Malware & Threat Intelligence" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
       <div className="card-grid">
         <Metric label="Malware DB" value={mwStats?.database?.total_entries ?? '—'} sub={mwStats?.scanner?.total_scans ? `${mwStats.scanner.total_scans} scans` : undefined} />
         <Metric label="YARA Rules" value={mwStats?.yara_rules ?? '—'} sub={mwStats?.scanner?.malicious_count ? `${mwStats.scanner.malicious_count} detections` : undefined} />
@@ -330,7 +420,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'dns-threats') return (
-      <DashboardWidget key={wid} id={wid} title="DNS Threat Intelligence" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="DNS Threat Intelligence" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
       <div className="card-grid">
         <Metric label="Domains Analyzed" value={dnsSummary?.domains_analyzed ?? '—'} sub={dnsSummary?.threats_detected ? `${dnsSummary.threats_detected} threats` : undefined} />
         <Metric label="DGA Suspects" value={dnsSummary?.dga_suspects ?? '—'} accent={dnsSummary?.dga_suspects > 0} tip="Domains flagged by the DGA detection algorithm" />
@@ -340,7 +430,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'lifecycle' && (lcStats || gaps)) return (
-      <DashboardWidget key={wid} id={wid} title="Fleet Lifecycle & Coverage" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Fleet Lifecycle & Coverage" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
           <div className="card-grid">
             {lcStats && <Metric label="Active Agents" value={lcStats.active ?? '—'} sub={lcStats.stale ? `${lcStats.stale} stale · ${lcStats.offline ?? 0} offline` : undefined} />}
             {lcStats && <Metric label="Archived" value={lcStats.archived ?? 0} sub={lcStats.decommissioned ? `${lcStats.decommissioned} decommissioned` : undefined} />}
@@ -350,7 +440,7 @@ export default function Dashboard() {
       </DashboardWidget>
         );
         if (wid === 'recent-alerts') return (
-      <DashboardWidget key={wid} id={wid} title="Recent Alerts" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget}>
+      <DashboardWidget key={wid} id={wid} title="Recent Alerts" index={order.indexOf(wid)} onMove={moveWidget} onRemove={removeWidget} paused={widgetPaused} onTogglePause={toggleWidgetRefresh}>
       <div className="card">
         <div className="card-header">
           <span className="card-title">Latest ({Math.min(filteredAlerts.length, 25)} of {alertList.length})</span>

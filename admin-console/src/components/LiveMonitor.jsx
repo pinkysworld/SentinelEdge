@@ -1,12 +1,20 @@
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import AlertDrawer from './AlertDrawer.jsx';
 import ProcessDrawer from './ProcessDrawer.jsx';
-import { JsonDetails, downloadCsv, downloadData } from './operator.jsx';
+import { JsonDetails, SummaryGrid, downloadCsv, downloadData, formatDateTime, formatRelativeTime } from './operator.jsx';
+
+const ALERT_VIEWS = [
+  { id: 'critical-linux', label: 'Critical Linux alerts', severity: 'critical', host: 'linux', source: 'all', query: '' },
+  { id: 'unassigned', label: 'Untriaged alerts', severity: 'all', host: 'all', source: 'all', query: 'acknowledged' },
+  { id: 'all', label: 'All alerts', severity: 'all', host: 'all', source: 'all', query: '' },
+];
 
 export default function LiveMonitor() {
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: alertData, loading, reload } = useApi(api.alerts);
   const { data: countData, reload: reloadCount } = useApi(api.alertsCount);
   const { data: grouped, reload: reloadGrouped } = useApi(api.alertsGrouped);
@@ -15,14 +23,27 @@ export default function LiveMonitor() {
   const { data: procAnalysis, reload: reloadPA } = useApi(api.processesAnalysis);
   const { data: fpStats, reload: reloadFP } = useApi(api.fpFeedbackStats);
   const [selectedId, setSelectedId] = useState(null);
+  const [hoveredId, setHoveredId] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
-  const [tab, setTab] = useState('stream');
+  const [tab, setTab] = useState(() => searchParams.get('monitorTab') || 'stream');
   const [procSort, setProcSort] = useState('cpu');
   const [procFilter, setProcFilter] = useState('');
-  const [sevFilter, setSevFilter] = useState('all');
+  const [sevFilter, setSevFilter] = useState(() => searchParams.get('sev') || 'all');
+  const [sourceFilter, setSourceFilter] = useState(() => searchParams.get('source') || 'all');
+  const [hostFilter, setHostFilter] = useState(() => searchParams.get('host') || 'all');
+  const [searchFilter, setSearchFilter] = useState(() => searchParams.get('q') || '');
   const [selectedAlerts, setSelectedAlerts] = useState(new Set());
   const [bulkAction, setBulkAction] = useState('');
   const [selectedProcess, setSelectedProcess] = useState(null);
+
+  const updateMonitorParams = (updates) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (!value || value === 'all') next.delete(key);
+      else next.set(key, value);
+    });
+    setSearchParams(next, { replace: true });
+  };
 
   const reloadAll = () => { reload(); reloadCount(); reloadGrouped(); };
   useInterval(reloadAll, 10000);
@@ -34,12 +55,18 @@ export default function LiveMonitor() {
   }, tab === 'processes' ? 10000 : null);
 
   const alertList = Array.isArray(alertData) ? alertData : alertData?.alerts || [];
+  const sourceOptions = ['all', ...new Set(alertList.map((alert) => alert.source).filter(Boolean))];
+  const hostOptions = ['all', ...new Set(alertList.map((alert) => alert.hostname).filter(Boolean))];
 
-  // Severity filter
   const filteredAlerts = useMemo(() => {
-    if (sevFilter === 'all') return alertList;
-    return alertList.filter(a => (a.severity || '').toLowerCase() === sevFilter);
-  }, [alertList, sevFilter]);
+    return alertList.filter((alert) => {
+      const matchesSeverity = sevFilter === 'all' || (alert.severity || '').toLowerCase() === sevFilter;
+      const matchesSource = sourceFilter === 'all' || alert.source === sourceFilter;
+      const matchesHost = hostFilter === 'all' || alert.hostname === hostFilter || String(alert.hostname || '').toLowerCase().includes(hostFilter.toLowerCase());
+      const matchesQuery = !searchFilter || JSON.stringify(alert).toLowerCase().includes(searchFilter.toLowerCase());
+      return matchesSeverity && matchesSource && matchesHost && matchesQuery;
+    });
+  }, [alertList, hostFilter, searchFilter, sevFilter, sourceFilter]);
 
   // Bulk selection helpers
   const toggleSelect = (aid) => {
@@ -110,6 +137,11 @@ export default function LiveMonitor() {
   const selectedAlert = selectedId == null
     ? null
     : filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === selectedId);
+  const previewAlert = useMemo(() => {
+    if (selectedAlert) return selectedAlert;
+    if (!hoveredId) return null;
+    return filteredAlerts.find((alert, index) => (alert.id || alert.alert_id || `${alert.timestamp}-${index}`) === hoveredId) || null;
+  }, [filteredAlerts, hoveredId, selectedAlert]);
 
   const exportAlerts = (format) => {
     if (format === 'csv') {
@@ -168,90 +200,186 @@ export default function LiveMonitor() {
         </div>
       </div>
 
-      <div className="tabs">
-        <button className={`tab ${tab === 'stream' ? 'active' : ''}`} onClick={() => setTab('stream')}>Alert Stream</button>
-        <button className={`tab ${tab === 'grouped' ? 'active' : ''}`} onClick={() => setTab('grouped')}>Grouped</button>
-        <button className={`tab ${tab === 'analysis' ? 'active' : ''}`} onClick={() => setTab('analysis')}>Analysis</button>
-        <button className={`tab ${tab === 'processes' ? 'active' : ''}`} onClick={() => setTab('processes')}>Processes</button>
+      <div className="tabs" role="tablist" aria-label="Monitor views">
+        <button className={`tab ${tab === 'stream' ? 'active' : ''}`} role="tab" aria-selected={tab === 'stream'} onClick={() => { setTab('stream'); updateMonitorParams({ monitorTab: 'stream' }); }}>Alert Stream</button>
+        <button className={`tab ${tab === 'grouped' ? 'active' : ''}`} role="tab" aria-selected={tab === 'grouped'} onClick={() => { setTab('grouped'); updateMonitorParams({ monitorTab: 'grouped' }); }}>Grouped</button>
+        <button className={`tab ${tab === 'analysis' ? 'active' : ''}`} role="tab" aria-selected={tab === 'analysis'} onClick={() => { setTab('analysis'); updateMonitorParams({ monitorTab: 'analysis' }); }}>Analysis</button>
+        <button className={`tab ${tab === 'processes' ? 'active' : ''}`} role="tab" aria-selected={tab === 'processes'} onClick={() => { setTab('processes'); updateMonitorParams({ monitorTab: 'processes' }); }}>Processes</button>
       </div>
 
-      {loading && <div className="loading"><div className="spinner" /></div>}
+      {loading && <div className="loading" role="status" aria-label="Loading alerts"><div className="spinner" /></div>}
 
       {tab === 'stream' && !loading && (
-        <div className="card">
-          {/* Severity filter + Bulk actions bar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 0', borderBottom: '1px solid var(--border)', marginBottom: 12 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Filter:</span>
-            {['all', 'critical', 'severe', 'elevated', 'low'].map(s => (
-              <button key={s} className={`btn btn-sm ${sevFilter === s ? 'btn-primary' : ''}`} onClick={() => setSevFilter(s)}>
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-            <div className="btn-group" style={{ marginLeft: 'auto' }}>
-              <button className="btn btn-sm" onClick={() => exportAlerts('json')}>Export JSON</button>
-              <button className="btn btn-sm" onClick={() => exportAlerts('csv')}>Export CSV</button>
-            </div>
-            {selectedAlerts.size > 0 && (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{selectedAlerts.size} selected</span>
-                <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
-                  style={{ padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12 }}>
-                  <option value="">Bulk Action…</option>
-                  <option value="fp">Mark as False Positive</option>
-                  <option value="triage">Acknowledge / Triage</option>
-                  <option value="incident">Create Incident</option>
-                </select>
-                <button className="btn btn-sm btn-primary" disabled={!bulkAction} onClick={executeBulk}>Apply</button>
+        <div className="triage-layout">
+          <section className="triage-list card">
+            <div className="card-header">
+              <span className="card-title">Alert Queue ({filteredAlerts.length})</span>
+              <div className="btn-group">
+                <button className="btn btn-sm" onClick={() => exportAlerts('json')}>Export JSON</button>
+                <button className="btn btn-sm" onClick={() => exportAlerts('csv')}>Export CSV</button>
               </div>
-            )}
-          </div>
-          {filteredAlerts.length === 0 ? <div className="empty">No alerts{sevFilter !== 'all' ? ` matching "${sevFilter}"` : ''}</div> : (
-            <div className="table-wrap">
-              <table>
-                <thead><tr>
-                  <th style={{ width: 30 }}><input type="checkbox" checked={selectedAlerts.size === filteredAlerts.length && filteredAlerts.length > 0} onChange={toggleSelectAll} /></th>
-                  <th>Time</th><th>Severity</th><th>Source</th><th>Category</th><th>Message</th><th>Actions</th>
-                </tr></thead>
-                <tbody>
-                  {filteredAlerts.map((a, i) => {
-                    const aid = a.id || a.alert_id || `${a.timestamp}-${i}`;
-                    const isSelected = selectedAlerts.has(aid);
-                    return (
-                    <tr key={aid} style={{ cursor: 'pointer', background: selectedId === aid ? 'rgba(59,130,246,.08)' : isSelected ? 'rgba(59,130,246,.04)' : undefined }}>
-                      <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(aid)} /></td>
-                      <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }} onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.timestamp || a.time || '—'}</td>
-                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}><span className={`sev-${(a.severity || 'low').toLowerCase()}`}>{a.severity}</span></td>
-                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.source || '—'}</td>
-                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.category || a.type || '—'}</td>
-                      <td onClick={() => setSelectedId(selectedId === aid ? null : aid)}>{a.message || a.description || '—'}</td>
-                      <td>
-                        <div className="btn-group">
-                          <button className="btn btn-sm" onClick={() => setSelectedId(selectedId === aid ? null : aid)}>
-                            Investigate
-                          </button>
-                          <button className="btn btn-sm" onClick={() => markFP(a)} title="Mark as false positive" style={{ color: 'var(--warning)' }}>FP</button>
-                        </div>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             </div>
-          )}
-          {/* FP Feedback Stats */}
-          {Array.isArray(fpStats) && fpStats.length > 0 && (
-            <div style={{ marginTop: 16, padding: 12, background: 'var(--bg)', borderRadius: 'var(--radius)' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>FP Feedback Summary</div>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                {fpStats.slice(0, 5).map((f, i) => (
-                  <span key={i} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'var(--border)' }}>
-                    {f.pattern}: {(f.fp_ratio * 100).toFixed(0)}% FP ({f.total_marked} total)
-                  </span>
+            <div className="triage-toolbar">
+              <div className="triage-toolbar-group">
+                {ALERT_VIEWS.map((view) => (
+                  <button
+                    key={view.id}
+                    className={`btn btn-sm ${view.id === (ALERT_VIEWS.find((candidate) => candidate.severity === sevFilter && candidate.host === hostFilter && candidate.source === sourceFilter && candidate.query === searchFilter)?.id) ? 'btn-primary' : ''}`}
+                    onClick={() => {
+                      setSevFilter(view.severity);
+                      setHostFilter(view.host);
+                      setSourceFilter(view.source);
+                      setSearchFilter(view.query);
+                      updateMonitorParams({ sev: view.severity, host: view.host, source: view.source, q: view.query });
+                    }}
+                  >
+                    {view.label}
+                  </button>
                 ))}
               </div>
+              <div className="triage-toolbar-group triage-toolbar-group-right">
+                <input
+                  className="form-input triage-search"
+                  placeholder="Search message, host, user, category…"
+                  value={searchFilter}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setSearchFilter(value);
+                    updateMonitorParams({ q: value });
+                  }}
+                />
+                <select className="form-select" value={sourceFilter} onChange={(event) => {
+                  const value = event.target.value;
+                  setSourceFilter(value);
+                  updateMonitorParams({ source: value });
+                }}>
+                  {sourceOptions.map((source) => <option key={source} value={source}>{source === 'all' ? 'All sources' : source}</option>)}
+                </select>
+                <select className="form-select" value={hostFilter} onChange={(event) => {
+                  const value = event.target.value;
+                  setHostFilter(value);
+                  updateMonitorParams({ host: value });
+                }}>
+                  {hostOptions.map((host) => <option key={host} value={host}>{host === 'all' ? 'All hosts' : host}</option>)}
+                </select>
+              </div>
             </div>
-          )}
+            <div className="active-filter-chips">
+              {['all', 'critical', 'severe', 'elevated', 'low'].map((severity) => (
+                <button
+                  key={severity}
+                  className={`filter-chip-button ${sevFilter === severity ? 'active' : ''}`}
+                  onClick={() => {
+                    setSevFilter(severity);
+                    updateMonitorParams({ sev: severity });
+                  }}
+                >
+                  {severity === 'all' ? 'All severities' : severity}
+                </button>
+              ))}
+              {sourceFilter !== 'all' && <span className="scope-chip">Source: {sourceFilter}</span>}
+              {hostFilter !== 'all' && <span className="scope-chip">Host: {hostFilter}</span>}
+              {searchFilter && <span className="scope-chip">Query: {searchFilter}</span>}
+            </div>
+            <div className="sticky-bulk-bar">
+              <div>{selectedAlerts.size} selected</div>
+              <select value={bulkAction} onChange={e => setBulkAction(e.target.value)} className="form-select" style={{ maxWidth: 200 }}>
+                <option value="">Bulk Action…</option>
+                <option value="fp">Mark as False Positive</option>
+                <option value="triage">Acknowledge / Triage</option>
+                <option value="incident">Create Incident</option>
+              </select>
+              <button className="btn btn-sm btn-primary" disabled={!bulkAction || selectedAlerts.size === 0} onClick={executeBulk}>Apply</button>
+            </div>
+            {filteredAlerts.length === 0 ? <div className="empty">No alerts match the current scope.</div> : (
+              <div className="split-list-table">
+                <table>
+                  <thead><tr>
+                    <th style={{ width: 30 }}><input type="checkbox" checked={selectedAlerts.size === filteredAlerts.length && filteredAlerts.length > 0} onChange={toggleSelectAll} aria-label="Select all visible alerts" /></th>
+                    <th>Time</th><th>Severity</th><th>Source</th><th>Category</th><th>Message</th>
+                  </tr></thead>
+                  <tbody>
+                    {filteredAlerts.map((alert, index) => {
+                      const aid = alert.id || alert.alert_id || `${alert.timestamp}-${index}`;
+                      const isSelected = selectedAlerts.has(aid);
+                      const isActive = selectedId === aid || hoveredId === aid;
+                      return (
+                        <tr
+                          key={aid}
+                          className={isActive ? 'row-active' : ''}
+                          tabIndex={0}
+                          onMouseEnter={() => setHoveredId(aid)}
+                          onFocus={() => setHoveredId(aid)}
+                          onClick={() => setSelectedId(selectedId === aid ? null : aid)}
+                        >
+                          <td onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(aid)} aria-label={`Select alert ${aid}`} /></td>
+                          <td>
+                            <div className="row-primary">{formatRelativeTime(alert.timestamp || alert.time)}</div>
+                            <div className="row-secondary">{formatDateTime(alert.timestamp || alert.time)}</div>
+                          </td>
+                          <td><span className={`badge ${(alert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (alert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}>{alert.severity || 'unknown'}</span></td>
+                          <td>{alert.source || '—'}</td>
+                          <td>{alert.category || alert.type || '—'}</td>
+                          <td>
+                            <div className="row-primary">{alert.message || alert.description || '—'}</div>
+                            <div className="row-secondary">{alert.hostname || alert.origin_agent_id || 'No host context'}</div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {Array.isArray(fpStats) && fpStats.length > 0 && (
+              <div className="detail-callout" style={{ marginTop: 16 }}>
+                FP feedback trends:
+                {' '}
+                {fpStats.slice(0, 3).map((item) => `${item.pattern} ${(item.fp_ratio * 100).toFixed(0)}%`).join(' · ')}
+              </div>
+            )}
+          </section>
+
+          <aside className="triage-detail card">
+            <div className="card-header">
+              <span className="card-title">{previewAlert ? (previewAlert.message || previewAlert.category || 'Alert Preview') : 'Alert Preview'}</span>
+              {previewAlert && (
+                <div className="btn-group">
+                  <button className="btn btn-sm" onClick={() => setSelectedId(selectedId ? null : (previewAlert.id || previewAlert.alert_id))}>
+                    {selectedId ? 'Unselect' : 'Pin'}
+                  </button>
+                  <button className="btn btn-sm" onClick={() => markFP(previewAlert)}>Mark FP</button>
+                </div>
+              )}
+            </div>
+            {previewAlert ? (
+              <>
+                <div className="detail-hero">
+                  <div>
+                    <div className="detail-hero-title">{previewAlert.category || previewAlert.type || 'Alert context'}</div>
+                    <div className="detail-hero-copy">{previewAlert.message || previewAlert.description || 'Open alert context available in this preview.'}</div>
+                  </div>
+                  <span className={`badge ${(previewAlert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (previewAlert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}>{previewAlert.severity || 'unknown'}</span>
+                </div>
+                <SummaryGrid data={{
+                  source: previewAlert.source,
+                  host: previewAlert.hostname || previewAlert.origin_agent_id,
+                  time: formatDateTime(previewAlert.timestamp || previewAlert.time),
+                  relative_time: formatRelativeTime(previewAlert.timestamp || previewAlert.time),
+                  score: previewAlert.score,
+                  status: previewAlert.status || 'open',
+                }} limit={6} />
+                <div className="detail-callout" style={{ marginTop: 16 }}>
+                  {previewAlert.hostname
+                    ? `Current scope: ${previewAlert.hostname}. Use this preview to inspect host, source, and severity without losing the surrounding queue.`
+                    : 'This alert has limited host context. Use the full drawer when you need deeper pivoting or raw evidence.'}
+                </div>
+                <JsonDetails data={previewAlert} label="Expanded alert context" />
+              </>
+            ) : (
+              <div className="empty">Hover or select an alert to keep context visible while triaging the queue.</div>
+            )}
+          </aside>
         </div>
       )}
 

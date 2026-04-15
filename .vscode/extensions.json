@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+    "vadimcn.vscode-lldb",
+    "dbaeumer.vscode-eslint",
+    "ms-playwright.playwright",
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "ms-python.python"
+  ]
+}

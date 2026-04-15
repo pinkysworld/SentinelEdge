@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+import datetime
+from email.utils import parsedate_to_datetime
+import logging
+import random
+import time
+from typing import Any, Generator
 
 import requests
 from urllib.parse import quote
@@ -16,6 +21,11 @@ from wardex.exceptions import (
 )
 
 MAX_BATCH_SIZE = 10_000
+DEFAULT_RETRIES = 3
+RETRY_BACKOFF_BASE = 0.5
+RETRY_BACKOFF_MAX = 30.0
+
+log = logging.getLogger(__name__)
 INCIDENT_SEVERITY_ALIASES = {
     "nominal": "Nominal",
     "low": "Low",
@@ -53,10 +63,12 @@ class WardexClient:
         token: str | None = None,
         timeout: float = 30.0,
         verify: bool = True,
+        retries: int = DEFAULT_RETRIES,
     ):
         self._base = base_url.rstrip("/")
         self._token = token
         self._timeout = timeout
+        self._retries = retries
         self._session = requests.Session()
         self._session.verify = verify
         if token:
@@ -105,11 +117,59 @@ class WardexClient:
             kwargs["params"] = params
         if body is not None:
             kwargs["json"] = body
-        resp = self._session.request(method, self._url(path), **kwargs)
-        self._raise_for_status(resp)
-        if self._is_json(resp):
-            return resp.json()
-        return resp.text
+        url = self._url(path)
+        last_exc: Exception | None = None
+        resp: requests.Response | None = None
+        for attempt in range(self._retries + 1):
+            try:
+                resp = self._session.request(method, url, **kwargs)
+            except requests.ConnectionError as exc:
+                last_exc = exc
+                if attempt < self._retries:
+                    self._backoff(attempt)
+                    continue
+                raise
+            if resp.status_code == 429 or resp.status_code >= 500:
+                last_exc = None
+                if attempt < self._retries:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            delay = float(retry_after)
+                        except ValueError:
+                            try:
+                                dt = parsedate_to_datetime(retry_after)
+                                delay = max(0, (dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
+                            except Exception:
+                                delay = self._backoff_delay(attempt)
+                    else:
+                        delay = self._backoff_delay(attempt)
+                    log.warning(
+                        "Retry %d/%d for %s %s (HTTP %d)",
+                        attempt + 1, self._retries, method, path, resp.status_code,
+                    )
+                    time.sleep(delay)
+                    continue
+            self._raise_for_status(resp)
+            if self._is_json(resp):
+                return resp.json()
+            return resp.text
+        if last_exc is not None:
+            raise last_exc
+        if resp is not None:
+            self._raise_for_status(resp)
+        return None  # unreachable
+
+    @staticmethod
+    def _backoff_delay(attempt: int) -> float:
+        delay = RETRY_BACKOFF_BASE * (2 ** attempt)
+        delay = min(delay, RETRY_BACKOFF_MAX)
+        return delay * (0.5 + random.random() * 0.5)
+
+    def _backoff(self, attempt: int) -> None:
+        delay = self._backoff_delay(attempt)
+        log.warning("Retry %d/%d after %.1fs (connection error)", attempt + 1, self._retries, delay)
+        time.sleep(delay)
 
     def _get(self, path: str, **params: Any) -> Any:
         return self._request("GET", path, **params)
@@ -179,16 +239,40 @@ class WardexClient:
         return self._get(f"/api/alerts/{quote(alert_id, safe='')}")
 
     def ack_alert(self, alert_id: str) -> dict[str, Any]:
-        raise self._unsupported(
-            "ack_alert()",
-            "Use the queue acknowledgement or event triage APIs; the current server does not expose a dedicated /api/alerts/{id}/ack route.",
-        )
+        """Acknowledge a single alert via the bulk acknowledge endpoint."""
+        return self._post("/api/alerts/bulk/acknowledge", {"ids": [alert_id]})
+
+    def ack_alerts(self, alert_ids: list[str]) -> dict[str, Any]:
+        """Acknowledge multiple alerts in one request."""
+        return self._post("/api/alerts/bulk/acknowledge", {"ids": alert_ids})
 
     def resolve_alert(self, alert_id: str) -> dict[str, Any]:
-        raise self._unsupported(
-            "resolve_alert()",
-            "Use incident/case workflows or event triage; the current server does not expose a dedicated /api/alerts/{id}/resolve route.",
-        )
+        """Resolve a single alert via the bulk resolve endpoint."""
+        return self._post("/api/alerts/bulk/resolve", {"ids": [alert_id]})
+
+    def resolve_alerts(self, alert_ids: list[str]) -> dict[str, Any]:
+        """Resolve multiple alerts in one request."""
+        return self._post("/api/alerts/bulk/resolve", {"ids": alert_ids})
+
+    def close_alert(self, alert_id: str) -> dict[str, Any]:
+        """Close a single alert via the bulk close endpoint."""
+        return self._post("/api/alerts/bulk/close", {"ids": [alert_id]})
+
+    def close_alerts(self, alert_ids: list[str]) -> dict[str, Any]:
+        """Close multiple alerts in one request."""
+        return self._post("/api/alerts/bulk/close", {"ids": alert_ids})
+
+    def list_all_alerts(self, page_size: int = 50, max_pages: int = 10_000) -> Generator[dict[str, Any], None, None]:
+        """Auto-paginating generator that yields every alert."""
+        offset = 0
+        for _ in range(max_pages):
+            batch = self.list_alerts(limit=page_size, offset=offset)
+            if not batch:
+                return
+            yield from batch
+            if len(batch) < page_size:
+                return
+            offset += len(batch)
 
     # ── incidents ─────────────────────────────────────────────────────────
 
@@ -214,11 +298,9 @@ class WardexClient:
             },
         )
 
-    def escalate(self, incident_id: str) -> dict[str, Any]:
-        raise self._unsupported(
-            "escalate()",
-            "Use create_incident(), update_incident(), or the escalation APIs directly if your deployment exposes them.",
-        )
+    def escalate(self, incident_id: str, *, policy_id: str = "default") -> dict[str, Any]:
+        """Start an escalation for an incident/alert via the escalation engine."""
+        return self._post("/api/escalation/start", {"policy_id": policy_id, "alert_id": incident_id})
 
     def update_incident(
         self,
@@ -579,3 +661,65 @@ class WardexClient:
             "severity": severity,
             "description": description,
         })
+
+    # ── UEBA ─────────────────────────────────────────────────────────
+
+    def ueba_risky_entities(self) -> list[dict[str, Any]]:
+        return self._get("/api/ueba/risky-entities")
+
+    def ueba_anomalies(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self._get("/api/ueba/anomalies", limit=limit)
+
+    def ueba_peer_groups(self) -> list[dict[str, Any]]:
+        return self._get("/api/ueba/peer-groups")
+
+    def ueba_entity(self, entity_id: str) -> dict[str, Any]:
+        return self._get(f"/api/ueba/entity/{quote(entity_id, safe='')}")
+
+    def ueba_timeline(self, entity_id: str, hours: int = 24) -> list[dict[str, Any]]:
+        return self._get(f"/api/ueba/timeline/{quote(entity_id, safe='')}", hours=hours)
+
+    # ── NDR advanced ─────────────────────────────────────────────────
+
+    def ndr_tls_anomalies(self) -> list[dict[str, Any]]:
+        return self._get("/api/ndr/tls-anomalies")
+
+    def ndr_dpi_anomalies(self) -> list[dict[str, Any]]:
+        return self._get("/api/ndr/dpi-anomalies")
+
+    def ndr_entropy_anomalies(self) -> list[dict[str, Any]]:
+        return self._get("/api/ndr/entropy-anomalies")
+
+    def ndr_self_signed_certs(self) -> list[dict[str, Any]]:
+        return self._get("/api/ndr/self-signed-certs")
+
+    def ndr_top_talkers(self, limit: int = 20) -> list[dict[str, Any]]:
+        return self._get("/api/ndr/top-talkers", limit=limit)
+
+    def ndr_protocol_distribution(self) -> dict[str, Any]:
+        return self._get("/api/ndr/protocol-distribution")
+
+    # ── email security ───────────────────────────────────────────────
+
+    def email_analyze(self, headers: str) -> dict[str, Any]:
+        return self._post("/api/email/analyze", {"headers": headers})
+
+    def email_quarantine(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self._get("/api/email/quarantine", limit=limit)
+
+    def email_quarantine_release(self, message_id: str) -> dict[str, Any]:
+        return self._post(f"/api/email/quarantine/{quote(message_id, safe='')}/release")
+
+    def email_quarantine_delete(self, message_id: str) -> dict[str, Any]:
+        return self._delete(f"/api/email/quarantine/{quote(message_id, safe='')}")
+
+    def email_stats(self) -> dict[str, Any]:
+        return self._get("/api/email/stats")
+
+    def email_policies(self) -> list[dict[str, Any]]:
+        return self._get("/api/email/policies")
+
+    # ── campaigns / attack graph ─────────────────────────────────────
+
+    def campaigns(self) -> dict[str, Any]:
+        return self._get("/api/campaigns")

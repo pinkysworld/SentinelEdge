@@ -148,12 +148,44 @@ jobs:
           rustup default nightly
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
+      - name: Restore fuzz corpus cache
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.sha }}
+          restore-keys: fuzz-corpus-
       - name: Fuzz CSV parser (60s)
         run: cd fuzz && cargo +nightly fuzz run csv_parse -- -max_total_time=60
       - name: Fuzz JSONL parser (60s)
         run: cd fuzz && cargo +nightly fuzz run jsonl_parse -- -max_total_time=60
       - name: Fuzz YARA loader (60s)
         run: cd fuzz && cargo +nightly fuzz run yara_load -- -max_total_time=60
+      - name: Fuzz Sigma import (60s)
+        run: cd fuzz && cargo +nightly fuzz run sigma_import -- -max_total_time=60
+      - name: Fuzz search query (60s)
+        run: cd fuzz && cargo +nightly fuzz run search_query -- -max_total_time=60
+      - name: Fuzz secrets expand (60s)
+        run: cd fuzz && cargo +nightly fuzz run secrets_expand -- -max_total_time=60
+
+  typescript-sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build SDK
+        run: npm run build
+      - name: Run tests
+        run: npm test -- --run
 
   frontend:
     runs-on: ubuntu-latest

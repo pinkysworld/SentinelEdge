@@ -250,6 +250,14 @@ export const reports = () => get('/api/reports');
 export const executiveSummary = () => get('/api/reports/executive-summary');
 export const reportById = (id) => get(`/api/reports/${encodeURIComponent(id)}`);
 export const deleteReport = (id) => del(`/api/reports/${encodeURIComponent(id)}`);
+export const reportTemplates = () => get('/api/report-templates');
+export const saveReportTemplate = (body) => post('/api/report-templates', body);
+export const reportRuns = () => get('/api/report-runs');
+export const createReportRun = (body) => post('/api/report-runs', body);
+export const reportSchedules = () => get('/api/report-schedules');
+export const saveReportSchedule = (body) => post('/api/report-schedules', body);
+export const inbox = () => get('/api/inbox');
+export const ackInbox = (body) => post('/api/inbox/ack', body);
 
 // ── Export ───────────────────────────────────────────────────
 export const exportTla = () => get('/api/export/tla');
@@ -264,6 +272,9 @@ export const runHunt = (id) => post(`/api/hunts/${encodeURIComponent(id)}/run`);
 export const contentRules = () => get('/api/content/rules');
 export const createContentRule = (body) => post('/api/content/rules', body);
 export const contentRuleLifecycle = (id, body) => post(`/api/content/rules/${encodeURIComponent(id)}/lifecycle`, body);
+export const contentRuleTest = (id, body = {}) => post(`/api/content/rules/${encodeURIComponent(id)}/test`, body);
+export const contentRulePromote = (id, body) => post(`/api/content/rules/${encodeURIComponent(id)}/promote`, body);
+export const contentRuleRollback = (id) => post(`/api/content/rules/${encodeURIComponent(id)}/rollback`, {});
 export const contentPacks = () => get('/api/content/packs');
 export const createContentPack = (body) => post('/api/content/packs', body);
 export const suppressions = () => get('/api/suppressions');
@@ -300,6 +311,10 @@ export const deleteRbacUser = (u) => del(`/api/rbac/users/${encodeURIComponent(u
 
 // ── UEBA & Entity ────────────────────────────────────────────
 export const uebaEntity = (id) => get(`/api/ueba/entity/${encodeURIComponent(id)}`);
+export const uebaRiskyEntities = (minRisk = 10) => get(`/api/ueba/risky?min_risk=${minRisk}`);
+export const uebaAnomalies = (limit = 100) => get(`/api/ueba/anomalies?limit=${limit}`);
+export const uebaPeerGroups = () => get('/api/ueba/peer-groups');
+export const uebaTimeline = (entityId) => get(`/api/ueba/timeline/${encodeURIComponent(entityId)}`);
 export const entityById = (id) => get(`/api/entities/${encodeURIComponent(id)}`);
 
 // ── Process Tree ─────────────────────────────────────────────
@@ -356,6 +371,20 @@ export const vulnerabilitySummary = () => get('/api/vulnerability/summary');
 // ── NDR Engine ───────────────────────────────────────────────
 export const ndrNetflow = (body) => post('/api/ndr/netflow', body);
 export const ndrReport = () => get('/api/ndr/report');
+export const ndrTlsAnomalies = () => get('/api/ndr/tls-anomalies');
+export const ndrDpiAnomalies = () => get('/api/ndr/dpi-anomalies');
+export const ndrEntropyAnomalies = () => get('/api/ndr/entropy-anomalies');
+export const ndrSelfSignedCerts = () => get('/api/ndr/self-signed-certs');
+export const ndrTopTalkers = () => get('/api/ndr/top-talkers');
+export const ndrProtocolDistribution = () => get('/api/ndr/protocol-distribution');
+
+// ── Email Security ───────────────────────────────────────────
+export const emailQuarantine = () => get('/api/email/quarantine');
+export const emailQuarantineRelease = (id) => post(`/api/email/quarantine/${encodeURIComponent(id)}/release`);
+export const emailQuarantineDelete = (id) => del(`/api/email/quarantine/${encodeURIComponent(id)}`);
+export const emailStats = () => get('/api/email/stats');
+export const emailPolicies = () => get('/api/email/policies');
+export const emailPolicyUpdate = (body) => put('/api/email/policies', body);
 
 // ── Container Detection ──────────────────────────────────────
 export const containerEvent = (body) => post('/api/container/event', body);

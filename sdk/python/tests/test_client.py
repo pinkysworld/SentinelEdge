@@ -176,12 +176,34 @@ def test_create_incident_uses_summary_field_and_normalizes_severity(monkeypatch)
     }
 
 
-def test_alert_ack_and_resolve_fail_fast_when_server_has_no_route():
+def test_ack_and_resolve_alert_use_bulk_endpoints(monkeypatch):
+    calls = install_stub(
+        monkeypatch,
+        {
+            ("POST", f"{BASE}/api/alerts/bulk/acknowledge"): DummyResponse(
+                url=f"{BASE}/api/alerts/bulk/acknowledge",
+                json_data={"status": "ok", "acknowledged": 1},
+                headers={"content-type": "application/json"},
+            ),
+            ("POST", f"{BASE}/api/alerts/bulk/resolve"): DummyResponse(
+                url=f"{BASE}/api/alerts/bulk/resolve",
+                json_data={"status": "ok", "resolved": 1},
+                headers={"content-type": "application/json"},
+            ),
+            ("POST", f"{BASE}/api/alerts/bulk/close"): DummyResponse(
+                url=f"{BASE}/api/alerts/bulk/close",
+                json_data={"status": "ok", "closed": 2},
+                headers={"content-type": "application/json"},
+            ),
+        },
+    )
     client = WardexClient(BASE, token="tok")
-    with pytest.raises(WardexError, match="ack_alert\\(\\) is not supported"):
-        client.ack_alert("12")
-    with pytest.raises(WardexError, match="resolve_alert\\(\\) is not supported"):
-        client.resolve_alert("12")
+    assert client.ack_alert("12")["acknowledged"] == 1
+    assert calls[0]["kwargs"]["json"] == {"ids": ["12"]}
+    assert client.resolve_alert("12")["resolved"] == 1
+    assert calls[1]["kwargs"]["json"] == {"ids": ["12"]}
+    assert client.close_alerts(["a", "b"])["closed"] == 2
+    assert calls[2]["kwargs"]["json"] == {"ids": ["a", "b"]}
 
 
 def test_list_alerts_passes_query_params(monkeypatch):
@@ -360,7 +382,7 @@ def test_error_mapping(monkeypatch):
             ("GET", f"{BASE}/api/health"): DummyResponse(url=f"{BASE}/api/health", status_code=500, text="boom"),
         },
     )
-    client = WardexClient(BASE, token="tok")
+    client = WardexClient(BASE, token="tok", retries=0)
     with pytest.raises(AuthenticationError):
         client.status()
     with pytest.raises(NotFoundError):
@@ -400,3 +422,82 @@ def test_openapi_spec_uses_json_endpoint(monkeypatch):
     )
     client = WardexClient(BASE, token="tok")
     assert client.openapi_spec()["openapi"] == "3.0.3"
+
+
+def test_list_all_alerts_auto_paginates(monkeypatch):
+    page1 = [{"id": i} for i in range(10)]
+    page2 = [{"id": i} for i in range(10, 17)]
+    install_stub(
+        monkeypatch,
+        {
+            (
+                "GET",
+                f"{BASE}/api/alerts",
+                (("limit", "10"), ("offset", "0")),
+            ): DummyResponse(
+                url=f"{BASE}/api/alerts",
+                json_data=page1,
+                headers={"content-type": "application/json"},
+            ),
+            (
+                "GET",
+                f"{BASE}/api/alerts",
+                (("limit", "10"), ("offset", "10")),
+            ): DummyResponse(
+                url=f"{BASE}/api/alerts",
+                json_data=page2,
+                headers={"content-type": "application/json"},
+            ),
+        },
+    )
+    client = WardexClient(BASE, token="tok")
+    all_alerts = list(client.list_all_alerts(page_size=10))
+    assert len(all_alerts) == 17
+    assert all_alerts[0]["id"] == 0
+    assert all_alerts[-1]["id"] == 16
+
+
+def test_escalate_posts_to_escalation_start(monkeypatch):
+    calls = install_stub(
+        monkeypatch,
+        {
+            ("POST", f"{BASE}/api/escalation/start"): DummyResponse(
+                url=f"{BASE}/api/escalation/start",
+                json_data={"escalation_id": "esc-001"},
+                headers={"content-type": "application/json"},
+            ),
+        },
+    )
+    client = WardexClient(BASE, token="tok")
+    result = client.escalate("alert-42", policy_id="urgent")
+    assert result["escalation_id"] == "esc-001"
+    assert calls[0]["kwargs"]["json"] == {"policy_id": "urgent", "alert_id": "alert-42"}
+
+
+def test_retry_on_server_error(monkeypatch):
+    attempt_count = {"n": 0}
+    original_install = install_stub
+
+    def fake_request(session, method, url, **kwargs):
+        attempt_count["n"] += 1
+        if attempt_count["n"] < 3:
+            return DummyResponse(url=url, status_code=503, text="unavailable")
+        return DummyResponse(
+            url=url, json_data={"status": "ok"}, headers={"content-type": "application/json"}
+        )
+
+    monkeypatch.setattr("requests.Session.request", fake_request)
+    client = WardexClient(BASE, token="tok", retries=3)
+    result = client.status()
+    assert result["status"] == "ok"
+    assert attempt_count["n"] == 3
+
+
+def test_retry_exhausted_raises(monkeypatch):
+    def fake_request(session, method, url, **kwargs):
+        return DummyResponse(url=url, status_code=500, text="boom")
+
+    monkeypatch.setattr("requests.Session.request", fake_request)
+    client = WardexClient(BASE, token="tok", retries=1)
+    with pytest.raises(ServerError):
+        client.status()

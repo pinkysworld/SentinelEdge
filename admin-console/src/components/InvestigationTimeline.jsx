@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useApi, useInterval } from '../hooks.jsx';
 import * as api from '../api.js';
 
@@ -65,9 +65,16 @@ export default function InvestigationTimeline() {
   const [sevFilter, setSevFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [useRegex, setUseRegex] = useState(false);
   const [timeRange, setTimeRange] = useState('24h');
+  const [groupBy, setGroupBy] = useState('none');
+  const [visibleCount, setVisibleCount] = useState(200);
 
   useInterval(rAlerts, 30000);
+
+  const zoomIn = useCallback(() => setVisibleCount(c => Math.max(25, Math.floor(c / 2))), []);
+  const zoomOut = useCallback(() => setVisibleCount(c => Math.min(2000, c * 2)), []);
+  const resetZoom = useCallback(() => setVisibleCount(200), []);
 
   // Combine alert and timeline data into unified events
   const events = useMemo(() => {
@@ -150,9 +157,17 @@ export default function InvestigationTimeline() {
         if (now - t > rangeMs) return false;
       }
       if (search) {
-        const lc = search.toLowerCase();
-        const searchable = `${e.message} ${e.type} ${e.host || ''} ${e.user || ''} ${e.process_name || ''}`.toLowerCase();
-        if (!searchable.includes(lc)) return false;
+        const searchable = `${e.message} ${e.type} ${e.host || ''} ${e.user || ''} ${e.process_name || ''}`;
+        if (useRegex) {
+          try {
+            if (search.length > 200) return false;
+            // Block patterns with nested quantifiers that cause catastrophic backtracking
+            if (/\([^)]*[+*][^)]*\)[+*?{]/.test(search)) return false;
+            if (!new RegExp(search, 'i').test(searchable)) return false;
+          } catch { return false; }
+        } else {
+          if (!searchable.toLowerCase().includes(search.toLowerCase())) return false;
+        }
       }
       return true;
     });
@@ -164,6 +179,20 @@ export default function InvestigationTimeline() {
     return counts;
   }, [filtered]);
 
+  // Group events
+  const grouped = useMemo(() => {
+    if (groupBy === 'none') return null;
+    const groups = {};
+    filtered.forEach(e => {
+      const key = groupBy === 'host' ? (e.host || 'Unknown') :
+                  groupBy === 'user' ? (e.user || 'Unknown') :
+                  groupBy === 'severity' ? (e.severity || 'info') :
+                  groupBy === 'process' ? (e.process_name || 'Unknown') : 'All';
+      (groups[key] ||= []).push(e);
+    });
+    return groups;
+  }, [filtered, groupBy]);
+
   return (
     <div>
       {/* Filter bar */}
@@ -172,13 +201,16 @@ export default function InvestigationTimeline() {
           <span className="sr-only">Search events</span>
           <input
             type="search"
-            placeholder="Search events…"
+            placeholder={useRegex ? 'Regex search…' : 'Search events…'}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="input"
             aria-label="Search timeline events"
             style={{ minWidth: 180 }}
           />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+          <input type="checkbox" checked={useRegex} onChange={e => setUseRegex(e.target.checked)} /> Regex
         </label>
 
         <label>
@@ -211,15 +243,48 @@ export default function InvestigationTimeline() {
           </select>
         </label>
 
-        <span className="timeline-count">{filtered.length} event{filtered.length !== 1 ? 's' : ''}</span>
+        <label>
+          <span className="sr-only">Group by</span>
+          <select value={groupBy} onChange={e => setGroupBy(e.target.value)} className="input" aria-label="Group by">
+            <option value="none">No Grouping</option>
+            <option value="host">Host</option>
+            <option value="user">User</option>
+            <option value="severity">Severity</option>
+            <option value="process">Process</option>
+          </select>
+        </label>
+
+        <div className="btn-group" style={{ marginLeft: 4 }}>
+          <button className="btn btn-sm" onClick={zoomIn} title="Zoom in (fewer events)">🔍+</button>
+          <button className="btn btn-sm" onClick={zoomOut} title="Zoom out (more events)">🔍−</button>
+          <button className="btn btn-sm" onClick={resetZoom} title="Reset zoom">↺</button>
+        </div>
+
+        <span className="timeline-count">{filtered.length} event{filtered.length !== 1 ? 's' : ''} (showing {Math.min(visibleCount, filtered.length)})</span>
       </div>
 
       {/* Timeline */}
       <div className="timeline" role="list" aria-label="Investigation timeline">
         {filtered.length === 0 ? (
           <div className="empty">No events match filters</div>
+        ) : grouped ? (
+          Object.entries(grouped).map(([key, items]) => (
+            <details key={key} open>
+              <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '8px 0', fontSize: 13, borderBottom: '1px solid var(--border)' }}>
+                {groupBy}: {key} ({items.length})
+              </summary>
+              {items.slice(0, visibleCount).map(event => (
+                <TimelineEvent
+                  key={event.id}
+                  event={event}
+                  expanded={expandedId === event.id}
+                  onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
+                />
+              ))}
+            </details>
+          ))
         ) : (
-          filtered.slice(0, 200).map(event => (
+          filtered.slice(0, visibleCount).map(event => (
             <TimelineEvent
               key={event.id}
               event={event}
@@ -228,8 +293,11 @@ export default function InvestigationTimeline() {
             />
           ))
         )}
-        {filtered.length > 200 && (
-          <div className="empty" style={{ padding: 8 }}>Showing first 200 of {filtered.length} events</div>
+        {filtered.length > visibleCount && (
+          <div className="empty" style={{ padding: 8 }}>
+            Showing {visibleCount} of {filtered.length} events
+            <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => setVisibleCount(c => c + 200)}>Load more</button>
+          </div>
         )}
       </div>
     </div>
