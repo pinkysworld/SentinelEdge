@@ -31,6 +31,12 @@ jobs:
             platform: macos-aarch64
             archive: wardex-macos-aarch64.tar.gz
 
+          # ── macOS Intel ───────────────────────────────────────────────────
+          - os: macos-13
+            target: x86_64-apple-darwin
+            platform: macos-x86_64
+            archive: wardex-macos-x86_64.tar.gz
+
           # ── Windows ─────────────────────────────────────────────────────
           - os: windows-latest
             target: x86_64-pc-windows-msvc

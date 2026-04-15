@@ -133,6 +133,7 @@ Tagged releases are built by GitHub Actions for:
 
 - Linux `x86_64-unknown-linux-musl`
 - macOS `aarch64-apple-darwin`
+- macOS `x86_64-apple-darwin`
 - Windows `x86_64-pc-windows-msvc`
 
 Native installation assets are also published for operators who do not want to unpack raw archives:
