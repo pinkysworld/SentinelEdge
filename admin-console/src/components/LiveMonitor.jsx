@@ -12,6 +12,55 @@ const ALERT_VIEWS = [
   { id: 'all', label: 'All alerts', severity: 'all', host: 'all', source: 'all', query: '' },
 ];
 
+function alertIdFor(alert, index) {
+  return alert.id || alert.alert_id || `${alert.timestamp}-${index}`;
+}
+
+function TriageEmptyState({ title, description, actionLabel, onAction }) {
+  return (
+    <div className="triage-empty">
+      <div className="triage-empty-title">{title}</div>
+      <div className="triage-empty-copy">{description}</div>
+      {actionLabel && onAction && <button className="btn btn-sm" onClick={onAction}>{actionLabel}</button>}
+    </div>
+  );
+}
+
+function MobileAlertCard({ alert, index, active, onPreview, onOpen, onMarkFP }) {
+  const alertId = alertIdFor(alert, index);
+  return (
+    <article
+      className={`mobile-stack-card ${active ? 'active' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onPreview(alertId)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onPreview(alertId);
+        }
+      }}
+    >
+      <div className="mobile-card-header">
+        <div>
+          <div className="mobile-card-title">{alert.message || alert.description || 'Alert'}</div>
+          <div className="row-secondary">{alert.hostname || alert.origin_agent_id || 'No host context'}</div>
+        </div>
+        <span className={`badge ${(alert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (alert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}>{alert.severity || 'unknown'}</span>
+      </div>
+      <div className="mobile-card-meta">
+        <span>{alert.source || 'unknown source'}</span>
+        <span>{alert.category || alert.type || 'uncategorized'}</span>
+        <span>{formatRelativeTime(alert.timestamp || alert.time)}</span>
+      </div>
+      <div className="mobile-card-actions">
+        <button className="btn btn-sm btn-primary" onClick={(event) => { event.stopPropagation(); onOpen(alertId); }}>Open Drawer</button>
+        <button className="btn btn-sm" onClick={(event) => { event.stopPropagation(); onMarkFP(alert); }}>Mark FP</button>
+      </div>
+    </article>
+  );
+}
+
 export default function LiveMonitor() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -80,7 +129,7 @@ export default function LiveMonitor() {
     if (selectedAlerts.size === filteredAlerts.length) {
       setSelectedAlerts(new Set());
     } else {
-      setSelectedAlerts(new Set(filteredAlerts.map((a, i) => a.id || a.alert_id || `${a.timestamp}-${i}`)));
+      setSelectedAlerts(new Set(filteredAlerts.map((alert, index) => alertIdFor(alert, index))));
     }
   };
 
@@ -100,7 +149,7 @@ export default function LiveMonitor() {
     const ids = [...selectedAlerts];
     if (bulkAction === 'fp') {
       for (const aid of ids) {
-        const alert = filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === aid);
+        const alert = filteredAlerts.find((candidate, index) => alertIdFor(candidate, index) === aid);
         if (alert) await markFP(alert);
       }
       toast(`Marked ${ids.length} alerts as false positive`, 'success');
@@ -134,14 +183,44 @@ export default function LiveMonitor() {
     return list;
   })();
 
+  const currentView = ALERT_VIEWS.find((view) => view.severity === sevFilter && view.host === hostFilter && view.source === sourceFilter && view.query === searchFilter);
+  const hasAlertFilters = sevFilter !== 'all' || sourceFilter !== 'all' || hostFilter !== 'all' || Boolean(searchFilter);
+  const criticalAlertCount = filteredAlerts.filter((alert) => String(alert.severity || '').toLowerCase() === 'critical').length;
+
   const selectedAlert = selectedId == null
     ? null
-    : filteredAlerts.find((a, i) => (a.id || a.alert_id || `${a.timestamp}-${i}`) === selectedId);
+    : filteredAlerts.find((alert, index) => alertIdFor(alert, index) === selectedId);
   const previewAlert = useMemo(() => {
     if (selectedAlert) return selectedAlert;
     if (!hoveredId) return null;
-    return filteredAlerts.find((alert, index) => (alert.id || alert.alert_id || `${alert.timestamp}-${index}`) === hoveredId) || null;
+    return filteredAlerts.find((alert, index) => alertIdFor(alert, index) === hoveredId) || null;
   }, [filteredAlerts, hoveredId, selectedAlert]);
+  const selectedAlertIndex = selectedId == null
+    ? -1
+    : filteredAlerts.findIndex((alert, index) => alertIdFor(alert, index) === selectedId);
+  const previewAlertId = selectedAlert ? selectedId : hoveredId;
+  const previewAlertIndex = previewAlertId == null
+    ? -1
+    : filteredAlerts.findIndex((alert, index) => alertIdFor(alert, index) === previewAlertId);
+
+  const clearAlertFilters = () => {
+    setSevFilter('all');
+    setSourceFilter('all');
+    setHostFilter('all');
+    setSearchFilter('');
+    setSelectedAlerts(new Set());
+    updateMonitorParams({ sev: 'all', source: 'all', host: 'all', q: '' });
+  };
+
+  const moveAlert = (direction, pinned = selectedId != null) => {
+    if (filteredAlerts.length === 0) return;
+    const currentIndex = pinned ? selectedAlertIndex : previewAlertIndex;
+    const rawIndex = currentIndex === -1 ? (direction > 0 ? 0 : filteredAlerts.length - 1) : currentIndex + direction;
+    const nextIndex = Math.max(0, Math.min(filteredAlerts.length - 1, rawIndex));
+    const nextId = alertIdFor(filteredAlerts[nextIndex], nextIndex);
+    setHoveredId(nextId);
+    if (pinned) setSelectedId(nextId);
+  };
 
   const exportAlerts = (format) => {
     if (format === 'csv') {
@@ -264,6 +343,28 @@ export default function LiveMonitor() {
                 </select>
               </div>
             </div>
+            <div className="summary-grid triage-summary-grid">
+              <div className="summary-card">
+                <div className="summary-label">Visible Alerts</div>
+                <div className="summary-value">{filteredAlerts.length}</div>
+                <div className="summary-meta">Queue size after the current scope filters</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Critical</div>
+                <div className="summary-value">{criticalAlertCount}</div>
+                <div className="summary-meta">Priority items still waiting in the queue</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Selected</div>
+                <div className="summary-value">{selectedAlerts.size}</div>
+                <div className="summary-meta">Alerts pinned for bulk actions</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Saved View</div>
+                <div className="summary-value">{currentView?.label || 'Custom'}</div>
+                <div className="summary-meta">Preset scope or operator-defined mix</div>
+              </div>
+            </div>
             <div className="active-filter-chips">
               {['all', 'critical', 'severe', 'elevated', 'low'].map((severity) => (
                 <button
@@ -280,6 +381,13 @@ export default function LiveMonitor() {
               {sourceFilter !== 'all' && <span className="scope-chip">Source: {sourceFilter}</span>}
               {hostFilter !== 'all' && <span className="scope-chip">Host: {hostFilter}</span>}
               {searchFilter && <span className="scope-chip">Query: {searchFilter}</span>}
+              {hasAlertFilters && <button className="filter-chip-button" onClick={clearAlertFilters}>Reset filters</button>}
+            </div>
+            <div className="triage-meta-bar">
+              <div className="hint">
+                {filteredAlerts.length} alert{filteredAlerts.length === 1 ? '' : 's'} in scope. {criticalAlertCount} critical. {currentView?.label ? `Preset: ${currentView.label}.` : 'Custom scope active.'}
+              </div>
+              {hasAlertFilters && <button className="btn btn-sm" onClick={clearAlertFilters}>Clear Scope</button>}
             </div>
             <div className="sticky-bulk-bar">
               <div>{selectedAlerts.size} selected</div>
@@ -291,44 +399,72 @@ export default function LiveMonitor() {
               </select>
               <button className="btn btn-sm btn-primary" disabled={!bulkAction || selectedAlerts.size === 0} onClick={executeBulk}>Apply</button>
             </div>
-            {filteredAlerts.length === 0 ? <div className="empty">No alerts match the current scope.</div> : (
+            {filteredAlerts.length === 0 ? (
+              <TriageEmptyState
+                title="No alerts match the current scope"
+                description="The queue is healthy, but the current search, source, or host scope narrowed this view to zero items. Clear the scope or switch presets to continue triage."
+                actionLabel={hasAlertFilters ? 'Clear Filters' : null}
+                onAction={hasAlertFilters ? clearAlertFilters : null}
+              />
+            ) : (
               <div className="split-list-table">
-                <table>
-                  <thead><tr>
-                    <th style={{ width: 30 }}><input type="checkbox" checked={selectedAlerts.size === filteredAlerts.length && filteredAlerts.length > 0} onChange={toggleSelectAll} aria-label="Select all visible alerts" /></th>
-                    <th>Time</th><th>Severity</th><th>Source</th><th>Category</th><th>Message</th>
-                  </tr></thead>
-                  <tbody>
-                    {filteredAlerts.map((alert, index) => {
-                      const aid = alert.id || alert.alert_id || `${alert.timestamp}-${index}`;
-                      const isSelected = selectedAlerts.has(aid);
-                      const isActive = selectedId === aid || hoveredId === aid;
-                      return (
-                        <tr
-                          key={aid}
-                          className={isActive ? 'row-active' : ''}
-                          tabIndex={0}
-                          onMouseEnter={() => setHoveredId(aid)}
-                          onFocus={() => setHoveredId(aid)}
-                          onClick={() => setSelectedId(selectedId === aid ? null : aid)}
-                        >
-                          <td onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(aid)} aria-label={`Select alert ${aid}`} /></td>
-                          <td>
-                            <div className="row-primary">{formatRelativeTime(alert.timestamp || alert.time)}</div>
-                            <div className="row-secondary">{formatDateTime(alert.timestamp || alert.time)}</div>
-                          </td>
-                          <td><span className={`badge ${(alert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (alert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}>{alert.severity || 'unknown'}</span></td>
-                          <td>{alert.source || '—'}</td>
-                          <td>{alert.category || alert.type || '—'}</td>
-                          <td>
-                            <div className="row-primary">{alert.message || alert.description || '—'}</div>
-                            <div className="row-secondary">{alert.hostname || alert.origin_agent_id || 'No host context'}</div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="desktop-table-only">
+                  <table>
+                    <thead><tr>
+                      <th style={{ width: 30 }}><input type="checkbox" checked={selectedAlerts.size === filteredAlerts.length && filteredAlerts.length > 0} onChange={toggleSelectAll} aria-label="Select all visible alerts" /></th>
+                      <th>Time</th><th>Severity</th><th>Source</th><th>Category</th><th>Message</th>
+                    </tr></thead>
+                    <tbody>
+                      {filteredAlerts.map((alert, index) => {
+                        const aid = alertIdFor(alert, index);
+                        const isSelected = selectedAlerts.has(aid);
+                        const isActive = selectedId === aid || hoveredId === aid;
+                        return (
+                          <tr
+                            key={aid}
+                            className={isActive ? 'row-active' : ''}
+                            tabIndex={0}
+                            onMouseEnter={() => setHoveredId(aid)}
+                            onFocus={() => setHoveredId(aid)}
+                            onClick={() => setSelectedId(selectedId === aid ? null : aid)}
+                          >
+                            <td onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(aid)} aria-label={`Select alert ${aid}`} /></td>
+                            <td>
+                              <div className="row-primary">{formatRelativeTime(alert.timestamp || alert.time)}</div>
+                              <div className="row-secondary">{formatDateTime(alert.timestamp || alert.time)}</div>
+                            </td>
+                            <td><span className={`badge ${(alert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (alert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}>{alert.severity || 'unknown'}</span></td>
+                            <td>{alert.source || '—'}</td>
+                            <td>{alert.category || alert.type || '—'}</td>
+                            <td>
+                              <div className="row-primary">{alert.message || alert.description || '—'}</div>
+                              <div className="row-secondary">{alert.hostname || alert.origin_agent_id || 'No host context'}</div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-stack">
+                  {filteredAlerts.map((alert, index) => {
+                    const aid = alertIdFor(alert, index);
+                    return (
+                      <MobileAlertCard
+                        key={aid}
+                        alert={alert}
+                        index={index}
+                        active={selectedId === aid || hoveredId === aid}
+                        onPreview={(nextId) => {
+                          setHoveredId(nextId);
+                          setSelectedId(nextId);
+                        }}
+                        onOpen={(nextId) => setSelectedId(nextId)}
+                        onMarkFP={markFP}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             )}
             {Array.isArray(fpStats) && fpStats.length > 0 && (
@@ -345,8 +481,8 @@ export default function LiveMonitor() {
               <span className="card-title">{previewAlert ? (previewAlert.message || previewAlert.category || 'Alert Preview') : 'Alert Preview'}</span>
               {previewAlert && (
                 <div className="btn-group">
-                  <button className="btn btn-sm" onClick={() => setSelectedId(selectedId ? null : (previewAlert.id || previewAlert.alert_id))}>
-                    {selectedId ? 'Unselect' : 'Pin'}
+                  <button className="btn btn-sm" onClick={() => setSelectedId(selectedAlert ? null : alertIdFor(previewAlert, previewAlertIndex))}>
+                    {selectedAlert ? 'Close Drawer' : 'Open Drawer'}
                   </button>
                   <button className="btn btn-sm" onClick={() => markFP(previewAlert)}>Mark FP</button>
                 </div>
@@ -354,6 +490,14 @@ export default function LiveMonitor() {
             </div>
             {previewAlert ? (
               <>
+                <div className="triage-detail-nav">
+                  <span className="scope-chip">{previewAlertIndex + 1} of {filteredAlerts.length}</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm" onClick={() => moveAlert(-1, selectedAlert != null)} disabled={previewAlertIndex <= 0}>Previous</button>
+                    <button className="btn btn-sm" onClick={() => moveAlert(1, selectedAlert != null)} disabled={previewAlertIndex >= filteredAlerts.length - 1}>Next</button>
+                    {!selectedAlert && <button className="btn btn-sm btn-primary" onClick={() => setSelectedId(alertIdFor(previewAlert, previewAlertIndex))}>Pin Preview</button>}
+                  </div>
+                </div>
                 <div className="detail-hero">
                   <div>
                     <div className="detail-hero-title">{previewAlert.category || previewAlert.type || 'Alert context'}</div>
@@ -377,7 +521,10 @@ export default function LiveMonitor() {
                 <JsonDetails data={previewAlert} label="Expanded alert context" />
               </>
             ) : (
-              <div className="empty">Hover or select an alert to keep context visible while triaging the queue.</div>
+              <TriageEmptyState
+                title="No alert preview yet"
+                description="Hover a row on desktop or tap a card on mobile to keep the surrounding queue visible while you inspect each alert."
+              />
             )}
           </aside>
         </div>
@@ -634,11 +781,37 @@ export default function LiveMonitor() {
           </div>
         </div>
       )}
-      <AlertDrawer alert={selectedAlert} onClose={() => setSelectedId(null)} onUpdated={reloadAll} />
+      <AlertDrawer
+        alert={selectedAlert}
+        onClose={() => setSelectedId(null)}
+        onUpdated={reloadAll}
+        onPrevious={() => moveAlert(-1, true)}
+        onNext={() => moveAlert(1, true)}
+        canPrevious={selectedAlertIndex > 0}
+        canNext={selectedAlertIndex !== -1 && selectedAlertIndex < filteredAlerts.length - 1}
+        positionLabel={selectedAlertIndex === -1 ? null : `${selectedAlertIndex + 1} of ${filteredAlerts.length}`}
+      />
       <ProcessDrawer
         pid={selectedProcess?.pid}
         snapshot={selectedProcess}
         onClose={() => setSelectedProcess(null)}
+        onPrevious={() => {
+          const currentIndex = procList.findIndex((proc) => proc.pid === selectedProcess?.pid);
+          if (currentIndex > 0) openProcess(procList[currentIndex - 1]);
+        }}
+        onNext={() => {
+          const currentIndex = procList.findIndex((proc) => proc.pid === selectedProcess?.pid);
+          if (currentIndex !== -1 && currentIndex < procList.length - 1) openProcess(procList[currentIndex + 1]);
+        }}
+        canPrevious={procList.findIndex((proc) => proc.pid === selectedProcess?.pid) > 0}
+        canNext={(() => {
+          const currentIndex = procList.findIndex((proc) => proc.pid === selectedProcess?.pid);
+          return currentIndex !== -1 && currentIndex < procList.length - 1;
+        })()}
+        positionLabel={(() => {
+          const currentIndex = procList.findIndex((proc) => proc.pid === selectedProcess?.pid);
+          return currentIndex === -1 ? null : `${currentIndex + 1} of ${procList.length}`;
+        })()}
         onUpdated={() => { reloadProcs(); reloadPA(); }}
       />
     </div>

@@ -145,11 +145,16 @@ impl EmailAnalyzer {
         // 2. Sender mismatch
         let sender_mismatch = Self::check_sender_mismatch(input, &mut indicators);
 
+        // 2b. Sender domain heuristics
+        let sender_domain_score = Self::check_sender_domains(input, &mut indicators);
+
         // 3. URL analysis
-        let body = input.body_text.as_deref()
-            .or(input.body_html.as_deref())
-            .unwrap_or("");
-        let url_findings = Self::analyze_urls(body, &mut indicators);
+        let body = [input.body_text.as_deref(), input.body_html.as_deref()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n");
+        let url_findings = Self::analyze_urls(&body, &mut indicators);
 
         // 4. Attachment analysis
         let attachment_findings = Self::analyze_attachments(&input.attachments, &mut indicators);
@@ -163,7 +168,7 @@ impl EmailAnalyzer {
         // Composite phishing score
         let phishing_score = Self::compute_phishing_score(
             &auth_results, sender_mismatch, &url_findings,
-            &attachment_findings, urgency_score,
+            &attachment_findings, urgency_score, sender_domain_score,
         );
 
         EmailThreatReport {
@@ -224,6 +229,51 @@ impl EmailAnalyzer {
         }
 
         reply_mismatch || return_mismatch
+    }
+
+    fn check_sender_domains(input: &EmailInput, indicators: &mut Vec<String>) -> f32 {
+        let from_domain = extract_domain(&input.from);
+        let mut score = 0.0_f32;
+        let mut seen = std::collections::HashSet::new();
+
+        for domain in [
+            Some(from_domain.clone()),
+            input.reply_to.as_ref().map(|value| extract_domain(value)),
+            input.return_path.as_ref().map(|value| extract_domain(value)),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if domain.is_empty() || !seen.insert(domain.clone()) {
+                continue;
+            }
+
+            if domain.contains("xn--") {
+                score += 0.3;
+                indicators.push(format!("punycode sender domain: {domain}"));
+            }
+            if SUSPICIOUS_TLDS.iter().any(|tld| domain.ends_with(tld)) {
+                score += 0.2;
+                indicators.push(format!("sender domain uses suspicious TLD: {domain}"));
+            }
+            if has_homoglyphs(&domain) {
+                score += 0.35;
+                indicators.push(format!("sender domain contains possible homoglyphs: {domain}"));
+            }
+            if domain.chars().all(|c| c.is_ascii_digit() || c == '.') && domain.split('.').count() == 4 {
+                score += 0.25;
+                indicators.push(format!("sender domain is an IP literal: {domain}"));
+            }
+        }
+
+        if let Some(message_id_domain) = input.message_id.as_deref().map(extract_domain) {
+            if !from_domain.is_empty() && !message_id_domain.is_empty() && message_id_domain != from_domain {
+                score += 0.15;
+                indicators.push(format!("Message-ID domain differs from From ({message_id_domain})"));
+            }
+        }
+
+        score.min(1.0)
     }
 
     fn analyze_urls(body: &str, indicators: &mut Vec<String>) -> Vec<UrlFinding> {
@@ -359,14 +409,16 @@ impl EmailAnalyzer {
         urls: &[UrlFinding],
         attachments: &[AttachmentFinding],
         urgency: f32,
+        sender_domain_score: f32,
     ) -> f32 {
-        let auth_component = auth.auth_score * 0.25;
-        let mismatch_component = if sender_mismatch { 0.15 } else { 0.0 };
+        let auth_component = auth.auth_score * 0.22;
+        let mismatch_component = if sender_mismatch { 0.14 } else { 0.0 };
+        let sender_component = sender_domain_score * 0.2;
         let url_component = urls.iter().map(|u| u.risk_score).sum::<f32>().min(1.0) * 0.2;
-        let attachment_component = attachments.iter().map(|a| a.risk_score).sum::<f32>().min(1.0) * 0.2;
-        let urgency_component = urgency * 0.2;
+        let attachment_component = attachments.iter().map(|a| a.risk_score).sum::<f32>().min(1.0) * 0.18;
+        let urgency_component = urgency * 0.12;
 
-        (auth_component + mismatch_component + url_component + attachment_component + urgency_component).min(1.0)
+        (auth_component + mismatch_component + sender_component + url_component + attachment_component + urgency_component).min(1.0)
     }
 }
 
@@ -495,5 +547,21 @@ mod tests {
         let report = EmailAnalyzer::analyze(&input);
         assert!(!report.attachment_findings.is_empty());
         assert!(report.attachment_findings[0].risk_score > 0.5);
+    }
+
+    #[test]
+    fn suspicious_sender_domain_is_scored() {
+        let input = make_input("security@micr0soft-support.top", "Security alert", "spf=pass");
+        let report = EmailAnalyzer::analyze(&input);
+        assert!(report.phishing_score > 0.1, "score={}", report.phishing_score);
+        assert!(report.indicators.iter().any(|indicator| indicator.contains("suspicious TLD")));
+    }
+
+    #[test]
+    fn message_id_domain_mismatch_is_flagged() {
+        let mut input = make_input("alerts@company.com", "Quarterly report", "spf=pass; dkim=pass");
+        input.message_id = Some("<12345@mailer.evil.example>".into());
+        let report = EmailAnalyzer::analyze(&input);
+        assert!(report.indicators.iter().any(|indicator| indicator.contains("Message-ID domain differs")));
     }
 }

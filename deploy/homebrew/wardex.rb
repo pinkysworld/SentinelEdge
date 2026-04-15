@@ -1,29 +1,31 @@
 class Wardex < Formula
   desc "SentinelEdge XDR — AI-powered endpoint detection & response"
   homepage "https://github.com/pinkysworld/Wardex"
-  version "0.51.0"
+  version "0.52.0"
   license "BSL-1.1"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/pinkysworld/Wardex/releases/download/v#{version}/wardex-v#{version}-aarch64-apple-darwin.tar.gz"
+      url "https://github.com/pinkysworld/Wardex/releases/download/v#{version}/wardex-macos-aarch64.tar.gz"
       # sha256 "PLACEHOLDER"
     else
-      url "https://github.com/pinkysworld/Wardex/releases/download/v#{version}/wardex-v#{version}-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/pinkysworld/Wardex/releases/download/v#{version}/wardex-macos-x86_64.tar.gz"
       # sha256 "PLACEHOLDER"
     end
   end
 
   on_linux do
-    url "https://github.com/pinkysworld/Wardex/releases/download/v#{version}/wardex-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+    url "https://github.com/pinkysworld/Wardex/releases/download/v#{version}/wardex-linux-x86_64.tar.gz"
     # sha256 "PLACEHOLDER"
   end
 
   def install
-    bin.install "wardex"
-    # Install default rules
-    (share/"wardex/rules/sigma").install Dir["rules/sigma/*"] if Dir.exist?("rules/sigma")
-    (share/"wardex/rules/yara").install Dir["rules/yara/*"] if Dir.exist?("rules/yara")
+    pkg = Dir["wardex-*"] .find { |path| File.directory?(path) }
+    raise "release archive layout changed" unless pkg
+
+    bin.install "#{pkg}/wardex"
+    (share/"wardex/site").install Dir["#{pkg}/site/*"] if Dir.exist?("#{pkg}/site")
+    (share/"wardex/examples").install Dir["#{pkg}/examples/*"] if Dir.exist?("#{pkg}/examples")
   end
 
   def post_install

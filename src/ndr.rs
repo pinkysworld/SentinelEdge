@@ -146,6 +146,8 @@ pub struct NdrReport {
     pub dpi_anomalies: Vec<DpiAnomaly>,
     /// High-entropy encrypted traffic sessions (potential C2/exfil).
     pub entropy_anomalies: Vec<EntropyAnomaly>,
+    /// Regular outbound cadence anomalies (potential beaconing).
+    pub beaconing_anomalies: Vec<BeaconingAnomaly>,
     /// Self-signed certificate detections.
     pub self_signed_certs: Vec<SelfSignedCert>,
 }
@@ -187,6 +189,30 @@ pub struct EntropyAnomaly {
     pub total_bytes: u64,
     pub flow_count: usize,
     pub risk_score: f32,
+}
+
+/// Regular interval outbound traffic anomaly (potential beaconing/C2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeaconingAnomaly {
+    pub src_addr: String,
+    pub dst_addr: String,
+    pub dst_port: u16,
+    pub protocol: String,
+    pub avg_interval_ms: u64,
+    pub jitter_pct: f32,
+    pub total_bytes: u64,
+    pub flow_count: usize,
+    pub risk_score: f32,
+    pub reason: String,
+}
+
+/// Protocol distribution summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolDistribution {
+    pub protocol: String,
+    pub flow_count: usize,
+    pub total_bytes: u64,
+    pub encrypted_ratio: f32,
 }
 
 /// Self-signed TLS certificate detection.
@@ -274,6 +300,7 @@ impl NdrEngine {
         let tls_anomalies = self.detect_tls_anomalies();
         let dpi_anomalies = self.detect_dpi_anomalies();
         let entropy_anomalies = self.detect_entropy_anomalies();
+        let beaconing_anomalies = self.detect_beaconing_anomalies();
         let self_signed_certs = self.detect_self_signed_certs();
 
         let external_dests: std::collections::HashSet<&str> = self.flows.iter()
@@ -306,8 +333,43 @@ impl NdrEngine {
             tls_anomalies,
             dpi_anomalies,
             entropy_anomalies,
+            beaconing_anomalies,
             self_signed_certs,
         }
+    }
+
+    pub fn protocol_distribution(&self) -> Vec<ProtocolDistribution> {
+        let mut by_protocol: HashMap<&str, (usize, u64, usize)> = HashMap::new();
+        for flow in &self.flows {
+            let entry = by_protocol.entry(&flow.protocol).or_insert((0, 0, 0));
+            entry.0 += 1;
+            entry.1 += flow.bytes_sent + flow.bytes_received;
+            if flow.is_encrypted {
+                entry.2 += 1;
+            }
+        }
+
+        let mut items: Vec<ProtocolDistribution> = by_protocol
+            .into_iter()
+            .map(|(protocol, (flow_count, total_bytes, encrypted_count))| ProtocolDistribution {
+                protocol: protocol.to_string(),
+                flow_count,
+                total_bytes,
+                encrypted_ratio: if flow_count > 0 {
+                    encrypted_count as f32 / flow_count as f32
+                } else {
+                    0.0
+                },
+            })
+            .collect();
+
+        items.sort_by(|left, right| {
+            right
+                .total_bytes
+                .cmp(&left.total_bytes)
+                .then_with(|| right.flow_count.cmp(&left.flow_count))
+        });
+        items
     }
 
     fn compute_top_talkers(&self) -> Vec<TopTalker> {
@@ -549,6 +611,83 @@ impl NdrEngine {
         anomalies
     }
 
+    /// Detect outbound traffic with a stable cadence that resembles beaconing.
+    fn detect_beaconing_anomalies(&self) -> Vec<BeaconingAnomaly> {
+        let mut groups: HashMap<(&str, &str, u16, &str), Vec<&NetFlowRecord>> = HashMap::new();
+
+        for flow in &self.flows {
+            if self.is_external(&flow.dst_addr) {
+                groups
+                    .entry((&flow.src_addr, &flow.dst_addr, flow.dst_port, &flow.protocol))
+                    .or_default()
+                    .push(flow);
+            }
+        }
+
+        let mut anomalies = Vec::new();
+        for ((src, dst, port, protocol), mut flows) in groups {
+            if flows.len() < 4 {
+                continue;
+            }
+
+            flows.sort_by_key(|flow| flow.timestamp_ms);
+            let intervals: Vec<f32> = flows
+                .windows(2)
+                .map(|pair| pair[1].timestamp_ms.saturating_sub(pair[0].timestamp_ms) as f32)
+                .filter(|interval| *interval > 0.0)
+                .collect();
+            if intervals.len() < 3 {
+                continue;
+            }
+
+            let avg_interval = intervals.iter().sum::<f32>() / intervals.len() as f32;
+            if !(10_000.0..=900_000.0).contains(&avg_interval) {
+                continue;
+            }
+
+            let variance = intervals
+                .iter()
+                .map(|interval| {
+                    let delta = interval - avg_interval;
+                    delta * delta
+                })
+                .sum::<f32>()
+                / intervals.len() as f32;
+            let stddev = variance.sqrt();
+            let jitter_ratio = if avg_interval > 0.0 { stddev / avg_interval } else { 1.0 };
+            if jitter_ratio > 0.15 {
+                continue;
+            }
+
+            let total_bytes: u64 = flows.iter().map(|flow| flow.bytes_sent + flow.bytes_received).sum();
+            let encrypted_ratio = flows.iter().filter(|flow| flow.is_encrypted).count() as f32 / flows.len() as f32;
+            let cadence_bonus = ((flows.len() as f32).ln() * 1.6).min(2.5);
+            let jitter_bonus = ((0.15 - jitter_ratio).max(0.0) * 20.0).min(2.0);
+            let risk = (4.0 + cadence_bonus + jitter_bonus + encrypted_ratio).min(10.0);
+
+            anomalies.push(BeaconingAnomaly {
+                src_addr: src.to_string(),
+                dst_addr: dst.to_string(),
+                dst_port: port,
+                protocol: protocol.to_string(),
+                avg_interval_ms: avg_interval.round() as u64,
+                jitter_pct: (jitter_ratio * 1000.0).round() / 10.0,
+                total_bytes,
+                flow_count: flows.len(),
+                risk_score: (risk * 100.0).round() / 100.0,
+                reason: format!(
+                    "Regular outbound cadence: {} flow(s) every ~{}s with {:.1}% jitter",
+                    flows.len(),
+                    (avg_interval / 1000.0).round(),
+                    jitter_ratio * 100.0,
+                ),
+            });
+        }
+
+        anomalies.sort_by(|left, right| right.risk_score.total_cmp(&left.risk_score));
+        anomalies
+    }
+
     /// Detect self-signed TLS certificates.
     fn detect_self_signed_certs(&self) -> Vec<SelfSignedCert> {
         let mut seen: HashMap<(&str, u16), (&NetFlowRecord, usize)> = HashMap::new();
@@ -706,5 +845,35 @@ mod tests {
         let report = engine.analyze();
         assert!(!report.self_signed_certs.is_empty());
         assert!(report.self_signed_certs[0].risk_score > 0.0);
+    }
+
+    #[test]
+    fn stable_beaconing_detected() {
+        let mut engine = NdrEngine::default();
+        for idx in 0..5 {
+            let mut flow = make_flow("10.0.0.4", "45.77.10.10", 443, 1200);
+            flow.timestamp_ms = 60_000 * idx as u64;
+            flow.is_encrypted = true;
+            engine.record_flow(flow);
+        }
+
+        let report = engine.analyze();
+        assert!(!report.beaconing_anomalies.is_empty());
+        assert_eq!(report.beaconing_anomalies[0].avg_interval_ms, 60_000);
+        assert!(report.beaconing_anomalies[0].jitter_pct <= 0.1);
+    }
+
+    #[test]
+    fn irregular_bursts_do_not_trigger_beaconing() {
+        let mut engine = NdrEngine::default();
+        for ts in [1_000_u64, 8_000, 90_000, 105_000, 410_000] {
+            let mut flow = make_flow("10.0.0.4", "45.77.10.10", 443, 1200);
+            flow.timestamp_ms = ts;
+            flow.is_encrypted = true;
+            engine.record_flow(flow);
+        }
+
+        let report = engine.analyze();
+        assert!(report.beaconing_anomalies.is_empty());
     }
 }

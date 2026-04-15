@@ -135,6 +135,21 @@ Tagged releases are built by GitHub Actions for:
 - macOS `aarch64-apple-darwin`
 - Windows `x86_64-pc-windows-msvc`
 
+Native installation assets are also published for operators who do not want to unpack raw archives:
+
+```bash
+# Debian / Ubuntu
+sudo dpkg -i ./wardex_*_amd64.deb
+
+# RHEL / Fedora / Rocky
+sudo rpm -i ./wardex-*.x86_64.rpm
+
+# Homebrew (formula kept in-repo)
+brew install --formula ./deploy/homebrew/wardex.rb
+```
+
+The Homebrew formula installs the binary plus the bundled static site and example data into the usual Homebrew locations under `share/wardex/`.
+
 ## Telemetry format
 
 The parser supports CSV (legacy 8-column and extended 10-column) and JSONL.

@@ -5,9 +5,8 @@
 //! scheduled polling, deduplication, and incremental updates.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use crate::threat_intel::{IoC, IoCType, ThreatFeed, ThreatIntelStore};
+use crate::threat_intel::{IoC, IoCType, ThreatIntelStore};
 use crate::malware_signatures::{MalwareEntry, MalwareHashDb, MalwareSeverity};
 use crate::yara_engine::YaraEngine;
 
@@ -96,6 +95,14 @@ impl FeedIngestionEngine {
         }
     }
 
+    pub fn new_with_defaults() -> Self {
+        let mut engine = Self::new();
+        for source in default_feed_sources() {
+            engine.add_source(source);
+        }
+        engine
+    }
+
     /// Register a new feed source.
     pub fn add_source(&mut self, source: FeedSource) -> String {
         let id = source.id.clone();
@@ -136,7 +143,7 @@ impl FeedIngestionEngine {
         data: &str,
         threat_intel: &mut ThreatIntelStore,
         hash_db: &mut MalwareHashDb,
-        yara: &mut YaraEngine,
+        _yara: &mut YaraEngine,
     ) -> Result<FeedPollResult, String> {
         let source = self
             .sources
@@ -300,6 +307,67 @@ impl FeedIngestionEngine {
 struct AbusechParsed {
     iocs: Vec<IoC>,
     malware_entries: Vec<MalwareEntry>,
+}
+
+fn default_feed_sources() -> Vec<FeedSource> {
+    vec![
+        FeedSource {
+            id: "abusech-malwarebazaar".into(),
+            name: "Abuse.ch MalwareBazaar".into(),
+            protocol: FeedProtocol::AbuseCh,
+            url: "https://bazaar.abuse.ch/export/jsonl/recent/".into(),
+            api_key: None,
+            poll_interval_secs: 900,
+            enabled: true,
+            last_poll: None,
+            last_success: None,
+            iocs_ingested: 0,
+            errors: vec![],
+            collection_id: None,
+        },
+        FeedSource {
+            id: "cisa-stix".into(),
+            name: "CISA STIX Bundle".into(),
+            protocol: FeedProtocol::StixBundle,
+            url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json".into(),
+            api_key: None,
+            poll_interval_secs: 3600,
+            enabled: true,
+            last_poll: None,
+            last_success: None,
+            iocs_ingested: 0,
+            errors: vec![],
+            collection_id: None,
+        },
+        FeedSource {
+            id: "urlhaus-online".into(),
+            name: "URLhaus Online URLs".into(),
+            protocol: FeedProtocol::CustomUrl,
+            url: "https://urlhaus.abuse.ch/downloads/json_online/".into(),
+            api_key: None,
+            poll_interval_secs: 1800,
+            enabled: true,
+            last_poll: None,
+            last_success: None,
+            iocs_ingested: 0,
+            errors: vec![],
+            collection_id: None,
+        },
+        FeedSource {
+            id: "otx-export".into(),
+            name: "OTX Pulse Export".into(),
+            protocol: FeedProtocol::CustomUrl,
+            url: "https://otx.alienvault.com/api/v1/pulses/subscribed".into(),
+            api_key: None,
+            poll_interval_secs: 3600,
+            enabled: false,
+            last_poll: None,
+            last_success: None,
+            iocs_ingested: 0,
+            errors: vec![],
+            collection_id: None,
+        },
+    ]
 }
 
 fn parse_abusech_feed(data: &str) -> AbusechParsed {
@@ -543,5 +611,15 @@ mod tests {
         let stats = engine.stats();
         assert_eq!(stats.total_sources, 0);
         assert_eq!(stats.total_polls, 0);
+    }
+
+    #[test]
+    fn default_sources_seed_common_hash_and_ioc_feeds() {
+        let engine = FeedIngestionEngine::new_with_defaults();
+        let ids: Vec<_> = engine.sources().iter().map(|source| source.id.as_str()).collect();
+
+        assert!(ids.contains(&"abusech-malwarebazaar"));
+        assert!(ids.contains(&"cisa-stix"));
+        assert!(ids.contains(&"urlhaus-online"));
     }
 }

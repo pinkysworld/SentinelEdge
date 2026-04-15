@@ -144,3 +144,25 @@ spool_max_bytes = 104857600  # 100 MB
 | RAM | 512 MB | 2 GB | 256 MB |
 | Disk | 1 GB | 10 GB | 500 MB |
 | Network | 1 Mbps | 10 Mbps | 100 kbps |
+
+## Sizing Guide
+
+| Fleet Size | Recommended Model | CPU | RAM | Disk | Notes |
+|-----------|-------------------|-----|-----|------|-------|
+| 1 – 50 agents | Standalone | 2 vCPU | 2 GB | 20 GB | Good fit for labs, branch offices, and evaluation installs |
+| 50 – 500 agents | Multi-Tenant or Edge Relay + Central | 4 – 8 vCPU | 8 GB | 100 GB | Keep backups and event retention outside the root filesystem |
+| 500 – 5 000 agents | Regional Federation | 8 – 16 vCPU per region | 16 – 32 GB | 250+ GB | Separate operator traffic from ingest traffic and plan for external observability |
+
+The primary scaling pressure is retained event volume rather than raw CPU. If you retain long histories, raise disk and backup budgets before you raise core count.
+
+## High Availability Reference Pattern
+
+Wardex does not yet ship a fully automated clustered control plane, but the current operationally sound pattern is active/passive or regional-active deployment with externalized recovery artifacts.
+
+1. Place the HTTP/UI listener behind a load balancer or reverse proxy.
+2. Keep `var/` on durable storage or ship scheduled backups using the existing backup/export workflows.
+3. Mirror configuration, admin secrets, and TLS assets through your secret manager instead of node-local files.
+4. Use a warm standby node for the same release version and restore checkpoints or backups during failover.
+5. In federation mode, keep each region autonomous and share posture/intel across regions instead of forwarding all raw events cross-region.
+
+For production planning, pair this document with `docs/DISASTER_RECOVERY.md` and `docs/PRODUCTION_HARDENING.md` so sizing, backup cadence, and failover drills are defined together.

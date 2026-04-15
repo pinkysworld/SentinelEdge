@@ -374,6 +374,7 @@ export const ndrReport = () => get('/api/ndr/report');
 export const ndrTlsAnomalies = () => get('/api/ndr/tls-anomalies');
 export const ndrDpiAnomalies = () => get('/api/ndr/dpi-anomalies');
 export const ndrEntropyAnomalies = () => get('/api/ndr/entropy-anomalies');
+export const ndrBeaconing = () => get('/api/ndr/beaconing');
 export const ndrSelfSignedCerts = () => get('/api/ndr/self-signed-certs');
 export const ndrTopTalkers = () => get('/api/ndr/top-talkers');
 export const ndrProtocolDistribution = () => get('/api/ndr/protocol-distribution');

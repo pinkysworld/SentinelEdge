@@ -65,7 +65,17 @@ function buildSnapshotDetail(pid, snapshot) {
   };
 }
 
-export default function ProcessDrawer({ pid, snapshot, onClose, onUpdated }) {
+export default function ProcessDrawer({
+  pid,
+  snapshot,
+  onClose,
+  onUpdated,
+  onPrevious,
+  onNext,
+  canPrevious = false,
+  canNext = false,
+  positionLabel = null,
+}) {
   const toast = useToast();
   const { data: detail, loading, error, reload } = useApi(
     () => api.processDetail(pid),
@@ -138,6 +148,13 @@ export default function ProcessDrawer({ pid, snapshot, onClose, onUpdated }) {
       subtitle={activeDetail ? `${activeDetail.platform} · ${activeDetail.hostname}` : `PID ${pid}`}
       actions={
         <>
+          {(onPrevious || onNext || positionLabel) && (
+            <div className="drawer-nav">
+              {positionLabel && <span className="scope-chip">{positionLabel}</span>}
+              {onPrevious && <button className="btn btn-sm" onClick={onPrevious} disabled={!canPrevious}>Previous</button>}
+              {onNext && <button className="btn btn-sm" onClick={onNext} disabled={!canNext}>Next</button>}
+            </div>
+          )}
           <button className="btn btn-sm" onClick={reload}>Refresh</button>
           {activeDetail && <button className="btn btn-sm" onClick={() => downloadData(activeDetail, `process-${activeDetail.pid}.json`)}>Export</button>}
           <button className="btn btn-sm" disabled={!detail || detail?.analysis?.self_process} onClick={queueKill}>Queue Kill</button>

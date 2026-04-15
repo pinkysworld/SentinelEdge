@@ -483,6 +483,37 @@ struct AppState {
     extra: HashMap<String, serde_json::Value>,
 }
 
+fn build_search_index_from_events(
+    events: &[crate::event_forward::StoredEvent],
+) -> Result<crate::search::SearchIndex, String> {
+    let index = crate::search::SearchIndex::new("/tmp/wardex-search")?;
+    for event in events {
+        let mut fields = HashMap::new();
+        fields.insert("timestamp".to_string(), event.alert.timestamp.clone());
+        fields.insert("device_id".to_string(), event.alert.hostname.clone());
+        fields.insert("event_class".to_string(), "alert".to_string());
+        fields.insert("process_name".to_string(), event.alert.action.clone());
+        fields.insert("command_line".to_string(), event.alert.reasons.join("; "));
+        fields.insert("src_ip".to_string(), String::new());
+        fields.insert("dst_ip".to_string(), String::new());
+        fields.insert("user_name".to_string(), String::new());
+        fields.insert(
+            "raw_text".to_string(),
+            format!(
+                "{} {} {} {} {}",
+                event.agent_id,
+                event.alert.hostname,
+                event.alert.action,
+                event.alert.level,
+                event.alert.reasons.join(" ")
+            ),
+        );
+        index.index_event(fields)?;
+    }
+    let _ = index.commit()?;
+    Ok(index)
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AgentDeployment {
     agent_id: String,
@@ -962,7 +993,7 @@ pub async fn run_server(
         yara_engine: crate::yara_engine::YaraEngine::new(),
         api_analytics: crate::api_analytics::ApiAnalytics::new(),
         trace_collector: crate::telemetry::TraceCollector::new(10000),
-        feed_engine: crate::feed_ingestion::FeedIngestionEngine::new(),
+        feed_engine: crate::feed_ingestion::FeedIngestionEngine::new_with_defaults(),
         playbook_dsl: crate::playbook_dsl::PlaybookDslStore::new(),
         image_inventory: crate::container_image::ImageInventory::new(),
         quarantine_store: crate::quarantine::QuarantineStore::new(),
@@ -4433,6 +4464,13 @@ fn handle_api(
         // NDR engine
         || (method == Method::Post && route_path == "/api/ndr/netflow")
         || (method == Method::Get && route_path == "/api/ndr/report")
+        || (method == Method::Get && route_path == "/api/ndr/tls-anomalies")
+        || (method == Method::Get && route_path == "/api/ndr/dpi-anomalies")
+        || (method == Method::Get && route_path == "/api/ndr/entropy-anomalies")
+        || (method == Method::Get && route_path == "/api/ndr/self-signed-certs")
+        || (method == Method::Get && route_path == "/api/ndr/top-talkers")
+        || (method == Method::Get && route_path == "/api/ndr/beaconing")
+        || (method == Method::Get && route_path == "/api/ndr/protocol-distribution")
         // Container detection
         || (method == Method::Post && route_path == "/api/container/event")
         || (method == Method::Get && route_path == "/api/container/alerts")
@@ -5977,6 +6015,14 @@ fn handle_api(
                 {"method": "PUT", "path": "/api/detection/profile", "auth": true, "description": "Set detection tuning profile (aggressive/balanced/quiet)"},
                 {"method": "POST", "path": "/api/fp-feedback", "auth": true, "description": "Submit false-positive feedback for an alert pattern"},
                 {"method": "GET", "path": "/api/fp-feedback/stats", "auth": true, "description": "False-positive feedback statistics and suppression weights"},
+                {"method": "GET", "path": "/api/ndr/report", "auth": true, "description": "Aggregate NDR analysis report with anomaly summaries"},
+                {"method": "GET", "path": "/api/ndr/tls-anomalies", "auth": true, "description": "TLS fingerprint anomalies from the current NDR window"},
+                {"method": "GET", "path": "/api/ndr/dpi-anomalies", "auth": true, "description": "DPI protocol mismatches from the current NDR window"},
+                {"method": "GET", "path": "/api/ndr/entropy-anomalies", "auth": true, "description": "High-entropy encrypted sessions from the current NDR window"},
+                {"method": "GET", "path": "/api/ndr/self-signed-certs", "auth": true, "description": "Self-signed certificate detections from the current NDR window"},
+                {"method": "GET", "path": "/api/ndr/top-talkers", "auth": true, "description": "Top talkers from the current NDR window"},
+                {"method": "GET", "path": "/api/ndr/beaconing", "auth": true, "description": "Regular outbound cadence anomalies that resemble beaconing"},
+                {"method": "GET", "path": "/api/ndr/protocol-distribution", "auth": true, "description": "Protocol traffic distribution from the current NDR window"},
                 {"method": "GET", "path": "/api/detection/score/normalize", "auth": true, "description": "Get normalized 0-100 threat score with severity label"},
                 {"method": "GET", "path": "/api/playbooks", "auth": true, "description": "List registered automated response playbooks"},
                 {"method": "POST", "path": "/api/playbooks", "auth": true, "description": "Register or update an automated response playbook"},
@@ -10409,7 +10455,11 @@ fn handle_api(
                                     );
                                 }
                             };
-                        match crate::search::SearchIndex::new("/tmp/wardex-search") {
+                        let events = {
+                            let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                            s.event_store.all_events().to_vec()
+                        };
+                        match build_search_index_from_events(&events) {
                             Ok(idx) => match idx.search(&query) {
                                 Ok(result) => {
                                     let body = serde_json::to_string(&result).unwrap_or_default();
@@ -10706,6 +10756,40 @@ fn handle_api(
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let report = s.ndr_engine.analyze();
                 let body = serde_json::to_string(&report).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/tls-anomalies" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let report = s.ndr_engine.analyze();
+                let body = serde_json::to_string(&report.tls_anomalies).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/dpi-anomalies" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let report = s.ndr_engine.analyze();
+                let body = serde_json::to_string(&report.dpi_anomalies).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/entropy-anomalies" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let report = s.ndr_engine.analyze();
+                let body = serde_json::to_string(&report.entropy_anomalies).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/self-signed-certs" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let report = s.ndr_engine.analyze();
+                let body = serde_json::to_string(&report.self_signed_certs).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/top-talkers" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let report = s.ndr_engine.analyze();
+                let body = serde_json::to_string(&report.top_talkers).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/beaconing" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let report = s.ndr_engine.analyze();
+                let body = serde_json::to_string(&report.beaconing_anomalies).unwrap_or_default();
+                json_response(&body, 200)
+            } else if method == Method::Get && url_path == "/api/ndr/protocol-distribution" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let body = serde_json::to_string(&s.ndr_engine.protocol_distribution()).unwrap_or_default();
                 json_response(&body, 200)
 
             // ── Container Detection ───────────────────────────────────
@@ -11014,7 +11098,11 @@ fn handle_api(
                         if query.is_empty() {
                             return error_json("query cannot be empty", 400);
                         }
-                        match crate::search::SearchIndex::new("/tmp/wardex-search") {
+                        let events = {
+                            let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                            s.event_store.all_events().to_vec()
+                        };
+                        match build_search_index_from_events(&events) {
                             Ok(idx) => {
                                 // Support pipe aggregation syntax
                                 if query.contains('|') {
@@ -14361,6 +14449,38 @@ mod tests {
         let _ = fs::remove_file(case_path);
         let _ = fs::remove_file(incident_path);
         let _ = fs::remove_file(agent_path);
+    }
+
+    #[test]
+    fn build_search_index_preserves_alert_event_class_contract() {
+        let mut store = EventStore::new(16);
+        store.ingest(&EventBatch {
+            agent_id: "agent-search".to_string(),
+            events: vec![sample_alert(
+                "search-host",
+                "Critical",
+                8.1,
+                "credential dumping",
+            )],
+        });
+
+        let index = build_search_index_from_events(&store.all_events().to_vec()).expect("search index");
+        let result = index
+            .search(&crate::search::SearchQuery {
+                query: "credential dumping".to_string(),
+                fields: Vec::new(),
+                from: None,
+                to: None,
+                limit: 10,
+                offset: 0,
+                sort_by: None,
+                sort_desc: false,
+            })
+            .expect("search result");
+
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].event_class, "alert");
+        assert_ne!(result.hits[0].event_class, "Critical");
     }
 
     #[test]

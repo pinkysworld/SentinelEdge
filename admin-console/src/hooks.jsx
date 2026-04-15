@@ -251,18 +251,67 @@ export function useWebSocket(pollIntervalMs = 2000) {
     let pollTimer = null;
     let retryDelay = 2000;
     let retryTimer = null;
-    let usingNativeWs = false;
+    let handshakeTimer = null;
+    let pollingConnecting = false;
+    let pollingConnectRequestId = 0;
+
+    const clearRetry = () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const clearHandshake = () => {
+      if (handshakeTimer) {
+        clearTimeout(handshakeTimer);
+        handshakeTimer = null;
+      }
+    };
+
+    const stopPolling = (disconnectSubscriber = false) => {
+      pollingConnectRequestId += 1;
+      pollingConnecting = false;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      const subscriberId = subscriberIdRef.current;
+      subscriberIdRef.current = null;
+      if (disconnectSubscriber && subscriberId != null) {
+        wsDisconnect(subscriberId).catch(() => {});
+      }
+    };
+
+    const schedulePollingReconnect = () => {
+      if (!mountedRef.current) return;
+      clearRetry();
+      const delay = Math.min(retryDelay, 30000);
+      retryDelay = Math.min(retryDelay * 2, 30000);
+      retryTimer = setTimeout(connectPolling, delay);
+    };
 
     const tryNativeWebSocket = () => {
+      if (!mountedRef.current) return;
       try {
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${proto}//${window.location.host}/ws/events`;
         const ws = new WebSocket(wsUrl);
+        let opened = false;
         wsRef.current = ws;
+        clearHandshake();
+        handshakeTimer = setTimeout(() => {
+          if (!mountedRef.current || wsRef.current !== ws || opened) return;
+          wsRef.current = null;
+          try { ws.close(); } catch {}
+          connectPolling();
+        }, 3000);
 
         ws.onopen = () => {
-          if (!mountedRef.current) { ws.close(); return; }
-          usingNativeWs = true;
+          if (!mountedRef.current || wsRef.current !== ws) { ws.close(); return; }
+          opened = true;
+          clearHandshake();
+          stopPolling(true);
           setConnected(true);
           retryDelay = 2000;
         };
@@ -277,48 +326,49 @@ export function useWebSocket(pollIntervalMs = 2000) {
         };
 
         ws.onerror = () => {
-          // WebSocket not available — fall back to polling
-          if (!usingNativeWs) {
-            ws.close();
-            wsRef.current = null;
-            fallbackToPolling();
-          }
+          if (!mountedRef.current || wsRef.current !== ws || opened) return;
+          clearHandshake();
+          wsRef.current = null;
+          try { ws.close(); } catch {}
+          connectPolling();
         };
 
         ws.onclose = () => {
+          if (wsRef.current === ws) {
+            wsRef.current = null;
+          }
+          clearHandshake();
           if (!mountedRef.current) return;
-          setConnected(false);
-          wsRef.current = null;
-          if (usingNativeWs) {
-            // Was connected via WS — try to reconnect
+          if (opened) {
+            setConnected(false);
             const delay = Math.min(retryDelay, 30000);
             retryDelay = Math.min(retryDelay * 2, 30000);
+            clearRetry();
             retryTimer = setTimeout(tryNativeWebSocket, delay);
+          } else if (!pollTimer && subscriberIdRef.current == null && !pollingConnecting) {
+            connectPolling();
           }
         };
-
-        // If WebSocket doesn't connect within 3s, fall back
-        setTimeout(() => {
-          if (!usingNativeWs && wsRef.current?.readyState !== WebSocket.OPEN) {
-            wsRef.current?.close();
-            wsRef.current = null;
-            fallbackToPolling();
-          }
-        }, 3000);
       } catch {
-        fallbackToPolling();
+        connectPolling();
       }
     };
 
-    const fallbackToPolling = () => {
-      if (usingNativeWs || !mountedRef.current) return;
-      connectPolling();
-    };
-
     const connectPolling = async () => {
+      if (!mountedRef.current || pollingConnecting || pollTimer || subscriberIdRef.current != null) {
+        return;
+      }
+      const requestId = ++pollingConnectRequestId;
+      pollingConnecting = true;
       try {
         const result = await wsConnect();
-        if (!mountedRef.current) return;
+        if (!result?.subscriber_id) {
+          throw new Error('Invalid ws connect response');
+        }
+        if (!mountedRef.current || requestId !== pollingConnectRequestId) {
+          wsDisconnect(result.subscriber_id).catch(() => {});
+          return;
+        }
         if (!result?.subscriber_id) {
           throw new Error('Invalid ws connect response');
         }
@@ -327,16 +377,20 @@ export function useWebSocket(pollIntervalMs = 2000) {
         retryDelay = 2000;
         startPolling();
       } catch {
-        if (mountedRef.current) {
+        if (mountedRef.current && requestId === pollingConnectRequestId) {
           setConnected(false);
-          const delay = Math.min(retryDelay, 30000);
-          retryDelay = Math.min(retryDelay * 2, 30000);
-          retryTimer = setTimeout(connectPolling, delay);
+          stopPolling(false);
+          schedulePollingReconnect();
+        }
+      } finally {
+        if (requestId === pollingConnectRequestId) {
+          pollingConnecting = false;
         }
       }
     };
 
     const startPolling = () => {
+      if (pollTimer || subscriberIdRef.current == null) return;
       pollTimer = setInterval(async () => {
         if (!mountedRef.current || subscriberIdRef.current == null) return;
         try {
@@ -348,11 +402,8 @@ export function useWebSocket(pollIntervalMs = 2000) {
         } catch {
           if (mountedRef.current) {
             setConnected(false);
-            subscriberIdRef.current = null;
-            clearInterval(pollTimer);
-            const delay = Math.min(retryDelay, 30000);
-            retryDelay = Math.min(retryDelay * 2, 30000);
-            retryTimer = setTimeout(connectPolling, delay);
+            stopPolling(false);
+            schedulePollingReconnect();
           }
         }
       }, pollIntervalMs);
@@ -363,12 +414,10 @@ export function useWebSocket(pollIntervalMs = 2000) {
 
     return () => {
       mountedRef.current = false;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (pollTimer) clearInterval(pollTimer);
+      clearRetry();
+      clearHandshake();
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-      if (subscriberIdRef.current != null) {
-        wsDisconnect(subscriberIdRef.current).catch(() => {});
-      }
+      stopPolling(true);
     };
   }, [pollIntervalMs]);
 

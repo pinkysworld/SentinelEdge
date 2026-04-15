@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import ProcessDrawer from './ProcessDrawer.jsx';
@@ -47,6 +48,36 @@ const CHECKLIST_TEMPLATES = {
     'Check for privilege escalation on host',
     'Review container runtime configuration',
   ],
+};
+
+const buildPlannerReasons = (context) => [
+  context?.title,
+  context?.summary,
+  context?.message,
+  context?.description,
+  context?.severity,
+  context?.reason,
+  context?.rule_id,
+  ...(Array.isArray(context?.tags) ? context.tags : []),
+  ...(Array.isArray(context?.reasons) ? context.reasons : []),
+].filter(Boolean);
+
+const buildPlannerHuntQuery = (context) => {
+  const severity = context?.severity ? `severity:${String(context.severity).toLowerCase()}` : '';
+  const terms = [
+    context?.rule_id,
+    context?.title,
+    context?.summary,
+    context?.message,
+    context?.host,
+    context?.agent_id,
+  ].filter(Boolean);
+  return [severity, ...terms].join(' ').trim() || 'severity:high';
+};
+
+const buildPlannerHuntName = (context) => {
+  const label = context?.title || context?.summary || context?.message || context?.id || 'Signal';
+  return `Hunt ${label}`;
 };
 
 // ── Campaign Correlation Graph (SVG) ───────────────────────────
@@ -124,6 +155,7 @@ function CampaignGraph() {
 
 export default function SOCWorkbench() {
   const toast = useToast();
+  const navigate = useNavigate();
 
   // Persist active tab in URL hash
   const [tab, setTabRaw] = useState(() => {
@@ -174,6 +206,10 @@ export default function SOCWorkbench() {
   const [escForm, setEscForm] = useState({ name: '', severity: 'critical', channel: 'email', targets: '', timeout_minutes: 30 });
   const [showEscForm, setShowEscForm] = useState(false);
   const [selectedProcess, setSelectedProcess] = useState(null);
+  const [investigationContext, setInvestigationContext] = useState(null);
+  const [plannerSuggestions, setPlannerSuggestions] = useState([]);
+  const [plannerLoading, setPlannerLoading] = useState(false);
+  const [startingWorkflowId, setStartingWorkflowId] = useState(null);
 
   // ── Case Comments ──
   const [commentText, setCommentText] = useState('');
@@ -201,6 +237,54 @@ export default function SOCWorkbench() {
   const caseArr = Array.isArray(caseList) ? caseList : caseList?.cases || [];
   const queueArr = Array.isArray(queue) ? queue : queue?.alerts || [];
   const rbacArr = Array.isArray(rbacData) ? rbacData : rbacData?.users || [];
+
+  const startWorkflow = async (workflow, caseId) => {
+    if (!workflow?.id) return;
+    setStartingWorkflowId(workflow.id);
+    try {
+      await api.investigationStart({ workflow_id: workflow.id, analyst: 'admin', case_id: caseId || undefined });
+      toast('Investigation started', 'success');
+      setTab('investigations');
+      rInv();
+    } catch {
+      toast('Failed to start', 'error');
+    } finally {
+      setStartingWorkflowId(null);
+    }
+  };
+
+  const openInvestigationPlanner = async (context, sourceType) => {
+    const nextContext = { ...context, sourceType };
+    setInvestigationContext(nextContext);
+    setTab('investigations');
+
+    const reasons = buildPlannerReasons(nextContext);
+    if (reasons.length === 0) {
+      setPlannerSuggestions([]);
+      return;
+    }
+
+    setPlannerLoading(true);
+    try {
+      const result = await api.investigationSuggest({ alert_reasons: reasons });
+      const items = Array.isArray(result) ? result : result?.suggestions || [];
+      setPlannerSuggestions(items);
+    } catch {
+      setPlannerSuggestions([]);
+      toast('Failed to load investigation suggestions', 'error');
+    } finally {
+      setPlannerLoading(false);
+    }
+  };
+
+  const pivotPlannerToHunt = (context) => {
+    const params = new URLSearchParams({
+      intent: 'run-hunt',
+      huntQuery: buildPlannerHuntQuery(context),
+      huntName: buildPlannerHuntName(context),
+    });
+    navigate(`/detection?${params.toString()}`);
+  };
 
   const viewInc = async (id) => {
     setSelectedInc(id);
@@ -320,6 +404,8 @@ export default function SOCWorkbench() {
                 <button className="btn btn-sm btn-primary" onClick={async () => {
                   try { await api.updateIncident(selectedInc, { status: 'closed' }); toast('Incident closed', 'success'); viewInc(selectedInc); rInc(); } catch { toast('Failed', 'error'); }
                 }}>Close Incident</button>
+                <button className="btn btn-sm" onClick={() => openInvestigationPlanner(incDetail, 'incident')}>Plan Investigation</button>
+                <button className="btn btn-sm" onClick={() => pivotPlannerToHunt(incDetail)}>Open Hunt</button>
                 <button className="btn btn-sm" onClick={async () => {
                   try { const r = await api.incidentReport(selectedInc); downloadData(typeof r === 'string' ? r : r, `incident-${selectedInc}-report.txt`, 'text/plain'); } catch { toast('Failed to generate report', 'error'); }
                 }}>Export Report</button>
@@ -451,6 +537,8 @@ export default function SOCWorkbench() {
                           if (!a.id) { toast('No alert ID', 'error'); return; }
                           try { await api.queueAck({ alert_id: a.id }); toast('Acknowledged', 'success'); rQueue(); } catch { toast('Failed', 'error'); }
                         }}>Ack</button>
+                        <button className="btn btn-sm" onClick={() => openInvestigationPlanner(a, 'queue-alert')}>Plan</button>
+                        <button className="btn btn-sm" onClick={() => pivotPlannerToHunt(a)}>Hunt</button>
                       </td>
                     </tr>
                   ))}
@@ -842,6 +930,53 @@ export default function SOCWorkbench() {
             <span className="card-title">Investigation Workflows</span>
             <button className="btn btn-sm" onClick={rInv}>↻ Refresh</button>
           </div>
+          {investigationContext && (
+            <div className="card" style={{ marginBottom: 16, background: 'var(--bg)' }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Planner Context</div>
+                  <div className="hint">{investigationContext.sourceType || 'signal'} • {investigationContext.title || investigationContext.summary || investigationContext.message || investigationContext.id || 'Untitled signal'}</div>
+                </div>
+                <div className="btn-group">
+                  <button className="btn btn-sm" onClick={() => pivotPlannerToHunt(investigationContext)}>Open Hunt</button>
+                  <button className="btn btn-sm" onClick={() => { setInvestigationContext(null); setPlannerSuggestions([]); }}>Clear</button>
+                </div>
+              </div>
+              <div className="summary-grid">
+                <div className="summary-card">
+                  <div className="summary-label">Severity</div>
+                  <div className="summary-value">{investigationContext.severity || '—'}</div>
+                  <div className="summary-meta">{investigationContext.rule_id || investigationContext.id || 'No explicit rule or incident ID'}</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-label">Suggested Workflows</div>
+                  <div className="summary-value">{plannerLoading ? '…' : plannerSuggestions.length}</div>
+                  <div className="summary-meta">Matched from incident or alert wording using backend workflow triggers.</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                {plannerLoading ? (
+                  <div className="hint">Evaluating workflow matches for this context…</div>
+                ) : plannerSuggestions.length === 0 ? (
+                  <div className="hint">No workflow suggestion matched. Use the hunt pivot to build a rule-specific search instead.</div>
+                ) : plannerSuggestions.map((workflow) => (
+                  <div key={workflow.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{workflow.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{workflow.description}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{(workflow.steps || []).length} steps • {(workflow.mitre_techniques || []).join(', ') || 'No ATT&CK mapping'}</div>
+                    </div>
+                    <div className="btn-group" style={{ alignItems: 'center' }}>
+                      <span className={`badge ${(workflow.severity || '').toLowerCase() === 'critical' || (workflow.severity || '').toLowerCase() === 'high' ? 'badge-err' : 'badge-info'}`}>{workflow.severity || 'medium'}</span>
+                      <button className="btn btn-sm btn-primary" onClick={() => startWorkflow(workflow, investigationContext.case_id)} disabled={startingWorkflowId === workflow.id}>
+                        {startingWorkflowId === workflow.id ? 'Starting…' : 'Start'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {workflows && Array.isArray(workflows) && workflows.length > 0 ? (
             <div className="table-wrap">
               <table>
@@ -856,13 +991,9 @@ export default function SOCWorkbench() {
                       <td>{wf.estimated_minutes}m</td>
                       <td>{(wf.steps || []).length}</td>
                       <td>
-                        <button className="btn btn-sm btn-primary" onClick={async () => {
-                          try {
-                            await api.investigationStart({ workflow_id: wf.id, analyst: 'admin' });
-                            toast('Investigation started', 'success');
-                            rInv();
-                          } catch { toast('Failed to start', 'error'); }
-                        }}>Start</button>
+                        <button className="btn btn-sm btn-primary" onClick={() => startWorkflow(wf, investigationContext?.case_id)} disabled={startingWorkflowId === wf.id}>
+                          {startingWorkflowId === wf.id ? 'Starting…' : 'Start'}
+                        </button>
                       </td>
                     </tr>
                   ))}

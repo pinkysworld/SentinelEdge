@@ -112,7 +112,7 @@ or **Not started**, with a priority of Critical / High / Medium.
 | 10.2 | SHA-256 binary attestation | High | Implemented |
 | 10.3 | Container image (Dockerfile) | Medium | Implemented |
 | 10.4 | systemd unit / launchd plist | Medium | Implemented |
-| 10.5 | Package manager (deb/rpm/brew) | Low | Not started |
+| 10.5 | Package manager (deb/rpm/brew) | Low | Implemented |
 
 ## 11. Documentation
 
@@ -140,11 +140,11 @@ or **Not started**, with a priority of Critical / High / Medium.
 | Retention | 5/5 |
 | Failure Handling | 6/6 |
 | Test Realism | 6/6 |
-| Packaging | 4/5 |
+| Packaging | 5/5 |
 | Documentation | 6/6 |
 
-**Overall**: 58/59 controls implemented (98%).
+**Overall**: 59/59 controls implemented (100%).
 
 ## Remediation Priorities
 
-1. **Package manager** (10.5) — deb/rpm/brew distribution.
+1. **Package publication verification** — keep release asset names, Homebrew formula URLs, and package checksum publication in lockstep on every tag.

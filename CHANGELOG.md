@@ -2,6 +2,32 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.52.0] — Hunt Workflows, NDR Depth & Release Polish
+
+### Detection & Investigation UX
+- **Run-hunt intent wiring** — The detection workspace now consumes `/detection?intent=run-hunt`, opens a dedicated hunt drawer, prefills query/name state from route parameters, and keeps drawer URL state consistent across tune, suppress, and hunt pivots.
+- **Inline hunt operations** — Analysts can run a live hunt, save a hunt definition, reopen related saved hunts, and inspect latest hunt results without leaving the selected rule context.
+- **Workflow suggestions in context** — Threat Detection now requests builtin workflow suggestions from the selected rule metadata and can start investigations directly from the detection detail pane.
+- **SOC planner handoff** — SOCWorkbench can build investigation plans from incident or queue-alert context and pivot the same context into the hunt drawer with prefilled hunt queries.
+
+### Detection Quality
+- **False-positive advisor UX** — Rule-specific false-positive patterns now score against selected rule metadata, prefill suppressions, and suggest safer weight reductions.
+- **Default intel feed seeding** — The feed engine now ships with common default sources for MalwareBazaar, CISA KEV/STIX, and URLhaus.
+- **Email sender heuristics** — Sender-domain scoring now considers suspicious TLDs, punycode, homoglyphs, IP-literal senders, and Message-ID domain mismatches.
+- **Persistence-aware LOLBin scoring** — Process scoring now flags scheduled-task, cron, launch agent, service-enablement, and startup-path persistence patterns.
+- **Hunt aggregation validation** — Invalid pipe aggregations now fail fast with structured errors instead of silently degrading into empty or misleading results.
+
+### NDR & APIs
+- **Beaconing anomaly detection** — NDR now detects low-jitter outbound beaconing cadence and exposes the results in the report model and admin console.
+- **Dedicated NDR anomaly endpoints** — TLS, DPI, entropy, self-signed certificate, top-talker, beaconing, and protocol-distribution endpoints are all individually exposed and documented.
+- **Search index rebuild contract** — Event-backed search index generation now preserves the alert event class contract while rebuilding from retained events.
+
+### Docs, Packaging & Quality
+- **Searchable docs site** — The website resources section now supports client-side search and empty-state handling for operator references.
+- **Release-facing docs refresh** — README, status, deployment, SDK, and getting-started material now reflect current package formats, sizing guidance, and release verification expectations.
+- **SDK drift CI** — CI now regenerates SDKs and fails if committed artifacts drift from the OpenAPI contract.
+- **Focused Playwright smoke coverage** — Deterministic browser smoke tests validate run-hunt routing, investigation planner start, and queue-to-hunt pivots.
+
 ## [0.51.0] — ClickHouse, EDR Blocking, WASM Tutorial & Platform Polish
 
 ### Storage

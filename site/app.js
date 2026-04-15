@@ -3,10 +3,10 @@
    Product-oriented landing page with lightweight progressive enhancement.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const RELEASE_VERSION = "0.45.0";
-const MODULE_COUNT = "128";
-const API_COUNT = "174";
-const TEST_COUNT = "1445";
+const RELEASE_VERSION = "0.52.0";
+const MODULE_COUNT = "134";
+const API_COUNT = "138";
+const TEST_COUNT = "1500+";
 
 const stats = [
   { value: RELEASE_VERSION, label: "current version" },
@@ -35,13 +35,13 @@ const pipelineDetails = [
     num: "01",
     title: "Detection Engineering",
     body: "Manage Sigma and native rules, test against retained events, promote or roll back, maintain suppressions, schedule hunts, and bridge kernel-level events directly into your Sigma rule library.",
-    note: "Includes hunts, content lifecycle, suppressions, MITRE coverage, and the new Sigma-KernelEvent bridge."
+    note: "Includes hunts, content lifecycle, suppressions, MITRE coverage, false-positive advisor actions, and a route-driven hunt drawer for inline run/save workflows."
   },
   {
     num: "02",
     title: "SOC Workbench",
     body: "Queue, cases, incident pivots, timelines, process trees, storyline views, and entity extraction keep analysts inside one investigation surface with full context.",
-    note: "Entity extraction automatically surfaces IPs, domains, hashes, MITRE techniques, and usernames from alerts."
+    note: "Investigation planners can now suggest builtin workflows from incident or alert context and pivot directly into a prefilled hunt."
   },
   {
     num: "03",
@@ -115,6 +115,37 @@ function renderInterfaces() {
     div.innerHTML = `<code>${f.name}</code><span>${f.desc}</span>`;
     el.appendChild(div);
   });
+}
+
+function initResourceSearch() {
+  const input = document.getElementById("resource-search");
+  if (!input) return;
+
+  const cards = Array.from(document.querySelectorAll("[data-resource-card]"));
+  const count = document.getElementById("resource-count");
+  const empty = document.getElementById("resource-empty");
+
+  const applyFilter = () => {
+    const query = input.value.trim().toLowerCase();
+    let visible = 0;
+
+    cards.forEach((card) => {
+      const haystack = `${card.dataset.search || ""} ${card.textContent || ""}`.toLowerCase();
+      const match = !query || haystack.includes(query);
+      card.hidden = !match;
+      if (match) visible += 1;
+    });
+
+    if (count) {
+      count.textContent = `${visible} resource${visible === 1 ? "" : "s"} visible`;
+    }
+    if (empty) {
+      empty.hidden = visible !== 0;
+    }
+  };
+
+  input.addEventListener("input", applyFilter);
+  applyFilter();
 }
 
 function initNav() {
@@ -201,6 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
   applyReleaseCopy();
   renderPipelineDetails();
   renderInterfaces();
+  initResourceSearch();
   initNav();
   requestAnimationFrame(() => initScrollReveal());
 });

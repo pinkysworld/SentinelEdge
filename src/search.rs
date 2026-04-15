@@ -628,39 +628,60 @@ pub struct HuntAggBucket {
 
 /// Parse a pipe-separated aggregation from a hunt query.
 /// Returns (filter_part, aggregation) if a pipe is found.
-fn parse_hunt_pipe(input: &str) -> (String, Option<HuntAggregation>) {
+fn parse_hunt_pipe(input: &str) -> Result<(String, Option<HuntAggregation>), String> {
     if let Some(idx) = input.find('|') {
         let filter = input[..idx].trim().to_string();
-        let agg_part = input[idx + 1..].trim().to_lowercase();
-        let tokens: Vec<&str> = agg_part.split_whitespace().collect();
+        let agg_part = input[idx + 1..].trim();
+        if agg_part.is_empty() {
+            return Err("missing aggregation after pipe".into());
+        }
+        let tokens: Vec<String> = agg_part
+            .split_whitespace()
+            .map(|token| token.to_lowercase())
+            .collect();
 
-        let agg = match tokens.first().map(|s| *s) {
+        let agg = match tokens.first().map(String::as_str) {
             Some("count") => {
                 if tokens.len() >= 3 && tokens[1] == "by" {
-                    Some(HuntAggregation::Count { group_by: Some(tokens[2].to_string()) })
-                } else {
+                    Some(HuntAggregation::Count { group_by: Some(tokens[2].clone()) })
+                } else if tokens.len() == 1 {
                     Some(HuntAggregation::Count { group_by: None })
+                } else {
+                    return Err("count only supports `count` or `count by <field>`".into());
                 }
             }
-            Some("count_distinct") => {
-                tokens.get(1).map(|f| HuntAggregation::CountDistinct { field: f.to_string() })
-            }
+            Some("count_distinct") => match tokens.get(1) {
+                Some(field) => Some(HuntAggregation::CountDistinct { field: field.clone() }),
+                None => return Err("count_distinct requires a field".into()),
+            },
             Some("top") => {
                 if tokens.len() >= 3 {
-                    let n = tokens[1].parse::<usize>().unwrap_or(10);
-                    Some(HuntAggregation::Top { n, field: tokens[2].to_string() })
+                    let n = tokens[1]
+                        .parse::<usize>()
+                        .map_err(|_| "top requires a numeric limit".to_string())?;
+                    Some(HuntAggregation::Top { n, field: tokens[2].clone() })
                 } else {
-                    None
+                    return Err("top requires `top <n> <field>`".into());
                 }
             }
-            Some("min") => tokens.get(1).map(|f| HuntAggregation::Min { field: f.to_string() }),
-            Some("max") => tokens.get(1).map(|f| HuntAggregation::Max { field: f.to_string() }),
-            Some("values") => tokens.get(1).map(|f| HuntAggregation::Values { field: f.to_string() }),
-            _ => None,
+            Some("min") => match tokens.get(1) {
+                Some(field) => Some(HuntAggregation::Min { field: field.clone() }),
+                None => return Err("min requires a field".into()),
+            },
+            Some("max") => match tokens.get(1) {
+                Some(field) => Some(HuntAggregation::Max { field: field.clone() }),
+                None => return Err("max requires a field".into()),
+            },
+            Some("values") => match tokens.get(1) {
+                Some(field) => Some(HuntAggregation::Values { field: field.clone() }),
+                None => return Err("values requires a field".into()),
+            },
+            Some(_) => return Err(format!("unsupported aggregation: {agg_part}")),
+            None => return Err("missing aggregation after pipe".into()),
         };
-        (filter, agg)
+        Ok((filter, agg))
     } else {
-        (input.to_string(), None)
+        Ok((input.to_string(), None))
     }
 }
 
@@ -669,7 +690,7 @@ impl SearchIndex {
     /// Supports: `process_name:mimikatz | count by device_id`
     pub fn hunt_aggregate(&self, input: &str) -> Result<HuntAggregationResult, String> {
         let start = std::time::Instant::now();
-        let (filter_part, aggregation) = parse_hunt_pipe(input);
+        let (filter_part, aggregation) = parse_hunt_pipe(input)?;
 
         let predicate = if filter_part.is_empty() || filter_part == "*" {
             None
@@ -999,5 +1020,19 @@ mod tests {
         let r = idx.hunt_aggregate("process:mimikatz | count by src_ip").unwrap();
         assert_eq!(r.total_matching, 1);
         assert_eq!(r.buckets.len(), 1);
+    }
+
+    #[test]
+    fn test_hunt_aggregate_rejects_unknown_pipe() {
+        let idx = make_index();
+        let err = idx.hunt_aggregate("* | nonsense").unwrap_err();
+        assert!(err.contains("unsupported aggregation"));
+    }
+
+    #[test]
+    fn test_hunt_aggregate_rejects_incomplete_pipe() {
+        let idx = make_index();
+        let err = idx.hunt_aggregate("* | count by").unwrap_err();
+        assert!(err.contains("count only supports"));
     }
 }

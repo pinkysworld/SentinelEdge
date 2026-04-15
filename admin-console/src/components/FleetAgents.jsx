@@ -12,6 +12,50 @@ const SAVED_VIEWS = [
   { id: 'linux', label: 'Linux Fleet', filters: { status: 'all', q: '', os: 'linux' } },
 ];
 
+function TriageEmptyState({ title, description, actionLabel, onAction }) {
+  return (
+    <div className="triage-empty">
+      <div className="triage-empty-title">{title}</div>
+      <div className="triage-empty-copy">{description}</div>
+      {actionLabel && onAction && <button className="btn btn-sm" onClick={onAction}>{actionLabel}</button>}
+    </div>
+  );
+}
+
+function MobileAgentCard({ agent, active, onOpen, onCopy }) {
+  return (
+    <article
+      className={`mobile-stack-card ${active ? 'active' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(agent)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen(agent);
+        }
+      }}
+    >
+      <div className="mobile-card-header">
+        <div>
+          <div className="mobile-card-title">{agent.hostname}</div>
+          <div className="row-secondary">{agent.id}</div>
+        </div>
+        <span className={`badge ${agent.status === 'online' ? 'badge-ok' : agent.status === 'offline' ? 'badge-err' : 'badge-warn'}`}>{agent.status}</span>
+      </div>
+      <div className="mobile-card-meta">
+        <span>{agent.os}</span>
+        <span>{agent.version}</span>
+        <span>{formatRelativeTime(agent.lastSeen)}</span>
+      </div>
+      <div className="mobile-card-actions">
+        <button className="btn btn-sm btn-primary" onClick={(event) => { event.stopPropagation(); onOpen(agent); }}>Inspect</button>
+        <button className="btn btn-sm" onClick={(event) => { event.stopPropagation(); onCopy(agent); }}>Copy</button>
+      </div>
+    </article>
+  );
+}
+
 function normalizeAgent(agent, index) {
   const id = agent.id || agent.agent_id || `agent-${index}`;
   return {
@@ -87,14 +131,24 @@ export default function FleetAgents() {
 
   const pagedAgents = useMemo(() => filteredAgents.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filteredAgents, page]);
   const totalPages = Math.max(1, Math.ceil(filteredAgents.length / PAGE_SIZE));
+  const hasFleetFilters = statusFilter !== 'all' || osFilter !== 'all' || Boolean(query);
 
   const currentPreview = agentDetail && selectedAgent ? { ...normalizeAgent(agentDetail, 0), raw: agentDetail } : hoveredAgent;
+  const currentPreviewIndex = currentPreview ? filteredAgents.findIndex((agent) => agent.id === currentPreview.id) : -1;
 
   const queueHealth = {
     offline: agentArr.filter((agent) => agent.status === 'offline').length,
     stale: agentArr.filter((agent) => agent.lastSeen && (Date.now() - new Date(agent.lastSeen).getTime()) > 30 * 60 * 1000).length,
     linux: agentArr.filter((agent) => String(agent.os).toLowerCase().includes('linux')).length,
   };
+
+  const clearFleetFilters = useCallback(() => {
+    setQuery('');
+    setStatusFilter('all');
+    setOsFilter('all');
+    setPage(0);
+    setFleetQueryState({ q: '', status: 'all', os: 'all' });
+  }, [setFleetQueryState]);
 
   const openAgent = async (agent) => {
     setSelectedAgent(agent.id);
@@ -253,60 +307,110 @@ export default function FleetAgents() {
                 </select>
               </div>
             </div>
+            <div className="summary-grid triage-summary-grid">
+              <div className="summary-card">
+                <div className="summary-label">Filtered Fleet</div>
+                <div className="summary-value">{filteredAgents.length}</div>
+                <div className="summary-meta">Endpoints still in the current operator scope</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Offline Over 1h</div>
+                <div className="summary-value">{queueHealth.offline}</div>
+                <div className="summary-meta">Saved views keep lagging endpoints visible</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Stale Heartbeats</div>
+                <div className="summary-value">{queueHealth.stale}</div>
+                <div className="summary-meta">Likely needs recovery or rollout validation</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Selected</div>
+                <div className="summary-value">{selected.size}</div>
+                <div className="summary-meta">Endpoint records pinned for bulk actions</div>
+              </div>
+            </div>
 
             <div className="active-filter-chips">
               {statusFilter !== 'all' && <span className="scope-chip">Status: {statusFilter}</span>}
               {osFilter !== 'all' && <span className="scope-chip">OS: {osFilter}</span>}
               {query && <span className="scope-chip">Query: {query}</span>}
+              {hasFleetFilters && <button className="filter-chip-button" onClick={clearFleetFilters}>Reset filters</button>}
+            </div>
+            <div className="triage-meta-bar">
+              <div className="hint">
+                Showing {pagedAgents.length} agent{pagedAgents.length === 1 ? '' : 's'} on page {page + 1} of {totalPages}. {queueHealth.offline} endpoints are currently offline.
+              </div>
+              {hasFleetFilters && <button className="btn btn-sm" onClick={clearFleetFilters}>Clear Scope</button>}
             </div>
 
             {filteredAgents.length === 0 ? (
-              <div className="empty">No agents match the current view.</div>
+              <TriageEmptyState
+                title="No agents match the current view"
+                description="The fleet is available, but the current search and platform filters narrowed this view to zero endpoints. Clear the scope or switch a saved view to continue operating."
+                actionLabel={hasFleetFilters ? 'Clear Filters' : null}
+                onAction={hasFleetFilters ? clearFleetFilters : null}
+              />
             ) : (
               <>
                 <div className="split-list-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th style={{ width: 32 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all visible agents" /></th>
-                        <th>Host</th>
-                        <th>Status</th>
-                        <th>OS</th>
-                        <th>Version</th>
-                        <th>Last Seen</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedAgents.map((agent) => {
-                        const isActive = (selectedAgent && selectedAgent === agent.id) || hoveredAgent?.id === agent.id;
-                        return (
-                          <tr
-                            key={agent.id}
-                            className={isActive ? 'row-active' : ''}
-                            onMouseEnter={() => setHoveredAgent(agent)}
-                            onFocus={() => setHoveredAgent(agent)}
-                            onClick={() => openAgent(agent)}
-                            tabIndex={0}
-                          >
-                            <td onClick={(event) => event.stopPropagation()}>
-                              <input type="checkbox" checked={selected.has(agent.id)} onChange={() => toggleSelect(agent.id)} aria-label={`Select ${agent.hostname}`} />
-                            </td>
-                            <td>
-                              <div className="row-primary">{agent.hostname}</div>
-                              <div className="row-secondary">{agent.id}</div>
-                            </td>
-                            <td><span className={`badge ${agent.status === 'online' ? 'badge-ok' : agent.status === 'offline' ? 'badge-err' : 'badge-warn'}`}>{agent.status}</span></td>
-                            <td>{agent.os}</td>
-                            <td>{agent.version}</td>
-                            <td>
-                              <div className="row-primary">{formatRelativeTime(agent.lastSeen)}</div>
-                              <div className="row-secondary">{formatDateTime(agent.lastSeen)}</div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="desktop-table-only">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 32 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all visible agents" /></th>
+                          <th>Host</th>
+                          <th>Status</th>
+                          <th>OS</th>
+                          <th>Version</th>
+                          <th>Last Seen</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedAgents.map((agent) => {
+                          const isActive = (selectedAgent && selectedAgent === agent.id) || hoveredAgent?.id === agent.id;
+                          return (
+                            <tr
+                              key={agent.id}
+                              className={isActive ? 'row-active' : ''}
+                              onMouseEnter={() => setHoveredAgent(agent)}
+                              onFocus={() => setHoveredAgent(agent)}
+                              onClick={() => openAgent(agent)}
+                              tabIndex={0}
+                            >
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <input type="checkbox" checked={selected.has(agent.id)} onChange={() => toggleSelect(agent.id)} aria-label={`Select ${agent.hostname}`} />
+                              </td>
+                              <td>
+                                <div className="row-primary">{agent.hostname}</div>
+                                <div className="row-secondary">{agent.id}</div>
+                              </td>
+                              <td><span className={`badge ${agent.status === 'online' ? 'badge-ok' : agent.status === 'offline' ? 'badge-err' : 'badge-warn'}`}>{agent.status}</span></td>
+                              <td>{agent.os}</td>
+                              <td>{agent.version}</td>
+                              <td>
+                                <div className="row-primary">{formatRelativeTime(agent.lastSeen)}</div>
+                                <div className="row-secondary">{formatDateTime(agent.lastSeen)}</div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mobile-stack">
+                    {pagedAgents.map((agent) => {
+                      const isActive = (selectedAgent && selectedAgent === agent.id) || hoveredAgent?.id === agent.id;
+                      return (
+                        <MobileAgentCard
+                          key={agent.id}
+                          agent={agent}
+                          active={isActive}
+                          onOpen={openAgent}
+                          onCopy={copyRow}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
                 {totalPages > 1 && (
                   <div className="triage-pagination">
@@ -331,6 +435,14 @@ export default function FleetAgents() {
             </div>
             {currentPreview ? (
               <>
+                <div className="triage-detail-nav">
+                  <span className="scope-chip">{currentPreviewIndex + 1} of {filteredAgents.length}</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm" onClick={() => currentPreviewIndex > 0 && openAgent(filteredAgents[currentPreviewIndex - 1])} disabled={currentPreviewIndex <= 0}>Previous</button>
+                    <button className="btn btn-sm" onClick={() => currentPreviewIndex < filteredAgents.length - 1 && openAgent(filteredAgents[currentPreviewIndex + 1])} disabled={currentPreviewIndex >= filteredAgents.length - 1}>Next</button>
+                    {!selectedAgent && <button className="btn btn-sm btn-primary" onClick={() => openAgent(currentPreview)}>Pin Preview</button>}
+                  </div>
+                </div>
                 <div className="detail-hero">
                   <div>
                     <div className="detail-hero-title">{currentPreview.hostname}</div>
@@ -365,7 +477,10 @@ export default function FleetAgents() {
                 <JsonDetails data={agentDetail || currentPreview.raw} label="Detailed endpoint context" />
               </>
             ) : (
-              <div className="empty">Hover or select an agent to inspect details without losing list position.</div>
+              <TriageEmptyState
+                title="No agent preview yet"
+                description="Hover a row on desktop or tap a card on mobile to inspect endpoint details without losing list position."
+              />
             )}
           </aside>
         </div>

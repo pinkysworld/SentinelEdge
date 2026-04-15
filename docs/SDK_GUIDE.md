@@ -19,6 +19,16 @@ This uses the OpenAPI Generator CLI to produce client libraries in
 - Java 11+ (for OpenAPI Generator) or `npx @openapitools/openapi-generator-cli`
 - `docs/openapi.yaml` must be up-to-date
 
+### CI drift check
+
+The CI pipeline regenerates the SDKs and fails if the committed SDK files drift from `docs/openapi.yaml`. Run the same validation locally before changing API shapes:
+
+```bash
+npm install -g @openapitools/openapi-generator-cli
+bash sdk/generate.sh
+git diff -- sdk/python sdk/typescript
+```
+
 ## Python SDK
 
 ### Installation

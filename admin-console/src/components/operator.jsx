@@ -289,6 +289,7 @@ export function downloadCsv(rows, filename) {
 
 export function SideDrawer({ open, title, subtitle, onClose, actions, children }) {
   const panelRef = useRef(null);
+  const previousFocusRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -301,9 +302,10 @@ export function SideDrawer({ open, title, subtitle, onClose, actions, children }
   useEffect(() => {
     if (!open || !panelRef.current) return;
     const panel = panelRef.current;
-    const focusable = () => panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-    const first = focusable()[0];
-    if (first) first.focus();
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () => Array.from(panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((node) => !node.hasAttribute('disabled'));
+    const first = focusable()[0] || panel;
+    first.focus();
 
     const trapFocus = (e) => {
       if (e.key !== 'Tab') return;
@@ -318,13 +320,16 @@ export function SideDrawer({ open, title, subtitle, onClose, actions, children }
       }
     };
     panel.addEventListener('keydown', trapFocus);
-    return () => panel.removeEventListener('keydown', trapFocus);
+    return () => {
+      panel.removeEventListener('keydown', trapFocus);
+      previousFocusRef.current?.focus?.();
+    };
   }, [open]);
 
   if (!open) return null;
   return (
     <div className="drawer-overlay" onClick={onClose}>
-      <aside className="drawer-panel" ref={panelRef} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+      <aside className="drawer-panel" ref={panelRef} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
         <div className="drawer-header">
           <div>
             <div className="drawer-title">{title}</div>
@@ -343,6 +348,7 @@ export function SideDrawer({ open, title, subtitle, onClose, actions, children }
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', tone = 'danger', onConfirm, onCancel }) {
   const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -357,9 +363,10 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', 
   useEffect(() => {
     if (!open || !dialogRef.current) return;
     const dialog = dialogRef.current;
-    const focusable = () => dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-    const first = focusable()[0];
-    if (first) first.focus();
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () => Array.from(dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((node) => !node.hasAttribute('disabled'));
+    const first = focusable()[0] || dialog;
+    first.focus();
 
     const trapFocus = (e) => {
       if (e.key !== 'Tab') return;
@@ -374,14 +381,17 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', 
       }
     };
     dialog.addEventListener('keydown', trapFocus);
-    return () => dialog.removeEventListener('keydown', trapFocus);
+    return () => {
+      dialog.removeEventListener('keydown', trapFocus);
+      previousFocusRef.current?.focus?.();
+    };
   }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-dialog" ref={dialogRef} onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <div className="confirm-dialog" ref={dialogRef} onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" tabIndex={-1}>
         <div className="confirm-dialog-header">
           <h3 id="confirm-dialog-title">{title}</h3>
         </div>

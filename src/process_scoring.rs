@@ -172,6 +172,32 @@ impl ProcessScorer {
             reasons.push("registry modification".into());
         }
 
+        // Persistence creation via scheduled tasks, cron, launch agents, or service enablement
+        if lower.contains("schtasks") && lower.contains("/create")
+            || lower.contains("crontab ")
+            || lower.contains("/etc/cron")
+            || lower.contains("launchctl load")
+            || lower.contains("launchctl bootstrap")
+            || lower.contains("systemctl enable")
+            || lower.contains("sc create")
+        {
+            score += 0.5;
+            reasons.push("persistence mechanism creation".into());
+        }
+
+        if lower.contains("currentversion\\run")
+            || lower.contains("currentversion\\runonce")
+            || lower.contains("~/library/launchagents")
+            || lower.contains("/library/launchagents")
+            || lower.contains("/library/launchdaemons")
+            || lower.contains(".bashrc")
+            || lower.contains(".zshrc")
+            || lower.contains(".profile")
+        {
+            score += 0.4;
+            reasons.push("startup persistence path touched".into());
+        }
+
         // Disabling security tools
         if lower.contains("set-mppreference") || lower.contains("disablerealtimemonitoring")
             || lower.contains("disable-windowsoptionalfeature")
@@ -438,6 +464,24 @@ mod tests {
         );
         assert!(assessment.total_risk > 0.5);
         assert!(assessment.lolbin_match.is_some());
+    }
+
+    #[test]
+    fn persistence_commands_are_flagged() {
+        let (score, reasons) = ProcessScorer::score_cmdline(
+            r#"schtasks /create /sc onlogon /tn updater /tr C:\Users\Public\updater.exe"#,
+        );
+        assert!(score >= 0.4, "score={score}");
+        assert!(reasons.iter().any(|reason| reason.contains("persistence")));
+    }
+
+    #[test]
+    fn startup_paths_are_flagged() {
+        let (score, reasons) = ProcessScorer::score_cmdline(
+            r#"reg add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v updater /d C:\Temp\updater.exe"#,
+        );
+        assert!(score >= 0.5, "score={score}");
+        assert!(reasons.iter().any(|reason| reason.contains("startup persistence")));
     }
 
     #[test]

@@ -15,8 +15,8 @@
       rel="stylesheet"
     >
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=7">
-    <script defer src="app.js?v=8"></script>
+    <link rel="stylesheet" href="styles.css?v=8">
+    <script defer src="app.js?v=9"></script>
   </head>
   <body>
     <nav class="site-nav" id="site-nav">
@@ -486,13 +486,13 @@
             </div>
             <div class="start-card">
               <h3>Package releases</h3>
-              <div class="code-block"><code>git tag v0.45.0</code></div>
+              <div class="code-block"><code>git tag v0.52.0</code></div>
               <p>Tagged releases trigger GitHub Actions packaging for Linux, macOS, and Windows archives.</p>
             </div>
             <div class="start-card">
               <h3>Validate the product</h3>
               <div class="code-block"><code>cargo test</code></div>
-              <p>Run the 1258-test suite, then use the live checks and browser smoke for a release-quality verification pass.</p>
+              <p>Run the automated suites, then use focused browser smoke coverage and SDK drift checks for a release-quality verification pass.</p>
             </div>
             <div class="start-card">
               <h3>Run as a service</h3>
@@ -518,48 +518,57 @@
             </p>
           </div>
 
+          <div class="resource-toolbar">
+            <label class="resource-search" for="resource-search">
+              <span>Search docs and references</span>
+              <input id="resource-search" type="search" placeholder="Search runbooks, deployment, SDK, API, threat model…">
+            </label>
+            <div class="resource-count" id="resource-count">8 resources visible</div>
+          </div>
+
           <div class="start-grid">
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="docs architecture deployment status runbooks getting started">
               <h3>Documentation Index</h3>
               <p>Start with the main documentation map for architecture, deployment, status, and runbooks.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/README.md" class="btn btn-outline" target="_blank" rel="noopener">Open Docs</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="openapi api contract integrations automation sdk">
               <h3>OpenAPI Contract</h3>
               <p>Use the versioned HTTP contract for integrations, SDK work, and operator automation.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/openapi.yaml" class="btn btn-outline" target="_blank" rel="noopener">View OpenAPI</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="deployment models sizing high availability relay federation multi-tenant">
               <h3>Deployment Models</h3>
               <p>Review the standalone, relay, and enterprise-oriented deployment approaches before rollout.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/DEPLOYMENT_MODELS.md" class="btn btn-outline" target="_blank" rel="noopener">Read Guide</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="runbooks response operations incidents agents siem installation">
               <h3>Runbooks</h3>
               <p>Operational guidance for agents, incident response, and SIEM integrations is bundled in the repository.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/tree/main/docs/runbooks" class="btn btn-outline" target="_blank" rel="noopener">Open Runbooks</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="roadmap backlog features ecosystem ha sso">
               <h3>Roadmap</h3>
               <p>See the roadmap for SSO, HA clustering, advanced content operations, and ecosystem expansion.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/ROADMAP_XDR_PROFESSIONAL.md" class="btn btn-outline" target="_blank" rel="noopener">View Roadmap</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="wasm extension guide plugins sandbox detection response">
               <h3>WASM Extension Guide</h3>
               <p>Build custom detection and response plugins as sandboxed WebAssembly modules.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/WASM_TUTORIAL.md" class="btn btn-outline" target="_blank" rel="noopener">WASM Tutorial</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="sdk integrations python typescript automation ci generate openapi">
               <h3>SDK &amp; Integrations</h3>
               <p>TypeScript and Python SDKs with 60+ methods for building automations and custom integrations.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/SDK_GUIDE.md" class="btn btn-outline" target="_blank" rel="noopener">SDK Guide</a></p>
             </div>
-            <div class="start-card">
+            <div class="start-card" data-resource-card data-search="threat model adversary abuse cases trust boundaries security">
               <h3>Threat Model</h3>
               <p>Adversary profiles, abuse cases, and trust boundaries for the platform.</p>
               <p><a href="https://github.com/pinkysworld/Wardex/blob/main/docs/THREAT_MODEL.md" class="btn btn-outline" target="_blank" rel="noopener">Threat Model</a></p>
             </div>
           </div>
+          <div class="resource-empty" id="resource-empty" hidden>No resources match the current search. Try terms like deployment, SDK, threat model, or runbooks.</div>
         </div>
       </section>
 
@@ -597,7 +606,7 @@
             <div class="start-card">
               <h3>Run the test suite</h3>
               <div class="code-block"><code>cargo test</code></div>
-              <p>Current release verification includes 1488 automated tests (1462 Rust + 26 admin-console).</p>
+              <p>Current release verification includes 1500+ automated tests and focused browser smoke coverage for hunt and investigation workflows.</p>
             </div>
           </div>
 
@@ -653,7 +662,7 @@
           </div>
 
           <div class="license-notice">
-            <p><strong>License &amp; Release:</strong> BSL 1.1 · <span id="license-version">v0.45.0</span></p>
+            <p><strong>License &amp; Release:</strong> BSL 1.1 · <span id="license-version">v0.52.0</span></p>
             <p><strong>Change Date:</strong> The BSL 1.1 license converts to Apache 2.0 on April 1, 2029. After this date, all usage — including commercial — is permitted under Apache 2.0 terms.</p>
             <p>For questions about licensing, commercial use, or partnership opportunities, please <a href="mailto:michel_ng@icloud.com">contact us</a>.</p>
           </div>
@@ -666,7 +675,7 @@
             <div class="footer-col footer-about">
               <span class="nav-logo footer-logo">WX</span>
               <p>
-                Wardex is a release-oriented XDR and SIEM platform for private-cloud operations. <span id="footer-about-module-count">135</span> Rust modules, <span id="footer-about-api-count">174</span> documented API paths, <span id="footer-about-test-count">1462</span> automated tests.
+                Wardex is a release-oriented XDR and SIEM platform for private-cloud operations. <span id="footer-about-module-count">134</span> Rust modules, <span id="footer-about-api-count">138</span> documented API paths, <span id="footer-about-test-count">1500+</span> automated tests.
               </p>
             </div>
             <div class="footer-col">
@@ -686,7 +695,7 @@
             </div>
           </div>
           <div class="footer-bottom">
-            <p>Wardex · Enterprise XDR &amp; SIEM · <span id="footer-release-test-count">1462</span> tests · <span id="footer-release-module-count">135</span> modules · <a href="../LICENSE" style="color:inherit;">BSL 1.1</a> · <span id="footer-version">v0.45.0</span> · Commercial use requires a <a href="#licensing" style="color: var(--nav-accent);">separate license</a></p>
+            <p>Wardex · Enterprise XDR &amp; SIEM · <span id="footer-release-test-count">1500+</span> tests · <span id="footer-release-module-count">134</span> modules · <a href="../LICENSE" style="color:inherit;">BSL 1.1</a> · <span id="footer-version">v0.52.0</span> · Commercial use requires a <a href="#licensing" style="color: var(--nav-accent);">separate license</a></p>
           </div>
         </div>
       </footer>

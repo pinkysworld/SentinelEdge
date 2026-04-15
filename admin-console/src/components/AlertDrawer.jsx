@@ -68,7 +68,16 @@ function suggestNextSteps(alert, mitre) {
 
 /* ── AlertDrawer component ──────────────────────────────────── */
 
-export default function AlertDrawer({ alert, onClose, onUpdated }) {
+export default function AlertDrawer({
+  alert,
+  onClose,
+  onUpdated,
+  onPrevious,
+  onNext,
+  canPrevious = false,
+  canNext = false,
+  positionLabel = null,
+}) {
   const toast = useToast();
   const [explainOpen, setExplainOpen] = useState(false);
 
@@ -136,6 +145,13 @@ export default function AlertDrawer({ alert, onClose, onUpdated }) {
       subtitle={`PID-free alert context · ${(alert.severity || 'unknown').toUpperCase()}`}
       actions={
         <>
+          {(onPrevious || onNext || positionLabel) && (
+            <div className="drawer-nav">
+              {positionLabel && <span className="scope-chip">{positionLabel}</span>}
+              {onPrevious && <button className="btn btn-sm" onClick={onPrevious} disabled={!canPrevious}>Previous</button>}
+              {onNext && <button className="btn btn-sm" onClick={onNext} disabled={!canNext}>Next</button>}
+            </div>
+          )}
           <button className="btn btn-sm" onClick={() => downloadData(alert, `alert-${alert.id || alert.alert_id || 'detail'}.json`)}>Export</button>
           <button className="btn btn-sm" onClick={markFalsePositive}>Mark FP</button>
           <button className="btn btn-sm btn-primary" onClick={createIncidentFromAlert}>Create Incident</button>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useApi, useInterval } from '../hooks.jsx';
 import * as api from '../api.js';
 
@@ -35,6 +35,7 @@ export default function NDRDashboard() {
   const tlsList = Array.isArray(tlsAnomalies) ? tlsAnomalies : tlsAnomalies?.items || r.tls_anomalies || [];
   const dpiList = Array.isArray(dpiAnomalies) ? dpiAnomalies : dpiAnomalies?.items || r.dpi_anomalies || [];
   const entropyList = r.entropy_anomalies || [];
+  const beaconingList = r.beaconing_anomalies || [];
   const selfSignedList = r.self_signed_certs || [];
 
   const tabs = [
@@ -42,6 +43,7 @@ export default function NDRDashboard() {
     { id: 'tls', label: `TLS (${tlsList.length})` },
     { id: 'dpi', label: `DPI (${dpiList.length})` },
     { id: 'entropy', label: `Entropy (${entropyList.length})` },
+    { id: 'beaconing', label: `Beaconing (${beaconingList.length})` },
     { id: 'certs', label: `Certs (${selfSignedList.length})` },
   ];
 
@@ -74,6 +76,10 @@ export default function NDRDashboard() {
         <div className="card" style={{ padding: 16, textAlign: 'center' }}>
           <div style={{ fontSize: 28, fontWeight: 700, color: tlsList.length > 0 ? 'var(--err)' : 'var(--ok)' }}>{tlsList.length}</div>
           <div className="hint">TLS Anomalies</div>
+        </div>
+        <div className="card" style={{ padding: 16, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: beaconingList.length > 0 ? 'var(--err)' : 'var(--ok)' }}>{beaconingList.length}</div>
+          <div className="hint">Beaconing Signals</div>
         </div>
       </div>
 
@@ -239,6 +245,34 @@ export default function NDRDashboard() {
                         <td>{formatBytes(a.total_bytes)}</td>
                         <td>{a.flow_count}</td>
                         <td><RiskBadge score={a.risk_score || 0} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {tab === 'beaconing' && (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                <div className="card-title">Regular Beaconing Cadence</div>
+                <div className="hint" style={{ marginTop: 4 }}>Outbound connections with stable intervals and low jitter that resemble command-and-control check-ins</div>
+              </div>
+              <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+                <table className="data-table" style={{ width: '100%' }}>
+                  <thead><tr><th>Source</th><th>Destination</th><th>Protocol</th><th>Avg Interval</th><th>Jitter</th><th>Flows</th><th>Traffic</th><th>Risk</th></tr></thead>
+                  <tbody>
+                    {beaconingList.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20 }}>No beaconing-like cadence detected</td></tr> : beaconingList.map((item, index) => (
+                      <tr key={index}>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>{item.src_addr}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>{item.dst_addr}:{item.dst_port}</td>
+                        <td><span className="badge badge-info">{item.protocol}</span></td>
+                        <td>{((item.avg_interval_ms || 0) / 1000).toFixed(0)}s</td>
+                        <td><span className={`badge ${item.jitter_pct <= 5 ? 'badge-err' : item.jitter_pct <= 10 ? 'badge-warn' : 'badge-info'}`}>{item.jitter_pct?.toFixed(1)}%</span></td>
+                        <td>{item.flow_count}</td>
+                        <td>{formatBytes(item.total_bytes)}</td>
+                        <td><RiskBadge score={item.risk_score || 0} /></td>
                       </tr>
                     ))}
                   </tbody>

@@ -358,6 +358,13 @@ tr:hover td { background: rgba(59,130,246,.03); }
   gap: 14px;
 }
 
+.drawer-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -748,6 +755,18 @@ textarea:focus-visible,
   min-width: 240px;
 }
 
+.triage-summary-grid {
+  margin: 0 0 12px;
+}
+
+.triage-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .sticky-bulk-bar {
   position: sticky;
   top: 0;
@@ -763,6 +782,54 @@ textarea:focus-visible,
 .split-list-table {
   overflow: auto;
   max-height: 620px;
+}
+
+.desktop-table-only {
+  min-width: 720px;
+}
+
+.mobile-stack {
+  display: none;
+}
+
+.mobile-stack-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.mobile-stack-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(59,130,246,.14);
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.mobile-card-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mobile-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mobile-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
 
 .split-list-table thead {
@@ -793,6 +860,38 @@ textarea:focus-visible,
   align-items: center;
   gap: 10px;
   margin-top: 12px;
+}
+
+.triage-detail-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.triage-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px 20px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(59,130,246,.05), rgba(59,130,246,0));
+}
+
+.triage-empty-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.triage-empty-copy {
+  max-width: 48ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
 }
 
 .detail-hero {
@@ -1112,6 +1211,15 @@ textarea:focus-visible,
   .triage-layout,
   .onboarding-grid { grid-template-columns: 1fr; }
   .triage-detail { position: static; }
+  .triage-meta-bar { align-items: stretch; flex-direction: column; }
+  .triage-toolbar-group-right { margin-left: 0; width: 100%; }
+  .triage-toolbar-group-right .form-input,
+  .triage-toolbar-group-right .form-select { flex: 1 1 180px; }
+  .triage-search { min-width: 0; width: 100%; }
+  .sticky-bulk-bar { flex-wrap: wrap; }
+  .split-list-table { max-height: none; overflow: visible; }
+  .desktop-table-only { display: none; }
+  .mobile-stack { display: grid; gap: 12px; }
   .table-wrap { overflow-x: auto; }
   .table-wrap table { min-width: 600px; }
   .topbar-title { font-size: 14px; }

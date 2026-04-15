@@ -2,30 +2,17 @@
 
 Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted security operations. It combines cross-platform telemetry collection, detection engineering, analyst workflows, approval-gated response, agent lifecycle management, SIEM integrations, and tamper-evident evidence handling in a single deployable product.
 
-## What ships in `v0.45.0`
+## What ships in `v0.52.0`
 
-- 135+ Rust source modules covering telemetry collection, detection engineering, malware scanning, SOC workflows, fleet operations, governance, SIEM integrations, and automated incident response
-- 174 documented OpenAPI paths with authenticated admin-console workflows, fleet controls, reports, threat hunting, compliance, and enterprise support surfaces
-- 1462+ automated tests (1272 unit + 190 integration + 26 vitest) plus live Playwright end-to-end coverage
-- **NEW: OIDC/SAML SSO** — Federated authentication with automatic role mapping
-- **NEW: LLM-assisted analyst** — RAG-powered security analyst with OpenAI/Azure/Anthropic/Ollama support and conversation history
-- **NEW: Secrets management** — Unified resolver for env vars (`${VAR}`), file secrets, and HashiCorp Vault KV v2
-- **NEW: HIPAA & GDPR compliance** — Automated evaluation of healthcare and data-protection controls
-- **NEW: Real cloud collectors** — AWS CloudTrail (SigV4), Azure Activity Log (OAuth2), GCP Cloud Audit (JWT/RS256) live polling
-- **NEW: Persistent event store** — Tantivy-based full-text search for event persistence
-- **NEW: SigmaHQ rule import** — YAML-based Sigma rule ingestion from the community repository
-- **NEW: ONNX ML inference** — Real model inference via ONNX Runtime for anomaly detection
-- **NEW: Load testing benchmarks** — Criterion micro-benchmarks for pipeline throughput
-- **NEW: Expanded fuzz targets** — search_query, secrets_expand, sigma_import fuzz targets
-- 20+ detection & UX enhancements: ML triage wiring, alert dedup, ransomware canary files, insider threat detection, DoH bypass detection, credential spray correlation, LOLBIN chain scoring, RBAC management UI, playbook visual editor, NOC wall display
-- Malware hash database with ~48 built-in signatures, YARA rule engine, and real-time file scanning
-- Threat hunting DSL with KQL-like syntax, field aliases, and wildcard matching
-- Multi-format SIEM export (CEF, LEEF, Syslog, Sentinel, UDM, ECS, QRadar)
-- Compliance evaluation for CIS v8, PCI-DSS v4, SOC 2 Type II, and NIST CSF 2.0
-- Playbook execution engine with 11 step types, conditional branching, and approval gates
-- AES-256-GCM backup encryption with passphrase-derived keys
-- Default local control-plane startup via `cargo run`, which launches the server and embedded local monitor together
-- GitHub Actions packaging for Linux, macOS, and Windows release archives
+- 134 Rust source modules covering telemetry collection, detection engineering, hunt/search, SOC workflows, fleet operations, governance, and automated incident response.
+- 138 documented OpenAPI paths with authenticated admin-console workflows, fleet controls, reports, hunts, investigations, NDR, and enterprise support surfaces.
+- 1500+ automated tests and smoke checks spanning Rust, SDK, admin-console, and Playwright browser coverage.
+- **NEW: Investigation and hunt workflow UX** — detection pages now consume `intent=run-hunt`, open a dedicated hunt drawer, save and run hunts inline, surface workflow suggestions, and let the SOC workbench pivot incidents and queue alerts directly into investigation plans or prefilled hunts.
+- **NEW: Analyst-quality tuning signals** — false-positive advisor actions now prefill suppressions, suggest safer weight reductions, and display rule-specific feedback instead of raw statistics.
+- **NEW: Deeper NDR visibility** — beaconing cadence detection, dedicated anomaly endpoints, and protocol distribution reporting are now wired through the API and console.
+- **NEW: Better threat context seeding** — default intel feed sources, sender-domain phishing heuristics, and persistence/startup-path LOLBin reasoning improve the out-of-box signal mix.
+- **NEW: Operator documentation and packaging polish** — sizing/HA guidance, native package installation notes, searchable site resources, Homebrew alignment, and SDK drift verification are now part of the shipped product surface.
+- **NEW: Deterministic browser smoke coverage** — focused Playwright tests cover the new hunt drawer, saved-hunt execution, investigation planner, and queue-to-hunt pivots without depending on a live backend.
 
 See [FEATURES.md](FEATURES.md) for the concise capability summary, [CHANGELOG.md](CHANGELOG.md) for release history, and [docs/README.md](docs/README.md) for the full documentation map.
 
@@ -75,12 +62,12 @@ Run the full automated suite:
 cargo test
 ```
 
-The current release passes 1428 automated tests (1345 Rust + 83 admin-console) across unit, integration, and end-to-end coverage. The repo also includes live verification helpers in [`tests/live_test.py`](tests/live_test.py), [`tests/verify_admin.py`](tests/verify_admin.py), [`tests/playwright/enterprise_console_smoke.spec.js`](tests/playwright/enterprise_console_smoke.spec.js), and [`tests/playwright/live_release_smoke.spec.js`](tests/playwright/live_release_smoke.spec.js).
+The current release is validated with Rust unit and integration suites, SDK checks, admin-console builds, and focused Playwright smoke coverage. The repo also includes live verification helpers in [`tests/live_test.py`](tests/live_test.py), [`tests/verify_admin.py`](tests/verify_admin.py), [`tests/playwright/enterprise_console_smoke.spec.js`](tests/playwright/enterprise_console_smoke.spec.js), and [`tests/playwright/live_release_smoke.spec.js`](tests/playwright/live_release_smoke.spec.js).
 
 ## Repository layout
 
 ```text
-src/                  Core platform modules (128 Rust source files)
+src/                  Core platform modules (134 Rust source files)
 tests/                Integration tests, live checks, and browser smoke coverage
 docs/                 Product, architecture, deployment, and runbook documentation
 admin-console/        React admin console source (embedded from dist at build time)

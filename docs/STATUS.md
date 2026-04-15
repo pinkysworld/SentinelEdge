@@ -2,12 +2,12 @@
 
 ## Current release
 
-- **Version:** `0.51.0`
+- **Version:** `0.52.0`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
-- **Source footprint:** 128 Rust source modules
-- **API contract:** 174 documented OpenAPI paths
-- **Verification:** 1376 automated tests (1323 Rust + 53 vitest) plus live Playwright end-to-end coverage
-- **Production hardening:** 98% (58/59 controls implemented)
+- **Source footprint:** 134 Rust source modules
+- **API contract:** 138 documented OpenAPI paths
+- **Verification:** Rust and SDK validation, production builds, and focused Playwright smoke coverage for investigation and hunt workflows
+- **Production hardening:** 100% (59/59 controls implemented)
 
 ## Shipped in the current platform
 
@@ -40,17 +40,17 @@
 ### SOC operations
 
 - Dashboard with Recharts visualizations (severity pie, 24h alert timeline, CPU/memory area chart), severity filter, and clickable alert drill-down
-- SOC Workbench with queue, cases, investigation pivots, storylines, response approval flows, and escalation management console
+- SOC Workbench with queue, cases, investigation pivots, storyline views, response approval flows, escalation management, and planner-to-hunt handoffs
 - Structured incident detail view with severity badge, storyline timeline, related events/agents, close/export actions
 - Event search, incident timelines, process-tree inspection, and evidence package export
 
 ### Detection engineering
 
 - Sigma and native managed rules
-- Rule testing, promotion, rollback, suppressions, content packs, and MITRE coverage
+- Rule testing, promotion, rollback, suppressions, content packs, MITRE coverage, and inline false-positive advisor actions
 - Saved hunts with thresholds, schedules, owners, history, and scheduled execution
 - Suppression rules management with inline creation form (rule_id, hostname, severity filters)
-- Hunt and suppression management UI with table views, inline create forms, and per-hunt run controls
+- Hunt drawer UX with route-driven run-hunt intent, live execution, saved-hunt reopening, and workflow suggestions from selected rule context
 
 ### Fleet and release operations
 
@@ -75,8 +75,8 @@
 The current release has been verified with:
 
 - `cargo test` passing across unit and integration suites
-- enterprise API regression coverage for hunts, content lifecycle, suppressions, storylines, governance, and supportability
-- live browser smoke coverage of the admin console, including Detection Engineering, Fleet, SOC Workbench, Reports, Settings, and responsive navigation
+- targeted API regression coverage for hunts, content lifecycle, suppressions, storylines, governance, and supportability
+- deterministic browser smoke coverage of run-hunt routing, investigation planner start, and queue-to-hunt pivots
 
 ## Current product posture
 
