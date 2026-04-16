@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust
         run: |
@@ -51,7 +51,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Security audit
@@ -60,7 +60,7 @@ jobs:
   deny:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -73,7 +73,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -84,7 +84,7 @@ jobs:
         run: cargo tarpaulin --out xml --skip-clean --fail-under 70
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: cobertura.xml
@@ -92,7 +92,7 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install MSRV toolchain
         run: |
           rustup toolchain install 1.85.0 --profile minimal
@@ -103,7 +103,7 @@ jobs:
   python-sdk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -125,7 +125,7 @@ jobs:
   semver-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Install Rust
@@ -141,7 +141,7 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install nightly toolchain
         run: |
           rustup toolchain install nightly --profile minimal
@@ -173,9 +173,9 @@ jobs:
       run:
         working-directory: sdk/typescript
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -193,9 +193,9 @@ jobs:
       run:
         working-directory: admin-console
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -218,7 +218,7 @@ jobs:
   feature-flags:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -232,7 +232,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -250,7 +250,7 @@ jobs:
           cargo install cargo-cyclonedx --locked
           cargo cyclonedx --format json --output-cdx
       - name: Upload attestation
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binary-attestation
           path: |
@@ -260,9 +260,9 @@ jobs:
   sdk-generation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -285,7 +285,7 @@ jobs:
   container-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build image for scanning
