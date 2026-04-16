@@ -91,7 +91,10 @@ if [[ -n "${APT_GPG_PRIVATE_KEY:-}" ]]; then
 
   gpg_args=(--batch --yes --pinentry-mode loopback --local-user "$signing_key")
   if [[ -n "${APT_GPG_PASSPHRASE:-}" ]]; then
-    gpg_args+=(--passphrase "$APT_GPG_PASSPHRASE")
+    passphrase_file="$GNUPGHOME/passphrase"
+    printf '%s' "$APT_GPG_PASSPHRASE" > "$passphrase_file"
+    chmod 600 "$passphrase_file"
+    gpg_args+=(--passphrase-file "$passphrase_file")
   fi
 
   gpg "${gpg_args[@]}" --output "$output_root/dists/$suite/Release.gpg" --armor --detach-sign -- "$output_root/dists/$suite/Release"
