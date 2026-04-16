@@ -28,7 +28,6 @@ docs/
 
 # Development files
 fuzz/
-benches/
 demo/
 sdk/
 test-results/
