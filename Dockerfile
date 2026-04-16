@@ -22,6 +22,7 @@ RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
 COPY src/ src/
 COPY site/ site/
 COPY examples/ examples/
+COPY benches/ benches/
 COPY tests/ tests/
 
 RUN cargo build --release --features tls --bin wardex \
