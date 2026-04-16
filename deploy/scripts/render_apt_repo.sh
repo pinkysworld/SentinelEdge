@@ -79,6 +79,7 @@ if [[ -n "${APT_GPG_PRIVATE_KEY:-}" ]]; then
 
   export GNUPGHOME
   GNUPGHOME="$(mktemp -d)"
+  chmod 700 "$GNUPGHOME"
 
   printf '%s\n' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
   signing_key="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec:/ { print $5; exit }')"
@@ -93,8 +94,8 @@ if [[ -n "${APT_GPG_PRIVATE_KEY:-}" ]]; then
     gpg_args+=(--passphrase "$APT_GPG_PASSPHRASE")
   fi
 
-  gpg "${gpg_args[@]}" --armor --detach-sign --output "$output_root/dists/$suite/Release.gpg" "$output_root/dists/$suite/Release"
-  gpg "${gpg_args[@]}" --clearsign --output "$output_root/dists/$suite/InRelease" "$output_root/dists/$suite/Release"
+  gpg "${gpg_args[@]}" --output "$output_root/dists/$suite/Release.gpg" --armor --detach-sign -- "$output_root/dists/$suite/Release"
+  gpg "${gpg_args[@]}" --output "$output_root/dists/$suite/InRelease" --clearsign -- "$output_root/dists/$suite/Release"
   gpg --batch --armor --export "$signing_key" > "$output_root/wardex-archive-key.asc"
 
   rm -rf "$GNUPGHOME"
