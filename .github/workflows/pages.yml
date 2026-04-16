@@ -22,9 +22,6 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,7 +33,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Install APT repository tooling
         run: |
@@ -101,7 +98,7 @@ jobs:
           fi
 
       - name: Upload static site
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site-build
 
@@ -115,4 +112,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
