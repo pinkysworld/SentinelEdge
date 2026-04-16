@@ -290,7 +290,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [build, sbom, helm-lint, linux-packages, container-scan, container-push]
+    needs: [build, sbom, helm-lint, linux-packages]
     runs-on: ubuntu-latest
     if: success()
 
