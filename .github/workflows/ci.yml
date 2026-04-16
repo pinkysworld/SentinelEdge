@@ -291,7 +291,7 @@ jobs:
       - name: Build image for scanning
         run: docker build -t wardex:ci-scan .
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: wardex:ci-scan
           format: table
