@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const VERSION = '0.52.3';
+const VERSION = '0.52.4';
 
 function json(data, status = 200) {
   return {

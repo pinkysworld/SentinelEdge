@@ -2,6 +2,11 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.52.4] — Release Asset Publication Fix
+
+### Packaging & Distribution
+- **Release asset filtering** — GitHub release publication now downloads only `wardex*` artifacts, excluding the Buildx `.dockerbuild` record artifact that broke release asset extraction.
+
 ## [0.52.3] — Release Workflow Completion Fixes
 
 ### Packaging & Distribution

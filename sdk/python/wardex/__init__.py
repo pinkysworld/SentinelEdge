@@ -9,7 +9,7 @@ from wardex.exceptions import (
     ServerError,
 )
 
-__version__ = "0.52.3"
+__version__ = "0.52.4"
 __all__ = [
     "WardexClient",
     "WardexError",
