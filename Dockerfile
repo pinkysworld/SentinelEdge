@@ -4,7 +4,7 @@
 #   docker run -p 9077:9077 -v wardex-data:/app/var wardex
 
 # ── Stage 1: Build ────────────────────────────────────────────────
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 COPY --from=node:22-bookworm /usr/local/ /usr/local/
 
 WORKDIR /build
@@ -50,4 +50,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["/app/wardex", "status-json"]
 
 ENTRYPOINT ["/app/wardex"]
-CMD ["serve", "--port", "9077"]
+CMD ["serve", "9077", "/app/site"]

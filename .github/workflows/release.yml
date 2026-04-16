@@ -330,3 +330,26 @@ jobs:
           prerelease: false
           files: |
             release-assets/*
+
+  sync-release-distribution:
+    name: Sync Distribution Channels
+    needs: [release]
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Dispatch Pages publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml \
+            --ref "${{ github.event.repository.default_branch }}" \
+            -f tag="${GITHUB_REF_NAME}"
+
+      - name: Dispatch Homebrew tap sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run sync-homebrew-tap.yml \
+            --ref "${{ github.event.repository.default_branch }}" \
+            -f tag="${GITHUB_REF_NAME}"
