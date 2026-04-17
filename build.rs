@@ -89,9 +89,7 @@ fn admin_build_skip_reason(admin_dir: &Path) -> Option<String> {
         return Some("WARDEX_SKIP_ADMIN_BUILD is set".to_string());
     }
     if !admin_dir.join("node_modules").is_dir() {
-        return Some(
-            "admin-console/node_modules is missing in this checkout".to_string(),
-        );
+        return Some("admin-console/node_modules is missing in this checkout".to_string());
     }
     let npm = npm_command();
     match Command::new(&npm).arg("--version").status() {
@@ -101,10 +99,7 @@ fn admin_build_skip_reason(admin_dir: &Path) -> Option<String> {
             npm.to_string_lossy(),
             status
         )),
-        Err(err) => Some(format!(
-            "{} is unavailable: {err}",
-            npm.to_string_lossy()
-        )),
+        Err(err) => Some(format!("{} is unavailable: {err}", npm.to_string_lossy())),
     }
 }
 
@@ -143,7 +138,12 @@ fn ensure_placeholder_admin_dist(dist_index: &Path) {
 fn env_flag(key: &str) -> bool {
     env::var(key)
         .ok()
-        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 

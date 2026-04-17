@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Wardex.
 
 ### Prerequisites
 
-- **Rust** toolchain (MSRV: 1.85.0) — `rustup toolchain install stable`
+- **Rust** toolchain (MSRV: 1.88.0) — `rustup toolchain install stable`
 - **Node.js** 22+ — for the admin console
 - **Python** 3.9+ — for the Python SDK and live tests
 
