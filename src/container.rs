@@ -364,47 +364,47 @@ impl ContainerDetector {
                 }
             }
             ContainerEventKind::VolumeMount => {
-                if let Some(path) = event.details.get("mount_path") {
-                    if self.sensitive_mounts.iter().any(|s| path.starts_with(s)) {
-                        alerts.push(ContainerAlert {
-                            id: self.next_alert_id(),
-                            timestamp: ts.clone(),
-                            severity: ContainerSeverity::High,
-                            kind: ContainerAlertKind::SensitiveMount,
-                            container_id: event.container_id.clone(),
-                            container_name: event.container_name.clone(),
-                            image: event.image.clone(),
-                            hostname: event.hostname.clone(),
-                            description: format!("Sensitive host path mounted: {path}"),
-                            risk_score: 7.0,
-                            mitre_techniques: vec!["T1611".into()],
-                            recommendations: vec![
-                                "Restrict volume mounts to necessary paths only".into(),
-                            ],
-                        });
-                    }
+                if let Some(path) = event.details.get("mount_path")
+                    && self.sensitive_mounts.iter().any(|s| path.starts_with(s))
+                {
+                    alerts.push(ContainerAlert {
+                        id: self.next_alert_id(),
+                        timestamp: ts.clone(),
+                        severity: ContainerSeverity::High,
+                        kind: ContainerAlertKind::SensitiveMount,
+                        container_id: event.container_id.clone(),
+                        container_name: event.container_name.clone(),
+                        image: event.image.clone(),
+                        hostname: event.hostname.clone(),
+                        description: format!("Sensitive host path mounted: {path}"),
+                        risk_score: 7.0,
+                        mitre_techniques: vec!["T1611".into()],
+                        recommendations: vec![
+                            "Restrict volume mounts to necessary paths only".into(),
+                        ],
+                    });
                 }
             }
             ContainerEventKind::CapabilityAdded => {
-                if let Some(cap) = event.details.get("capability") {
-                    if self.dangerous_caps.iter().any(|c| cap == c) {
-                        alerts.push(ContainerAlert {
-                            id: self.next_alert_id(),
-                            timestamp: ts.clone(),
-                            severity: ContainerSeverity::High,
-                            kind: ContainerAlertKind::CapabilityAbuse,
-                            container_id: event.container_id.clone(),
-                            container_name: event.container_name.clone(),
-                            image: event.image.clone(),
-                            hostname: event.hostname.clone(),
-                            description: format!("Dangerous capability added: {cap}"),
-                            risk_score: 6.5,
-                            mitre_techniques: vec!["T1611".into()],
-                            recommendations: vec![format!(
-                                "Remove {cap} capability if not strictly needed"
-                            )],
-                        });
-                    }
+                if let Some(cap) = event.details.get("capability")
+                    && self.dangerous_caps.iter().any(|c| cap == c)
+                {
+                    alerts.push(ContainerAlert {
+                        id: self.next_alert_id(),
+                        timestamp: ts.clone(),
+                        severity: ContainerSeverity::High,
+                        kind: ContainerAlertKind::CapabilityAbuse,
+                        container_id: event.container_id.clone(),
+                        container_name: event.container_name.clone(),
+                        image: event.image.clone(),
+                        hostname: event.hostname.clone(),
+                        description: format!("Dangerous capability added: {cap}"),
+                        risk_score: 6.5,
+                        mitre_techniques: vec!["T1611".into()],
+                        recommendations: vec![format!(
+                            "Remove {cap} capability if not strictly needed"
+                        )],
+                    });
                 }
             }
             ContainerEventKind::K8sRbacChange => {

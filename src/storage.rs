@@ -1488,12 +1488,12 @@ impl AlertDedupCache {
         self.entries
             .retain(|_, e| (now - e.first_seen) < self.window_secs);
 
-        if let Some(entry) = self.entries.get_mut(&hash) {
-            if (now - entry.first_seen) < self.window_secs {
-                entry.occurrence_count += 1;
-                self.total_suppressed += 1;
-                return Some(entry.alert_id.clone());
-            }
+        if let Some(entry) = self.entries.get_mut(&hash)
+            && (now - entry.first_seen) < self.window_secs
+        {
+            entry.occurrence_count += 1;
+            self.total_suppressed += 1;
+            return Some(entry.alert_id.clone());
         }
 
         self.entries.insert(
@@ -1546,10 +1546,10 @@ impl SharedStorage {
     /// Insert alert with dedup: if a matching signature exists within the window,
     /// suppress the insert and return the existing alert ID.
     pub fn insert_alert_dedup(&self, alert: StoredAlert) -> Result<Option<String>, StorageError> {
-        if let Ok(mut dedup) = self.dedup.lock() {
-            if let Some(existing_id) = dedup.check_and_record(&alert) {
-                return Ok(Some(existing_id));
-            }
+        if let Ok(mut dedup) = self.dedup.lock()
+            && let Some(existing_id) = dedup.check_and_record(&alert)
+        {
+            return Ok(Some(existing_id));
         }
         self.with(|store| store.insert_alert(alert))?;
         Ok(None)

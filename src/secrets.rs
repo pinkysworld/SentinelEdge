@@ -208,10 +208,10 @@ impl SecretsResolver {
             .as_secs();
 
         if let Ok(cache) = self.cache.lock() {
-            if let Some(cached) = cache.get(vault_ref) {
-                if now - cached.fetched_at < self.config.vault.cache_ttl_secs {
-                    return Ok(cached.value.clone());
-                }
+            if let Some(cached) = cache.get(vault_ref)
+                && now - cached.fetched_at < self.config.vault.cache_ttl_secs
+            {
+                return Ok(cached.value.clone());
             }
         } else {
             eprintln!("[WARN] Vault secret cache lock poisoned — bypassing cache for {vault_ref}");

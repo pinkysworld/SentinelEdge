@@ -429,11 +429,11 @@ impl PlaybookEngine {
                         step_now,
                     );
                     // Jump to on_failure step if specified, else abort
-                    if let Some(ref fallback_id) = step.on_failure {
-                        if let Some(jump_idx) = steps.iter().position(|s| &s.id == fallback_id) {
-                            i = jump_idx;
-                            continue;
-                        }
+                    if let Some(ref fallback_id) = step.on_failure
+                        && let Some(jump_idx) = steps.iter().position(|s| &s.id == fallback_id)
+                    {
+                        i = jump_idx;
+                        continue;
                     }
                     self.finish_execution(&exec_id, ExecutionStatus::Failed, Some(err), step_now);
                     return Ok(exec_id);

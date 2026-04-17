@@ -1237,62 +1237,59 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
     if let Ok(output) = std::process::Command::new("dpkg-query")
         .args(["-W", "-f", "${Package}\t${Version}\t${Installed-Size}\n"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            for line in text.lines() {
-                let fields: Vec<&str> = line.split('\t').collect();
-                if fields.len() >= 2 {
-                    let name = fields[0].to_string();
-                    let version = fields[1].to_string();
-                    let size_kb: f64 = fields
-                        .get(2)
-                        .and_then(|s| s.trim().parse().ok())
-                        .unwrap_or(0.0);
-                    apps.push(InstalledApp {
-                        name: name.clone(),
-                        path: format!("/usr/bin/{name}"),
-                        version,
-                        bundle_id: String::new(),
-                        size_mb: size_kb / 1024.0,
-                        last_modified: String::new(),
-                    });
-                }
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() >= 2 {
+                let name = fields[0].to_string();
+                let version = fields[1].to_string();
+                let size_kb: f64 = fields
+                    .get(2)
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0.0);
+                apps.push(InstalledApp {
+                    name: name.clone(),
+                    path: format!("/usr/bin/{name}"),
+                    version,
+                    bundle_id: String::new(),
+                    size_mb: size_kb / 1024.0,
+                    last_modified: String::new(),
+                });
             }
         }
     }
 
     // Fallback to rpm if dpkg returned nothing
-    if apps.is_empty() {
-        if let Ok(output) = std::process::Command::new("rpm")
+    if apps.is_empty()
+        && let Ok(output) = std::process::Command::new("rpm")
             .args([
                 "-qa",
                 "--queryformat",
                 "%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\n",
             ])
             .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    let fields: Vec<&str> = line.split('\t').collect();
-                    if fields.len() >= 2 {
-                        let name = fields[0].to_string();
-                        let version = fields[1].to_string();
-                        let size_bytes: f64 = fields
-                            .get(2)
-                            .and_then(|s| s.trim().parse().ok())
-                            .unwrap_or(0.0);
-                        apps.push(InstalledApp {
-                            name: name.clone(),
-                            path: format!("/usr/bin/{name}"),
-                            version,
-                            bundle_id: String::new(),
-                            size_mb: size_bytes / (1024.0 * 1024.0),
-                            last_modified: String::new(),
-                        });
-                    }
-                }
+        && output.status.success()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() >= 2 {
+                let name = fields[0].to_string();
+                let version = fields[1].to_string();
+                let size_bytes: f64 = fields
+                    .get(2)
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0.0);
+                apps.push(InstalledApp {
+                    name: name.clone(),
+                    path: format!("/usr/bin/{name}"),
+                    version,
+                    bundle_id: String::new(),
+                    size_mb: size_bytes / (1024.0 * 1024.0),
+                    last_modified: String::new(),
+                });
             }
         }
     }
@@ -1314,12 +1311,12 @@ fn collect_process_usage() -> HashMap<u32, (f32, f32)> {
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines().skip(1) {
         let fields: Vec<&str> = line.split_whitespace().collect();
-        if fields.len() >= 3 {
-            if let Ok(pid) = fields[0].parse::<u32>() {
-                let cpu: f32 = fields[1].parse().unwrap_or(0.0);
-                let mem: f32 = fields[2].parse().unwrap_or(0.0);
-                map.insert(pid, (cpu, mem));
-            }
+        if fields.len() >= 3
+            && let Ok(pid) = fields[0].parse::<u32>()
+        {
+            let cpu: f32 = fields[1].parse().unwrap_or(0.0);
+            let mem: f32 = fields[2].parse().unwrap_or(0.0);
+            map.insert(pid, (cpu, mem));
         }
     }
     map
@@ -1333,12 +1330,11 @@ fn uid_to_name(uid: u32) -> String {
     if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
         for line in passwd.lines() {
             let fields: Vec<&str> = line.split(':').collect();
-            if fields.len() >= 3 {
-                if let Ok(u) = fields[2].parse::<u32>() {
-                    if u == uid {
-                        return fields[0].to_string();
-                    }
-                }
+            if fields.len() >= 3
+                && let Ok(u) = fields[2].parse::<u32>()
+                && u == uid
+            {
+                return fields[0].to_string();
             }
         }
     }

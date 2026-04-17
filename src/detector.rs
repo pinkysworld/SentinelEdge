@@ -516,10 +516,10 @@ impl AnomalyDetector {
             if self.custom_weights.is_none() {
                 self.custom_weights = Some(self.signal_weights());
             }
-            if let Some(ref mut weights) = self.custom_weights {
-                if let Some(w) = weights.get_mut(signal_or_reason) {
-                    *w *= 0.9; // reduce by 10%
-                }
+            if let Some(ref mut weights) = self.custom_weights
+                && let Some(w) = weights.get_mut(signal_or_reason)
+            {
+                *w *= 0.9; // reduce by 10%
             }
         }
     }

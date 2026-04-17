@@ -443,20 +443,19 @@ fn parse_abusech_feed(data: &str) -> AbusechParsed {
                 .get("url_domain")
                 .or_else(|| entry.get("domain"))
                 .and_then(|v| v.as_str())
+                && !domain.is_empty()
             {
-                if !domain.is_empty() {
-                    iocs.push(IoC {
-                        ioc_type: IoCType::Domain,
-                        value: domain.to_string(),
-                        confidence: 0.75,
-                        severity: "medium".to_string(),
-                        source: "abuse.ch".to_string(),
-                        first_seen: now.clone(),
-                        last_seen: now.clone(),
-                        tags: vec!["malware-distribution".to_string()],
-                        related_iocs: vec![],
-                    });
-                }
+                iocs.push(IoC {
+                    ioc_type: IoCType::Domain,
+                    value: domain.to_string(),
+                    confidence: 0.75,
+                    severity: "medium".to_string(),
+                    source: "abuse.ch".to_string(),
+                    first_seen: now.clone(),
+                    last_seen: now.clone(),
+                    tags: vec!["malware-distribution".to_string()],
+                    related_iocs: vec![],
+                });
             }
         }
     }

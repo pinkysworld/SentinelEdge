@@ -77,6 +77,12 @@ pub struct SessionStore {
     store_path: Option<String>,
 }
 
+impl Default for SessionStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionStore {
     pub fn new() -> Self {
         Self {
@@ -127,10 +133,11 @@ impl SessionStore {
         };
         let store = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if let Ok(json) = serde_json::to_string(&*store) {
-            if let Some(parent) = Path::new(path).parent() {
-                if !parent.as_os_str().is_empty() && std::fs::create_dir_all(parent).is_err() {
-                    return;
-                }
+            if let Some(parent) = Path::new(path).parent()
+                && !parent.as_os_str().is_empty()
+                && std::fs::create_dir_all(parent).is_err()
+            {
+                return;
             }
             let tmp = format!("{path}.tmp");
             if std::fs::write(&tmp, &json).is_ok() {

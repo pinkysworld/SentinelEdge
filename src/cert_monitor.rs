@@ -242,7 +242,7 @@ mod tests {
             key_size_bits: 2048,
             is_self_signed: false,
             is_expired: days < 0,
-            is_expiring_soon: days >= 0 && days <= 30,
+            is_expiring_soon: (0..=30).contains(&days),
             agent_id: None,
             discovered_at: "2025-06-01T00:00:00Z".into(),
         }

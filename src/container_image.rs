@@ -196,31 +196,30 @@ impl ImageInventory {
                 "{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}",
             ])
             .output()
+            && out.status.success()
         {
-            if out.status.success() {
-                let text = String::from_utf8_lossy(&out.stdout);
-                for line in text.lines() {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() >= 5 {
-                        let size_str = parts[3].trim();
-                        let size_mb = parse_docker_size(size_str);
-                        let image = ContainerImage {
-                            id: parts[0].to_string(),
-                            repository: parts[1].to_string(),
-                            tag: parts[2].to_string(),
-                            digest: String::new(),
-                            size_mb,
-                            created: parts[4].to_string(),
-                            labels: HashMap::new(),
-                            base_image: None,
-                            layers: 0,
-                            risk_score: 0.0,
-                            scan_status: ImageScanStatus::NotScanned,
-                            vulnerabilities: Vec::new(),
-                        };
-                        self.upsert(image);
-                        count += 1;
-                    }
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 5 {
+                    let size_str = parts[3].trim();
+                    let size_mb = parse_docker_size(size_str);
+                    let image = ContainerImage {
+                        id: parts[0].to_string(),
+                        repository: parts[1].to_string(),
+                        tag: parts[2].to_string(),
+                        digest: String::new(),
+                        size_mb,
+                        created: parts[4].to_string(),
+                        labels: HashMap::new(),
+                        base_image: None,
+                        layers: 0,
+                        risk_score: 0.0,
+                        scan_status: ImageScanStatus::NotScanned,
+                        vulnerabilities: Vec::new(),
+                    };
+                    self.upsert(image);
+                    count += 1;
                 }
             }
         }

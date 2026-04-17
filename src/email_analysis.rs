@@ -348,16 +348,15 @@ impl EmailAnalyzer {
             }
         }
 
-        if let Some(message_id_domain) = input.message_id.as_deref().map(extract_domain) {
-            if !from_domain.is_empty()
-                && !message_id_domain.is_empty()
-                && message_id_domain != from_domain
-            {
-                score += 0.15;
-                indicators.push(format!(
-                    "Message-ID domain differs from From ({message_id_domain})"
-                ));
-            }
+        if let Some(message_id_domain) = input.message_id.as_deref().map(extract_domain)
+            && !from_domain.is_empty()
+            && !message_id_domain.is_empty()
+            && message_id_domain != from_domain
+        {
+            score += 0.15;
+            indicators.push(format!(
+                "Message-ID domain differs from From ({message_id_domain})"
+            ));
         }
 
         score.min(1.0)
@@ -423,14 +422,13 @@ impl EmailAnalyzer {
 
             // Double extension (e.g., report.pdf.exe)
             let dots: Vec<_> = lower.match_indices('.').collect();
-            if dots.len() >= 2 {
-                if let Some(&(last_dot_pos, _)) = dots.last() {
-                    let last_ext = &lower[last_dot_pos..];
-                    if DANGEROUS_EXTENSIONS.contains(&last_ext) {
-                        risk += 0.8;
-                        att_indicators
-                            .push("double extension with dangerous final extension".into());
-                    }
+            if dots.len() >= 2
+                && let Some(&(last_dot_pos, _)) = dots.last()
+            {
+                let last_ext = &lower[last_dot_pos..];
+                if DANGEROUS_EXTENSIONS.contains(&last_ext) {
+                    risk += 0.8;
+                    att_indicators.push("double extension with dangerous final extension".into());
                 }
             }
 

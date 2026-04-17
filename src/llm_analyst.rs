@@ -344,7 +344,7 @@ impl LlmAnalyst {
     fn estimate_confidence(&self, usage: &OpenAiUsage) -> f32 {
         // Heuristic: longer responses with more context generally indicate higher confidence
         let ratio = usage.completion_tokens as f32 / usage.prompt_tokens.max(1) as f32;
-        (ratio * 2.0).min(1.0).max(0.1)
+        (ratio * 2.0).clamp(0.1, 1.0)
     }
 
     /// Clear conversation history for a given conversation ID.

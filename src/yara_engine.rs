@@ -757,7 +757,7 @@ mod tests {
         assert!(report.results[0].matched);
 
         // Exceeds size limit → no match
-        let report = engine.scan(&vec![b'x'; 100]);
+        let report = engine.scan(&[b'x'; 100]);
         assert!(!report.results[0].matched);
     }
 }

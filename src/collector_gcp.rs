@@ -396,17 +396,17 @@ impl GcpAuditCollector {
         }
 
         // Authenticate if needed
-        if !self.token_valid() {
-            if let Err(e) = self.authenticate() {
-                return GcpPollResult {
-                    events: Vec::new(),
-                    event_count: 0,
-                    success: false,
-                    error: Some(e),
-                    polled_at: now,
-                    next_page_token: None,
-                };
-            }
+        if !self.token_valid()
+            && let Err(e) = self.authenticate()
+        {
+            return GcpPollResult {
+                events: Vec::new(),
+                event_count: 0,
+                success: false,
+                error: Some(e),
+                polled_at: now,
+                next_page_token: None,
+            };
         }
 
         let token = match &self.access_token {

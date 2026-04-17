@@ -545,8 +545,8 @@ mod tests {
         // Simulate: device1 sends value + mask1 - mask2
         // device2 sends value + mask2 - mask1
         // Sum should equal sum of values (masks cancel)
-        let val1 = vec![1.0, 2.0, 3.0];
-        let val2 = vec![4.0, 5.0, 6.0];
+        let val1 = [1.0, 2.0, 3.0];
+        let val2 = [4.0, 5.0, 6.0];
 
         let masked1: Vec<f64> = val1
             .iter()
@@ -644,7 +644,7 @@ mod tests {
         let initial = vec![0.0, 0.0];
         let mut coord = FederatedCoordinator::new(initial, 2);
 
-        let target = vec![5.0, 10.0];
+        let target = [5.0, 10.0];
         let history = coord.convergence_loop(20, 0.01, |_round, current| {
             // Two devices both push toward target
             vec![

@@ -756,7 +756,7 @@ impl InferenceEngine for OnnxEngine {
         Ok(Prediction {
             model: model.into(),
             label: label.into(),
-            confidence: confidence.min(1.0).max(0.0),
+            confidence: confidence.clamp(0.0, 1.0),
             latency_ms: latency,
             features_used: features.len(),
         })

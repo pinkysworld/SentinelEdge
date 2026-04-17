@@ -554,8 +554,27 @@ impl NdrEngine {
 
         for (ja3, flows) in &ja3_groups {
             // Check against known-malicious JA3 hashes
-            if KNOWN_BAD_JA3.contains(&ja3.as_str()) {
-                if let Some(first) = flows.first() {
+            if KNOWN_BAD_JA3.contains(&ja3.as_str())
+                && let Some(first) = flows.first()
+            {
+                anomalies.push(TlsFingerprintAnomaly {
+                    ja3_hash: ja3.clone(),
+                    ja4_fingerprint: first.ja4_fingerprint.clone().unwrap_or_default(),
+                    src_addr: first.src_addr.clone(),
+                    dst_addr: first.dst_addr.clone(),
+                    dst_port: first.dst_port,
+                    tls_sni: first.tls_sni.clone().unwrap_or_default(),
+                    tls_version: first.tls_version.clone().unwrap_or_default(),
+                    risk_score: 9.0,
+                    reason: format!("Known malicious JA3 fingerprint: {ja3}"),
+                    flow_count: flows.len(),
+                });
+            }
+
+            // Flag rare JA3 fingerprints (seen in < 3 flows with external destinations)
+            if flows.len() <= 2 {
+                let has_external = flows.iter().any(|f| self.is_external(&f.dst_addr));
+                if has_external && let Some(first) = flows.first() {
                     anomalies.push(TlsFingerprintAnomaly {
                         ja3_hash: ja3.clone(),
                         ja4_fingerprint: first.ja4_fingerprint.clone().unwrap_or_default(),
@@ -564,34 +583,13 @@ impl NdrEngine {
                         dst_port: first.dst_port,
                         tls_sni: first.tls_sni.clone().unwrap_or_default(),
                         tls_version: first.tls_version.clone().unwrap_or_default(),
-                        risk_score: 9.0,
-                        reason: format!("Known malicious JA3 fingerprint: {ja3}"),
+                        risk_score: 4.0,
+                        reason: format!(
+                            "Rare JA3 fingerprint seen in only {} flow(s)",
+                            flows.len()
+                        ),
                         flow_count: flows.len(),
                     });
-                }
-            }
-
-            // Flag rare JA3 fingerprints (seen in < 3 flows with external destinations)
-            if flows.len() <= 2 {
-                let has_external = flows.iter().any(|f| self.is_external(&f.dst_addr));
-                if has_external {
-                    if let Some(first) = flows.first() {
-                        anomalies.push(TlsFingerprintAnomaly {
-                            ja3_hash: ja3.clone(),
-                            ja4_fingerprint: first.ja4_fingerprint.clone().unwrap_or_default(),
-                            src_addr: first.src_addr.clone(),
-                            dst_addr: first.dst_addr.clone(),
-                            dst_port: first.dst_port,
-                            tls_sni: first.tls_sni.clone().unwrap_or_default(),
-                            tls_version: first.tls_version.clone().unwrap_or_default(),
-                            risk_score: 4.0,
-                            reason: format!(
-                                "Rare JA3 fingerprint seen in only {} flow(s)",
-                                flows.len()
-                            ),
-                            flow_count: flows.len(),
-                        });
-                    }
                 }
             }
         }
@@ -619,19 +617,19 @@ impl NdrEngine {
         let mut mismatches: HashMap<(String, String, u16, String), usize> = HashMap::new();
 
         for f in &self.flows {
-            if let Some(ref dpi_proto) = f.dpi_protocol {
-                if let Some(expected) = port_to_dpi.get(&f.dst_port) {
-                    let dpi_upper = dpi_proto.to_uppercase();
-                    let exp_upper = expected.to_uppercase();
-                    if !dpi_upper.starts_with(&exp_upper) && !exp_upper.starts_with(&dpi_upper) {
-                        let key = (
-                            f.src_addr.clone(),
-                            f.dst_addr.clone(),
-                            f.dst_port,
-                            dpi_proto.clone(),
-                        );
-                        *mismatches.entry(key).or_insert(0) += 1;
-                    }
+            if let Some(ref dpi_proto) = f.dpi_protocol
+                && let Some(expected) = port_to_dpi.get(&f.dst_port)
+            {
+                let dpi_upper = dpi_proto.to_uppercase();
+                let exp_upper = expected.to_uppercase();
+                if !dpi_upper.starts_with(&exp_upper) && !exp_upper.starts_with(&dpi_upper) {
+                    let key = (
+                        f.src_addr.clone(),
+                        f.dst_addr.clone(),
+                        f.dst_port,
+                        dpi_proto.clone(),
+                    );
+                    *mismatches.entry(key).or_insert(0) += 1;
                 }
             }
         }
@@ -663,15 +661,16 @@ impl NdrEngine {
         let mut groups: HashMap<(&str, &str, u16), (f64, u64, usize)> = HashMap::new();
 
         for f in &self.flows {
-            if let Some(entropy) = f.payload_entropy {
-                if self.is_external(&f.dst_addr) && entropy > 7.5 {
-                    let entry = groups
-                        .entry((&f.src_addr, &f.dst_addr, f.dst_port))
-                        .or_insert((0.0, 0, 0));
-                    entry.0 += entropy as f64;
-                    entry.1 += f.bytes_sent + f.bytes_received;
-                    entry.2 += 1;
-                }
+            if let Some(entropy) = f.payload_entropy
+                && self.is_external(&f.dst_addr)
+                && entropy > 7.5
+            {
+                let entry = groups
+                    .entry((&f.src_addr, &f.dst_addr, f.dst_port))
+                    .or_insert((0.0, 0, 0));
+                entry.0 += entropy as f64;
+                entry.1 += f.bytes_sent + f.bytes_received;
+                entry.2 += 1;
             }
         }
 

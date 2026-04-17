@@ -555,14 +555,14 @@ fn parse_yaml_to_json(yaml: &str) -> Result<serde_json::Value, String> {
 
             if indent >= 8 && in_sub_map {
                 // Nested map (e.g., detection selection fields)
-                if let Some(ref mut map) = current_map {
-                    if let Some(ref sk) = sub_key {
-                        let sub = map
-                            .entry(sk.clone())
-                            .or_insert_with(|| serde_json::json!({}));
-                        if let Some(obj) = sub.as_object_mut() {
-                            obj.insert(k, parse_yaml_value(v));
-                        }
+                if let Some(ref mut map) = current_map
+                    && let Some(ref sk) = sub_key
+                {
+                    let sub = map
+                        .entry(sk.clone())
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(obj) = sub.as_object_mut() {
+                        obj.insert(k, parse_yaml_value(v));
                     }
                 }
             } else if indent >= 4 {

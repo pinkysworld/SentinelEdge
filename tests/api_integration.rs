@@ -154,7 +154,7 @@ fn detection_summary_includes_mode_and_learning_state() {
     assert_eq!(body["warmup_samples"].as_u64().unwrap(), 4);
     assert!((body["learn_threshold"].as_f64().unwrap() - 2.5).abs() < 1e-6);
     assert_eq!(body["observed_samples"].as_u64().unwrap(), 0);
-    assert_eq!(body["baseline_ready"].as_bool().unwrap(), false);
+    assert!(!body["baseline_ready"].as_bool().unwrap());
 }
 
 #[test]
@@ -1767,11 +1767,10 @@ fn monitoring_options_returns_grouped_payload() {
             .all(|option| option["id"].is_string())
     );
     assert!(
-        body["summary"]["platform_guidance"]
+        !body["summary"]["platform_guidance"]
             .as_array()
             .unwrap()
-            .len()
-            >= 1
+            .is_empty()
     );
     let auth_option = body["groups"]
         .as_array()
@@ -2140,7 +2139,7 @@ fn event_ingest_and_list() {
         .into_json::<serde_json::Value>()
         .unwrap();
     assert_eq!(summary["total_events"].as_u64().unwrap(), 1);
-    assert!(summary["top_reasons"].as_array().unwrap().len() >= 1);
+    assert!(!summary["top_reasons"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -2232,7 +2231,7 @@ fn siem_status_returns_disabled_by_default() {
         .expect("siem status");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().unwrap();
-    assert_eq!(body["enabled"].as_bool().unwrap(), false);
+    assert!(!body["enabled"].as_bool().unwrap());
     assert_eq!(body["total_pushed"].as_u64().unwrap(), 0);
 }
 
@@ -2290,7 +2289,7 @@ fn update_check_no_updates_available() {
     .expect("update check");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().unwrap();
-    assert_eq!(body["update_available"].as_bool().unwrap(), false);
+    assert!(!body["update_available"].as_bool().unwrap());
 }
 
 #[test]
@@ -2357,10 +2356,7 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
         deployed["deployment"]["rollout_group"].as_str().unwrap(),
         "canary"
     );
-    assert_eq!(
-        deployed["deployment"]["allow_downgrade"].as_bool().unwrap(),
-        false
-    );
+    assert!(!deployed["deployment"]["allow_downgrade"].as_bool().unwrap());
 
     let heartbeat = ureq::post(&format!("{}/api/agents/{}/heartbeat", base(port), agent_id))
         .set("Content-Type", "application/json")
@@ -2368,7 +2364,7 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
         .expect("heartbeat")
         .into_json::<serde_json::Value>()
         .unwrap();
-    assert_eq!(heartbeat["update_assigned"].as_bool().unwrap(), true);
+    assert!(heartbeat["update_assigned"].as_bool().unwrap());
     assert_eq!(heartbeat["target_version"].as_str().unwrap(), "0.16.0");
 
     let details = ureq::get(&format!("{}/api/agents/{}/details", base(port), agent_id))
@@ -2397,7 +2393,7 @@ fn remote_update_assignment_flows_through_heartbeat_and_update_check() {
     .expect("targeted update check")
     .into_json::<serde_json::Value>()
     .unwrap();
-    assert_eq!(update["update_available"].as_bool().unwrap(), true);
+    assert!(update["update_available"].as_bool().unwrap());
     assert_eq!(update["version"].as_str().unwrap(), "0.16.0");
     assert!(
         update["download_url"]
@@ -2746,10 +2742,7 @@ fn remote_update_deploy_allows_downgrades_when_explicitly_enabled() {
         .expect("assign rollback deployment")
         .into_json::<serde_json::Value>()
         .unwrap();
-    assert_eq!(
-        deployed["deployment"]["allow_downgrade"].as_bool().unwrap(),
-        true
-    );
+    assert!(deployed["deployment"]["allow_downgrade"].as_bool().unwrap());
 
     let update = ureq::get(&format!(
         "{}/api/agents/update?agent_id={}&current_version=0.16.0",
@@ -2760,7 +2753,7 @@ fn remote_update_deploy_allows_downgrades_when_explicitly_enabled() {
     .expect("rollback update check")
     .into_json::<serde_json::Value>()
     .unwrap();
-    assert_eq!(update["update_available"].as_bool().unwrap(), true);
+    assert!(update["update_available"].as_bool().unwrap());
     assert_eq!(update["version"].as_str().unwrap(), "0.15.5");
 }
 
@@ -3626,10 +3619,7 @@ fn rollback_deployment_works() {
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["status"].as_str().unwrap(), "rollback_assigned");
     assert_eq!(body["deployment"]["version"].as_str().unwrap(), "1.0.0");
-    assert_eq!(
-        body["deployment"]["allow_downgrade"].as_bool().unwrap(),
-        true
-    );
+    assert!(body["deployment"]["allow_downgrade"].as_bool().unwrap());
 }
 
 // ── Agent Monitoring Scope ─────────────────────────────────────
@@ -3646,7 +3636,7 @@ fn agent_scope_set_and_get() {
         .expect("get scope");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().unwrap();
-    assert_eq!(body["override"].as_bool().unwrap(), false);
+    assert!(!body["override"].as_bool().unwrap());
 
     // Set custom scope
     let scope = serde_json::json!({
@@ -3669,9 +3659,9 @@ fn agent_scope_set_and_get() {
         .call()
         .expect("get scope again");
     let body: serde_json::Value = resp.into_json().unwrap();
-    assert_eq!(body["override"].as_bool().unwrap(), true);
-    assert_eq!(body["scope"]["network_activity"].as_bool().unwrap(), false);
-    assert_eq!(body["scope"]["battery_state"].as_bool().unwrap(), false);
+    assert!(body["override"].as_bool().unwrap());
+    assert!(!body["scope"]["network_activity"].as_bool().unwrap());
+    assert!(!body["scope"]["battery_state"].as_bool().unwrap());
 
     // Clear scope
     let resp = ureq::post(&format!("{}/api/agents/{}/scope", base(port), agent_id))
@@ -3727,7 +3717,7 @@ fn rollout_config_updatable_via_config_patch() {
         .call()
         .expect("get rollout config");
     let body: serde_json::Value = resp.into_json().unwrap();
-    assert_eq!(body["auto_progress"].as_bool().unwrap(), true);
+    assert!(body["auto_progress"].as_bool().unwrap());
     assert_eq!(body["canary_soak_secs"].as_u64().unwrap(), 120);
     assert_eq!(body["max_failures"].as_u64().unwrap(), 3);
 }
@@ -4274,7 +4264,7 @@ fn enterprise_entities_storyline_and_incident_report_include_context() {
             .unwrap();
     assert_eq!(entity["kind"].as_str().unwrap(), "host");
     assert!(entity["related_event_count"].as_u64().unwrap() >= 2);
-    assert!(entity["ticket_syncs"].as_array().unwrap().len() >= 1);
+    assert!(!entity["ticket_syncs"].as_array().unwrap().is_empty());
 
     let timeline: serde_json::Value = ureq::get(&format!(
         "{}/api/entities/host/story-host/timeline",
@@ -4297,9 +4287,9 @@ fn enterprise_entities_storyline_and_incident_report_include_context() {
     .expect("incident storyline")
     .into_json()
     .unwrap();
-    assert!(storyline["linked_cases"].as_array().unwrap().len() >= 1);
-    assert!(storyline["response_actions"].as_array().unwrap().len() >= 1);
-    assert!(storyline["ticket_syncs"].as_array().unwrap().len() >= 1);
+    assert!(!storyline["linked_cases"].as_array().unwrap().is_empty());
+    assert!(!storyline["response_actions"].as_array().unwrap().is_empty());
+    assert!(!storyline["ticket_syncs"].as_array().unwrap().is_empty());
     assert!(
         storyline["evidence_package"]["case_count"]
             .as_u64()
@@ -4319,7 +4309,7 @@ fn enterprise_entities_storyline_and_incident_report_include_context() {
     .unwrap();
     assert!(report.get("storyline").is_some());
     assert!(report.get("evidence_package").is_some());
-    assert!(report["linked_cases"].as_array().unwrap().len() >= 1);
+    assert!(!report["linked_cases"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -4440,11 +4430,10 @@ fn enterprise_governance_and_support_endpoints_enforce_roles() {
             .unwrap();
     assert!(diagnostics["digest"].as_str().unwrap().len() >= 32);
     assert!(
-        diagnostics["bundle"]["auth"]["idp_providers"]
+        !diagnostics["bundle"]["auth"]["idp_providers"]
             .as_array()
             .unwrap()
-            .len()
-            >= 1
+            .is_empty()
     );
 
     let dependencies: serde_json::Value =
@@ -4576,14 +4565,13 @@ fn chaos_path_traversal_rejected() {
     ];
     for path in &traversal_attempts {
         let resp = ureq::get(&format!("{}{}", base(port), path)).call();
-        match resp {
-            Ok(r) => assert_ne!(
+        if let Ok(r) = resp {
+            assert_ne!(
                 r.status(),
                 200,
                 "Path traversal should not succeed: {}",
                 path
-            ),
-            Err(_) => {} // 404 or error is expected
+            );
         }
     }
 }
@@ -4727,15 +4715,14 @@ fn chaos_wrong_http_method_graceful() {
                 .send_string("{}"),
             _ => unreachable!(),
         };
-        match result {
-            Ok(r) => assert!(
+        if let Ok(r) = result {
+            assert!(
                 r.status() == 405 || r.status() == 200 || r.status() == 404,
                 "Unexpected status for {} {}: {}",
                 method,
                 path,
                 r.status()
-            ),
-            Err(_) => {} // error response is fine
+            );
         }
     }
     // Server still alive

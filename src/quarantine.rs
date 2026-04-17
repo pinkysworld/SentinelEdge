@@ -320,21 +320,11 @@ impl EntropyWindow {
 
 /// Monitors canary/bait files deployed in common directories to detect
 /// ransomware-like activity.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CanaryMonitor {
     pub canaries: Vec<CanaryFile>,
     pub alerts: Vec<CanaryAlert>,
     pub entropy_window: EntropyWindow,
-}
-
-impl Default for CanaryMonitor {
-    fn default() -> Self {
-        Self {
-            canaries: Vec::new(),
-            alerts: Vec::new(),
-            entropy_window: EntropyWindow::default(),
-        }
-    }
 }
 
 impl CanaryMonitor {

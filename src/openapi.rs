@@ -1920,10 +1920,7 @@ mod tests {
             .post
             .as_ref()
             .unwrap();
-        assert_eq!(
-            execute_response.request_body.as_ref().unwrap().required,
-            false
-        );
+        assert!(!execute_response.request_body.as_ref().unwrap().required);
     }
 
     #[test]

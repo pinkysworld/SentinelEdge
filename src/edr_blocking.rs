@@ -257,7 +257,7 @@ impl EdrBlockingEngine {
         while state
             .indicators
             .front()
-            .map_or(false, |i| i.timestamp_ms < cutoff)
+            .is_some_and(|i| i.timestamp_ms < cutoff)
         {
             state.indicators.pop_front();
         }

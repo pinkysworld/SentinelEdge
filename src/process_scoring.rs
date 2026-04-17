@@ -310,9 +310,8 @@ impl ProcessScorer {
         cmdline: Option<&str>,
     ) -> ProcessRiskAssessment {
         let (lineage_score, mut reasons) = Self::score_lineage(chain);
-        let (cmdline_score, cmd_reasons) = cmdline
-            .map(|c| Self::score_cmdline(c))
-            .unwrap_or((0.0, vec![]));
+        let (cmdline_score, cmd_reasons) =
+            cmdline.map(Self::score_cmdline).unwrap_or((0.0, vec![]));
         reasons.extend(cmd_reasons);
 
         let lolbin_match = Self::check_lolbin(name);
@@ -588,7 +587,7 @@ mod tests {
     #[test]
     fn lolbin_chain_three_triggers() {
         let mut tracker = LolbinChainTracker::default();
-        let execs = vec![
+        let execs = [
             LolbinExecution {
                 host_id: "host-1".into(),
                 lolbin_name: "cmd.exe".into(),

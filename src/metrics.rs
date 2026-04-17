@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn registry_renders_gauge() {
         let mut reg = MetricsRegistry::new();
-        reg.gauge("test_gauge", "A test gauge", BTreeMap::new(), 3.14);
+        reg.gauge("test_gauge", "A test gauge", BTreeMap::new(), 314.0 / 100.0);
         let out = reg.render();
         assert!(out.contains("# TYPE test_gauge gauge"));
         assert!(out.contains("test_gauge 3.14"));

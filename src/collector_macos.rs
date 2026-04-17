@@ -916,10 +916,10 @@ fn dir_size_mb(path: &Path) -> f64 {
                     // One level deep approximation to avoid long recursion
                     if let Ok(sub) = fs::read_dir(entry.path()) {
                         for se in sub.flatten() {
-                            if let Ok(sm) = se.metadata() {
-                                if sm.is_file() {
-                                    total += sm.len();
-                                }
+                            if let Ok(sm) = se.metadata()
+                                && sm.is_file()
+                            {
+                                total += sm.len();
                             }
                         }
                     }

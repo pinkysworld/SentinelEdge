@@ -330,7 +330,7 @@ fn tokenize_hunt(input: &str) -> Result<Vec<HuntToken>, String> {
     Ok(tokens)
 }
 
-fn parse_or<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+fn parse_or(tokens: &[HuntToken]) -> Result<(HuntPredicate, &[HuntToken]), String> {
     let (mut left, mut rest) = parse_and(tokens)?;
     while !rest.is_empty() && rest[0] == HuntToken::Or {
         let (right, r) = parse_and(&rest[1..])?;
@@ -340,7 +340,7 @@ fn parse_or<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToke
     Ok((left, rest))
 }
 
-fn parse_and<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+fn parse_and(tokens: &[HuntToken]) -> Result<(HuntPredicate, &[HuntToken]), String> {
     let (mut left, mut rest) = parse_unary(tokens)?;
     while !rest.is_empty()
         && (rest[0] == HuntToken::And
@@ -366,7 +366,7 @@ fn parse_and<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntTok
     Ok((left, rest))
 }
 
-fn parse_unary<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+fn parse_unary(tokens: &[HuntToken]) -> Result<(HuntPredicate, &[HuntToken]), String> {
     if tokens.is_empty() {
         return Err("unexpected end of query".into());
     }
@@ -377,7 +377,7 @@ fn parse_unary<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntT
     parse_primary(tokens)
 }
 
-fn parse_primary<'a>(tokens: &'a [HuntToken]) -> Result<(HuntPredicate, &'a [HuntToken]), String> {
+fn parse_primary(tokens: &[HuntToken]) -> Result<(HuntPredicate, &[HuntToken]), String> {
     if tokens.is_empty() {
         return Err("unexpected end of query".into());
     }

@@ -1037,13 +1037,13 @@ pub async fn run_server(
     // Load community YARA malware rules
     {
         let yara_path = std::path::Path::new("rules/yara/malware.json");
-        if yara_path.exists() {
-            if let Ok(json) = std::fs::read_to_string(yara_path) {
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                match s.yara_engine.load_rules_json(&json) {
-                    Ok(n) => tracing::info!("loaded {n} community YARA malware rules"),
-                    Err(e) => tracing::warn!("failed to load YARA malware rules: {e}"),
-                }
+        if yara_path.exists()
+            && let Ok(json) = std::fs::read_to_string(yara_path)
+        {
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            match s.yara_engine.load_rules_json(&json) {
+                Ok(n) => tracing::info!("loaded {n} community YARA malware rules"),
+                Err(e) => tracing::warn!("failed to load YARA malware rules: {e}"),
             }
         }
     }
@@ -2083,16 +2083,14 @@ impl AuthIdentity {
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
-    if let Some(val) = headers.get("authorization") {
-        if let Ok(s) = val.to_str() {
-            if let Some((scheme, token)) = s.split_once(char::is_whitespace) {
-                if scheme.eq_ignore_ascii_case("bearer") {
-                    let trimmed = token.trim();
-                    if !trimmed.is_empty() {
-                        return Some(trimmed.to_string());
-                    }
-                }
-            }
+    if let Some(val) = headers.get("authorization")
+        && let Ok(s) = val.to_str()
+        && let Some((scheme, token)) = s.split_once(char::is_whitespace)
+        && scheme.eq_ignore_ascii_case("bearer")
+    {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
     }
     None
@@ -3535,7 +3533,7 @@ fn filtered_events<'a>(
 
 fn csv_escape(value: &str) -> String {
     // Strip CRLF injection vectors
-    let sanitised = value.replace('\r', " ").replace('\n', " ");
+    let sanitised = value.replace(['\r', '\n'], " ");
     let safe = sanitised.replace('"', "\"\"");
     // Prevent CSV formula injection — unconditionally prefix with single quote
     format!("\"'{}\"", safe)
@@ -4140,8 +4138,8 @@ fn handle_api(
     state: &Arc<Mutex<AppState>>,
 ) -> Response<Body> {
     // ── API versioning: /api/v1/... → /api/... ──────────────────
-    let url = if url.starts_with("/api/v1/") {
-        format!("/api/{}", &url[8..])
+    let url = if let Some(stripped) = url.strip_prefix("/api/v1/") {
+        format!("/api/{stripped}")
     } else {
         url.to_string()
     };
@@ -5469,7 +5467,7 @@ fn handle_api(
                             )
                         }
                     }
-                    Err(response) => response,
+                    Err(response) => *response,
                 }
             }
             Err(e) => error_json(&e, 400),
@@ -10270,23 +10268,23 @@ fn handle_api(
                     Err(_) => serde_json::json!({}),
                 };
                 // Append ClickHouse status if configured
-                if let Some(ref ch) = s.clickhouse_store {
-                    if let Some(obj) = stats_json.as_object_mut() {
-                        obj.insert("clickhouse_enabled".into(), serde_json::json!(true));
-                        obj.insert("clickhouse_url".into(), serde_json::json!(ch.config().url));
-                        obj.insert(
-                            "clickhouse_database".into(),
-                            serde_json::json!(ch.config().database),
-                        );
-                        obj.insert(
-                            "clickhouse_buffer_len".into(),
-                            serde_json::json!(ch.buffer_len()),
-                        );
-                        obj.insert(
-                            "clickhouse_total_inserted".into(),
-                            serde_json::json!(ch.total_inserted()),
-                        );
-                    }
+                if let Some(ref ch) = s.clickhouse_store
+                    && let Some(obj) = stats_json.as_object_mut()
+                {
+                    obj.insert("clickhouse_enabled".into(), serde_json::json!(true));
+                    obj.insert("clickhouse_url".into(), serde_json::json!(ch.config().url));
+                    obj.insert(
+                        "clickhouse_database".into(),
+                        serde_json::json!(ch.config().database),
+                    );
+                    obj.insert(
+                        "clickhouse_buffer_len".into(),
+                        serde_json::json!(ch.buffer_len()),
+                    );
+                    obj.insert(
+                        "clickhouse_total_inserted".into(),
+                        serde_json::json!(ch.total_inserted()),
+                    );
                 }
                 json_response(&stats_json.to_string(), 200)
             } else if method == Method::Get && url_path == "/api/storage/agents" {
@@ -12477,9 +12475,10 @@ fn handle_analyze(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
             for chunk_start in (0..total).step_by(chunk_size) {
                 let chunk_end = (chunk_start + chunk_size).min(total);
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                for i in chunk_start..chunk_end {
-                    let sample = &samples[i];
-                    let report_entry = &result.reports[i];
+                for (sample, report_entry) in samples[chunk_start..chunk_end]
+                    .iter()
+                    .zip(result.reports[chunk_start..chunk_end].iter())
+                {
                     let pre = s
                         .detector
                         .snapshot()
@@ -12916,22 +12915,25 @@ fn handle_config_reload(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<B
 fn config_save_target(
     current: &Config,
     body: &str,
-) -> Result<(Config, Vec<String>), Response<Body>> {
+) -> Result<(Config, Vec<String>), Box<Response<Body>>> {
     if body.trim().is_empty() {
         return Ok((current.clone(), Vec::new()));
     }
 
     let patch: crate::config::ConfigPatch = match serde_json::from_str(body) {
         Ok(p) => p,
-        Err(e) => return Err(error_json(&format!("invalid JSON: {e}"), 400)),
+        Err(e) => return Err(Box::new(error_json(&format!("invalid JSON: {e}"), 400))),
     };
 
     let mut next_config = current.clone();
     let result = patch.apply(&mut next_config);
     if !result.success {
         return match serde_json::to_string_pretty(&result) {
-            Ok(json) => Err(json_response(&json, 400)),
-            Err(e) => Err(error_json(&format!("serialization error: {e}"), 500)),
+            Ok(json) => Err(Box::new(json_response(&json, 400))),
+            Err(e) => Err(Box::new(error_json(
+                &format!("serialization error: {e}"),
+                500,
+            ))),
         };
     }
 
@@ -14870,8 +14872,7 @@ mod tests {
             )],
         });
 
-        let index =
-            build_search_index_from_events(&store.all_events().to_vec()).expect("search index");
+        let index = build_search_index_from_events(store.all_events()).expect("search index");
         let result = index
             .search(&crate::search::SearchQuery {
                 query: "credential dumping".to_string(),

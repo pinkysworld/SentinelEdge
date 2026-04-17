@@ -159,10 +159,10 @@ impl AssetInventory {
     /// Update risk scores based on vulnerability reports.
     pub fn update_risk_scores(&mut self, vuln_scores: &HashMap<String, f32>) {
         for asset in &mut self.assets {
-            if let Some(agent_id) = &asset.agent_id {
-                if let Some(score) = vuln_scores.get(agent_id) {
-                    asset.risk_score = *score;
-                }
+            if let Some(agent_id) = &asset.agent_id
+                && let Some(score) = vuln_scores.get(agent_id)
+            {
+                asset.risk_score = *score;
             }
         }
     }

@@ -883,11 +883,11 @@ pub fn report_to_markdown(report: &ComplianceReport) -> String {
     md.push_str(&format!(
         "# Compliance Report: {} v{}\n\n",
         report.framework_name,
-        report.framework_id.split('-').last().unwrap_or(""),
+        report.framework_id.split('-').next_back().unwrap_or(""),
     ));
     md.push_str(&format!("**Generated:** {}\n\n", report.generated_at));
     md.push_str("## Summary\n\n");
-    md.push_str(&format!("| Metric | Value |\n|--------|-------|\n"));
+    md.push_str("| Metric | Value |\n|--------|-------|\n");
     md.push_str(&format!("| Total Controls | {} |\n", report.total_controls));
     md.push_str(&format!("| Passed | {} |\n", report.passed));
     md.push_str(&format!("| Failed | {} |\n", report.failed));

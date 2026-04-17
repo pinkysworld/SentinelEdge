@@ -78,15 +78,14 @@ impl ApiAnalytics {
             self.global_errors += 1;
         }
         // Evict least-used endpoints when we exceed the cap
-        if self.endpoints.len() > self.max_endpoints {
-            if let Some(smallest_key) = self
+        if self.endpoints.len() > self.max_endpoints
+            && let Some(smallest_key) = self
                 .endpoints
                 .iter()
                 .min_by_key(|(_, v)| v.len())
                 .map(|(k, _)| k.clone())
-            {
-                self.endpoints.remove(&smallest_key);
-            }
+        {
+            self.endpoints.remove(&smallest_key);
         }
     }
 

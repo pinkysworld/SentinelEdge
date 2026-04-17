@@ -965,11 +965,13 @@ mod tests {
     #[test]
     fn monitor_patch_updates_scope() {
         let mut config = Config::default();
-        let mut monitor = MonitorSettings::default();
-        monitor.scope = MonitorScopeSettings {
-            file_integrity: false,
-            systemd_units: true,
-            ..MonitorScopeSettings::default()
+        let monitor = MonitorSettings {
+            scope: MonitorScopeSettings {
+                file_integrity: false,
+                systemd_units: true,
+                ..MonitorScopeSettings::default()
+            },
+            ..MonitorSettings::default()
         };
         let patch = ConfigPatch {
             monitor: Some(monitor),

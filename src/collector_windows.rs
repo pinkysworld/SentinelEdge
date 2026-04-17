@@ -834,89 +834,86 @@ pub fn collect_installed_apps() -> Vec<InstalledApp> {
             "/format:csv",
         ])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            for line in text.lines().skip(1) {
-                let fields: Vec<&str> = line.split(',').collect();
-                if fields.len() >= 4 {
-                    let install_location = fields.get(1).unwrap_or(&"").to_string();
-                    let name = fields.get(2).unwrap_or(&"").trim().to_string();
-                    let version = fields.get(3).unwrap_or(&"").trim().to_string();
-                    if name.is_empty() {
-                        continue;
-                    }
-                    apps.push(InstalledApp {
-                        name,
-                        path: install_location,
-                        version,
-                        bundle_id: String::new(),
-                        size_mb: 0.0,
-                        last_modified: String::new(),
-                    });
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines().skip(1) {
+            let fields: Vec<&str> = line.split(',').collect();
+            if fields.len() >= 4 {
+                let install_location = fields.get(1).unwrap_or(&"").to_string();
+                let name = fields.get(2).unwrap_or(&"").trim().to_string();
+                let version = fields.get(3).unwrap_or(&"").trim().to_string();
+                if name.is_empty() {
+                    continue;
                 }
+                apps.push(InstalledApp {
+                    name,
+                    path: install_location,
+                    version,
+                    bundle_id: String::new(),
+                    size_mb: 0.0,
+                    last_modified: String::new(),
+                });
             }
         }
     }
 
     // Fallback: registry query for 64-bit apps
-    if apps.is_empty() {
-        if let Ok(output) = std::process::Command::new("reg")
+    if apps.is_empty()
+        && let Ok(output) = std::process::Command::new("reg")
             .args([
                 "query",
                 r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                 "/s",
             ])
             .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                let mut current_name = String::new();
-                let mut current_version = String::new();
-                let mut current_path = String::new();
+        && output.status.success()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut current_name = String::new();
+        let mut current_version = String::new();
+        let mut current_path = String::new();
 
-                for line in text.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("DisplayName") {
-                        if let Some(val) = trimmed.split("REG_SZ").nth(1) {
-                            current_name = val.trim().to_string();
-                        }
-                    } else if trimmed.starts_with("DisplayVersion") {
-                        if let Some(val) = trimmed.split("REG_SZ").nth(1) {
-                            current_version = val.trim().to_string();
-                        }
-                    } else if trimmed.starts_with("InstallLocation") {
-                        if let Some(val) = trimmed.split("REG_SZ").nth(1) {
-                            current_path = val.trim().to_string();
-                        }
-                    } else if trimmed.starts_with("HKEY_") || trimmed.is_empty() {
-                        if !current_name.is_empty() {
-                            apps.push(InstalledApp {
-                                name: current_name.clone(),
-                                path: current_path.clone(),
-                                version: current_version.clone(),
-                                bundle_id: String::new(),
-                                size_mb: 0.0,
-                                last_modified: String::new(),
-                            });
-                        }
-                        current_name.clear();
-                        current_version.clear();
-                        current_path.clear();
-                    }
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("DisplayName") {
+                if let Some(val) = trimmed.split("REG_SZ").nth(1) {
+                    current_name = val.trim().to_string();
                 }
-                // Flush last entry
+            } else if trimmed.starts_with("DisplayVersion") {
+                if let Some(val) = trimmed.split("REG_SZ").nth(1) {
+                    current_version = val.trim().to_string();
+                }
+            } else if trimmed.starts_with("InstallLocation") {
+                if let Some(val) = trimmed.split("REG_SZ").nth(1) {
+                    current_path = val.trim().to_string();
+                }
+            } else if trimmed.starts_with("HKEY_") || trimmed.is_empty() {
                 if !current_name.is_empty() {
                     apps.push(InstalledApp {
-                        name: current_name,
-                        path: current_path,
-                        version: current_version,
+                        name: current_name.clone(),
+                        path: current_path.clone(),
+                        version: current_version.clone(),
                         bundle_id: String::new(),
                         size_mb: 0.0,
                         last_modified: String::new(),
                     });
                 }
+                current_name.clear();
+                current_version.clear();
+                current_path.clear();
             }
+        }
+        // Flush last entry
+        if !current_name.is_empty() {
+            apps.push(InstalledApp {
+                name: current_name,
+                path: current_path,
+                version: current_version,
+                bundle_id: String::new(),
+                size_mb: 0.0,
+                last_modified: String::new(),
+            });
         }
     }
 

@@ -216,45 +216,45 @@ impl EventStore for ClickHouseStorage {
         let results: Vec<StoredEvent> = buf
             .iter()
             .filter(|e| {
-                if let Some(ref t) = filter.tenant_id {
-                    if e.tenant_id != *t {
-                        return false;
-                    }
+                if let Some(ref t) = filter.tenant_id
+                    && e.tenant_id != *t
+                {
+                    return false;
                 }
-                if let Some(ref from) = filter.from {
-                    if e.timestamp < *from {
-                        return false;
-                    }
+                if let Some(ref from) = filter.from
+                    && e.timestamp < *from
+                {
+                    return false;
                 }
-                if let Some(ref to) = filter.to {
-                    if e.timestamp > *to {
-                        return false;
-                    }
+                if let Some(ref to) = filter.to
+                    && e.timestamp > *to
+                {
+                    return false;
                 }
-                if let Some(sev) = filter.severity_min {
-                    if e.severity < sev {
-                        return false;
-                    }
+                if let Some(sev) = filter.severity_min
+                    && e.severity < sev
+                {
+                    return false;
                 }
-                if let Some(cls) = filter.event_class {
-                    if e.event_class != cls {
-                        return false;
-                    }
+                if let Some(cls) = filter.event_class
+                    && e.event_class != cls
+                {
+                    return false;
                 }
-                if let Some(ref d) = filter.device_id {
-                    if e.device_id != *d {
-                        return false;
-                    }
+                if let Some(ref d) = filter.device_id
+                    && e.device_id != *d
+                {
+                    return false;
                 }
-                if let Some(ref u) = filter.user_name {
-                    if e.user_name != *u {
-                        return false;
-                    }
+                if let Some(ref u) = filter.user_name
+                    && e.user_name != *u
+                {
+                    return false;
                 }
-                if let Some(ref ip) = filter.src_ip {
-                    if e.src_ip != *ip {
-                        return false;
-                    }
+                if let Some(ref ip) = filter.src_ip
+                    && e.src_ip != *ip
+                {
+                    return false;
                 }
                 true
             })
@@ -313,6 +313,12 @@ pub struct InMemoryEventStore {
     events: std::sync::Mutex<Vec<StoredEvent>>,
 }
 
+impl Default for InMemoryEventStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryEventStore {
     pub fn new() -> Self {
         Self {
@@ -334,45 +340,45 @@ impl EventStore for InMemoryEventStore {
         let filtered: Vec<StoredEvent> = store
             .iter()
             .filter(|e| {
-                if let Some(ref tid) = filter.tenant_id {
-                    if e.tenant_id != *tid {
-                        return false;
-                    }
+                if let Some(ref tid) = filter.tenant_id
+                    && e.tenant_id != *tid
+                {
+                    return false;
                 }
-                if let Some(ref from) = filter.from {
-                    if e.timestamp < *from {
-                        return false;
-                    }
+                if let Some(ref from) = filter.from
+                    && e.timestamp < *from
+                {
+                    return false;
                 }
-                if let Some(ref to) = filter.to {
-                    if e.timestamp > *to {
-                        return false;
-                    }
+                if let Some(ref to) = filter.to
+                    && e.timestamp > *to
+                {
+                    return false;
                 }
-                if let Some(sev) = filter.severity_min {
-                    if e.severity < sev {
-                        return false;
-                    }
+                if let Some(sev) = filter.severity_min
+                    && e.severity < sev
+                {
+                    return false;
                 }
-                if let Some(cls) = filter.event_class {
-                    if e.event_class != cls {
-                        return false;
-                    }
+                if let Some(cls) = filter.event_class
+                    && e.event_class != cls
+                {
+                    return false;
                 }
-                if let Some(ref did) = filter.device_id {
-                    if e.device_id != *did {
-                        return false;
-                    }
+                if let Some(ref did) = filter.device_id
+                    && e.device_id != *did
+                {
+                    return false;
                 }
-                if let Some(ref un) = filter.user_name {
-                    if e.user_name != *un {
-                        return false;
-                    }
+                if let Some(ref un) = filter.user_name
+                    && e.user_name != *un
+                {
+                    return false;
                 }
-                if let Some(ref ip) = filter.src_ip {
-                    if e.src_ip != *ip {
-                        return false;
-                    }
+                if let Some(ref ip) = filter.src_ip
+                    && e.src_ip != *ip
+                {
+                    return false;
                 }
                 true
             })
@@ -387,45 +393,45 @@ impl EventStore for InMemoryEventStore {
         let count = store
             .iter()
             .filter(|e| {
-                if let Some(ref tid) = filter.tenant_id {
-                    if e.tenant_id != *tid {
-                        return false;
-                    }
+                if let Some(ref tid) = filter.tenant_id
+                    && e.tenant_id != *tid
+                {
+                    return false;
                 }
-                if let Some(ref from) = filter.from {
-                    if e.timestamp < *from {
-                        return false;
-                    }
+                if let Some(ref from) = filter.from
+                    && e.timestamp < *from
+                {
+                    return false;
                 }
-                if let Some(ref to) = filter.to {
-                    if e.timestamp > *to {
-                        return false;
-                    }
+                if let Some(ref to) = filter.to
+                    && e.timestamp > *to
+                {
+                    return false;
                 }
-                if let Some(sev) = filter.severity_min {
-                    if e.severity < sev {
-                        return false;
-                    }
+                if let Some(sev) = filter.severity_min
+                    && e.severity < sev
+                {
+                    return false;
                 }
-                if let Some(cls) = filter.event_class {
-                    if e.event_class != cls {
-                        return false;
-                    }
+                if let Some(cls) = filter.event_class
+                    && e.event_class != cls
+                {
+                    return false;
                 }
-                if let Some(ref did) = filter.device_id {
-                    if e.device_id != *did {
-                        return false;
-                    }
+                if let Some(ref did) = filter.device_id
+                    && e.device_id != *did
+                {
+                    return false;
                 }
-                if let Some(ref un) = filter.user_name {
-                    if e.user_name != *un {
-                        return false;
-                    }
+                if let Some(ref un) = filter.user_name
+                    && e.user_name != *un
+                {
+                    return false;
                 }
-                if let Some(ref ip) = filter.src_ip {
-                    if e.src_ip != *ip {
-                        return false;
-                    }
+                if let Some(ref ip) = filter.src_ip
+                    && e.src_ip != *ip
+                {
+                    return false;
                 }
                 true
             })

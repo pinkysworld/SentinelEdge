@@ -182,13 +182,13 @@ mod tests {
 
     #[test]
     fn train_requires_minimum_samples() {
-        let samples: Vec<_> = (0..2).map(|i| benign_sample(i)).collect();
+        let samples: Vec<_> = (0..2).map(benign_sample).collect();
         assert!(DeviceFingerprint::train(&samples).is_none());
     }
 
     #[test]
     fn train_produces_fingerprint() {
-        let samples: Vec<_> = (0..10).map(|i| benign_sample(i)).collect();
+        let samples: Vec<_> = (0..10).map(benign_sample).collect();
         let fp = DeviceFingerprint::train(&samples).unwrap();
         assert_eq!(fp.trained_samples, 10);
         // CPU mean should be around 20.45 (20.0 + avg of 0.0..0.9)
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn benign_sample_matches() {
-        let training: Vec<_> = (0..20).map(|i| benign_sample(i)).collect();
+        let training: Vec<_> = (0..20).map(benign_sample).collect();
         let fp = DeviceFingerprint::train(&training).unwrap();
 
         let test_sample = benign_sample(5);
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn anomalous_sample_detected() {
-        let training: Vec<_> = (0..20).map(|i| benign_sample(i)).collect();
+        let training: Vec<_> = (0..20).map(benign_sample).collect();
         let fp = DeviceFingerprint::train(&training).unwrap();
 
         // Wildly different sample — impersonation attempt
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn fingerprint_serializes() {
-        let training: Vec<_> = (0..10).map(|i| benign_sample(i)).collect();
+        let training: Vec<_> = (0..10).map(benign_sample).collect();
         let fp = DeviceFingerprint::train(&training).unwrap();
         let json = serde_json::to_string(&fp).unwrap();
         assert!(json.contains("means"));
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn ewma_drift_adapts() {
-        let training: Vec<_> = (0..20).map(|i| benign_sample(i)).collect();
+        let training: Vec<_> = (0..20).map(benign_sample).collect();
         let mut fp = DeviceFingerprint::train(&training).unwrap();
         let old_mean = fp.means[0];
 

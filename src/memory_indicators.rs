@@ -399,8 +399,8 @@ mod tests {
     fn shellcode_nop_sled_detected() {
         let mut data = vec![0u8; 256];
         // Insert NOP sled at offset 10
-        for i in 10..26 {
-            data[i] = 0x90;
+        for byte in data.iter_mut().take(26).skip(10) {
+            *byte = 0x90;
         }
         let matches = scan_buffer_for_shellcode(&data);
         assert!(matches.iter().any(|m| m.pattern_name.contains("NOP")));

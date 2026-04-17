@@ -1252,10 +1252,9 @@ pub fn run_monitor(
                     .create(true)
                     .append(true)
                     .open(&mon.alert_log)
+                && let Err(e) = writeln!(f, "{json}")
             {
-                if let Err(e) = writeln!(f, "{json}") {
-                    eprintln!("[WARN] alert log write failed: {e}");
-                }
+                eprintln!("[WARN] alert log write failed: {e}");
             }
 
             // Structured output

@@ -88,10 +88,10 @@ impl IncidentStore {
         }
         if let Ok(json) = serde_json::to_string_pretty(&self.incidents) {
             let tmp = format!("{}.tmp", self.store_path);
-            if std::fs::write(&tmp, &json).is_ok() {
-                if let Err(e) = std::fs::rename(&tmp, path) {
-                    eprintln!("[WARN] incident persist rename failed: {e}");
-                }
+            if std::fs::write(&tmp, &json).is_ok()
+                && let Err(e) = std::fs::rename(&tmp, path)
+            {
+                eprintln!("[WARN] incident persist rename failed: {e}");
             }
         }
     }

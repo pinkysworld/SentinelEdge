@@ -141,11 +141,11 @@ impl SiemConnector {
             self.pending_logs.drain(..self.pending_logs.len() / 2);
         }
         self.pending_logs.push(log.clone());
-        if self.pending_logs.len() >= self.config.batch_size {
-            if let Err(e) = self.flush_logs() {
-                eprintln!("[WARN] SIEM flush_logs failed: {e}");
-                self.last_error = Some(e);
-            }
+        if self.pending_logs.len() >= self.config.batch_size
+            && let Err(e) = self.flush_logs()
+        {
+            eprintln!("[WARN] SIEM flush_logs failed: {e}");
+            self.last_error = Some(e);
         }
     }
 
@@ -1076,8 +1076,10 @@ mod tests {
 
     #[test]
     fn config_validation() {
-        let mut config = SiemConfig::default();
-        config.enabled = true;
+        let mut config = SiemConfig {
+            enabled: true,
+            ..SiemConfig::default()
+        };
         assert!(config.validate().is_err()); // no endpoint
 
         config.endpoint = "http://localhost:8088".into();

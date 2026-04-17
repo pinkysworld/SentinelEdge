@@ -834,8 +834,10 @@ mod tests {
 
     #[test]
     fn okta_disabled() {
-        let mut config = OktaConfig::default();
-        config.enabled = false;
+        let config = OktaConfig {
+            enabled: false,
+            ..OktaConfig::default()
+        };
         let collector = OktaCollector::new(config);
         assert!(!collector.is_enabled());
     }
