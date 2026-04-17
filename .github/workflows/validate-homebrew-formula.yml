@@ -94,6 +94,12 @@ jobs:
             homebrew-formula/wardex.rb
           ruby -c homebrew-formula/wardex.rb
 
+      - name: Configure git identity for temporary tap
+        shell: bash
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Stage formula in temporary tap
         shell: bash
         run: |

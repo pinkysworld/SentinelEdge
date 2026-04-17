@@ -2,11 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import {
-  ConfirmDialog,
-  JsonDetails,
-  SummaryGrid,
-} from './operator.jsx';
+import { ConfirmDialog, JsonDetails, SummaryGrid } from './operator.jsx';
 import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const AGENT_COLUMNS = ['id', 'hostname', 'os', 'version', 'status', 'last_seen'];

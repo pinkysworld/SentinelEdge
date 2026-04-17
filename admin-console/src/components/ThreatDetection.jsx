@@ -2,11 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import {
-  JsonDetails,
-  SummaryGrid,
-  SideDrawer,
-} from './operator.jsx';
+import { JsonDetails, SummaryGrid, SideDrawer } from './operator.jsx';
 import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const SAVED_VIEWS = [

@@ -1,11 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import {
-  JsonDetails,
-  RawJsonDetails,
-  SummaryGrid,
-} from './operator.jsx';
+import { JsonDetails, RawJsonDetails, SummaryGrid } from './operator.jsx';
 import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const GUIDES = {

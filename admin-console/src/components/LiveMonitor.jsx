@@ -4,10 +4,7 @@ import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import AlertDrawer from './AlertDrawer.jsx';
 import ProcessDrawer from './ProcessDrawer.jsx';
-import {
-  JsonDetails,
-  SummaryGrid,
-} from './operator.jsx';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { downloadCsv, downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const ALERT_VIEWS = [

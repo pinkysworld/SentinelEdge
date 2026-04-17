@@ -2,10 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import {
-  JsonDetails,
-  SummaryGrid,
-} from './operator.jsx';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const TABS = ['templates', 'runs', 'delivery'];
