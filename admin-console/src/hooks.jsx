@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import {
   setToken,
@@ -66,11 +67,9 @@ export function RoleProvider({ children }) {
   const [role, setRole] = useState('viewer');
 
   useEffect(() => {
-    if (!authenticated) {
-      setRole('viewer');
-      return;
-    }
+    if (!authenticated) return undefined;
     let cancelled = false;
+    let retryTimer = null;
     const fetchRole = (retries = 2) => {
       authSession()
         .then((data) => {
@@ -78,7 +77,7 @@ export function RoleProvider({ children }) {
         })
         .catch(() => {
           if (!cancelled && retries > 0) {
-            setTimeout(() => fetchRole(retries - 1), 1000);
+            retryTimer = setTimeout(() => fetchRole(retries - 1), 1000);
           } else if (!cancelled) {
             setRole('viewer');
           }
@@ -87,10 +86,15 @@ export function RoleProvider({ children }) {
     fetchRole();
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [authenticated]);
 
-  return <RoleContext.Provider value={{ role, setRole }}>{children}</RoleContext.Provider>;
+  return (
+    <RoleContext.Provider value={{ role: authenticated ? role : 'viewer', setRole }}>
+      {children}
+    </RoleContext.Provider>
+  );
 }
 
 export function useRole() {

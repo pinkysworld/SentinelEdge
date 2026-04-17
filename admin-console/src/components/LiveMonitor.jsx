@@ -7,11 +7,8 @@ import ProcessDrawer from './ProcessDrawer.jsx';
 import {
   JsonDetails,
   SummaryGrid,
-  downloadCsv,
-  downloadData,
-  formatDateTime,
-  formatRelativeTime,
 } from './operator.jsx';
+import { downloadCsv, downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const ALERT_VIEWS = [
   {

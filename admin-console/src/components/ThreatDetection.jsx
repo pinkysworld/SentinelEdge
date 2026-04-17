@@ -6,9 +6,8 @@ import {
   JsonDetails,
   SummaryGrid,
   SideDrawer,
-  formatDateTime,
-  formatRelativeTime,
 } from './operator.jsx';
+import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const SAVED_VIEWS = [
   {

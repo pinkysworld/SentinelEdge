@@ -5,10 +5,8 @@ import * as api from '../api.js';
 import {
   JsonDetails,
   SummaryGrid,
-  downloadData,
-  formatDateTime,
-  formatRelativeTime,
 } from './operator.jsx';
+import { downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const TABS = ['templates', 'runs', 'delivery'];
 

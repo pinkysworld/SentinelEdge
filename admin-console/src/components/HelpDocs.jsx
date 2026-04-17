@@ -5,9 +5,8 @@ import {
   JsonDetails,
   RawJsonDetails,
   SummaryGrid,
-  formatDateTime,
-  formatRelativeTime,
 } from './operator.jsx';
+import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const GUIDES = {
   'threat-detection': {

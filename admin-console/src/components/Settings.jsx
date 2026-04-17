@@ -3,6 +3,16 @@ import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 
+function parseStructuredConfig(config) {
+  if (!config) return null;
+  if (typeof config !== 'string') return config;
+  try {
+    return JSON.parse(config);
+  } catch {
+    return null;
+  }
+}
+
 function ToggleSwitch({ label, checked, onChange, description }) {
   const toggleId = useId();
   return (
@@ -155,9 +165,9 @@ export default function Settings() {
   const { data: monPaths } = useApi(api.monitoringPaths);
   const { data: flags } = useApi(api.featureFlags);
   const { data: siemSt } = useApi(api.siemStatus);
-  const { data: siemCfg, reload: rSiem } = useApi(api.siemConfig);
+  const { data: siemCfg } = useApi(api.siemConfig);
   const { data: taxiiSt } = useApi(api.taxiiStatus);
-  const { data: taxiiCfg, reload: rTaxii } = useApi(api.taxiiConfig);
+  const { data: taxiiCfg } = useApi(api.taxiiConfig);
   const { data: enrichConn } = useApi(api.enrichmentConnectors);
   const { data: idp } = useApi(api.idpProviders);
   const { data: scim } = useApi(api.scimConfig);
@@ -184,42 +194,19 @@ export default function Settings() {
   const [newUser, setNewUser] = useState({ username: '', role: 'analyst' });
   const [creatingUser, setCreatingUser] = useState(false);
 
-  // Parse config into structured form when loaded
-  useEffect(() => {
-    if (config && !configEditing) {
-      const parsed =
-        typeof config === 'string'
-          ? (() => {
-              try {
-                return JSON.parse(config);
-              } catch {
-                return null;
-              }
-            })()
-          : config;
-      if (parsed) {
-        setStructuredConfig(structuredClone(parsed));
-        setSavedSnapshot(JSON.stringify(parsed, null, 2));
-      }
-    }
-  }, [config, configEditing]);
+  const parsedConfig = useMemo(() => parseStructuredConfig(config), [config]);
+  const parsedConfigText = useMemo(
+    () => (parsedConfig ? JSON.stringify(parsedConfig, null, 2) : ''),
+    [parsedConfig],
+  );
+  const visibleConfig = configEditing ? structuredConfig : parsedConfig;
 
   const startEdit = () => {
-    const parsed =
-      typeof config === 'string'
-        ? (() => {
-            try {
-              return JSON.parse(config);
-            } catch {
-              return null;
-            }
-          })()
-        : config;
-    if (parsed) {
-      setStructuredConfig(structuredClone(parsed));
-      setSavedSnapshot(JSON.stringify(parsed, null, 2));
+    if (parsedConfig) {
+      setStructuredConfig(structuredClone(parsedConfig));
+      setSavedSnapshot(parsedConfigText);
     }
-    setConfigText(typeof config === 'string' ? config : JSON.stringify(config, null, 2));
+    setConfigText(parsedConfigText);
     setConfigEditing(true);
   };
 
@@ -241,10 +228,11 @@ export default function Settings() {
     try {
       const body = editMode === 'json' ? JSON.parse(configText) : structuredConfig;
       await api.configSave(body);
+      await rConfig();
       toast('Config saved', 'success');
-      setConfigEditing(false);
+      setStructuredConfig(structuredClone(body));
       setSavedSnapshot(JSON.stringify(body, null, 2));
-      rConfig();
+      setConfigEditing(false);
     } catch (e) {
       toast(
         editMode === 'json' && e instanceof SyntaxError ? 'Invalid JSON' : 'Save failed',
@@ -280,20 +268,20 @@ export default function Settings() {
   };
 
   const configScalars = useMemo(() => {
-    if (!structuredConfig || typeof structuredConfig !== 'object') return null;
+    if (!visibleConfig || typeof visibleConfig !== 'object') return null;
     return Object.fromEntries(
-      Object.entries(structuredConfig).filter(
+      Object.entries(visibleConfig).filter(
         ([, value]) => value == null || typeof value !== 'object' || Array.isArray(value),
       ),
     );
-  }, [structuredConfig]);
+  }, [visibleConfig]);
 
   const configSections = useMemo(() => {
-    if (!structuredConfig || typeof structuredConfig !== 'object') return [];
-    return Object.entries(structuredConfig).filter(
+    if (!visibleConfig || typeof visibleConfig !== 'object') return [];
+    return Object.entries(visibleConfig).filter(
       ([, value]) => value && typeof value === 'object' && !Array.isArray(value),
     );
-  }, [structuredConfig]);
+  }, [visibleConfig]);
 
   const normalizedMonitoringPaths = useMemo(() => {
     if (Array.isArray(monPaths)) return monPaths;
@@ -751,7 +739,7 @@ export default function Settings() {
               ) : (
                 <div className="empty">Loading configuration...</div>
               )
-            ) : structuredConfig ? (
+            ) : parsedConfig ? (
               <div style={{ padding: '12px 0' }}>
                 <SummaryGrid
                   data={configScalars}
@@ -770,7 +758,7 @@ export default function Settings() {
                     ))}
                   </div>
                 )}
-                <JsonDetails data={structuredConfig} label="Full configuration breakdown" />
+                <JsonDetails data={parsedConfig} label="Full configuration breakdown" />
               </div>
             ) : (
               <>

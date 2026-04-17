@@ -94,36 +94,18 @@ const COMMANDS = [
   },
 ];
 
-export default function SearchPalette({ open, onClose, onNavigate }) {
+function SearchPaletteDialog({ onClose, onNavigate, saved, setSaved }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [saved, setSaved] = useState(loadSaved);
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (open) {
-      setQuery('');
-      setResults([]);
-      setSelectedIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [open]);
-
-  // Keyboard shortcut: Cmd/Ctrl+K
-  useEffect(() => {
-    const handler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        onClose ? onClose(!open) : null;
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
-
   const searchGenRef = useRef(0);
+
+  useEffect(() => {
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 50);
+    return () => window.clearTimeout(focusTimer);
+  }, []);
 
   const doSearch = useCallback(async (q) => {
     if (!q || q.length < 2) {
@@ -202,8 +184,6 @@ export default function SearchPalette({ open, onClose, onNavigate }) {
       onClose?.(false);
     } else if (e.key === 'Escape') onClose?.(false);
   };
-
-  if (!open) return null;
 
   return (
     <div className="search-palette-overlay" onClick={() => onClose?.(false)}>
@@ -372,5 +352,31 @@ export default function SearchPalette({ open, onClose, onNavigate }) {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SearchPalette({ open, onClose, onNavigate }) {
+  const [saved, setSaved] = useState(loadSaved);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        onClose?.(!open);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <SearchPaletteDialog
+      onClose={onClose}
+      onNavigate={onNavigate}
+      saved={saved}
+      setSaved={setSaved}
+    />
   );
 }

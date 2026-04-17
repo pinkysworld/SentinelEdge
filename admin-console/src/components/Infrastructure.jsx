@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import { JsonDetails, SummaryGrid, formatDateTime, formatRelativeTime } from './operator.jsx';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
+import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const TABS = ['overview', 'assets', 'exposure', 'integrity', 'observability'];
 const SAVED_VIEWS = [

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import { JsonDetails, SideDrawer, SummaryGrid, downloadData } from './operator.jsx';
+import { JsonDetails, SideDrawer, SummaryGrid } from './operator.jsx';
+import { downloadData } from './operatorUtils.js';
 
 function requestSeverity(detail) {
   const risk = (detail?.risk_level || '').toLowerCase();

@@ -17,10 +17,11 @@ import {
 } from 'recharts';
 import AlertDrawer from './AlertDrawer.jsx';
 import ProcessDrawer from './ProcessDrawer.jsx';
-import DashboardWidget, { useWidgetLayout } from './DashboardWidget.jsx';
+import DashboardWidget from './DashboardWidget.jsx';
 import Tip from './Tooltip.jsx';
 import { SkeletonCard } from './Skeleton.jsx';
-import { formatDateTime, formatRelativeTime, formatNumber } from './operator.jsx';
+import { formatDateTime, formatNumber, formatRelativeTime } from './operatorUtils.js';
+import { useWidgetLayout } from './useWidgetLayout.js';
 
 function Metric({ label, value, sub, accent, onClick, tip }) {
   return (

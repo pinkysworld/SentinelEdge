@@ -6,9 +6,8 @@ import {
   ConfirmDialog,
   JsonDetails,
   SummaryGrid,
-  formatDateTime,
-  formatRelativeTime,
 } from './operator.jsx';
+import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 const AGENT_COLUMNS = ['id', 'hostname', 'os', 'version', 'status', 'last_seen'];
 const PAGE_SIZE = 25;

@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useApi, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import ProcessDrawer from './ProcessDrawer.jsx';
-import { JsonDetails, SummaryGrid, downloadData } from './operator.jsx';
+import { JsonDetails, SummaryGrid } from './operator.jsx';
 import InvestigationTimeline from './InvestigationTimeline.jsx';
+import { downloadData } from './operatorUtils.js';
 
 import PlaybookEditor from './PlaybookEditor.jsx';
 

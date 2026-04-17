@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 /**
  * DashboardWidget — draggable, collapsible, removable dashboard widget wrapper.
@@ -99,80 +99,4 @@ export default function DashboardWidget({
       {!collapsed && <div className="widget-content">{children}</div>}
     </div>
   );
-}
-
-/**
- * Hook to manage widget order with localStorage persistence.
- */
-export function useWidgetLayout(defaultOrder, storageKey = 'wardex_widget_layout') {
-  const [order, setOrder] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Merge any new widgets from defaultOrder that aren't in saved layout
-          const missing = defaultOrder.filter((id) => !parsed.includes(id));
-          return missing.length > 0 ? [...parsed, ...missing] : parsed;
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    return defaultOrder;
-  });
-
-  const [hidden, setHidden] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKey + '_hidden');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return new Set(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-    return new Set();
-  });
-
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(order));
-  }, [order, storageKey]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKey + '_hidden', JSON.stringify([...hidden]));
-  }, [hidden, storageKey]);
-
-  const moveWidget = useCallback((fromId, toId) => {
-    setOrder((prev) => {
-      const arr = [...prev];
-      const fromIdx = arr.indexOf(fromId);
-      const toIdx = arr.indexOf(toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      arr.splice(fromIdx, 1);
-      arr.splice(toIdx, 0, fromId);
-      return arr;
-    });
-  }, []);
-
-  const removeWidget = useCallback((id) => {
-    setHidden((prev) => new Set([...prev, id]));
-  }, []);
-
-  const restoreWidget = useCallback((id) => {
-    setHidden((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const resetLayout = useCallback(() => {
-    setOrder(defaultOrder);
-    setHidden(new Set());
-  }, [defaultOrder]);
-
-  const visibleWidgets = order.filter((id) => !hidden.has(id));
-
-  return { order: visibleWidgets, hidden, moveWidget, removeWidget, restoreWidget, resetLayout };
 }

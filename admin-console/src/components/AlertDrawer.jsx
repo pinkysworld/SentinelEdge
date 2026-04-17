@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../hooks.jsx';
 import * as api from '../api.js';
-import { JsonDetails, SideDrawer, SummaryGrid, downloadData } from './operator.jsx';
+import { JsonDetails, SideDrawer, SummaryGrid } from './operator.jsx';
+import { downloadData } from './operatorUtils.js';
 
 /* ── MITRE + investigation helpers ──────────────────────────── */
 
