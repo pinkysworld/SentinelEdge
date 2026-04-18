@@ -13,3 +13,4 @@ This directory contains operational runbooks for deploying, configuring, and ope
 | [response-playbooks.md](response-playbooks.md) | Incident response playbooks and remediation approval workflows |
 | [deployment.md](deployment.md) | Installation, atomic upgrades, rollback, fleet enrollment |
 | [troubleshooting.md](troubleshooting.md) | Diagnostics, common failures, log analysis, escalation |
+| [AGENT_ROLLBACK.md](AGENT_ROLLBACK.md) | Emergency rollback procedure for a bad agent release |

@@ -4,9 +4,9 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.43.x  | Yes       |
-| 0.42.x  | Security fixes only |
-| < 0.42  | No        |
+| 0.52.x  | Yes       |
+| 0.51.x  | Security fixes only |
+| < 0.51  | No        |
 
 ## Reporting a Vulnerability
 
@@ -63,3 +63,10 @@ The following are in scope:
 See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) and
 [docs/PRODUCTION_HARDENING.md](docs/PRODUCTION_HARDENING.md) for details on
 implemented security controls.
+
+## Verifying Release Artifacts
+
+Every tagged release ships a SLSA v1.0 build-provenance attestation and a
+CycloneDX SBOM. See [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) for the
+exact `gh attestation verify` and `cosign verify` commands to run against
+binaries, archives, and container images before deploying them.
