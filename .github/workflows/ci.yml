@@ -302,6 +302,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.35.0
         with:
           cache: 'false'
+          version: latest
           image-ref: wardex:ci-scan
           format: table
           exit-code: 1
