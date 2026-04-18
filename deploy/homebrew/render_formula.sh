@@ -23,7 +23,7 @@ class Wardex < Formula
   sha256 "$source_sha256"
   license "BUSL-1.1"
 
-  depends_on "rust" => :build
+  depends_on "rust" => :build if OS.mac?
   depends_on "node" => :build if OS.mac?
 
   def install
