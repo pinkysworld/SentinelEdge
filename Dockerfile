@@ -27,6 +27,14 @@ RUN cargo build --release --features tls --bin wardex \
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        --only-upgrade \
+        base-files \
+        bash \
+        libc6 \
+        libgcc-s1 \
+        libstdc++6 \
+        openssl \
+    && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
