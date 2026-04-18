@@ -7,11 +7,15 @@ class Wardex < Formula
   sha256 "68da2b9a429420936434d5c621d213dc3eea18ca6c19682ab382eaa067f603a9"
   license "BUSL-1.1"
 
-  depends_on "node" => :build
   depends_on "rust" => :build
+  depends_on "node" => :build if OS.mac?
 
   def install
-    system "npm", "ci", "--prefix", "admin-console"
+    if OS.mac?
+      system "npm", "ci", "--prefix", "admin-console"
+    else
+      ENV["WARDEX_SKIP_ADMIN_BUILD"] = "1"
+    end
     system "cargo", "install", *std_cargo_args(path: ".")
 
     pkgshare.install "examples", "site"
