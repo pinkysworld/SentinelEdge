@@ -31,6 +31,9 @@ class Wardex < Formula
       system "npm", "ci", "--prefix", "admin-console"
     else
       ENV["WARDEX_SKIP_ADMIN_BUILD"] = "1"
+      ENV["CARGO_HOME"] = "#{Dir.home}/.cargo"
+      ENV["RUSTUP_HOME"] = "#{Dir.home}/.rustup"
+      ENV.prepend_path "PATH", "#{Dir.home}/.cargo/bin"
     end
     system "cargo", "install", *std_cargo_args(path: ".")
 
