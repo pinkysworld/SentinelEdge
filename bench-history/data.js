@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776591227357,
+  "lastUpdate": 1776592713170,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -87,6 +87,96 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 33820,
             "range": "± 224",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "distinct": true,
+          "id": "4ebb905a64dbb13c2e90da21b7f67261b9a1568d",
+          "message": "malware+metrics: static scorer + optional metrics bearer auth\n\n- Static multi-signal scorer: 0-100 aggregate score with per-factor\n  breakdown (hash_reputation, yara_severity, entropy_packer,\n  threat_intel, filename_heuristics, ransomware_behavior) and\n  plain-English rationale. Exposed as new static_score field on\n  ScanResult. Saturating weighted combination of primary + secondary/2\n  + tail/2, capped at 100. Bands: Clean / LowRisk / Suspicious /\n  LikelyMalicious / Malicious.\n- Filename heuristics: double-extension lures (invoice.pdf.exe),\n  rare-exec extensions, RTLO bidi override, mixed Cyrillic/Latin.\n- Metrics endpoint: optional bearer token via\n  config.server.metrics_bearer_token. Legacy public behavior\n  preserved when unset. Constant-time compare.\n- 7 new unit tests, 12/12 malware_scanner tests green.",
+          "timestamp": "2026-04-19T11:52:55+02:00",
+          "tree_id": "497b3caff4b2f17bd8ae99c44f67314f06af2ed5",
+          "url": "https://github.com/pinkysworld/Wardex/commit/4ebb905a64dbb13c2e90da21b7f67261b9a1568d"
+        },
+        "date": 1776592712863,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 47089,
+            "range": "± 166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 403943,
+            "range": "± 2118",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1849896,
+            "range": "± 18304",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17321452,
+            "range": "± 131047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 686,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 225,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 17268621,
+            "range": "± 113477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 113980,
+            "range": "± 411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 94899,
+            "range": "± 13028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 58,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 33698,
+            "range": "± 573",
             "unit": "ns/iter"
           }
         ]
