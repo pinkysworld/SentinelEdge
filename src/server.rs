@@ -5547,6 +5547,42 @@ fn handle_api(
         ),
         (Method::Get, "/api/metrics") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
+            // Optional bearer-token gate (config.server.metrics_bearer_token).
+            // When the token is set, the client must present a matching
+            // `Authorization: Bearer <token>` header; otherwise the endpoint
+            // is public (legacy behaviour preserved for drop-in deployments).
+            if let Some(expected) = s
+                .config
+                .server
+                .metrics_bearer_token
+                .as_deref()
+                .filter(|t| !t.is_empty())
+            {
+                let provided = bearer_token(headers);
+                let ok = matches!(&provided, Some(t) if {
+                    let a = t.as_bytes();
+                    let b = expected.as_bytes();
+                    if a.len() != b.len() {
+                        false
+                    } else {
+                        let mut diff = 0u8;
+                        for (x, y) in a.iter().zip(b.iter()) {
+                            diff |= x ^ y;
+                        }
+                        diff == 0
+                    }
+                });
+                if !ok {
+                    return respond_api(
+                        state,
+                        &method,
+                        &url,
+                        remote_addr,
+                        false,
+                        error_json("metrics endpoint requires bearer token", 401),
+                    );
+                }
+            }
             text_response(&prometheus_metrics_payload(&s), 200)
         }
         (Method::Get, "/api/slo/status") => {

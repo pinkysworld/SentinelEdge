@@ -255,6 +255,14 @@ pub struct ServerSettings {
     /// Graceful shutdown timeout in seconds.
     #[serde(default = "default_shutdown_timeout_secs")]
     pub shutdown_timeout_secs: u64,
+    /// Optional bearer token required for `/api/metrics`.
+    ///
+    /// When `None` or empty the endpoint is public (legacy behaviour).
+    /// When set, clients must send `Authorization: Bearer <token>` or the
+    /// request returns `401 Unauthorized`. Reads from `WARDEX_METRICS_TOKEN`
+    /// at startup if the config value is empty.
+    #[serde(default)]
+    pub metrics_bearer_token: Option<String>,
 }
 
 fn default_read_rate_limit() -> u32 {
@@ -273,6 +281,7 @@ impl Default for ServerSettings {
             rate_limit_read_per_minute: default_read_rate_limit(),
             rate_limit_write_per_minute: default_write_rate_limit(),
             shutdown_timeout_secs: default_shutdown_timeout_secs(),
+            metrics_bearer_token: None,
         }
     }
 }

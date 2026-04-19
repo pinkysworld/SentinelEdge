@@ -27,6 +27,9 @@ The server reads `wardex.toml` from the working directory at startup (or from `-
 port = 8080
 host = "127.0.0.1"
 shutdown_timeout_secs = 30
+# metrics_bearer_token = "s3cret"  # When set, /api/metrics requires this bearer token.
+#                                  # Leave unset (default) to keep the endpoint public for Prometheus scrapers
+#                                  # that run on a trusted network.
 ```
 
 ### `[security]`
