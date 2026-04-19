@@ -2,6 +2,31 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.53.0] — Rules Marketplace, Tiered Pricing & `wardex doctor`
+
+### Marketing Site
+- **Rules marketplace** — New `site/rules.html` renders all 302 built-in detections (92 YARA + 210 Sigma) with filter-by-kind, filter-by-severity, free-text search, and MITRE ATT&CK chip links. Index regenerated at deploy time from `rules/yara/*.json` and `rules/sigma/*.yml` via `scripts/build_rules_index.py`.
+- **Tiered pricing** — Rewritten `site/pricing.html` introduces a five-tier plan grid: Community (free, ≤10 endpoints), Starter (€49/mo, up to 25 endpoints), Team (€3/endpoint/mo), Business (€6/endpoint/mo), and Enterprise (custom). Includes monthly/annual toggle, feature comparison table, and 8-item FAQ.
+- **Checkout landing** — New `site/checkout.html` Stripe-ready intake form for the Starter tier with order summary and EU VAT support.
+- **Project status page** — New `site/status.html` reports release cadence, open CVEs, supply-chain incidents, SBOM availability, and signing-key verification instructions with live release feed from the GitHub API.
+- **Integrations registry** — New `site/integrations.html` catalogs 20+ built-in and planned connectors (Slack, Teams, PagerDuty, ServiceNow, Jira, Splunk HEC, Elastic, syslog, OpenTelemetry, MISP, VirusTotal, OIDC, …).
+- **API reference** — New `site/api.html` renders `docs/openapi.yaml` via Redoc.
+- **Competitive comparison** — New `site/comparison.html` with feature matrix vs. CrowdStrike, SentinelOne, Defender, Elastic, and Wazuh.
+- **SEO & social** — Sitemap, robots.txt, branded 404 page, OG/Twitter Card meta on every page, 1200×630 OG cover SVG.
+- **One-line installer** — New `site/install.sh` with platform autodetection.
+- **Accessibility** — WCAG 2.1 AA-clean across all pages (pa11y-ci gate).
+
+### CLI
+- **`wardex doctor`** — New preflight subcommand that reports build version, runtime target, config parse status, data/site/rules directory health, and crash-log detection. Exit code 1 on any failed check. Suitable for support-ticket paste-in.
+
+### Admin Console
+- **Accessible confirm dialog** — New `<ConfirmDialog>` component with `useConfirm()` hook replaces `window.confirm()` across process kill/isolate and settings actions. Focus trap, ESC handling, tone variants (default/warning/danger).
+- **Empty-state component** — New `<EmptyState>` for contextual "no results" screens with primary/secondary CTAs.
+- **Copy-to-clipboard** — Reusable button behavior on code snippets and rule names with 1.5s visual feedback.
+
+### Packaging & Distribution
+- **Rule index in Pages** — Pages deploy workflow regenerates `site/rules-index.json` from the on-disk rule packs so the marketplace always reflects the released rule content.
+
 ## [0.52.5] — Release Distribution Dispatch Authorization Fix
 
 ### Packaging & Distribution
