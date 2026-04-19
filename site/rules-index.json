@@ -1,0 +1,3948 @@
+{
+  "meta": {
+    "total": 302,
+    "yara": 92,
+    "sigma": 210,
+    "packs": [
+      "authentication",
+      "cloud",
+      "command_and_control",
+      "community",
+      "compliance",
+      "container_security",
+      "credential_access",
+      "defense_evasion",
+      "discovery",
+      "endpoint",
+      "execution",
+      "exfiltration",
+      "fileless_malware",
+      "identity",
+      "impact",
+      "initial_access",
+      "iot_ot",
+      "lateral_movement",
+      "malware",
+      "network",
+      "persistence",
+      "privilege_escalation",
+      "supply_chain"
+    ]
+  },
+  "rules": [
+    {
+      "kind": "sigma",
+      "pack": "authentication",
+      "name": "API Token Used from Multiple IPs",
+      "description": "Detects a single API token being used from more than 3 distinct IPs in an hour.",
+      "severity": "high",
+      "mitre": [
+        "T1528"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "authentication",
+      "name": "Brute Force Login Attempts",
+      "description": "Detects multiple failed login attempts from a single source within a short time window indicating a brute-force attack.",
+      "severity": "high",
+      "mitre": [
+        "T1110"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "authentication",
+      "name": "Credential Stuffing via Known Breach List",
+      "description": "Detects login attempts using credentials from known breach databases.",
+      "severity": "critical",
+      "mitre": [
+        "T1110.004"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "authentication",
+      "name": "Login from Unusual Geolocation",
+      "description": "Detects authentication from a geolocation not previously seen for the user.",
+      "severity": "medium",
+      "mitre": [
+        "T1078"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "authentication",
+      "name": "Successful Login After Multiple Failures",
+      "description": "Detects a successful authentication following several failed attempts — potential successful brute force.",
+      "severity": "medium",
+      "mitre": [
+        "T1110"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Cloud Database Snapshot Shared Externally",
+      "description": "Detects RDS/Cloud SQL snapshot being shared with external accounts, enabling data exfiltration.",
+      "severity": "critical",
+      "mitre": [
+        "T1537"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Cloud Function or Lambda Deployed with Admin Privileges",
+      "description": "Detects serverless function deployment with overly permissive IAM role (admin or wildcard).",
+      "severity": "critical",
+      "mitre": [
+        "T1648"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Cloud Logging Disabled",
+      "description": "Detects disabling of cloud audit logging (CloudTrail, GCP Audit, Azure Activity) which is a common defense evasion technique.",
+      "severity": "critical",
+      "mitre": [
+        "T1562.008"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Cloud Resource Created in Unusual Region",
+      "description": "Detects cloud resources provisioned in regions not previously used by the organization.",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Cloud Storage Public Access Enabled",
+      "description": "Detects a storage bucket or blob container being made publicly accessible.",
+      "severity": "critical",
+      "mitre": [
+        "T1530"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "GCP Service Account Key Created",
+      "description": "Detects creation of service account keys which can be used for persistent unauthorized access.",
+      "severity": "high",
+      "mitre": [
+        "T1098.001"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "IAM Policy Weakened",
+      "description": "Detects IAM policy changes that broaden permissions or add wildcard access.",
+      "severity": "critical",
+      "mitre": [
+        "T1078.004"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "IAM Role Assumed by Unusual Principal",
+      "description": "Detects sts:AssumeRole calls from principals not previously seen assuming this role, indicating potential privilege escalation.",
+      "severity": "high",
+      "mitre": [
+        "T1078.004"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Impossible Travel for Cloud Admin",
+      "description": "Detects cloud console logins from geographically impossible locations within a short time window.",
+      "severity": "high",
+      "mitre": [
+        "T1078"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "MFA Disabled for User",
+      "description": "Detects MFA being disabled for a user account.",
+      "severity": "critical",
+      "mitre": [
+        "T1556"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "OAuth Application Granted High Privileges",
+      "description": "Detects OAuth consent grants with high-privilege scopes (e.g. Directory.ReadWrite.All, Mail.ReadWrite) that could enable account takeover.",
+      "severity": "critical",
+      "mitre": [
+        "T1098.003"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "S3 Bucket Policy Changed to Allow Cross-Account Access",
+      "description": "Detects S3 bucket policy modifications that grant access to external AWS accounts.",
+      "severity": "critical",
+      "mitre": [
+        "T1537"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/15",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Unauthorized Cloud API Call",
+      "description": "Detects API calls to cloud management planes that are not in the approved action list.",
+      "severity": "high",
+      "mitre": [
+        "T1059.009"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "cloud",
+      "name": "Unusual Data Download Volume from Cloud",
+      "description": "Detects download of large data volumes from cloud storage or databases.",
+      "severity": "high",
+      "mitre": [
+        "T1530"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "C2 Communication via DNS Tunneling",
+      "description": "Detects DNS tunneling used for command and control",
+      "severity": "high",
+      "mitre": [
+        "T1071.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "C2 via Cloud Storage Services",
+      "description": "Detects C2 communication via cloud storage (Dropbox, Google Drive, OneDrive)",
+      "severity": "medium",
+      "mitre": [
+        "T1102"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "C2 via HTTPS Beaconing",
+      "description": "Detects periodic HTTPS beaconing indicative of C2 communication",
+      "severity": "high",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "Cobalt Strike Default Profile",
+      "description": "Detects default Cobalt Strike C2 communication patterns",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "Domain Fronting Detection",
+      "description": "Detects domain fronting used to hide C2 traffic",
+      "severity": "high",
+      "mitre": [
+        "T1090.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "Encrypted Channel via Non-Standard Port",
+      "description": "Detects TLS/SSL traffic on non-standard ports indicating C2",
+      "severity": "medium",
+      "mitre": [
+        "T1573.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "Fast Flux DNS Detection",
+      "description": "Detects fast flux DNS patterns used for C2 infrastructure resilience",
+      "severity": "high",
+      "mitre": [
+        "T1568.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "IRC-Based C2 Communication",
+      "description": "Detects IRC protocol usage indicating botnet C2",
+      "severity": "high",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "Sliver C2 Framework Detection",
+      "description": "Detects Sliver C2 framework communication indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1071"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "command_and_control",
+      "name": "Tor Exit Node Communication",
+      "description": "Detects communication with known Tor exit nodes",
+      "severity": "high",
+      "mitre": [
+        "T1090.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - API Key Rotation Overdue",
+      "description": "Detects API keys that haven't been rotated within policy period",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Audit Log Tampering",
+      "description": "Detects attempts to modify, delete, or disable audit logging",
+      "severity": "critical",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Backup Verification Failure",
+      "description": "Detects backup verification or restore test failures",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Certificate Expiry Warning",
+      "description": "Detects TLS certificates approaching expiration",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Data Export without Approval",
+      "description": "Detects bulk data exports without prior approval workflow completion",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Data Retention Violation",
+      "description": "Detects data retained beyond the organization's retention policy",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Encryption at Rest Not Enabled",
+      "description": "Detects storage volumes or databases without encryption at rest",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - MFA Bypass Attempt",
+      "description": "Detects attempts to bypass multi-factor authentication",
+      "severity": "critical",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Network Segmentation Violation",
+      "description": "Detects traffic crossing network segments without authorization",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - PII Access Logging",
+      "description": "Detects access to tables or fields containing personally identifiable information",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Password Policy Violation",
+      "description": "Detects password changes that violate organizational password policy",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Privileged Account without Review",
+      "description": "Detects privileged accounts that haven't been reviewed within policy period",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Third-Party Access Audit",
+      "description": "Detects third-party vendor access to production systems",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Unauthorized Admin Access Attempt",
+      "description": "Detects unauthorized attempts to access administrative functions",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "compliance",
+      "name": "Compliance - Unpatched System Detection",
+      "description": "Detects systems missing critical security patches beyond SLA",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Container Escape via Host PID Namespace",
+      "description": "Detects containers with hostPID enabled allowing process namespace escape",
+      "severity": "critical",
+      "mitre": [
+        "T1611"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Container Network Policy Violation",
+      "description": "Detects containers bypassing or violating network policies",
+      "severity": "high",
+      "mitre": [
+        "T1046"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Container Resource Limit Bypass",
+      "description": "Detects containers without resource limits enabling resource abuse",
+      "severity": "medium",
+      "mitre": [
+        "T1496"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Container Running as Root",
+      "description": "Detects containers running with root user ID",
+      "severity": "high",
+      "mitre": [
+        "T1611"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Docker Socket Mount in Container",
+      "description": "Detects containers mounting the Docker socket enabling container escape",
+      "severity": "critical",
+      "mitre": [
+        "T1611"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Kubernetes Privileged Container",
+      "description": "Detects creation of privileged containers in Kubernetes",
+      "severity": "critical",
+      "mitre": [
+        "T1611"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Kubernetes RBAC Privilege Grant",
+      "description": "Detects creation of ClusterRoleBindings granting cluster-admin",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Kubernetes Secret Access from Unauthorized Pod",
+      "description": "Detects unauthorized access to Kubernetes secrets",
+      "severity": "critical",
+      "mitre": [
+        "T1552.007"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Pod Exec Shell Access",
+      "description": "Detects kubectl exec into running pods with shell access",
+      "severity": "high",
+      "mitre": [
+        "T1059"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "container_security",
+      "name": "Suspicious Container Image Pull",
+      "description": "Detects pulling container images from untrusted registries",
+      "severity": "medium",
+      "mitre": [
+        "T1195.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "AS-REP Roasting Attempt",
+      "description": "Detects AS-REP roasting targeting accounts without pre-authentication",
+      "severity": "high",
+      "mitre": [
+        "T1558.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "Chrome Browser Password Extraction",
+      "description": "Detects tools accessing Chrome stored passwords",
+      "severity": "high",
+      "mitre": [
+        "T1555.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "Credential Access via LSASS Memory Dump",
+      "description": "Detects processes accessing LSASS memory for credential dumping",
+      "severity": "critical",
+      "mitre": [
+        "T1003.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "Credential Vault Access",
+      "description": "Detects access to Windows Credential Manager vaults",
+      "severity": "medium",
+      "mitre": [
+        "T1555.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "DCSync Attack Detection",
+      "description": "Detects DCSync replication requests indicating credential theft",
+      "severity": "critical",
+      "mitre": [
+        "T1003.006"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "Kerberoasting via Service Ticket Request",
+      "description": "Detects Kerberos service ticket requests targeting service accounts",
+      "severity": "high",
+      "mitre": [
+        "T1558.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "Keylogger Activity Detection",
+      "description": "Detects common keylogger API usage patterns",
+      "severity": "high",
+      "mitre": [
+        "T1056.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "NTLM Hash Extraction via Registry",
+      "description": "Detects SAM/SECURITY/SYSTEM registry hive access for offline cracking",
+      "severity": "critical",
+      "mitre": [
+        "T1003.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "Password Spray via Multiple Failed Logins",
+      "description": "Detects password spray attacks with many accounts failing from same source",
+      "severity": "high",
+      "mitre": [
+        "T1110.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "credential_access",
+      "name": "SSH Key Theft Attempt",
+      "description": "Detects unauthorized access to SSH private keys",
+      "severity": "high",
+      "mitre": [
+        "T1552.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - AMSI Bypass",
+      "description": "Detects attempts to bypass AMSI (Antimalware Scan Interface)",
+      "severity": "critical",
+      "mitre": [
+        "T1562.001"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - DLL Side-Loading",
+      "description": "Detects DLL side-loading via legitimate signed executables",
+      "severity": "high",
+      "mitre": [
+        "T1574.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - ETW Tampering",
+      "description": "Detects attempts to disable Event Tracing for Windows",
+      "severity": "critical",
+      "mitre": [
+        "T1562.006"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Indicator Removal on Host",
+      "description": "Detects attempts to clear event logs, delete security artifacts, or remove other forensic evidence from the host.\n",
+      "severity": "high",
+      "mitre": [
+        "T1070"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Linux Log Clearing",
+      "description": "Detects clearing of Linux system logs",
+      "severity": "high",
+      "mitre": [
+        "T1070.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Masquerading (Renamed System Binaries)",
+      "description": "Detects execution of renamed copies of system binaries, a common masquerading technique to bypass application whitelisting and EDR.\n",
+      "severity": "medium",
+      "mitre": [
+        "T1036.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Process Hollowing",
+      "description": "Detects process hollowing techniques used to inject malicious code",
+      "severity": "critical",
+      "mitre": [
+        "T1055.012"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Reflective DLL Loading",
+      "description": "Detects reflective DLL injection via memory-only loading",
+      "severity": "critical",
+      "mitre": [
+        "T1620"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Timestomping via touch or PowerShell",
+      "description": "Detects attempts to modify file timestamps to blend in with legitimate files.",
+      "severity": "medium",
+      "mitre": [
+        "T1070.006"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "defense_evasion",
+      "name": "Defense Evasion - Windows Defender Exclusion",
+      "description": "Detects adding exclusions to Windows Defender",
+      "severity": "high",
+      "mitre": [
+        "T1562.001"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "AD Domain Enumeration",
+      "description": "Detects Active Directory enumeration commands",
+      "severity": "medium",
+      "mitre": [
+        "T1087.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "AWS IAM Enumeration",
+      "description": "Detects AWS IAM reconnaissance commands",
+      "severity": "medium",
+      "mitre": [
+        "T1087.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "Azure AD Enumeration",
+      "description": "Detects Azure Active Directory enumeration commands",
+      "severity": "medium",
+      "mitre": [
+        "T1087.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "Cloud Metadata Service Access",
+      "description": "Detects SSRF or local access to cloud metadata services",
+      "severity": "high",
+      "mitre": [
+        "T1552.005"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "Docker Container Enumeration",
+      "description": "Detects container and Docker environment enumeration",
+      "severity": "medium",
+      "mitre": [
+        "T1082"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "LDAP Enumeration Query",
+      "description": "Detects LDAP queries used for Active Directory reconnaissance",
+      "severity": "medium",
+      "mitre": [
+        "T1087.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "Network Discovery via Nmap",
+      "description": "Detects network scanning and service enumeration using nmap",
+      "severity": "medium",
+      "mitre": [
+        "T1046"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "Reconnaissance via Bloodhound",
+      "description": "Detects Active Directory reconnaissance using Bloodhound/SharpHound",
+      "severity": "high",
+      "mitre": [
+        "T1087.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "System Information Discovery",
+      "description": "Detects system information gathering commands",
+      "severity": "low",
+      "mitre": [
+        "T1082"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "discovery",
+      "name": "WiFi Password Extraction",
+      "description": "Detects extraction of stored WiFi credentials",
+      "severity": "high",
+      "mitre": [
+        "T1040"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "File Dropped in Temp Directory",
+      "description": "Detects executable files written to temp directories.",
+      "severity": "medium",
+      "mitre": [
+        "T1036"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Memory Injection Detected",
+      "description": "Detects process hollowing or remote thread injection.",
+      "severity": "critical",
+      "mitre": [
+        "T1055"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Privilege Escalation Attempt",
+      "description": "Detects process elevation or token manipulation attempts.",
+      "severity": "critical",
+      "mitre": [
+        "T1548"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Registry Persistence Modification",
+      "description": "Detects modifications to well-known registry autorun keys.",
+      "severity": "high",
+      "mitre": [
+        "T1547.001"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Scheduled Task Created",
+      "description": "Detects creation of new scheduled tasks which may indicate persistence.",
+      "severity": "medium",
+      "mitre": [
+        "T1053.005"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Service Installation",
+      "description": "Detects new service installations that could indicate persistence.",
+      "severity": "medium",
+      "mitre": [
+        "T1543.003"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Shadow Copy Deletion",
+      "description": "Detects deletion of volume shadow copies — a common ransomware precursor.",
+      "severity": "critical",
+      "mitre": [
+        "T1490"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "endpoint",
+      "name": "Suspicious Process Execution",
+      "description": "Detects execution of known attack tools or LOLBins on monitored endpoints.",
+      "severity": "high",
+      "mitre": [
+        "T1059"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Bash Reverse Shell",
+      "description": "Detects bash-based reverse shell execution",
+      "severity": "critical",
+      "mitre": [
+        "T1059.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "CronJob Persistence via Execution",
+      "description": "Detects suspicious cron job modifications for persistent execution",
+      "severity": "medium",
+      "mitre": [
+        "T1053.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Curl/Wget Download and Execute",
+      "description": "Detects download-and-execute patterns using curl or wget",
+      "severity": "high",
+      "mitre": [
+        "T1059.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Living-off-the-Land Binary Execution",
+      "description": "Detects abuse of LOLBins for code execution",
+      "severity": "high",
+      "mitre": [
+        "T1218"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "MSHTA JavaScript Execution",
+      "description": "Detects MSHTA executing inline JavaScript for code execution",
+      "severity": "high",
+      "mitre": [
+        "T1218.005"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Process Injection via CreateRemoteThread",
+      "description": "Detects process injection using CreateRemoteThread API",
+      "severity": "critical",
+      "mitre": [
+        "T1055.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Python Reverse Shell",
+      "description": "Detects Python-based reverse shell execution",
+      "severity": "critical",
+      "mitre": [
+        "T1059.006"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Scheduled Task Execution via At",
+      "description": "Detects scheduled task creation using at command",
+      "severity": "medium",
+      "mitre": [
+        "T1053.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Suspicious PowerShell Execution",
+      "description": "Detects suspicious PowerShell execution with encoded commands",
+      "severity": "high",
+      "mitre": [
+        "T1059.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "execution",
+      "name": "Windows Script Host Execution",
+      "description": "Detects Windows Script Host executing suspicious scripts",
+      "severity": "medium",
+      "mitre": [
+        "T1059.005"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Archive Creation Before Transfer",
+      "description": "Detects creation of compressed archives in temporary or user directories, commonly done before data exfiltration.\n",
+      "severity": "medium",
+      "mitre": [
+        "T1560.001"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Bluetooth Data Transfer",
+      "description": "Detects data exfiltration via Bluetooth connections",
+      "severity": "medium",
+      "mitre": [
+        "T1011"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Clipboard Exfiltration",
+      "description": "Detects automated clipboard access patterns for data theft",
+      "severity": "medium",
+      "mitre": [
+        "T1115"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Covert Channel via ICMP",
+      "description": "Detects ICMP-based data exfiltration via oversized packets",
+      "severity": "high",
+      "mitre": [
+        "T1048.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Data Transfer Over Alternative Protocol",
+      "description": "Detects potential data exfiltration through alternative protocols such as DNS tunneling, ICMP exfil, or use of cloud storage CLIs.\n",
+      "severity": "high",
+      "mitre": [
+        "T1048",
+        "T1567"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Email with Large Attachment",
+      "description": "Detects emails with unusually large attachments",
+      "severity": "medium",
+      "mitre": [
+        "T1048.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Large File Upload to Cloud Storage",
+      "description": "Detects large file uploads to cloud storage services",
+      "severity": "high",
+      "mitre": [
+        "T1567.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Large Outbound Data Transfer",
+      "description": "Detects unusually large outbound data transfers that may indicate bulk data exfiltration. Requires network telemetry.\n",
+      "severity": "medium",
+      "mitre": [
+        "T1048"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - Steganography Tool Usage",
+      "description": "Detects tools embedding data in images for covert exfiltration",
+      "severity": "high",
+      "mitre": [
+        "T1027.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "exfiltration",
+      "name": "Exfiltration - USB Mass Storage Write",
+      "description": "Detects data written to USB mass storage devices",
+      "severity": "high",
+      "mitre": [
+        "T1052.001"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - .NET Assembly Loading from Memory",
+      "description": "Detects .NET assemblies loaded directly from memory without disk artifact",
+      "severity": "critical",
+      "mitre": [
+        "T1620"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - In-Memory .NET Assembly Load",
+      "description": "Detects in-memory .NET assembly loading patterns commonly used by fileless malware.",
+      "severity": "high",
+      "mitre": [
+        "T1059.001"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - MSHTA HTA Execution",
+      "description": "Detects MSHTA executing HTA files from remote URLs",
+      "severity": "high",
+      "mitre": [
+        "T1218.005"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - Registry Payload Storage",
+      "description": "Detects storage of encoded payloads in Windows Registry",
+      "severity": "critical",
+      "mitre": [
+        "T1112"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - Shell Memory Execution (Linux)",
+      "description": "Detects memory-based execution via /dev/shm or memfd_create on Linux",
+      "severity": "high",
+      "mitre": [
+        "T1620"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - Suspicious Script Execution via LOLBins",
+      "description": "Detects script execution via living-off-the-land binaries (LOLBins) that commonly indicate fileless malware techniques.\n",
+      "severity": "high",
+      "mitre": [
+        "T1059",
+        "T1218"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - VBA Macro Memory Injection",
+      "description": "Detects VBA macros using Win32 API for memory injection",
+      "severity": "critical",
+      "mitre": [
+        "T1204.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "fileless_malware",
+      "name": "Fileless Malware - WMI Script Execution",
+      "description": "Detects WMI-based fileless script execution",
+      "severity": "high",
+      "mitre": [
+        "T1047"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Break Glass Account Usage",
+      "description": "Detects usage of emergency break-glass accounts",
+      "severity": "critical",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Bulk Permission Change",
+      "description": "Detects bulk permission modifications across resources",
+      "severity": "high",
+      "mitre": [
+        "T1222"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Conditional Access Policy Bypass",
+      "description": "Detects authentication that bypasses conditional access policies",
+      "severity": "high",
+      "mitre": [
+        "T1556"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Dormant Account Reactivation",
+      "description": "Detects login to accounts dormant for more than 90 days",
+      "severity": "high",
+      "mitre": [
+        "T1078"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Federated Identity Provider Change",
+      "description": "Detects changes to federated identity providers (SAML/OIDC configuration)",
+      "severity": "critical",
+      "mitre": [
+        "T1556.007"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Group Policy Modification",
+      "description": "Detects unauthorized modifications to group policies",
+      "severity": "high",
+      "mitre": [
+        "T1484.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Impossible Travel Login",
+      "description": "Detects user authentication from geographically distant locations in short time",
+      "severity": "high",
+      "mitre": [
+        "T1078"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - MFA Token Replay",
+      "description": "Detects reuse of MFA tokens indicating compromise",
+      "severity": "critical",
+      "mitre": [
+        "T1111"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Mass Account Creation",
+      "description": "Detects rapid creation of multiple user accounts",
+      "severity": "high",
+      "mitre": [
+        "T1136"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - OAuth Token Abuse",
+      "description": "Detects suspicious OAuth token usage patterns",
+      "severity": "high",
+      "mitre": [
+        "T1550.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Password Never Expires",
+      "description": "Detects accounts configured with password never expires",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Privilege Role Assignment",
+      "description": "Detects assignment of admin or privileged roles to users",
+      "severity": "high",
+      "mitre": [
+        "T1098"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Service Account Interactive Login",
+      "description": "Detects service accounts used for interactive/console login",
+      "severity": "critical",
+      "mitre": [
+        "T1078.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Session Hijacking Indicator",
+      "description": "Detects same session token used from different source IPs",
+      "severity": "critical",
+      "mitre": [
+        "T1563"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "identity",
+      "name": "Identity - Suspicious API Key Usage",
+      "description": "Detects API key usage from unexpected locations or with unusual patterns",
+      "severity": "high",
+      "mitre": [
+        "T1552.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Account Lockout Attack",
+      "description": "Detects intentional account lockout by brute forcing known accounts",
+      "severity": "high",
+      "mitre": [
+        "T1531"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Cryptocurrency Mining Detection",
+      "description": "Detects cryptocurrency mining software execution",
+      "severity": "high",
+      "mitre": [
+        "T1496"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Data Destruction via Batch Script",
+      "description": "Detects batch scripts attempting mass file deletion",
+      "severity": "critical",
+      "mitre": [
+        "T1485"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Database Destruction",
+      "description": "Detects commands that drop or destroy database content",
+      "severity": "critical",
+      "mitre": [
+        "T1485"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Defacement Detection",
+      "description": "Detects web content modification indicating defacement",
+      "severity": "high",
+      "mitre": [
+        "T1491.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Disk Wiper Activity",
+      "description": "Detects disk wiping tools and techniques",
+      "severity": "critical",
+      "mitre": [
+        "T1561.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Firmware Corruption Attempt",
+      "description": "Detects attempts to modify system firmware for persistent impact",
+      "severity": "critical",
+      "mitre": [
+        "T1495"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Ransomware File Extension Modification",
+      "description": "Detects mass file extension changes indicating ransomware encryption",
+      "severity": "critical",
+      "mitre": [
+        "T1486"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Service Stop for Impact",
+      "description": "Detects stopping of critical services before destructive actions",
+      "severity": "high",
+      "mitre": [
+        "T1489"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "impact",
+      "name": "Volume Shadow Copy Deletion",
+      "description": "Detects deletion of volume shadow copies prior to ransomware execution",
+      "severity": "critical",
+      "mitre": [
+        "T1490"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "Adversary-in-the-Middle Phishing Proxy",
+      "description": "Detects EvilGinx/Modlishka-style AitM phishing proxy indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1557",
+        "T1566.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "Drive-By Compromise via Browser Exploit",
+      "description": "Detects browser spawning unexpected child processes indicating exploitation",
+      "severity": "critical",
+      "mitre": [
+        "T1189"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "HTML Smuggling Detection",
+      "description": "Detects HTML files creating executable content via JavaScript",
+      "severity": "high",
+      "mitre": [
+        "T1566.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "ISO/IMG File Mount and Execute",
+      "description": "Detects execution from mounted ISO/IMG disk images (Mark-of-the-Web bypass)",
+      "severity": "high",
+      "mitre": [
+        "T1566.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "Initial Access via Macro Execution",
+      "description": "Detects Office macro execution spawning suspicious child processes",
+      "severity": "high",
+      "mitre": [
+        "T1566.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "OneNote File Dropping Executable",
+      "description": "Detects OneNote files used to drop malicious payloads",
+      "severity": "high",
+      "mitre": [
+        "T1566.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "Phishing Link Click from Email Client",
+      "description": "Detects suspicious URL access originating from email clients",
+      "severity": "medium",
+      "mitre": [
+        "T1566.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "QR Code Phishing Detection",
+      "description": "Detects QR code scanning leading to credential harvesting sites",
+      "severity": "medium",
+      "mitre": [
+        "T1566.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "Trusted Relationship Abuse",
+      "description": "Detects authentication from trusted partner networks outside normal hours",
+      "severity": "high",
+      "mitre": [
+        "T1199"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "initial_access",
+      "name": "Watering Hole Attack Indicator",
+      "description": "Detects rapid multi-user access to a previously benign domain that changed behavior",
+      "severity": "high",
+      "mitre": [
+        "T1189"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Device Battery Drain Attack",
+      "description": "Detects artificially accelerated battery drain on battery-powered IoT devices.",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Device Communication to Unusual External Host",
+      "description": "Detects IoT/OT devices connecting to external hosts not in the approved allowlist.",
+      "severity": "high",
+      "mitre": [
+        "T1071"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Digital Twin Divergence",
+      "description": "Detects when a device's actual telemetry diverges significantly from its digital twin prediction.",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Firmware Downgrade Detected",
+      "description": "Detects a device reporting a firmware version lower than its previous known version.",
+      "severity": "critical",
+      "mitre": [
+        "T1601"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Mass Device Reboot",
+      "description": "Detects multiple devices rebooting within a short window — potential attack or widespread failure.",
+      "severity": "high",
+      "mitre": [
+        "T1529"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Protocol Anomaly on OT Network",
+      "description": "Detects unexpected protocol usage on OT/SCADA network segments.",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Sensor Value Outside Physical Bounds",
+      "description": "Detects sensor readings that exceed physically possible ranges, indicating data injection.",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "iot_ot",
+      "name": "Unauthorized Configuration Change",
+      "description": "Detects configuration changes on managed devices without a corresponding change request.",
+      "severity": "critical",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "DCOM Remote Execution",
+      "description": "Detects DCOM-based lateral movement via MMC or ShellWindows",
+      "severity": "high",
+      "mitre": [
+        "T1021.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "Internal Port Scanning",
+      "description": "Detects port scanning activity within the internal network",
+      "severity": "medium",
+      "mitre": [
+        "T1046"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "Lateral Movement via PsExec",
+      "description": "Detects PsExec usage for lateral movement",
+      "severity": "high",
+      "mitre": [
+        "T1570",
+        "T1021.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "Pass-the-Hash Attack",
+      "description": "Detects Pass-the-Hash authentication patterns",
+      "severity": "critical",
+      "mitre": [
+        "T1550.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "Remote Desktop Protocol Brute Force",
+      "description": "Detects RDP brute force attempts from multiple failed logons",
+      "severity": "high",
+      "mitre": [
+        "T1021.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "Remote Service Installation",
+      "description": "Detects remote service creation for lateral movement",
+      "severity": "high",
+      "mitre": [
+        "T1021.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "SMB Share Enumeration",
+      "description": "Detects SMB share enumeration used for lateral movement reconnaissance",
+      "severity": "medium",
+      "mitre": [
+        "T1135"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "SSH Lateral Movement Chain",
+      "description": "Detects SSH sessions originating from another SSH session",
+      "severity": "medium",
+      "mitre": [
+        "T1021.004"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "WMI Remote Execution",
+      "description": "Detects WMI-based lateral movement",
+      "severity": "high",
+      "mitre": [
+        "T1047"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "lateral_movement",
+      "name": "WinRM Remote Shell",
+      "description": "Detects WinRM shell sessions for lateral movement",
+      "severity": "high",
+      "mitre": [
+        "T1021.006"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "Anomalous Network Traffic Volume",
+      "description": "Detects a device sending significantly more traffic than its baseline, potential data exfiltration.",
+      "severity": "high",
+      "mitre": [
+        "T1048"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "Connection to Known C2 Infrastructure",
+      "description": "Detects outbound connections to known command-and-control IP addresses or domains.",
+      "severity": "critical",
+      "mitre": [
+        "T1071"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "DNS Tunneling Detected",
+      "description": "Detects unusually long or high-entropy DNS queries indicative of DNS tunneling.",
+      "severity": "high",
+      "mitre": [
+        "T1071.004"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "Lateral Movement via SMB",
+      "description": "Detects SMB connections between internal hosts that deviate from normal patterns.",
+      "severity": "high",
+      "mitre": [
+        "T1021.002"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "Port Scan Activity",
+      "description": "Detects a single source connecting to many distinct ports on a target.",
+      "severity": "medium",
+      "mitre": [
+        "T1046"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "TLS Certificate Anomaly",
+      "description": "Detects TLS connections with self-signed, expired, or recently issued certificates.",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "network",
+      "name": "Unusual Outbound Port",
+      "description": "Detects outbound connections on non-standard ports that have not been seen before.",
+      "severity": "medium",
+      "mitre": [
+        "T1571"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Boot or Logon Autostart Execution",
+      "description": "Detects modifications to common persistence locations including startup folders, Run registry keys, scheduled tasks, and services.\n",
+      "severity": "medium",
+      "mitre": [
+        "T1547",
+        "T1053"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Boot or Logon Init Scripts",
+      "description": "Detects modification of init scripts for boot persistence",
+      "severity": "high",
+      "mitre": [
+        "T1037"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - SSH Authorized Keys Modification",
+      "description": "Detects unauthorized SSH authorized_keys modifications for persistent access",
+      "severity": "high",
+      "mitre": [
+        "T1098.004"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Scheduled Task Created",
+      "description": "Detects creation of scheduled tasks which may be used for persistence.",
+      "severity": "medium",
+      "mitre": [
+        "T1053.005"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Systemd Service Creation",
+      "description": "Detects creation of systemd services for persistence",
+      "severity": "high",
+      "mitre": [
+        "T1543.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Systemd Service Creation (Linux)",
+      "description": "Detects new systemd service unit files being created, potentially for persistence.",
+      "severity": "medium",
+      "mitre": [
+        "T1543.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - WMI Event Subscription",
+      "description": "Detects WMI event subscriptions for persistence",
+      "severity": "high",
+      "mitre": [
+        "T1546.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Web Shell Detection",
+      "description": "Detects web shell files dropped in web server directories",
+      "severity": "critical",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - Windows Registry Run Keys",
+      "description": "Detects registry modifications to Run/RunOnce keys for persistence",
+      "severity": "high",
+      "mitre": [
+        "T1547.001"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "persistence",
+      "name": "Persistence - macOS LaunchAgent/LaunchDaemon",
+      "description": "Detects creation of macOS persistence mechanisms via LaunchAgents or LaunchDaemons.",
+      "severity": "medium",
+      "mitre": [
+        "T1543.004"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Container Escape via Host Namespace",
+      "description": "Detects container escape attempts using host namespace access",
+      "severity": "critical",
+      "mitre": [
+        "T1611"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "DLL Hijacking via PATH Manipulation",
+      "description": "Detects DLL hijacking attempts via writable PATH directories",
+      "severity": "high",
+      "mitre": [
+        "T1574.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Kernel Module Loading",
+      "description": "Detects suspicious kernel module loading for privilege escalation",
+      "severity": "critical",
+      "mitre": [
+        "T1547.006"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Linux Capability Abuse",
+      "description": "Detects abuse of Linux capabilities for privilege escalation",
+      "severity": "high",
+      "mitre": [
+        "T1548.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Privilege Escalation via Sudo Misconfiguration",
+      "description": "Detects exploitation of sudo NOPASSWD or wildcard misconfigurations",
+      "severity": "high",
+      "mitre": [
+        "T1548.003"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "SUID/SGID Binary Exploitation",
+      "description": "Detects suspicious execution of SUID/SGID binaries for privilege escalation",
+      "severity": "high",
+      "mitre": [
+        "T1548.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Scheduled Task Privilege Escalation",
+      "description": "Detects scheduled task creation running as SYSTEM",
+      "severity": "high",
+      "mitre": [
+        "T1053.005"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Token Impersonation via Named Pipe",
+      "description": "Detects token impersonation attacks via named pipes (Potato attacks)",
+      "severity": "critical",
+      "mitre": [
+        "T1134.001"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "UAC Bypass via Fodhelper",
+      "description": "Detects UAC bypass through fodhelper.exe registry manipulation",
+      "severity": "critical",
+      "mitre": [
+        "T1548.002"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "privilege_escalation",
+      "name": "Windows Service Path Unquoted",
+      "description": "Detects exploitation of unquoted service paths for privilege escalation",
+      "severity": "medium",
+      "mitre": [
+        "T1574.009"
+      ],
+      "author": "Wardex Team",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Anomalous CI/CD Pipeline Execution",
+      "description": "Detects CI/CD pipeline runs from unexpected branches or triggered by unknown actors.",
+      "severity": "high",
+      "mitre": [
+        "T1195.002"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Container Image from Untrusted Registry",
+      "description": "Detects container images pulled from registries not in the approved list.",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Dependency With Known Vulnerability",
+      "description": "Detects a dependency in the SBOM that has a known CVE with CVSS >= 7.0.",
+      "severity": "high",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "SBOM Drift Detected",
+      "description": "Detects changes between consecutive SBOM snapshots indicating untracked dependency changes.",
+      "severity": "medium",
+      "mitre": [],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Supply Chain - CI/CD Pipeline Credential Exposure",
+      "description": "Detects credentials exposed in CI/CD build logs or artifacts",
+      "severity": "critical",
+      "mitre": [],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Supply Chain - Dependency Confusion Attack",
+      "description": "Detects packages pulled from public registries that shadow internal packages",
+      "severity": "critical",
+      "mitre": [
+        "T1195.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Supply Chain - Firmware Update Integrity Failure",
+      "description": "Detects firmware updates that fail signature verification",
+      "severity": "critical",
+      "mitre": [
+        "T1195.003"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Supply Chain - Typosquatting Package Detection",
+      "description": "Detects installation of packages with names similar to popular packages",
+      "severity": "high",
+      "mitre": [
+        "T1195.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Supply Chain - Unauthorized Code Signing Certificate",
+      "description": "Detects code signed with unknown or unauthorized certificates",
+      "severity": "critical",
+      "mitre": [
+        "T1553.002"
+      ],
+      "author": "",
+      "created": "",
+      "enabled": true
+    },
+    {
+      "kind": "sigma",
+      "pack": "supply_chain",
+      "name": "Supply Chain Package Tampered",
+      "description": "Detects SBOM component hash mismatch indicating potential supply chain tampering.",
+      "severity": "critical",
+      "mitre": [
+        "T1195"
+      ],
+      "author": "Wardex Contributors",
+      "created": "2025/06/01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "blackcat_alphv_ransomware",
+      "description": "BlackCat/ALPHV Rust-based ransomware",
+      "severity": "critical",
+      "mitre": [
+        "T1486"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "brute_ratel_c4",
+      "description": "Brute Ratel C4 red-team framework",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "cobalt_strike_malleable",
+      "description": "Cobalt Strike malleable C2 profile artifacts",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "container_escape",
+      "description": "Container escape attempt indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1611"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "credential_dump_lsass",
+      "description": "LSASS memory credential dumping techniques",
+      "severity": "critical",
+      "mitre": [
+        "T1003.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "crypto_miner_generic",
+      "description": "Cryptocurrency miner indicators",
+      "severity": "medium",
+      "mitre": [
+        "T1496"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "data_exfiltration_dns",
+      "description": "DNS-based data exfiltration tunneling",
+      "severity": "high",
+      "mitre": [
+        "T1048.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "emotet_doc_dropper",
+      "description": "Emotet document dropper with obfuscated VBA macros",
+      "severity": "high",
+      "mitre": [
+        "T1566.001",
+        "T1059.005"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "exploit_log4shell",
+      "description": "Log4Shell CVE-2021-44228 exploitation patterns",
+      "severity": "critical",
+      "mitre": [
+        "T1190"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "exploit_proxyshell",
+      "description": "ProxyShell Exchange exploitation chain indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1190"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "impacket_tools",
+      "description": "Impacket Python lateral movement toolkit",
+      "severity": "high",
+      "mitre": [
+        "T1021.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "infostealer_browser_harvest",
+      "description": "Generic browser credential and cookie harvesting",
+      "severity": "medium",
+      "mitre": [
+        "T1555.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "kubernetes_attack_tools",
+      "description": "Kubernetes cluster attack tooling signatures",
+      "severity": "high",
+      "mitre": [
+        "T1613"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "linux_elf_reverse_shell",
+      "description": "Linux ELF reverse shell payload",
+      "severity": "high",
+      "mitre": [
+        "T1059.004"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "linux_persistence_crontab",
+      "description": "Linux crontab persistence technique",
+      "severity": "medium",
+      "mitre": [
+        "T1053.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "lockbit_ransomware",
+      "description": "LockBit ransomware indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1486"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "lolbin_certutil_download",
+      "description": "Certutil abuse for file download or decode",
+      "severity": "medium",
+      "mitre": [
+        "T1140"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "lolbin_msbuild_abuse",
+      "description": "MSBuild living-off-the-land proxy execution",
+      "severity": "high",
+      "mitre": [
+        "T1127.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "lolbin_mshta_execute",
+      "description": "MSHTA living-off-the-land script execution",
+      "severity": "high",
+      "mitre": [
+        "T1218.005"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "macos_persistence_launchagent",
+      "description": "macOS LaunchAgent/LaunchDaemon persistence",
+      "severity": "medium",
+      "mitre": [
+        "T1543.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "meterpreter_stager",
+      "description": "Metasploit Meterpreter stager and shell strings",
+      "severity": "critical",
+      "mitre": [
+        "T1059.006"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "mimikatz_memory",
+      "description": "Mimikatz credential dumper detected in memory",
+      "severity": "critical",
+      "mitre": [
+        "T1003.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "mimikatz_pe_binary",
+      "description": "Mimikatz PE binary on disk",
+      "severity": "critical",
+      "mitre": [
+        "T1003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "packed_upx",
+      "description": "UPX packed executable (common malware packing)",
+      "severity": "low",
+      "mitre": [
+        "T1027.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "phishing_html_smuggling",
+      "description": "HTML smuggling for payload delivery via email/browser",
+      "severity": "high",
+      "mitre": [
+        "T1027.006"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "powershell_download_cradle",
+      "description": "PowerShell download cradle patterns for payload staging",
+      "severity": "high",
+      "mitre": [
+        "T1059.001",
+        "T1105"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "powershell_encoded_command",
+      "description": "Obfuscated PowerShell with encoded command invocation",
+      "severity": "medium",
+      "mitre": [
+        "T1059.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "process_hollowing",
+      "description": "Process hollowing technique indicators",
+      "severity": "high",
+      "mitre": [
+        "T1055.012"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "process_injection_remote_thread",
+      "description": "Process injection via CreateRemoteThread API chain",
+      "severity": "high",
+      "mitre": [
+        "T1055.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "ransomware_generic_behavior",
+      "description": "Generic ransomware behavioral strings",
+      "severity": "critical",
+      "mitre": [
+        "T1486",
+        "T1490"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "rat_asyncrat",
+      "description": "AsyncRAT remote access trojan",
+      "severity": "high",
+      "mitre": [
+        "T1219"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "rat_remcos",
+      "description": "Remcos RAT remote access trojan",
+      "severity": "high",
+      "mitre": [
+        "T1219"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "reverse_shell_generic",
+      "description": "Generic reverse shell patterns across platforms",
+      "severity": "high",
+      "mitre": [
+        "T1059"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "rootkit_kernel_driver",
+      "description": "Kernel rootkit driver loading indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1014"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "rubeus_kerberos",
+      "description": "Rubeus Kerberos interaction tool indicators",
+      "severity": "high",
+      "mitre": [
+        "T1558"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "ryuk_ransomware",
+      "description": "Ryuk ransomware binary artifacts",
+      "severity": "critical",
+      "mitre": [
+        "T1486"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "sharphound_bloodhound",
+      "description": "SharpHound/BloodHound Active Directory enumeration",
+      "severity": "high",
+      "mitre": [
+        "T1087.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "sliver_c2_implant",
+      "description": "Sliver C2 framework implant artifacts",
+      "severity": "high",
+      "mitre": [
+        "T1071"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "stealer_redline",
+      "description": "RedLine Stealer info-stealer malware",
+      "severity": "high",
+      "mitre": [
+        "T1555"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "wannacry_ransomware",
+      "description": "WannaCry ransomware indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1486"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "webshell_china_chopper",
+      "description": "China Chopper web shell one-liner variants",
+      "severity": "critical",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "community",
+      "name": "webshell_generic_jsp",
+      "description": "Generic JSP web shell indicators",
+      "severity": "high",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-06-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "agenttesla_keylogger",
+      "description": "Detects AgentTesla keylogger/stealer .NET assembly strings",
+      "severity": "high",
+      "mitre": [
+        "T1555",
+        "T1056.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "asyncrat_client",
+      "description": "Detects AsyncRAT client implant",
+      "severity": "high",
+      "mitre": [
+        "T1219",
+        "T1547.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "bash_history_wiper",
+      "description": "Detects shell scripts that wipe bash history and login traces",
+      "severity": "medium",
+      "mitre": [
+        "T1070.003",
+        "T1070.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "brute_ratel_c4",
+      "description": "Detects Brute Ratel C4 adversary simulation framework",
+      "severity": "critical",
+      "mitre": [
+        "T1071",
+        "T1059"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "bumblebee_loader",
+      "description": "Detects BumbleBee malware loader strings",
+      "severity": "critical",
+      "mitre": [
+        "T1105",
+        "T1027"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "cobalt_strike_beacon_x64",
+      "description": "Detects Cobalt Strike Beacon x64 default configuration patterns",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001",
+        "T1059.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "cobalt_strike_beacon_x86",
+      "description": "Detects Cobalt Strike Beacon x86 shellcode stager",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "darkcomet_rat",
+      "description": "Detects DarkComet RAT strings and behavior",
+      "severity": "high",
+      "mitre": [
+        "T1219",
+        "T1056.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "diamorphine_rootkit",
+      "description": "Detects Diamorphine Linux rootkit kernel module",
+      "severity": "critical",
+      "mitre": [
+        "T1014",
+        "T1547.006"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "dnscat2_tunnel",
+      "description": "Detects dnscat2 DNS covert-channel tunnel client",
+      "severity": "high",
+      "mitre": [
+        "T1071.004",
+        "T1572"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "eicar_test_file",
+      "description": "Standard EICAR Anti-Virus Test File pattern (public domain)",
+      "severity": "low",
+      "mitre": [],
+      "author": "EICAR",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "emotet_loader",
+      "description": "Detects Emotet loader DLL patterns",
+      "severity": "high",
+      "mitre": [
+        "T1055.001",
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "gozi_ursnif_banking",
+      "description": "Detects Gozi/Ursnif banking trojan config blocks",
+      "severity": "critical",
+      "mitre": [
+        "T1056.001",
+        "T1185"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "havoc_c2_implant",
+      "description": "Detects Havoc C2 framework Demon agent strings",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001",
+        "T1105"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "hta_payload_loader",
+      "description": "Detects MSHTA / HTA-based loader with embedded script execution",
+      "severity": "high",
+      "mitre": [
+        "T1218.005",
+        "T1059.005"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "icedid_bokbot",
+      "description": "Detects IcedID / Bokbot banking trojan loader",
+      "severity": "critical",
+      "mitre": [
+        "T1055",
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "iodine_dns_tunnel",
+      "description": "Detects iodine DNS tunneling client strings",
+      "severity": "high",
+      "mitre": [
+        "T1071.004",
+        "T1572"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "kinsing_miner",
+      "description": "Detects Kinsing cryptomining malware (targets misconfigured Docker/Redis)",
+      "severity": "high",
+      "mitre": [
+        "T1496",
+        "T1068"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "linux_perl_webshell",
+      "description": "Detects generic Perl/CGI webshell patterns (backconnect + command exec)",
+      "severity": "high",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "linux_ssh_backdoor",
+      "description": "Detects modified OpenSSH server/client with credential-logging backdoor",
+      "severity": "critical",
+      "mitre": [
+        "T1556.004",
+        "T1098.004"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "lockbit_ransomware",
+      "description": "Detects LockBit ransomware family indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1486",
+        "T1490"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "lumma_stealer",
+      "description": "Detects Lumma / LummaC2 info-stealer indicators",
+      "severity": "high",
+      "mitre": [
+        "T1555",
+        "T1005"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "macho_persistence_plist",
+      "description": "Detects macOS launch-agent plist persistence strings (suspicious when bundled in binaries)",
+      "severity": "medium",
+      "mitre": [
+        "T1543.004",
+        "T1543.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "macro_autoopen_ole",
+      "description": "Detects OLE documents with suspicious auto-open macros",
+      "severity": "high",
+      "mitre": [
+        "T1204.002",
+        "T1059.005"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "meterpreter_reverse_https",
+      "description": "Detects Metasploit Meterpreter reverse HTTPS payload",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001",
+        "T1573"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "meterpreter_reverse_tcp",
+      "description": "Detects Metasploit Meterpreter reverse TCP payload patterns",
+      "severity": "critical",
+      "mitre": [
+        "T1059",
+        "T1106"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "mimikatz_strings",
+      "description": "Detects Mimikatz credential harvesting tool",
+      "severity": "critical",
+      "mitre": [
+        "T1003.001",
+        "T1003.002",
+        "T1003.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "nimplant_c2",
+      "description": "Detects NimPlant C2 implant (Nim-based)",
+      "severity": "critical",
+      "mitre": [
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "njrat_backdoor",
+      "description": "Detects njRAT backdoor communication patterns",
+      "severity": "high",
+      "mitre": [
+        "T1219",
+        "T1056.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "powershell_download_exec",
+      "description": "Detects PowerShell download cradle and execution patterns",
+      "severity": "high",
+      "mitre": [
+        "T1059.001",
+        "T1105"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "pyinstaller_bundled_malware",
+      "description": "Detects Python PyInstaller bundle containing suspicious strings",
+      "severity": "medium",
+      "mitre": [
+        "T1027.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "qakbot_loader",
+      "description": "Detects QakBot/QBot loader indicators",
+      "severity": "high",
+      "mitre": [
+        "T1059.001",
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "quasarrat_payload",
+      "description": "Detects QuasarRAT open-source RAT",
+      "severity": "high",
+      "mitre": [
+        "T1219"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "raccoon_stealer_v2",
+      "description": "Detects Raccoon Stealer v2 credential and cookie theft",
+      "severity": "high",
+      "mitre": [
+        "T1555.003",
+        "T1539"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "redline_stealer",
+      "description": "Detects RedLine Stealer .NET info-stealer strings",
+      "severity": "high",
+      "mitre": [
+        "T1555.003",
+        "T1552.001",
+        "T1071.001"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "remcos_rat",
+      "description": "Detects Remcos RAT communication and persistence",
+      "severity": "high",
+      "mitre": [
+        "T1219",
+        "T1056.001",
+        "T1113"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "reptile_rootkit",
+      "description": "Detects Reptile Linux rootkit indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1014",
+        "T1547.006"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "revil_ransomware",
+      "description": "Detects REvil/Sodinokibi ransomware indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1486"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "sliver_c2_implant",
+      "description": "Detects Sliver C2 framework implant",
+      "severity": "critical",
+      "mitre": [
+        "T1071",
+        "T1059"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "teamtnt_cloud_attack",
+      "description": "Detects TeamTNT cloud credential harvester and miner deployer",
+      "severity": "high",
+      "mitre": [
+        "T1552.005",
+        "T1496"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "themida_packed",
+      "description": "Detects Themida/WinLicense packed executables",
+      "severity": "medium",
+      "mitre": [
+        "T1027.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "truebot_loader",
+      "description": "Detects TrueBot (Silence group) loader indicators",
+      "severity": "high",
+      "mitre": [
+        "T1105",
+        "T1027"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "vba_stomping",
+      "description": "Detects VBA stomping (p-code without source) used for evasion",
+      "severity": "high",
+      "mitre": [
+        "T1027",
+        "T1059.005"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "vmprotect_packed",
+      "description": "Detects VMProtect packed binaries",
+      "severity": "medium",
+      "mitre": [
+        "T1027.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "wannacry_ransomware",
+      "description": "Detects WannaCry ransomware indicators",
+      "severity": "critical",
+      "mitre": [
+        "T1486",
+        "T1210"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "webshell_asp_generic",
+      "description": "Detects generic ASP/ASPX webshell patterns",
+      "severity": "high",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "webshell_jsp_generic",
+      "description": "Detects generic JSP webshell patterns",
+      "severity": "high",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "webshell_php_advanced",
+      "description": "Detects obfuscated PHP webshells beyond basic eval patterns",
+      "severity": "high",
+      "mitre": [
+        "T1505.003"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "xlm4_macro_formula",
+      "description": "Detects Excel 4.0 XLM macro formula abuse",
+      "severity": "high",
+      "mitre": [
+        "T1059.005",
+        "T1204.002"
+      ],
+      "author": "Wardex Community",
+      "created": "2025-01-01",
+      "enabled": true
+    },
+    {
+      "kind": "yara",
+      "pack": "malware",
+      "name": "xmrig_miner_linux",
+      "description": "Detects XMRig Monero miner strings (Linux variant)",
+      "severity": "medium",
+      "mitre": [
+        "T1496"
+      ],
+      "author": "Wardex Community",
+      "created": "2026-04-19",
+      "enabled": true
+    }
+  ]
+}

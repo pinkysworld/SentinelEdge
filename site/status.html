@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Project Status — Wardex</title>
+    <meta name="description" content="Wardex project status: release signing keys, recent releases, security advisories, supply-chain incidents and contact.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Wardex">
+    <meta property="og:title" content="Project Status — Wardex">
+    <meta property="og:description" content="Release signing keys, recent releases, security advisories, supply-chain incidents and contact.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/status.html">
+    <meta property="og:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Project Status — Wardex">
+    <meta name="twitter:description" content="Release signing keys, recent releases, security advisories, supply-chain incidents and contact.">
+    <meta name="twitter:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <link rel="canonical" href="https://pinkysworld.github.io/Wardex/status.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=13">
+    <script defer src="app.js?v=13"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="rules.html" class="nav-link">Rules</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Project Status</p>
+          <h1>Wardex is active and shipping.</h1>
+          <p class="page-hero-desc">This page is maintained by the Wardex team. Unlike SaaS uptime dashboards (which don't apply to a self-hosted product), it tracks what actually matters for operators: release cadence, signing keys, open CVE advisories and supply-chain incidents.</p>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Current</p>
+            <h2>At a glance</h2>
+          </div>
+          <div class="status-grid">
+            <div class="status-card status-ok">
+              <p class="status-label">Releases</p>
+              <p class="status-value">✓ Shipping</p>
+              <p class="status-note">Tagged releases published to GitHub with SHA-256 and cosign signatures.</p>
+            </div>
+            <div class="status-card status-ok">
+              <p class="status-label">Open CVEs</p>
+              <p class="status-value">0</p>
+              <p class="status-note">No open security advisories against Wardex code at this time.</p>
+            </div>
+            <div class="status-card status-ok">
+              <p class="status-label">Supply-chain incidents</p>
+              <p class="status-value">0</p>
+              <p class="status-note">No compromised dependencies, key loss or release-infrastructure incidents.</p>
+            </div>
+            <div class="status-card status-ok">
+              <p class="status-label">SBOM</p>
+              <p class="status-value">✓ Published</p>
+              <p class="status-note">CycloneDX SBOM attached to every tagged release.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Releases</p>
+            <h2>Recent activity</h2>
+          </div>
+          <div id="releases-list" class="releases-list"><p class="muted">Loading recent releases from GitHub…</p></div>
+          <p class="muted"><a href="https://github.com/pinkysworld/Wardex/releases" target="_blank" rel="noopener">View all releases on GitHub →</a></p>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Trust</p>
+            <h2>Verifying a release</h2>
+          </div>
+          <div class="status-grid">
+            <div class="status-card">
+              <p class="status-label">cosign key</p>
+              <pre class="status-key"><code>ed25519 / published in repo under
+deploy/cosign.pub</code></pre>
+              <p class="status-note">Every release is signed with the committed public key. Verify with <code>cosign verify-blob</code>.</p>
+            </div>
+            <div class="status-card">
+              <p class="status-label">Checksums</p>
+              <pre class="status-key"><code>SHA256SUMS per release
+signed with cosign</code></pre>
+              <p class="status-note">Download the <code>SHA256SUMS</code> file, verify its cosign signature, then verify each binary against it.</p>
+            </div>
+            <div class="status-card">
+              <p class="status-label">SBOM</p>
+              <pre class="status-key"><code>wardex-&lt;version&gt;.cdx.json</code></pre>
+              <p class="status-note">CycloneDX JSON attached to every release. Scan with <code>grype</code> or <code>trivy sbom</code>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Security contact</p>
+            <h2>Responsible disclosure</h2>
+          </div>
+          <p class="page-hero-desc">Security reports: please email <a href="mailto:security@wardex.io">security@wardex.io</a> or open a <a href="https://github.com/pinkysworld/Wardex/security/advisories/new" target="_blank" rel="noopener">GitHub Security Advisory</a>. We follow coordinated disclosure with a 90-day default window and CVE assignment for confirmed issues.</p>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-bottom"><p>Wardex · © 2024–2026 · BSL 1.1</p></div>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+      (async function () {
+        const list = document.getElementById('releases-list');
+        try {
+          const res = await fetch('https://api.github.com/repos/pinkysworld/Wardex/releases?per_page=5');
+          if (!res.ok) throw new Error('api');
+          const data = await res.json();
+          if (!Array.isArray(data) || !data.length) {
+            list.innerHTML = '<p class="muted">No releases published yet.</p>';
+            return;
+          }
+          list.innerHTML = '';
+          for (const r of data.slice(0, 5)) {
+            const el = document.createElement('div');
+            el.className = 'release-row';
+            const date = r.published_at ? new Date(r.published_at).toISOString().slice(0, 10) : '';
+            el.innerHTML = `
+              <div class="release-row-head">
+                <a class="release-tag" href="${r.html_url}" target="_blank" rel="noopener">${r.tag_name}</a>
+                <span class="release-date">${date}</span>
+              </div>
+              <p class="release-name">${(r.name || '').replace(/</g, '&lt;')}</p>
+            `;
+            list.appendChild(el);
+          }
+        } catch (err) {
+          list.innerHTML = '<p class="muted">Could not load releases. See <a href="https://github.com/pinkysworld/Wardex/releases" target="_blank" rel="noopener">GitHub releases</a>.</p>';
+        }
+      })();
+    </script>
+  </body>
+</html>

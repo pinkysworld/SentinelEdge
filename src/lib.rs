@@ -3,6 +3,7 @@
 // ── Core Server & API ────────────────────────────────────────────────────────
 pub mod auth;
 pub mod config;
+pub mod doctor;
 pub mod graphql;
 pub mod oidc;
 pub mod openapi;

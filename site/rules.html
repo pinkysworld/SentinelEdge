@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Detection Rules Marketplace — Wardex</title>
+    <meta name="description" content="Browse the full Wardex detection rule library: YARA and Sigma packs with MITRE ATT&amp;CK mapping, severity and authorship.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Wardex">
+    <meta property="og:title" content="Detection Rules Marketplace — Wardex">
+    <meta property="og:description" content="Browse the full Wardex detection rule library: YARA and Sigma with MITRE ATT&amp;CK mapping.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/rules.html">
+    <meta property="og:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Detection Rules Marketplace — Wardex">
+    <meta name="twitter:description" content="Browse the full Wardex detection rule library: YARA and Sigma with MITRE ATT&amp;CK mapping.">
+    <meta name="twitter:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <link rel="canonical" href="https://pinkysworld.github.io/Wardex/rules.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=13">
+    <script defer src="app.js?v=13"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="rules.html" class="nav-link active">Rules</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Detection Rules</p>
+          <h1>The built-in rule library.</h1>
+          <p class="page-hero-desc">Every Wardex release ships with curated YARA and Sigma detections covering initial access, execution, persistence, privilege escalation, credential access, discovery, lateral movement, C2, collection, exfiltration and impact. Browse, filter and copy — or fork the repo and contribute your own.</p>
+          <p class="rules-stats"><strong id="rules-total">0</strong> rules · <strong id="rules-yara">0</strong> YARA · <strong id="rules-sigma">0</strong> Sigma</p>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="rules-toolbar" role="region" aria-label="Rule filters">
+            <label class="rules-search">
+              <span class="visually-hidden">Search rules</span>
+              <input type="search" id="rules-search" placeholder="Search by name, description, MITRE ID…" autocomplete="off">
+            </label>
+            <div class="rules-filter-group" role="group" aria-label="Kind">
+              <button type="button" class="rules-chip active" data-filter-kind="all">All</button>
+              <button type="button" class="rules-chip" data-filter-kind="yara">YARA</button>
+              <button type="button" class="rules-chip" data-filter-kind="sigma">Sigma</button>
+            </div>
+            <div class="rules-filter-group" role="group" aria-label="Severity">
+              <button type="button" class="rules-chip active" data-filter-severity="all">Any</button>
+              <button type="button" class="rules-chip sev-critical" data-filter-severity="critical">Critical</button>
+              <button type="button" class="rules-chip sev-high" data-filter-severity="high">High</button>
+              <button type="button" class="rules-chip sev-medium" data-filter-severity="medium">Medium</button>
+              <button type="button" class="rules-chip sev-low" data-filter-severity="low">Low</button>
+            </div>
+          </div>
+
+          <p class="rules-count"><span id="rules-visible">0</span> rules match</p>
+          <div class="rules-grid" id="rules-grid" aria-live="polite"></div>
+          <div class="rules-empty" id="rules-empty" hidden>
+            <p>No rules match these filters. <button type="button" class="btn-link" id="rules-clear">Clear filters</button></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Contribute</p>
+            <h2>Write once, ship to every deployment.</h2>
+          </div>
+          <div class="contribute-grid">
+            <div class="contribute-card">
+              <h3>YARA rules</h3>
+              <p>Add your rule to <code>rules/yara/community.json</code> in the format already used — Wardex ships them to every customer on the next release.</p>
+              <a class="btn btn-outline" href="https://github.com/pinkysworld/Wardex/tree/main/rules/yara" target="_blank" rel="noopener">View YARA packs on GitHub</a>
+            </div>
+            <div class="contribute-card">
+              <h3>Sigma rules</h3>
+              <p>Drop a Sigma YAML into <code>rules/sigma/</code> under the appropriate tactic file (credential-access, persistence, etc.). Wardex converts to internal AST at load time.</p>
+              <a class="btn btn-outline" href="https://github.com/pinkysworld/Wardex/tree/main/rules/sigma" target="_blank" rel="noopener">View Sigma packs on GitHub</a>
+            </div>
+            <div class="contribute-card">
+              <h3>Open a PR</h3>
+              <p>See <code>CONTRIBUTING.md</code> for the workflow. Rules are reviewed for false-positive risk and signed into the next tagged release.</p>
+              <a class="btn btn-primary" href="https://github.com/pinkysworld/Wardex/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribution guide</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-bottom"><p>Wardex · © 2024–2026 · BSL 1.1</p></div>
+        </div>
+      </footer>
+    </main>
+
+    <template id="rule-card-template">
+      <article class="rule-card">
+        <header class="rule-card-head">
+          <span class="rule-kind"></span>
+          <span class="rule-severity"></span>
+        </header>
+        <h3 class="rule-name"></h3>
+        <p class="rule-description"></p>
+        <ul class="rule-mitre"></ul>
+        <footer class="rule-card-foot">
+          <span class="rule-pack"></span>
+          <button type="button" class="rule-copy btn-link">Copy name</button>
+        </footer>
+      </article>
+    </template>
+
+    <script>
+      (async function () {
+        const grid = document.getElementById('rules-grid');
+        const template = document.getElementById('rule-card-template');
+        const searchEl = document.getElementById('rules-search');
+        const emptyEl = document.getElementById('rules-empty');
+        const clearBtn = document.getElementById('rules-clear');
+        const totalEl = document.getElementById('rules-total');
+        const yaraEl = document.getElementById('rules-yara');
+        const sigmaEl = document.getElementById('rules-sigma');
+        const visibleEl = document.getElementById('rules-visible');
+        let rules = [];
+        let filters = { kind: 'all', severity: 'all', query: '' };
+
+        try {
+          const res = await fetch('rules-index.json');
+          if (!res.ok) throw new Error('index not found');
+          const payload = await res.json();
+          rules = payload.rules || [];
+          totalEl.textContent = payload.meta?.total ?? rules.length;
+          yaraEl.textContent = payload.meta?.yara ?? rules.filter(r => r.kind === 'yara').length;
+          sigmaEl.textContent = payload.meta?.sigma ?? rules.filter(r => r.kind === 'sigma').length;
+        } catch (err) {
+          grid.innerHTML = '<p class="rules-error">Could not load rule index. View rules on <a href="https://github.com/pinkysworld/Wardex/tree/main/rules" target="_blank" rel="noopener">GitHub</a>.</p>';
+          return;
+        }
+
+        const normalizeSeverity = (s) => {
+          const v = String(s || '').toLowerCase();
+          if (v === 'informational' || v === 'info') return 'low';
+          if (['critical', 'high', 'medium', 'low'].includes(v)) return v;
+          return 'medium';
+        };
+
+        function render() {
+          const q = filters.query.trim().toLowerCase();
+          grid.innerHTML = '';
+          let shown = 0;
+          for (const rule of rules) {
+            const sev = normalizeSeverity(rule.severity);
+            if (filters.kind !== 'all' && rule.kind !== filters.kind) continue;
+            if (filters.severity !== 'all' && sev !== filters.severity) continue;
+            if (q) {
+              const hay = [rule.name, rule.description, rule.pack, rule.author, ...(rule.mitre || [])].join(' ').toLowerCase();
+              if (!hay.includes(q)) continue;
+            }
+            const node = template.content.cloneNode(true);
+            node.querySelector('.rule-kind').textContent = rule.kind.toUpperCase();
+            node.querySelector('.rule-kind').classList.add('kind-' + rule.kind);
+            const sevEl = node.querySelector('.rule-severity');
+            sevEl.textContent = sev;
+            sevEl.classList.add('sev-' + sev);
+            node.querySelector('.rule-name').textContent = rule.name;
+            node.querySelector('.rule-description').textContent = rule.description || 'No description';
+            const mitreEl = node.querySelector('.rule-mitre');
+            (rule.mitre || []).slice(0, 4).forEach((id) => {
+              const li = document.createElement('li');
+              const a = document.createElement('a');
+              a.href = 'https://attack.mitre.org/techniques/' + String(id).replace('.', '/');
+              a.target = '_blank';
+              a.rel = 'noopener';
+              a.textContent = id;
+              li.appendChild(a);
+              mitreEl.appendChild(li);
+            });
+            node.querySelector('.rule-pack').textContent = rule.pack;
+            const copyBtn = node.querySelector('.rule-copy');
+            copyBtn.addEventListener('click', async () => {
+              try {
+                await navigator.clipboard.writeText(rule.name);
+                copyBtn.textContent = 'Copied';
+                setTimeout(() => { copyBtn.textContent = 'Copy name'; }, 1500);
+              } catch { /* no-op */ }
+            });
+            grid.appendChild(node);
+            shown += 1;
+          }
+          visibleEl.textContent = shown;
+          emptyEl.hidden = shown !== 0;
+        }
+
+        searchEl.addEventListener('input', (e) => {
+          filters.query = e.target.value;
+          render();
+        });
+        clearBtn.addEventListener('click', () => {
+          filters = { kind: 'all', severity: 'all', query: '' };
+          searchEl.value = '';
+          document.querySelectorAll('.rules-chip').forEach((c) => {
+            c.classList.toggle('active', c.dataset.filterKind === 'all' || c.dataset.filterSeverity === 'all');
+          });
+          render();
+        });
+        document.querySelectorAll('[data-filter-kind]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            filters.kind = btn.dataset.filterKind;
+            document.querySelectorAll('[data-filter-kind]').forEach((b) => b.classList.toggle('active', b === btn));
+            render();
+          });
+        });
+        document.querySelectorAll('[data-filter-severity]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            filters.severity = btn.dataset.filterSeverity;
+            document.querySelectorAll('[data-filter-severity]').forEach((b) => b.classList.toggle('active', b === btn));
+            render();
+          });
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

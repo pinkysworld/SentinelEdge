@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Checkout — Wardex Starter</title>
+    <meta name="description" content="Start a 14-day Wardex Starter subscription. €49/month, up to 25 endpoints, email support.">
+    <meta name="robots" content="noindex">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=13">
+    <script defer src="app.js?v=13"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <div class="nav-links">
+          <a href="pricing.html" class="nav-link">← Back to pricing</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Checkout</p>
+          <h1>Wardex Starter</h1>
+          <p class="page-hero-desc">Self-hosted XDR for small teams. Up to 25 endpoints, production use, email support within one business day.</p>
+
+          <div class="checkout-grid">
+            <div class="checkout-summary">
+              <h2>Order summary</h2>
+              <dl class="checkout-lines">
+                <dt>Plan</dt><dd>Starter (monthly)</dd>
+                <dt>Endpoints</dt><dd>Up to 25</dd>
+                <dt>Support</dt><dd>Email, 1 business day</dd>
+                <dt>Updates</dt><dd>12 months of signed releases</dd>
+                <dt>Trial</dt><dd>14 days, full refund if cancelled</dd>
+              </dl>
+              <div class="checkout-total">
+                <span>Total today</span>
+                <strong>€49.00 / month</strong>
+              </div>
+              <p class="muted">VAT charged at EU reverse-charge when a valid VAT ID is provided. No auto-renew surprises — billing stops the day you cancel.</p>
+            </div>
+
+            <form class="checkout-form" id="checkout-form" novalidate>
+              <h2>Request your checkout link</h2>
+              <p class="muted">Wardex is privacy-first: we don't run a customer database on the public web. Submit this form and we'll email you a one-time Stripe checkout link within one business day.</p>
+
+              <label class="form-field">
+                <span>Work email <span class="req">*</span></span>
+                <input type="email" name="email" required autocomplete="email" placeholder="you@company.com">
+              </label>
+              <label class="form-field">
+                <span>Company <span class="req">*</span></span>
+                <input type="text" name="company" required autocomplete="organization" placeholder="Acme GmbH">
+              </label>
+              <label class="form-field">
+                <span>Endpoints (approx.)</span>
+                <input type="number" name="endpoints" min="1" max="25" value="10">
+              </label>
+              <label class="form-field">
+                <span>EU VAT ID (optional)</span>
+                <input type="text" name="vat" placeholder="DE123456789">
+              </label>
+              <label class="form-check">
+                <input type="checkbox" name="terms" required>
+                <span>I accept the <a href="https://github.com/pinkysworld/Wardex/blob/main/LICENSE" target="_blank" rel="noopener">BSL 1.1 license</a> and confirm this is for internal production use.</span>
+              </label>
+              <button type="submit" class="btn btn-primary btn-block" id="checkout-submit">Email me a checkout link</button>
+              <p class="form-status" id="checkout-status" role="status" aria-live="polite"></p>
+              <p class="muted form-footnote">Prefer invoice or wire for 3+ seats? <a href="mailto:sales@wardex.io">Email sales@wardex.io</a>.</p>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-bottom"><p>Wardex · © 2024–2026 · BSL 1.1 · <a href="https://github.com/pinkysworld/Wardex/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a></p></div>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+      document.getElementById('checkout-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const status = document.getElementById('checkout-status');
+        const btn = document.getElementById('checkout-submit');
+        if (!form.checkValidity()) {
+          status.textContent = 'Please complete the required fields.';
+          status.className = 'form-status form-status-error';
+          return;
+        }
+        const data = Object.fromEntries(new FormData(form).entries());
+        const subject = encodeURIComponent('Wardex Starter checkout request — ' + (data.company || ''));
+        const body = encodeURIComponent(
+          'Company: ' + (data.company || '') + '\n' +
+          'Email: ' + (data.email || '') + '\n' +
+          'Endpoints: ' + (data.endpoints || '') + '\n' +
+          'VAT ID: ' + (data.vat || '') + '\n' +
+          '\nPlease send a Stripe checkout link for Wardex Starter (€49/mo, up to 25 endpoints).'
+        );
+        window.location.href = 'mailto:sales@wardex.io?subject=' + subject + '&body=' + body;
+        btn.disabled = true;
+        btn.textContent = 'Opening email client…';
+        status.textContent = 'If your email client did not open, copy sales@wardex.io and include your company name.';
+        status.className = 'form-status form-status-ok';
+      });
+    </script>
+  </body>
+</html>

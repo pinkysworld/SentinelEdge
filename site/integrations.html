@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Integrations — Wardex</title>
+    <meta name="description" content="Built-in and planned Wardex integrations: Slack, Teams, PagerDuty, ServiceNow, Jira, Splunk HEC, Elastic, syslog, webhook, SMTP and more.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Wardex">
+    <meta property="og:title" content="Integrations — Wardex">
+    <meta property="og:description" content="Built-in and planned Wardex integrations for chat, ticketing, SIEM and alerting.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/integrations.html">
+    <meta property="og:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Integrations — Wardex">
+    <meta name="twitter:description" content="Built-in and planned Wardex integrations for chat, ticketing, SIEM and alerting.">
+    <meta name="twitter:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <link rel="canonical" href="https://pinkysworld.github.io/Wardex/integrations.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=13">
+    <script defer src="app.js?v=13"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="rules.html" class="nav-link">Rules</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Integrations</p>
+          <h1>Connect Wardex to the tools you already run.</h1>
+          <p class="page-hero-desc">Alerts, cases and telemetry flow in and out of Wardex over well-documented protocols. Every built-in connector is configured from the admin console under <code>Settings → Integrations</code>.</p>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Alerting &amp; chat</p>
+            <h2>Get paged where you work</h2>
+          </div>
+          <div class="integrations-grid">
+            <div class="integration-card"><h3>Slack</h3><span class="integration-status status-ok">Built-in</span><p>Route alerts, case updates and runbook prompts to channels or DMs via incoming webhook.</p></div>
+            <div class="integration-card"><h3>Microsoft Teams</h3><span class="integration-status status-ok">Built-in</span><p>Incoming-webhook adapter with Adaptive Card formatting.</p></div>
+            <div class="integration-card"><h3>PagerDuty</h3><span class="integration-status status-ok">Built-in</span><p>Events API v2 with dedup keys per case ID.</p></div>
+            <div class="integration-card"><h3>Opsgenie</h3><span class="integration-status status-planned">Planned</span><p>Events API with priority mapping from severity.</p></div>
+            <div class="integration-card"><h3>Webhook (generic)</h3><span class="integration-status status-ok">Built-in</span><p>Signed JSON POST with retries, suitable for any receiver.</p></div>
+            <div class="integration-card"><h3>SMTP</h3><span class="integration-status status-ok">Built-in</span><p>Email alerts and weekly digests with TLS.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Ticketing &amp; case management</p>
+            <h2>Keep the ticket of record honest</h2>
+          </div>
+          <div class="integrations-grid">
+            <div class="integration-card"><h3>Jira</h3><span class="integration-status status-ok">Built-in</span><p>Create/update issues with bidirectional state sync and custom-field mapping.</p></div>
+            <div class="integration-card"><h3>ServiceNow</h3><span class="integration-status status-ok">Built-in</span><p>Table API connector for Security Incident Response.</p></div>
+            <div class="integration-card"><h3>GitHub Issues</h3><span class="integration-status status-ok">Built-in</span><p>For small teams running internal tracking in GitHub.</p></div>
+            <div class="integration-card"><h3>Linear</h3><span class="integration-status status-planned">Planned</span><p>GraphQL mutations with project/team mapping.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">SIEM &amp; log pipelines</p>
+            <h2>Fan telemetry out to your SIEM</h2>
+          </div>
+          <div class="integrations-grid">
+            <div class="integration-card"><h3>Splunk HEC</h3><span class="integration-status status-ok">Built-in</span><p>HTTP Event Collector sink with batching and backpressure.</p></div>
+            <div class="integration-card"><h3>Elastic</h3><span class="integration-status status-ok">Built-in</span><p>Bulk API sink with ECS-mapped field names.</p></div>
+            <div class="integration-card"><h3>Syslog (RFC 5424)</h3><span class="integration-status status-ok">Built-in</span><p>TLS and UDP transports, CEF and raw JSON payloads.</p></div>
+            <div class="integration-card"><h3>OpenTelemetry OTLP</h3><span class="integration-status status-ok">Built-in</span><p>Export traces, metrics and logs to any OTLP receiver.</p></div>
+            <div class="integration-card"><h3>Kafka</h3><span class="integration-status status-planned">Planned</span><p>Native producer with SASL/SCRAM and TLS.</p></div>
+            <div class="integration-card"><h3>S3 / object-store</h3><span class="integration-status status-planned">Planned</span><p>Cold archival of events and case artifacts with compression.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Identity &amp; SSO</p>
+            <h2>Plug into your IdP</h2>
+          </div>
+          <div class="integrations-grid">
+            <div class="integration-card"><h3>OIDC (generic)</h3><span class="integration-status status-ok">Built-in</span><p>Works with Okta, Entra ID, Google Workspace, Authentik, Keycloak.</p></div>
+            <div class="integration-card"><h3>SAML 2.0</h3><span class="integration-status status-planned">Planned</span><p>Enterprise federation for Azure AD / ADFS / PingFederate.</p></div>
+            <div class="integration-card"><h3>SCIM 2.0</h3><span class="integration-status status-planned">Planned</span><p>Automated user and group provisioning.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Threat intel</p>
+            <h2>Enrich with your feeds</h2>
+          </div>
+          <div class="integrations-grid">
+            <div class="integration-card"><h3>MISP</h3><span class="integration-status status-ok">Built-in</span><p>Pull indicators via REST and auto-attach to matching events.</p></div>
+            <div class="integration-card"><h3>TAXII 2.1</h3><span class="integration-status status-planned">Planned</span><p>Pull STIX feeds from any TAXII server (DHS AIS, OTX, commercial).</p></div>
+            <div class="integration-card"><h3>VirusTotal</h3><span class="integration-status status-ok">Built-in</span><p>Hash and URL enrichment with per-tenant API keys.</p></div>
+            <div class="integration-card"><h3>AbuseIPDB</h3><span class="integration-status status-ok">Built-in</span><p>IP reputation for external connections.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="cta-box">
+            <h2>Missing a connector?</h2>
+            <p>The integration layer is a stable Rust trait. Ping us or open a PR and we'll prioritize it.</p>
+            <div class="cta-actions">
+              <a class="btn btn-primary" href="https://github.com/pinkysworld/Wardex/issues/new?labels=integration" target="_blank" rel="noopener">Request an integration</a>
+              <a class="btn btn-outline" href="resources.html">SDK &amp; docs</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-bottom"><p>Wardex · © 2024–2026 · BSL 1.1</p></div>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>
