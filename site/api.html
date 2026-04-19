@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>API Reference — Wardex</title>
+    <meta name="description" content="Wardex REST API reference rendered from the versioned OpenAPI specification.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="API Reference — Wardex">
+    <meta property="og:description" content="Interactive reference for the Wardex REST control plane.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/api.html">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="API Reference — Wardex">
+    <meta name="twitter:description" content="Interactive reference for the Wardex REST control plane.">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=12">
+    <style>
+      body { margin: 0; }
+      #redoc-wrap { min-height: 100vh; }
+      .api-hero { padding: 72px 24px 32px; background: var(--nav-bg); color: #e8e8e8; }
+      .api-hero h1 { color: #fff; }
+      .api-hero .container { max-width: 1120px; margin: 0 auto; }
+      .api-hero a { color: var(--nav-accent); }
+    </style>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <div class="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+          <a href="api.html" class="nav-link active">API</a>
+        </div>
+      </div>
+    </nav>
+
+    <section class="api-hero">
+      <div class="container">
+        <p class="label" style="color: var(--nav-accent);">REST API</p>
+        <h1>Wardex API Reference</h1>
+        <p>Rendered from <a href="https://github.com/pinkysworld/Wardex/blob/main/docs/openapi.yaml" target="_blank" rel="noopener">docs/openapi.yaml</a> · bearer-token authentication · 161 endpoints across ingestion, detection, triage, fleet, and admin surfaces.</p>
+      </div>
+    </section>
+
+    <div id="redoc-wrap">
+      <redoc spec-url="https://raw.githubusercontent.com/pinkysworld/Wardex/main/docs/openapi.yaml" theme='{"typography":{"fontFamily":"Inter, system-ui, sans-serif"}}'></redoc>
+    </div>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+  </body>
+</html>

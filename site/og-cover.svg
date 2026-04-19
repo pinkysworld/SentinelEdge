@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1e24"/>
+      <stop offset="100%" stop-color="#0f1319"/>
+    </linearGradient>
+    <linearGradient id="stripe" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a6b5a"/>
+      <stop offset="50%" stop-color="#4fd1b2"/>
+      <stop offset="100%" stop-color="#c47a2e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1200" height="6" fill="url(#stripe)"/>
+  <g transform="translate(80, 180)">
+    <rect x="0" y="0" width="96" height="96" rx="18" fill="#4fd1b2"/>
+    <text x="48" y="68" font-family="Inter, sans-serif" font-weight="700" font-size="52" fill="#0f1319" text-anchor="middle">WX</text>
+  </g>
+  <text x="80" y="360" font-family="Inter, sans-serif" font-weight="700" font-size="84" fill="#ffffff" letter-spacing="-2">Wardex</text>
+  <text x="80" y="428" font-family="Inter, sans-serif" font-weight="500" font-size="36" fill="#c8cdd5">Private-cloud XDR &amp; SIEM built in Rust</text>
+  <text x="80" y="480" font-family="JetBrains Mono, monospace" font-size="22" fill="#4fd1b2">one binary · no vendor lock-in · BSL 1.1</text>
+  <g transform="translate(80, 530)" font-family="Inter, sans-serif" font-size="20" fill="#8a9099">
+    <text x="0" y="0">Detection · Investigation · Hunting · Fleet · Governance</text>
+  </g>
+</svg>

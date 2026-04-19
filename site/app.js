@@ -234,6 +234,57 @@ function initScrollReveal() {
   });
 }
 
+function initCopyButtons() {
+  const targets = document.querySelectorAll(".terminal-snippet, .console-output, pre.copyable");
+  targets.forEach((el) => {
+    if (el.querySelector(".copy-btn")) return;
+    const code = el.querySelector("code") || el;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy-btn";
+    btn.setAttribute("aria-label", "Copy to clipboard");
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5A1.5 1.5 0 0 1 5.5 0h7A1.5 1.5 0 0 1 14 1.5v10a1.5 1.5 0 0 1-1.5 1.5H10v1.5A1.5 1.5 0 0 1 8.5 16h-7A1.5 1.5 0 0 1 0 14.5v-10A1.5 1.5 0 0 1 1.5 3H4V1.5zm1 0v1h7.5a1.5 1.5 0 0 1 1.5 1.5V11h.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0-.5.5zM1.5 4a.5.5 0 0 0-.5.5v10a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5v-10a.5.5 0 0 0-.5-.5h-7z"/></svg><span>Copy</span>`;
+    btn.addEventListener("click", async () => {
+      const text = (code.innerText || code.textContent || "").trim();
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.classList.add("copied");
+        const label = btn.querySelector("span");
+        if (label) label.textContent = "Copied";
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          if (label) label.textContent = "Copy";
+        }, 1600);
+      } catch (_err) {
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+    el.appendChild(btn);
+  });
+}
+
+function initPricingToggle() {
+  const buttons = document.querySelectorAll(".pricing-toggle-btn");
+  if (buttons.length === 0) return;
+  const amounts = document.querySelectorAll(".tier-amount[data-price-monthly]");
+  const apply = (period) => {
+    buttons.forEach((b) => {
+      const on = b.dataset.period === period;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    amounts.forEach((el) => {
+      const v = period === "annual" ? el.dataset.priceAnnual : el.dataset.priceMonthly;
+      if (v) el.textContent = v;
+    });
+  };
+  buttons.forEach((b) => b.addEventListener("click", () => apply(b.dataset.period)));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   renderStats();
   applyReleaseCopy();
@@ -241,5 +292,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderInterfaces();
   initResourceSearch();
   initNav();
+  initCopyButtons();
+  initPricingToggle();
   requestAnimationFrame(() => initScrollReveal());
 });

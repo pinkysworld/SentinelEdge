@@ -4,6 +4,292 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Pricing &amp; Licensing — Wardex</title>
+    <meta name="description" content="Transparent Wardex pricing: free Community tier, €49/month Starter, per-endpoint Team and Business plans, and custom Enterprise. BSL 1.1 source-available.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Wardex">
+    <meta property="og:title" content="Pricing &amp; Licensing — Wardex">
+    <meta property="og:description" content="Free Community tier, €49/month Starter, and per-endpoint Team, Business and Enterprise plans for private-cloud XDR.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/pricing.html">
+    <meta property="og:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Pricing &amp; Licensing — Wardex">
+    <meta name="twitter:description" content="Free Community tier, €49/month Starter, and per-endpoint Team, Business and Enterprise plans for private-cloud XDR.">
+    <meta name="twitter:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <link rel="canonical" href="https://pinkysworld.github.io/Wardex/pricing.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=12">
+    <script defer src="app.js?v=12"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link active">Pricing</a>
+          <a href="donate.html" class="nav-link">Support</a>
+          <a href="https://github.com/pinkysworld/Wardex" class="nav-link nav-link-icon" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Pricing &amp; Licensing</p>
+          <h1>Free to learn. Transparent when you scale.</h1>
+          <p class="page-hero-desc">
+            Wardex ships under Business Source License 1.1 — source-available today, Apache 2.0 on <strong>1 April 2029</strong>. Community use is free. Production deployments pick a tier below, with a flat <strong>€49/month</strong> entry point.
+          </p>
+          <div class="pricing-toggle" role="tablist" aria-label="Billing period">
+            <button type="button" class="pricing-toggle-btn active" data-period="monthly" aria-pressed="true">Monthly</button>
+            <button type="button" class="pricing-toggle-btn" data-period="annual" aria-pressed="false">Annual <span class="pill">−17%</span></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="tier-grid">
+
+            <div class="tier-card">
+              <div class="tier-card-header">
+                <h3>Community</h3>
+                <p class="tier-tag">Self-hosted, non-production</p>
+              </div>
+              <div class="tier-price"><span class="tier-amount">Free</span></div>
+              <p class="tier-limits">Up to <strong>10 endpoints</strong> · BSL 1.1 non-commercial</p>
+              <ul class="tier-features">
+                <li>Full source access</li>
+                <li>All detection engines</li>
+                <li>Community support (GitHub Issues)</li>
+                <li>Academic &amp; research use</li>
+                <li>Internal evaluation &amp; proof-of-concept</li>
+              </ul>
+              <a href="https://github.com/pinkysworld/Wardex" class="btn btn-outline tier-cta" target="_blank" rel="noopener">Get it on GitHub</a>
+            </div>
+
+            <div class="tier-card tier-starter tier-featured">
+              <div class="tier-ribbon">Most popular</div>
+              <div class="tier-card-header">
+                <h3>Starter</h3>
+                <p class="tier-tag">Small teams going to production</p>
+              </div>
+              <div class="tier-price">
+                <span class="tier-currency">€</span><span class="tier-amount" data-price-monthly="49" data-price-annual="40">49</span><span class="tier-period">/month</span>
+              </div>
+              <p class="tier-limits">Up to <strong>25 endpoints</strong> · flat pricing</p>
+              <ul class="tier-features">
+                <li>Production licence rights</li>
+                <li>Email support (72h)</li>
+                <li>All detection engines &amp; YARA rules</li>
+                <li>Self-hosted single-tenant</li>
+                <li>Release channel access</li>
+              </ul>
+              <a href="mailto:michel_ng@icloud.com?subject=Wardex%20Starter" class="btn btn-primary tier-cta">Start with Starter</a>
+            </div>
+
+            <div class="tier-card">
+              <div class="tier-card-header">
+                <h3>Team</h3>
+                <p class="tier-tag">SOCs &amp; MSPs</p>
+              </div>
+              <div class="tier-price">
+                <span class="tier-currency">€</span><span class="tier-amount" data-price-monthly="3" data-price-annual="2.5">3</span><span class="tier-period">/endpoint/mo</span>
+              </div>
+              <p class="tier-limits">25–250 endpoints · min 25</p>
+              <ul class="tier-features">
+                <li>Everything in Starter</li>
+                <li>Priority email (24h)</li>
+                <li>SSO &amp; SAML (OIDC)</li>
+                <li>RBAC + audit logs</li>
+                <li>Multi-tenant isolation</li>
+              </ul>
+              <a href="mailto:michel_ng@icloud.com?subject=Wardex%20Team" class="btn btn-outline tier-cta">Contact Sales</a>
+            </div>
+
+            <div class="tier-card">
+              <div class="tier-card-header">
+                <h3>Business</h3>
+                <p class="tier-tag">Regulated &amp; mid-market</p>
+              </div>
+              <div class="tier-price">
+                <span class="tier-currency">€</span><span class="tier-amount" data-price-monthly="6" data-price-annual="5">6</span><span class="tier-period">/endpoint/mo</span>
+              </div>
+              <p class="tier-limits">250–5 000 endpoints · min 100</p>
+              <ul class="tier-features">
+                <li>Everything in Team</li>
+                <li>8×5 support, dedicated Slack</li>
+                <li>Onboarding workshop</li>
+                <li>HA reference architecture</li>
+                <li>Compliance pack (SOC2, ISO, HIPAA)</li>
+              </ul>
+              <a href="mailto:michel_ng@icloud.com?subject=Wardex%20Business" class="btn btn-outline tier-cta">Talk to us</a>
+            </div>
+
+            <div class="tier-card tier-enterprise">
+              <div class="tier-card-header">
+                <h3>Enterprise</h3>
+                <p class="tier-tag">Global &amp; air-gapped</p>
+              </div>
+              <div class="tier-price"><span class="tier-amount">Custom</span></div>
+              <p class="tier-limits">Unlimited endpoints · on-prem or air-gapped</p>
+              <ul class="tier-features">
+                <li>Everything in Business</li>
+                <li>24/7 support, signed SLA</li>
+                <li>Dedicated solutions engineer</li>
+                <li>Indemnification &amp; custom terms</li>
+                <li>Custom detections &amp; training</li>
+              </ul>
+              <a href="mailto:michel_ng@icloud.com?subject=Wardex%20Enterprise" class="btn btn-outline tier-cta">Request a call</a>
+            </div>
+
+          </div>
+
+          <p class="pricing-footnote">Prices exclude VAT. Annual prepay saves ~17%. Paid tiers include a 30-day evaluation under non-production BSL terms. All deployments remain fully self-hosted — we never receive your telemetry.</p>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Compare plans</p>
+            <h2>What's in each tier.</h2>
+          </div>
+          <div class="compare-table-wrap">
+            <table class="compare-table">
+              <thead>
+                <tr>
+                  <th scope="col">Feature</th>
+                  <th scope="col">Community</th>
+                  <th scope="col">Starter</th>
+                  <th scope="col">Team</th>
+                  <th scope="col">Business</th>
+                  <th scope="col">Enterprise</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Endpoints</th><td>10</td><td>25</td><td>250</td><td>5 000</td><td>Unlimited</td></tr>
+                <tr><th scope="row">Production use</th><td>—</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">All detection engines</th><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">SSO / SAML</th><td>—</td><td>—</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">RBAC + audit logs</th><td>—</td><td>—</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">HA reference arch</th><td>—</td><td>—</td><td>—</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">Support SLA</th><td>Community</td><td>72h email</td><td>24h email</td><td>8×5 Slack</td><td>24/7 signed</td></tr>
+                <tr><th scope="row">Dedicated engineer</th><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
+                <tr><th scope="row">Air-gapped distribution</th><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
+                <tr><th scope="row">Indemnification</th><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="license-notice">
+            <h3>How BSL 1.1 works in practice</h3>
+            <p><strong>Release version:</strong> <span id="license-version">v0.52.5</span></p>
+            <p><strong>Change Date:</strong> BSL 1.1 converts to Apache 2.0 on <strong>1 April 2029</strong>. After that date, historical releases become Apache 2.0 — no separate licence needed.</p>
+            <p><strong>Production use:</strong> Any commercial or production environment requires one of the paid tiers above. Non-production use — development, research, internal evaluation — is permitted under BSL 1.1 itself.</p>
+            <p><strong>Verification:</strong> Release archives and container images ship with SLSA provenance, CycloneDX SBOMs and cosign signatures — steps in <a href="https://github.com/pinkysworld/Wardex/blob/main/docs/REPRODUCIBILITY.md" target="_blank" rel="noopener">Reproducibility &amp; Supply-Chain Verification</a>.</p>
+            <p><strong>Questions?</strong> Licensing, commercial use, or partnerships — <a href="mailto:michel_ng@icloud.com">contact us directly</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Licensing FAQ</p>
+            <h2>Answers to the common questions.</h2>
+          </div>
+          <div class="faq-stack">
+            <details class="faq-item"><summary>Do I need to pay to try Wardex?</summary><p>No. The Community tier is free for up to 10 endpoints and covers evaluation, research, homelab and non-production use. Paid tiers are only required when you run Wardex against live business operations.</p></details>
+            <details class="faq-item"><summary>What exactly counts as &quot;production&quot; use?</summary><p>Any environment where Wardex is monitoring or protecting real business operations, customer data or live workloads. If a SOC depends on it to detect real attacks — that's production.</p></details>
+            <details class="faq-item"><summary>Is the product the same across tiers?</summary><p>Yes. Every tier ships the same binary with all detection engines, the full admin console, the complete API, and YARA/Sigma rule packs. Tiers differ on endpoint count, support SLA, SSO/RBAC, HA and contract terms — not on feature flags.</p></details>
+            <details class="faq-item"><summary>Do you see my telemetry?</summary><p>Never. Wardex is 100% self-hosted. Agent events, alerts and analytics stay in your infrastructure. We don't operate a cloud backplane — there is nothing to phone home to.</p></details>
+            <details class="faq-item"><summary>Is Wardex truly open-source?</summary><p>The source is fully open, readable, forkable and modifiable. BSL 1.1 is source-available with a time-locked conversion to Apache 2.0. It's not OSI-certified open-source during the BSL window, but it's functionally open for every use case except commercial production deployment.</p></details>
+            <details class="faq-item"><summary>Can I switch tiers or cancel?</summary><p>Yes. Monthly plans cancel at any time — you keep the right to run the version you licensed for the remainder of the period. Annual plans renew yearly. No lock-in — the source stays yours.</p></details>
+            <details class="faq-item"><summary>Do you offer discounts?</summary><p>Yes. Academic, non-profit and early-stage startup discounts are available. Annual prepay is ~17% off monthly. Email us with context and we'll reply within 48h.</p></details>
+            <details class="faq-item"><summary>What happens after the Change Date?</summary><p>On 1 April 2029, every Wardex release up to that point converts automatically to Apache 2.0. Commercial tiers continue for newer releases, support and SLAs — but the core becomes traditional open-source.</p></details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-cta-band">
+        <div class="container">
+          <div class="cta-card">
+            <div>
+              <h2>Ready to deploy Wardex in production?</h2>
+              <p>Pick Starter at a flat €49/month, or get in touch for a hands-on technical review of your deployment plan.</p>
+            </div>
+            <div class="cta-actions">
+              <a href="mailto:michel_ng@icloud.com?subject=Wardex%20pricing%20question" class="btn btn-primary">Contact Sales</a>
+              <a href="donate.html" class="btn btn-outline">Community Support</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-grid">
+            <div class="footer-col footer-about">
+              <span class="nav-logo footer-logo">WX</span>
+              <p>Private-cloud XDR &amp; SIEM built in Rust. One binary. Full data sovereignty.</p>
+              <p class="footer-version"><span id="footer-version">v0.52.5</span> · BSL 1.1</p>
+            </div>
+            <div class="footer-col">
+              <h4>Product</h4>
+              <a href="features.html">Features</a>
+              <a href="architecture.html">Architecture</a>
+              <a href="pricing.html">Pricing</a>
+              <a href="https://github.com/pinkysworld/Wardex/releases" target="_blank" rel="noopener">Releases</a>
+            </div>
+            <div class="footer-col">
+              <h4>Resources</h4>
+              <a href="resources.html">Documentation</a>
+              <a href="api.html">API Reference</a>
+              <a href="https://github.com/pinkysworld/Wardex/blob/main/docs/SDK_GUIDE.md" target="_blank" rel="noopener">SDK Guide</a>
+              <a href="https://github.com/pinkysworld/Wardex/blob/main/docs/THREAT_MODEL.md" target="_blank" rel="noopener">Threat Model</a>
+            </div>
+            <div class="footer-col">
+              <h4>Project</h4>
+              <a href="https://github.com/pinkysworld/Wardex" target="_blank" rel="noopener">GitHub</a>
+              <a href="donate.html">Support</a>
+              <a href="https://github.com/pinkysworld/Wardex/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
+              <a href="mailto:michel_ng@icloud.com">Contact</a>
+            </div>
+          </div>
+          <div class="footer-bottom">
+            <p>Wardex · © 2024–2026 · <a href="../LICENSE" style="color:inherit;">BSL 1.1</a> · Commercial production use requires a <a href="pricing.html" style="color: var(--nav-accent);">separate licence</a>.</p>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pricing &amp; Licensing — Wardex</title>
     <meta name="description" content="Wardex licensing: free for community, research, and non-production use. Commercial licence required for production.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -3,6 +3,7 @@ import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SideDrawer, SummaryGrid } from './operator.jsx';
 import { downloadData } from './operatorUtils.js';
+import { useConfirm } from './ConfirmDialog.jsx';
 
 function requestSeverity(detail) {
   const risk = (detail?.risk_level || '').toLowerCase();
@@ -76,6 +77,7 @@ export default function ProcessDrawer({
   positionLabel = null,
 }) {
   const toast = useToast();
+  const [confirm, confirmUI] = useConfirm();
   const {
     data: detail,
     loading,
@@ -118,20 +120,23 @@ export default function ProcessDrawer({
 
   const queueKill = async () => {
     if (!detail) return;
-    if (
-      !window.confirm(
-        `Queue kill request for PID ${detail.pid} (${detail.display_name || detail.name})?`,
-      )
-    )
-      return;
+    const procLabel = detail.display_name || detail.name;
+    const ok = await confirm({
+      title: `Queue kill for PID ${detail.pid}?`,
+      message: `Wardex will send a kill request for ${procLabel} on ${detail.hostname}. This is auditable and reversible only by re-launching the process.`,
+      confirmLabel: 'Queue kill',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+    });
+    if (!ok) return;
     await queueAction(
       {
         action: 'kill_process',
         pid: detail.pid,
-        process_name: detail.display_name || detail.name,
+        process_name: procLabel,
         hostname: detail.hostname,
         severity: requestSeverity(detail),
-        reason: `Operator-requested kill for ${detail.display_name || detail.name} via admin console`,
+        reason: `Operator-requested kill for ${procLabel} via admin console`,
       },
       'Kill',
     );
@@ -139,7 +144,14 @@ export default function ProcessDrawer({
 
   const queueIsolate = async () => {
     if (!detail) return;
-    if (!window.confirm(`Queue host isolation for ${detail.hostname}?`)) return;
+    const ok = await confirm({
+      title: `Isolate ${detail.hostname}?`,
+      message: `Host isolation quarantines the endpoint from the network except for Wardex control. Services on the host will become unreachable.`,
+      confirmLabel: 'Isolate host',
+      cancelLabel: 'Cancel',
+      tone: 'warning',
+    });
+    if (!ok) return;
     await queueAction(
       {
         action: 'isolate',
@@ -152,6 +164,7 @@ export default function ProcessDrawer({
   };
 
   return (
+    <>
     <SideDrawer
       open={!!pid}
       onClose={onClose}
@@ -334,5 +347,7 @@ export default function ProcessDrawer({
         </>
       )}
     </SideDrawer>
+    {confirmUI}
+    </>
   );
 }

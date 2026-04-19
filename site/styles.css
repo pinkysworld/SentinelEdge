@@ -2497,3 +2497,165 @@ chl.chl.chlin: tter0.chl.chl.chlin: tter0rm: uppercase;
   background: var(--bg-alt);
   border-radius: 3px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v12 — Tiered pricing, copy buttons, comparison table, 404
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Pricing period toggle */
+.pricing-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 24px;
+  padding: 4px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.pricing-toggle-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 8px 18px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.875re  font-size: 0.875re  font-size: 0.875re  font-size: 0.875re  font-size: 0.875re  font-size: 0.875re  font-size: 0.875re  font-snsition);
+}
+.pricing-toggle-btn.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+.pricing-toggle-btn .pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+}
+
+/* Tier grid + cards */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  margin: 32px 0 24px;
+}
+@media (max-width: 1100px) { .tier-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .tier-grid { grid-template-columns: 1fr; } }
+
+.tier-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 22px;  padding: 24px 22p--surface);
+  border: 1  borded var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(-  box-shadow: var(ns  box-shadow: var(-  box-shadow: var(ns  box-shadow: var(-  box-shadow: var(ns  box-shadow: var(-  box-shadow: var(ns  box-shadow: var(-  box-shadow: var(nsshad  box-shadow: var(-  box-shde  box-shadow: var(-  tier-card.tier-featured {
+  border-color: var(--accent);
+  box-shadow: 0 10px 36px rgba(26,107,90,0.14);
+}
+.tier-ribbon {
+  position: absolute;
+  top: -12px;
+  right: 16px;
+  padding: 4px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.tier-card-header h3 { font-size: 1.15rem; margin-bottom: 4px; }
+.tier-tag {
+  font-size: 0.82rem;
+  color: var(--ink-3);
+  mar  mar  mar  mar  mar  mar  mar  mar  mar  mar  maitems: baseline;
+  gap: 2px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+.tier-currency {.tier-currency {.tier-currency {.tier-currencvar(--i.tier-currency {.tier-currency ze: 2.2rem; font-weight: 700; letter-sp.tier-currency {.tier-currency {.tier-currency {.tier-currencvar(--i.tier-currency {.tier-currency ze: 2.2rem; font-weight: 700; letter-sp.tier-currency {.tier-currency {.tier-currency {.tier-currencvar(--i.tier-currency {.tier-currency ze: 2.2rem; font-weight: 700; letter 0 8px;
+  font-size: 0.88rem;
+  color: var(--ink-2);
+}
+.tier-features li {
+  position: relative;
+  padding-left: 22px;
+}
+.tier-features li::before {
+.tier-feat "✓";
+  p  p  p  p  p  p  p     p  p  p  pop: 0;
+                  ;
+  color  color  color  color er-cta   color  co0%;   color  color  colorer; disp  color  color  color ier-  color  color  color  color er-cta   color  co0%;   color  col 0%, var(--bg-alt) 100%); }
+
+.pricing-footnote {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--ink-3);
+  line-height: 1.55;
+}
+
+/* Comparison / plan-compare tables */
+.compare-table-wrap {
+  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflow-x: aut  overflor(  overflow-x: aut-weight: 700;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  col  col  col  col  col  cole-table tbody th {
+                                           olor: var(--ink);
+  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  ba  bth:  ba  ba  ba  ba  -vendors thead th:nth-child(2) {
+  background: var(--accent-light);
+  color: var(--accent-hover);
+}
+.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendors tbody td:nt.compare-vendors tbowe.compare-vendoropacity: 0;
+  transition: opacity var(--transition), background var(--transition), color var(--transition), border-color var(--transition);
+}
+.terminal-snippet, .console-output, pre.copyabl.terminal-snippet, .console-output, pre.copyabl.terminal-snippet, .console-output, pre.copyabl.terminal-snippet, .console-output, pre.copyabl.terminal-snippet, .console-output, pre.copyabl.terminal-snippet, .console-output, pre.copyabl.terminal-snipbord.terminal-snippet, .console-outp}
+.copy-btn.copied {
+  opacity: 1;
+  background: rgba(79,209,178,0.22);
+  color: var(--nav-accent);
+  border-color: rgba(79,209,178,0.5);
+}
+
+/* 404 page */
+.notfound {
+  min-height: calc(100vh - 64px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 0;
+}
+.notfound-card {
+  max-width: 640px;
+  padding: 48px 40px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.notfound-card .label { justify-self: c.notfound-card .label { justify-self: c.notfound-card .label { justify-self: c.notfound-card .label { justify-self: c.notfoundp;
+  justify-content: center;
+  gap: 10px;
+  margin: 28px 0 24px;
+}
+.notfound-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  justify-content: center;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+  font-size: 0.85rem;
+}
+.notfound-links a { color: var(--accent); }
+.notfound-links a:hover { text-decoration: underline; }

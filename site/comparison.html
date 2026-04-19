@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wardex vs. the market — Private-cloud XDR comparison</title>
+    <meta name="description" content="How Wardex compares to CrowdStrike, SentinelOne, Microsoft Defender for Endpoint, Elastic Security and Wazuh on data sovereignty, deployment, and licensing.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Wardex vs. CrowdStrike, SentinelOne, Defender, Elastic, Wazuh">
+    <meta property="og:description" content="Side-by-side XDR comparison focused on data sovereignty and deployment model.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/comparison.html">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Wardex vs. the market — XDR comparison">
+    <meta name="twitter:description" content="Side-by-side XDR comparison focused on data sovereignty and deployment model.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=12">
+    <script defer src="app.js?v=12"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+          <a href="donate.html" class="nav-link">Support</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Comparison</p>
+          <h1>Wardex vs. the market.</h1>
+          <p class="page-hero-desc">An honest, spec-level comparison against the five XDR/EDR platforms most commonly evaluated alongside Wardex. All values reflect publicly documented behaviour at the time of writing.</p>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="compare-table-wrap">
+            <table class="compare-table compare-vendors">
+              <thead>
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Wardex</th>
+                  <th scope="col">CrowdStrike Falcon</th>
+                  <th scope="col">SentinelOne Singularity</th>
+                  <th scope="col">Microsoft Defender XDR</th>
+                  <th scope="col">Elastic Security</th>
+                  <th scope="col">Wazuh</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Deployment model</th><td>Self-hosted / air-gapped</td><td>SaaS</td><td>SaaS (limited on-prem)</td><td>SaaS (Azure)</td><td>Self-hosted or Cloud</td><td>Self-hosted</td></tr>
+                <tr><th scope="row">Data sovereignty</th><td>✓ 100% on-prem</td><td>Vendor cloud</td><td>Vendor cloud</td><td>Microsoft cloud</td><td>Operator choice</td><td>✓ On-prem</td></tr>
+                <tr><th scope="row">Single-binary install</th><td>✓</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+                <tr><th scope="row">Source available</th><td>✓ BSL 1.1 → Apache</td><td>—</td><td>—</td><td>—</td><td>✓ Elastic 2.0</td><td>✓ AGPL</td></tr>
+                <tr><th scope="row">Entry price</th><td>Free / €49 mo</td><td>~$300/mo (Go)</td><td>Per-seat</td><td>E5 bundle</td><td>Free tier</td><td>Free</td></tr>
+                <tr><th scope="row">Memory forensics</th><td>✓</td><td>✓</td><td>✓</td><td>Partial</td><td>Partial</td><td>—</td></tr>
+                <tr><th scope="row">UEBA + geo-validation</th><td>✓</td><td>Add-on</td><td>Add-on</td><td>✓</td><td>Partial</td><td>—</td></tr>
+                <tr><th scope="row">YARA + Sigma rule packs</th><td>✓ in-box</td><td>Add-on</td><td>Add-on</td><td>Add-on</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">Digital twin / adversarial harness</th><td>✓</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+                <tr><th scope="row">SLSA provenance + SBOM</th><td>✓ signed cosign</td><td>—</td><td>—</td><td>—</td><td>Partial</td><td>—</td></tr>
+                <tr><th scope="row">Offline / air-gapped support</th><td>✓</td><td>—</td><td>Limited</td><td>—</td><td>✓</td><td>✓</td></tr>
+                <tr><th scope="row">Written in</th><td>Rust</td><td>C / Go</td><td>C++</td><td>C# / .NET</td><td>Go / Java</td><td>C</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="pricing-footnote">Sources: vendor product pages, public documentation, and MITRE ATT&amp;CK evaluations. Last reviewed: 2025. Where a feature requires an add-on or higher tier it is marked "Add-on". Wardex detection feature set reflects current release v0.52.5.</p>
+        </div>
+      </section>
+
+      <section class="section section-cta-band">
+        <div class="container">
+          <div class="cta-card">
+            <div>
+              <h2>Evaluate Wardex head-to-head.</h2>
+              <p>Run the full product free for up to 10 endpoints under the Community tier — no trial expiry, no telemetry leaving your network.</p>
+            </div>
+            <div class="cta-actions">
+              <a href="https://github.com/pinkysworld/Wardex" class="btn btn-primary" target="_blank" rel="noopener">Start on GitHub</a>
+              <a href="pricing.html" class="btn btn-outline">See pricing</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-bottom"><p>Wardex · © 2024–2026 · BSL 1.1</p></div>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

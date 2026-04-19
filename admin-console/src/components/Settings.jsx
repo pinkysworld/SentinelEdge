@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useId } from 'react';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
+import { useConfirm } from './ConfirmDialog.jsx';
 
 function parseStructuredConfig(config) {
   if (!config) return null;
@@ -159,6 +160,7 @@ function TextInput({ label, value, onChange, placeholder, description }) {
 
 export default function Settings() {
   const toast = useToast();
+  const [confirm, confirmUI] = useConfirm();
   const [tab, setTab] = useState('config');
   const { data: config, reload: rConfig } = useApi(api.configCurrent);
   const { data: monOpts } = useApi(api.monitoringOptions);
@@ -329,8 +331,14 @@ export default function Settings() {
     log_level: 'info',
   };
 
-  const resetToDefaults = () => {
-    if (!confirm('Reset configuration to default values?')) return;
+  const resetToDefaults = async () => {
+    const ok = await confirm({
+      title: 'Reset configuration to defaults?',
+      message: 'Built-in defaults will overwrite the currently loaded values. You still have to click Save to apply them server-side.',
+      confirmLabel: 'Reset',
+      tone: 'warning',
+    });
+    if (!ok) return;
     setStructuredConfig((prev) => {
       const next = structuredClone(prev);
       Object.entries(DEFAULTS).forEach(([k, v]) => {
@@ -1120,9 +1128,16 @@ export default function Settings() {
                         className="btn btn-ghost btn-sm"
                         style={{ color: 'var(--danger)' }}
                         onClick={async () => {
-                          if (!confirm(`Delete user "${u.username || u.name}"?`)) return;
+                          const username = u.username || u.name;
+                          const ok = await confirm({
+                            title: `Delete user "${username}"?`,
+                            message: 'The account is removed and any active sessions are revoked. This cannot be undone.',
+                            confirmLabel: 'Delete user',
+                            tone: 'danger',
+                          });
+                          if (!ok) return;
                           try {
-                            await api.rbacDeleteUser(u.username || u.name);
+                            await api.rbacDeleteUser(username);
                             toast('User deleted', 'success');
                             rTeam();
                           } catch (e) {
@@ -1277,7 +1292,13 @@ export default function Settings() {
                       toast('Invalid value — enter 1-3650 days', 'error');
                       return;
                     }
-                    if (!confirm(`Purge all records older than ${purgeDays} days?`)) return;
+                    const ok = await confirm({
+                      title: `Purge records older than ${purgeDays} days?`,
+                      message: 'Alerts, audit events and metrics older than the retention window will be permanently deleted. This cannot be undone.',
+                      confirmLabel: 'Purge records',
+                      tone: 'danger',
+                    });
+                    if (!ok) return;
                     setPurging(true);
                     try {
                       const r = await api.adminDbPurge({ retention_days: purgeDays });
@@ -1368,7 +1389,13 @@ export default function Settings() {
               <button
                 className="btn btn-danger"
                 onClick={async () => {
-                  if (!confirm('Shutdown the Wardex server?')) return;
+                  const ok = await confirm({
+                    title: 'Shutdown the Wardex server?',
+                    message: 'The server process will terminate. You will need out-of-band access to restart it.',
+                    confirmLabel: 'Shutdown',
+                    tone: 'danger',
+                  });
+                  if (!ok) return;
                   try {
                     await api.shutdown();
                     toast('Shutdown initiated', 'warning');
@@ -1383,6 +1410,7 @@ export default function Settings() {
           </div>
         </>
       )}
+      {confirmUI}
     </div>
   );
 }
