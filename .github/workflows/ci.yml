@@ -309,6 +309,32 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
+  # ── Benchmark smoke gate ──────────────────────────────────────────
+  # Compiles (but does not execute) the criterion benchmarks so obvious
+  # breakage — missing APIs, feature-flag drift, signature changes —
+  # fails fast instead of surfacing only during a perf investigation.
+  # Kept as `--no-run` because full runs are too slow for the PR lane;
+  # scheduled perf runs with baselines are tracked for a follow-up.
+  bench-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Cache cargo registry & build
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: bench-
+      - name: Compile benchmarks
+        run: cargo bench --no-run --bench pipeline
+
   # ── Single aggregate status for branch protection ─────────────────────
   # Depend on this one job in branch protection rules instead of pinning
   # every individual matrix job. Uses `always()` + result checks so a
@@ -329,6 +355,7 @@ jobs:
       - feature-flags
       - sdk-generation
       - container-scan
+      - bench-compile
     runs-on: ubuntu-latest
     steps:
       - name: Verify all required jobs succeeded
