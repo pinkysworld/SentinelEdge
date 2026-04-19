@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776593699145,
+  "lastUpdate": 1776607538627,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -357,6 +357,96 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 33493,
             "range": "± 311",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "distinct": true,
+          "id": "9adb9fb86d0215313fd05d958a857881bdd77a85",
+          "message": "malware: dynamic behavior scoring (phase 3) + ML triage calibration (phase 4)\n\nPhase 3 — dynamic/behavioral scoring:\n- New BehaviorSignals struct carrying 5 runtime tactics\n  (suspicious_process_tree, defense_evasion, persistence_installed,\n  c2_beaconing_detected, credential_access).\n- New behavior_indicators axis on ScoreFactors (15 pts/tactic, cap 60).\n- New MalwareScanner::enrich_with_behavior(): appends a behavior layer\n  ScanMatch, upgrades verdict (2+ tactics -> Suspicious if Clean,\n  3+ -> Malicious), and recomputes the static score with the behavior\n  axis while preserving any prior ransomware contribution.\n\nPhase 4 — ML triage polish:\n- MlTriageInfo gains calibrated_probability (sigmoid-calibrated raw\n  confidence, Platt style k=4.0 centred on 0.5) and rationale lines.\n- ML triage now also runs for clean samples whose entropy analysis\n  flags packed/suspicious — packed binaries no longer slip through\n  without a triage opinion.\n- Deterministic calibration (pure f64, no randomness), monotonic,\n  bounded to [0, 1], midpoint-preserving.\n\n5 new unit tests, 17/17 malware_scanner tests green.",
+          "timestamp": "2026-04-19T16:00:01+02:00",
+          "tree_id": "e608e557739f8806b5863f43b271c876bdb828c3",
+          "url": "https://github.com/pinkysworld/Wardex/commit/9adb9fb86d0215313fd05d958a857881bdd77a85"
+        },
+        "date": 1776607538210,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 47483,
+            "range": "± 375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 410215,
+            "range": "± 5806",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1872841,
+            "range": "± 18280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17388093,
+            "range": "± 110287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 676,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 227,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 17374147,
+            "range": "± 130421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 113780,
+            "range": "± 1448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 93818,
+            "range": "± 2398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 55,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 33439,
+            "range": "± 355",
             "unit": "ns/iter"
           }
         ]
