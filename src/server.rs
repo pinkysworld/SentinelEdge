@@ -77,7 +77,8 @@ use crate::energy::EnergyBudget;
 use crate::enforcement::EnforcementEngine;
 use crate::enrollment::{AgentHealth, AgentIdentity, AgentRegistry, AgentStatus};
 use crate::enterprise::{
-    ContentLifecycle, EnterpriseStore, HuntResponseAction, HuntRun, ResponseActionResult,
+    ContentLifecycle, EnterpriseStore, HuntResponseAction, HuntRun, IdentityConfigValidation,
+    ResponseActionResult,
     SavedHunt, build_content_rules_view, build_entity_profile, build_entity_timeline,
     build_incident_storyline, build_mitre_coverage,
 };
@@ -7765,7 +7766,20 @@ fn handle_api(
         }
         (Method::Get, "/api/idp/providers") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
-            json_response(&serde_json::json!({"providers": s.enterprise.idp_providers(), "count": s.enterprise.idp_providers().len()}).to_string(), 200)
+            let providers = s.enterprise.idp_provider_summaries();
+            let healthy = providers
+                .iter()
+                .filter(|provider| provider.validation.status == "ready")
+                .count();
+            json_response(
+                &serde_json::json!({
+                    "providers": providers,
+                    "count": s.enterprise.idp_providers().len(),
+                    "healthy": healthy,
+                })
+                .to_string(),
+                200,
+            )
         }
         (Method::Post, "/api/idp/providers") => match read_json_value(body, 12 * 1024) {
             Ok(v) => {
@@ -7775,7 +7789,7 @@ fn handle_api(
                     .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
                     .unwrap_or_default();
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                let provider = s.enterprise.create_or_update_idp_provider(
+                match s.enterprise.create_or_update_idp_provider(
                     v["id"].as_str(),
                     v["kind"].as_str().unwrap_or("oidc").to_string(),
                     v["display_name"]
@@ -7798,29 +7812,49 @@ fn handle_api(
                         .and_then(|value| value.as_bool())
                         .unwrap_or(true),
                     mappings,
-                );
-                let _ = s.enterprise.record_change(
-                    "identity_provider",
-                    &provider.id,
-                    &format!(
-                        "Configured {} provider {}",
-                        provider.kind, provider.display_name
-                    ),
-                    auth_identity.actor(),
-                    Some(provider.id.clone()),
-                    Some(&v.to_string()),
-                );
-                json_response(
-                    &serde_json::json!({"status": "saved", "provider": provider}).to_string(),
-                    200,
-                )
+                ) {
+                    Ok(provider) => {
+                        let validation = s
+                            .enterprise
+                            .idp_provider_summaries()
+                            .into_iter()
+                            .find(|summary| summary.provider.id == provider.id)
+                            .map(|summary| summary.validation)
+                            .unwrap_or_else(|| IdentityConfigValidation {
+                                status: if provider.enabled {
+                                    "ready".to_string()
+                                } else {
+                                    "disabled".to_string()
+                                },
+                                issues: Vec::new(),
+                                mapping_count: provider.group_role_mappings.len(),
+                            });
+                        let _ = s.enterprise.record_change(
+                            "identity_provider",
+                            &provider.id,
+                            &format!(
+                                "Configured {} provider {}",
+                                provider.kind, provider.display_name
+                            ),
+                            auth_identity.actor(),
+                            Some(provider.id.clone()),
+                            Some(&v.to_string()),
+                        );
+                        json_response(
+                            &serde_json::json!({"status": "saved", "provider": provider, "validation": validation})
+                                .to_string(),
+                            200,
+                        )
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
             }
             Err(e) => error_json(&e, 400),
         },
         (Method::Get, "/api/scim/config") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             json_response(
-                &serde_json::json!({"config": s.enterprise.scim()}).to_string(),
+                &serde_json::json!({"config": s.enterprise.scim(), "validation": s.enterprise.scim_validation()}).to_string(),
                 200,
             )
         }
@@ -7832,7 +7866,7 @@ fn handle_api(
                     .and_then(|value| serde_json::from_value::<HashMap<String, String>>(value).ok())
                     .unwrap_or_default();
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                let config = s.enterprise.update_scim(
+                match s.enterprise.update_scim(
                     v.get("enabled")
                         .and_then(|value| value.as_bool())
                         .unwrap_or(true),
@@ -7848,19 +7882,25 @@ fn handle_api(
                         .to_string(),
                     v["default_role"].as_str().unwrap_or("viewer").to_string(),
                     mappings,
-                );
-                let _ = s.enterprise.record_change(
-                    "scim",
-                    "scim-config",
-                    "Updated SCIM provisioning configuration",
-                    auth_identity.actor(),
-                    Some("scim-config".to_string()),
-                    Some(&v.to_string()),
-                );
-                json_response(
-                    &serde_json::json!({"status": "saved", "config": config}).to_string(),
-                    200,
-                )
+                ) {
+                    Ok(config) => {
+                        let validation = s.enterprise.scim_validation();
+                        let _ = s.enterprise.record_change(
+                            "scim",
+                            "scim-config",
+                            "Updated SCIM provisioning configuration",
+                            auth_identity.actor(),
+                            Some("scim-config".to_string()),
+                            Some(&v.to_string()),
+                        );
+                        json_response(
+                            &serde_json::json!({"status": "saved", "config": config, "validation": validation})
+                                .to_string(),
+                            200,
+                        )
+                    }
+                    Err(e) => error_json(&e, 400),
+                }
             }
             Err(e) => error_json(&e, 400),
         },

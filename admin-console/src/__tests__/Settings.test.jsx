@@ -23,6 +23,60 @@ describe('Settings', () => {
       const path = parsed.pathname;
       const params = parsed.searchParams;
 
+      if (path === '/api/idp/providers') {
+        return Promise.resolve(
+          jsonOk({
+            providers: [
+              {
+                id: 'idp-1',
+                display_name: 'Corporate SSO',
+                kind: 'oidc',
+                enabled: true,
+                validation: {
+                  status: 'warning',
+                  issues: [
+                    {
+                      level: 'warning',
+                      field: 'group_role_mappings',
+                      message:
+                        'No group-to-role mappings configured; users may fall back to viewer access.',
+                    },
+                  ],
+                  mapping_count: 0,
+                },
+              },
+            ],
+            count: 1,
+            healthy: 0,
+          }),
+        );
+      }
+      if (path === '/api/scim/config') {
+        return Promise.resolve(
+          jsonOk({
+            config: {
+              enabled: true,
+              base_url: 'https://scim.example.com',
+              provisioning_mode: 'automatic',
+              default_role: 'admin',
+              group_role_mappings: { Security: 'admin' },
+              status: 'configured',
+            },
+            validation: {
+              status: 'warning',
+              issues: [
+                {
+                  level: 'warning',
+                  field: 'default_role',
+                  message:
+                    'Default role is admin; review whether all newly provisioned users should be privileged.',
+                },
+              ],
+              mapping_count: 1,
+            },
+          }),
+        );
+      }
       if (
         path === '/api/audit/log' &&
         params.get('limit') === '25' &&
@@ -198,5 +252,51 @@ describe('Settings', () => {
       ).toBe(true);
     });
     expect(globalThis.URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it('surfaces identity validation state on the integrations tab', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ToastProvider>
+        <Settings />
+      </ToastProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Integrations' }));
+
+    const idpCard = (await screen.findByText('IdP Providers')).closest('.card');
+    expect(idpCard).not.toBeNull();
+
+    const providerCell = within(idpCard).getByRole('cell', { name: 'Corporate SSO' });
+    const providerRow = providerCell.closest('tr');
+    expect(providerRow).not.toBeNull();
+    expect(within(providerRow).getByText('OIDC')).toBeInTheDocument();
+    expect(within(providerRow).getByText('Review')).toBeInTheDocument();
+    expect(within(providerRow).getByText('1 issue • 0 mappings')).toBeInTheDocument();
+    expect(
+      screen.getByText('No group-to-role mappings configured; users may fall back to viewer access.'),
+    ).toBeInTheDocument();
+
+    const scimCard = screen.getByText('SCIM Config').closest('.card');
+    expect(scimCard).not.toBeNull();
+    expect(within(scimCard).getByText('Review')).toBeInTheDocument();
+    expect(within(scimCard).getByText('1 group mapping configured')).toBeInTheDocument();
+    expect(
+      Array.from(scimCard.querySelectorAll('.stat-box')).some((node) =>
+        node.textContent?.includes(
+          'Default role is admin; review whether all newly provisioned users should be privileged.',
+        ),
+      ),
+    ).toBe(true);
+
+    await waitFor(() => {
+      expect(
+        globalThis.fetch.mock.calls.some(([url]) => String(url) === '/api/idp/providers'),
+      ).toBe(true);
+      expect(
+        globalThis.fetch.mock.calls.some(([url]) => String(url) === '/api/scim/config'),
+      ).toBe(true);
+    });
   });
 });

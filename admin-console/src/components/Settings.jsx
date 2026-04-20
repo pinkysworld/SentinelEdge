@@ -74,6 +74,47 @@ function auditRangeLabel(page) {
   return `Showing ${page.offset + 1}-${page.offset + page.count} of ${page.total} entries`;
 }
 
+function normalizeValidation(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { status: 'unknown', issues: [], mapping_count: 0 };
+  }
+  return {
+    status: typeof value.status === 'string' ? value.status : 'unknown',
+    issues: Array.isArray(value.issues) ? value.issues : [],
+    mapping_count: typeof value.mapping_count === 'number' ? value.mapping_count : 0,
+  };
+}
+
+function validationBadgeClass(status) {
+  switch (status) {
+    case 'ready':
+      return 'badge-ok';
+    case 'warning':
+      return 'badge-warn';
+    case 'error':
+      return 'badge-err';
+    case 'disabled':
+      return 'badge-info';
+    default:
+      return 'badge-info';
+  }
+}
+
+function validationStatusLabel(status) {
+  switch (status) {
+    case 'ready':
+      return 'Ready';
+    case 'warning':
+      return 'Review';
+    case 'error':
+      return 'Blocked';
+    case 'disabled':
+      return 'Disabled';
+    default:
+      return 'Unknown';
+  }
+}
+
 function auditEmptyMessage(filtersActive) {
   return filtersActive ? 'No audit entries match the current filters.' : 'No audit entries captured yet.';
 }
@@ -397,11 +438,26 @@ export default function Settings() {
   }, [enrichConn]);
 
   const idpRows = useMemo(() => {
-    if (Array.isArray(idp)) return idp;
-    if (Array.isArray(idp?.providers)) return idp.providers;
-    if (Array.isArray(idp?.items)) return idp.items;
-    return [];
+    const rows = Array.isArray(idp)
+      ? idp
+      : Array.isArray(idp?.providers)
+        ? idp.providers
+        : Array.isArray(idp?.items)
+          ? idp.items
+          : [];
+    return rows.map((entry) => ({
+      ...entry,
+      validation: normalizeValidation(entry?.validation),
+    }));
   }, [idp]);
+
+  const scimConfigData = useMemo(() => {
+    const candidate = scim?.config ?? scim;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+    return candidate;
+  }, [scim]);
+
+  const scimValidation = useMemo(() => normalizeValidation(scim?.validation), [scim]);
 
   const flagEntries = useMemo(() => {
     if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return [];
@@ -1093,26 +1149,72 @@ export default function Settings() {
                 IdP Providers
               </div>
               {idpRows.length > 0 ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {idpRows.map((p, i) => (
-                        <tr key={i}>
-                          <td>{p.name || p.id || '—'}</td>
-                          <td>{p.type || '—'}</td>
-                          <td>{p.enabled ? '✓' : '✗'}</td>
+                <>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Status</th>
+                          <th>Validation</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {idpRows.map((p, i) => (
+                          <tr key={p.id || i}>
+                            <td>{p.display_name || p.name || p.id || '—'}</td>
+                            <td>{String(p.kind || p.type || '—').toUpperCase()}</td>
+                            <td>
+                              <span className={`badge ${p.enabled ? 'badge-ok' : 'badge-info'}`}>
+                                {p.enabled ? 'Enabled' : 'Disabled'}
+                              </span>
+                            </td>
+                            <td>
+                              <span
+                                className={`badge ${validationBadgeClass(p.validation?.status)}`}
+                              >
+                                {validationStatusLabel(p.validation?.status)}
+                              </span>
+                              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.75 }}>
+                                {p.validation?.issues?.length || 0} issue
+                                {p.validation?.issues?.length === 1 ? '' : 's'} •{' '}
+                                {p.validation?.mapping_count || 0} mapping
+                                {(p.validation?.mapping_count || 0) === 1 ? '' : 's'}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {idpRows.some((provider) => provider.validation?.issues?.length > 0) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                      {idpRows
+                        .filter((provider) => provider.validation?.issues?.length > 0)
+                        .map((provider) => (
+                          <div key={`${provider.id}-issues`} className="stat-box">
+                            <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                              {provider.display_name || provider.id}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {provider.validation.issues.map((issue, index) => (
+                                <div key={`${provider.id}-issue-${index}`} style={{ fontSize: 12 }}>
+                                  <span
+                                    className={`badge ${issue.level === 'error' ? 'badge-err' : 'badge-warn'}`}
+                                    style={{ marginRight: 8 }}
+                                  >
+                                    {issue.level}
+                                  </span>
+                                  <strong>{issue.field}:</strong> {issue.message}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <SummaryGrid
@@ -1125,12 +1227,34 @@ export default function Settings() {
               )}
             </div>
             <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>
-                SCIM Config
+              <div className="card-header">
+                <span className="card-title">SCIM Config</span>
+                <span className={`badge ${validationBadgeClass(scimValidation.status)}`}>
+                  {validationStatusLabel(scimValidation.status)}
+                </span>
               </div>
-              {scim && typeof scim === 'object' && !Array.isArray(scim) ? (
+              {scimConfigData ? (
                 <>
-                  <SummaryGrid data={scim} limit={10} />
+                  <SummaryGrid data={scimConfigData} limit={10} />
+                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>
+                    {scimValidation.mapping_count} group mapping
+                    {scimValidation.mapping_count === 1 ? '' : 's'} configured
+                  </div>
+                  {scimValidation.issues.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+                      {scimValidation.issues.map((issue, index) => (
+                        <div key={`scim-issue-${index}`} className="stat-box" style={{ fontSize: 12 }}>
+                          <span
+                            className={`badge ${issue.level === 'error' ? 'badge-err' : 'badge-warn'}`}
+                            style={{ marginRight: 8 }}
+                          >
+                            {issue.level}
+                          </span>
+                          <strong>{issue.field}:</strong> {issue.message}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <JsonDetails data={scim} />
                 </>
               ) : (

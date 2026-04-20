@@ -42,6 +42,68 @@ fn severity_rank(severity: &str) -> u8 {
     }
 }
 
+const IDENTITY_ROLES: [&str; 3] = ["admin", "analyst", "viewer"];
+const SCIM_PROVISIONING_MODES: [&str; 2] = ["manual", "automatic"];
+
+fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value.and_then(|entry| {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn normalize_identity_role(role: &str) -> Result<String, String> {
+    let normalized = role.trim().to_ascii_lowercase();
+    if IDENTITY_ROLES.contains(&normalized.as_str()) {
+        Ok(normalized)
+    } else {
+        Err(format!(
+            "invalid role '{role}'; expected one of {}",
+            IDENTITY_ROLES.join(", ")
+        ))
+    }
+}
+
+fn normalize_group_role_mappings(
+    mappings: HashMap<String, String>,
+) -> Result<HashMap<String, String>, String> {
+    let mut normalized = HashMap::new();
+    for (group, role) in mappings {
+        let group_name = group.trim();
+        if group_name.is_empty() {
+            return Err("group role mappings cannot contain empty group names".into());
+        }
+        let normalized_role = normalize_identity_role(&role)?;
+        normalized.insert(group_name.to_string(), normalized_role);
+    }
+    Ok(normalized)
+}
+
+fn validation_issue(level: &str, field: &str, message: &str) -> IdentityConfigIssue {
+    IdentityConfigIssue {
+        level: level.to_string(),
+        field: field.to_string(),
+        message: message.to_string(),
+    }
+}
+
+fn validation_status(enabled: bool, issues: &[IdentityConfigIssue]) -> String {
+    if !enabled {
+        return "disabled".to_string();
+    }
+    if issues.iter().any(|issue| issue.level == "error") {
+        return "error".to_string();
+    }
+    if issues.iter().any(|issue| issue.level == "warning") {
+        return "warning".to_string();
+    }
+    "ready".to_string()
+}
+
 fn attack_name(attack: &MitreAttack) -> String {
     if attack.technique_name.is_empty() {
         attack.technique_id.clone()
@@ -619,6 +681,27 @@ pub struct ScimConfig {
     pub last_sync_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct IdentityConfigIssue {
+    pub level: String,
+    pub field: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IdentityConfigValidation {
+    pub status: String,
+    pub issues: Vec<IdentityConfigIssue>,
+    pub mapping_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IdentityProviderSummary {
+    #[serde(flatten)]
+    pub provider: IdentityProviderConfig,
+    pub validation: IdentityConfigValidation,
+}
+
 impl Default for ScimConfig {
     fn default() -> Self {
         Self {
@@ -923,6 +1006,22 @@ impl EnterpriseStore {
 
     pub fn scim(&self) -> &ScimConfig {
         &self.snapshot.scim
+    }
+
+    pub fn idp_provider_summaries(&self) -> Vec<IdentityProviderSummary> {
+        self.snapshot
+            .idp_providers
+            .iter()
+            .cloned()
+            .map(|provider| IdentityProviderSummary {
+                validation: validate_idp_provider_config(&provider),
+                provider,
+            })
+            .collect()
+    }
+
+    pub fn scim_validation(&self) -> IdentityConfigValidation {
+        validate_scim_config(&self.snapshot.scim)
     }
 
     pub fn change_control(&self) -> &[ChangeControlEntry] {
@@ -1779,7 +1878,39 @@ impl EnterpriseStore {
         entity_id: Option<String>,
         enabled: bool,
         group_role_mappings: HashMap<String, String>,
-    ) -> IdentityProviderConfig {
+    ) -> Result<IdentityProviderConfig, String> {
+        let normalized_kind = kind.trim().to_ascii_lowercase();
+        if normalized_kind != "oidc" && normalized_kind != "saml" {
+            return Err("identity provider kind must be 'oidc' or 'saml'".into());
+        }
+        let normalized_name = display_name.trim();
+        if normalized_name.is_empty() {
+            return Err("identity provider display_name cannot be empty".into());
+        }
+        let normalized_issuer_url = normalize_optional_text(issuer_url);
+        let normalized_sso_url = normalize_optional_text(sso_url);
+        let normalized_client_id = normalize_optional_text(client_id);
+        let normalized_entity_id = normalize_optional_text(entity_id);
+        let normalized_mappings = normalize_group_role_mappings(group_role_mappings)?;
+
+        if enabled {
+            if normalized_kind == "oidc" {
+                if normalized_issuer_url.is_none() {
+                    return Err("enabled OIDC providers require issuer_url".into());
+                }
+                if normalized_client_id.is_none() {
+                    return Err("enabled OIDC providers require client_id".into());
+                }
+            } else {
+                if normalized_sso_url.is_none() {
+                    return Err("enabled SAML providers require sso_url".into());
+                }
+                if normalized_entity_id.is_none() {
+                    return Err("enabled SAML providers require entity_id".into());
+                }
+            }
+        }
+
         if let Some(id) = id
             && let Some(index) = self
                 .snapshot
@@ -1789,14 +1920,14 @@ impl EnterpriseStore {
         {
             let updated = {
                 let provider = &mut self.snapshot.idp_providers[index];
-                provider.kind = kind;
-                provider.display_name = display_name;
-                provider.issuer_url = issuer_url;
-                provider.sso_url = sso_url;
-                provider.client_id = client_id;
-                provider.entity_id = entity_id;
+                provider.kind = normalized_kind;
+                provider.display_name = normalized_name.to_string();
+                provider.issuer_url = normalized_issuer_url;
+                provider.sso_url = normalized_sso_url;
+                provider.client_id = normalized_client_id;
+                provider.entity_id = normalized_entity_id;
                 provider.enabled = enabled;
-                provider.group_role_mappings = group_role_mappings;
+                provider.group_role_mappings = normalized_mappings;
                 provider.status = if enabled {
                     "configured".to_string()
                 } else {
@@ -1806,28 +1937,28 @@ impl EnterpriseStore {
                 provider.clone()
             };
             self.persist();
-            return updated;
+            return Ok(updated);
         }
         let provider = IdentityProviderConfig {
             id: self.next_id("idp"),
-            kind,
-            display_name,
-            issuer_url,
-            sso_url,
-            client_id,
-            entity_id,
+            kind: normalized_kind,
+            display_name: normalized_name.to_string(),
+            issuer_url: normalized_issuer_url,
+            sso_url: normalized_sso_url,
+            client_id: normalized_client_id,
+            entity_id: normalized_entity_id,
             enabled,
             status: if enabled {
                 "configured".to_string()
             } else {
                 "disabled".to_string()
             },
-            group_role_mappings,
+            group_role_mappings: normalized_mappings,
             updated_at: now_rfc3339(),
         };
         self.snapshot.idp_providers.push(provider.clone());
         self.persist();
-        provider
+        Ok(provider)
     }
 
     pub fn update_scim(
@@ -1838,13 +1969,31 @@ impl EnterpriseStore {
         provisioning_mode: String,
         default_role: String,
         group_role_mappings: HashMap<String, String>,
-    ) -> ScimConfig {
+    ) -> Result<ScimConfig, String> {
+        let normalized_mode = provisioning_mode.trim().to_ascii_lowercase();
+        if !SCIM_PROVISIONING_MODES.contains(&normalized_mode.as_str()) {
+            return Err("scim provisioning_mode must be 'manual' or 'automatic'".into());
+        }
+        let normalized_default_role = normalize_identity_role(&default_role)?;
+        let normalized_base_url = normalize_optional_text(base_url);
+        let normalized_bearer_token = normalize_optional_text(bearer_token);
+        let normalized_mappings = normalize_group_role_mappings(group_role_mappings)?;
+
+        if enabled {
+            if normalized_base_url.is_none() {
+                return Err("enabled SCIM configuration requires base_url".into());
+            }
+            if normalized_bearer_token.is_none() {
+                return Err("enabled SCIM configuration requires bearer_token".into());
+            }
+        }
+
         self.snapshot.scim.enabled = enabled;
-        self.snapshot.scim.base_url = base_url;
-        self.snapshot.scim.bearer_token = bearer_token;
-        self.snapshot.scim.provisioning_mode = provisioning_mode;
-        self.snapshot.scim.default_role = default_role;
-        self.snapshot.scim.group_role_mappings = group_role_mappings;
+        self.snapshot.scim.base_url = normalized_base_url;
+        self.snapshot.scim.bearer_token = normalized_bearer_token;
+        self.snapshot.scim.provisioning_mode = normalized_mode;
+        self.snapshot.scim.default_role = normalized_default_role;
+        self.snapshot.scim.group_role_mappings = normalized_mappings;
         self.snapshot.scim.status = if enabled {
             "configured".to_string()
         } else {
@@ -1852,7 +2001,124 @@ impl EnterpriseStore {
         };
         self.snapshot.scim.updated_at = Some(now_rfc3339());
         self.persist();
-        self.snapshot.scim.clone()
+        Ok(self.snapshot.scim.clone())
+    }
+}
+
+fn validate_idp_provider_config(provider: &IdentityProviderConfig) -> IdentityConfigValidation {
+    let mut issues = Vec::new();
+    if provider.display_name.trim().is_empty() {
+        issues.push(validation_issue(
+            "error",
+            "display_name",
+            "Display name is required.",
+        ));
+    }
+
+    match provider.kind.trim().to_ascii_lowercase().as_str() {
+        "oidc" => {
+            if provider.enabled && provider.issuer_url.as_deref().unwrap_or("").trim().is_empty() {
+                issues.push(validation_issue(
+                    "error",
+                    "issuer_url",
+                    "Enabled OIDC providers require an issuer URL.",
+                ));
+            }
+            if provider.enabled && provider.client_id.as_deref().unwrap_or("").trim().is_empty() {
+                issues.push(validation_issue(
+                    "error",
+                    "client_id",
+                    "Enabled OIDC providers require a client ID.",
+                ));
+            }
+        }
+        "saml" => {
+            if provider.enabled && provider.sso_url.as_deref().unwrap_or("").trim().is_empty() {
+                issues.push(validation_issue(
+                    "error",
+                    "sso_url",
+                    "Enabled SAML providers require an SSO URL.",
+                ));
+            }
+            if provider.enabled && provider.entity_id.as_deref().unwrap_or("").trim().is_empty() {
+                issues.push(validation_issue(
+                    "error",
+                    "entity_id",
+                    "Enabled SAML providers require an entity ID.",
+                ));
+            }
+        }
+        _ => issues.push(validation_issue(
+            "error",
+            "kind",
+            "Provider kind must be OIDC or SAML.",
+        )),
+    }
+
+    if provider.enabled && provider.group_role_mappings.is_empty() {
+        issues.push(validation_issue(
+            "warning",
+            "group_role_mappings",
+            "No group-to-role mappings configured; users may fall back to viewer access.",
+        ));
+    }
+
+    IdentityConfigValidation {
+        status: validation_status(provider.enabled, &issues),
+        mapping_count: provider.group_role_mappings.len(),
+        issues,
+    }
+}
+
+fn validate_scim_config(config: &ScimConfig) -> IdentityConfigValidation {
+    let mut issues = Vec::new();
+    if config.enabled && config.base_url.as_deref().unwrap_or("").trim().is_empty() {
+        issues.push(validation_issue(
+            "error",
+            "base_url",
+            "Enabled SCIM provisioning requires a base URL.",
+        ));
+    }
+    if config.enabled && config.bearer_token.as_deref().unwrap_or("").trim().is_empty() {
+        issues.push(validation_issue(
+            "error",
+            "bearer_token",
+            "Enabled SCIM provisioning requires a bearer token.",
+        ));
+    }
+    if !SCIM_PROVISIONING_MODES.contains(&config.provisioning_mode.as_str()) {
+        issues.push(validation_issue(
+            "error",
+            "provisioning_mode",
+            "Provisioning mode must be manual or automatic.",
+        ));
+    }
+    if !IDENTITY_ROLES.contains(&config.default_role.as_str()) {
+        issues.push(validation_issue(
+            "error",
+            "default_role",
+            "Default role must be admin, analyst, or viewer.",
+        ));
+    }
+    if config.enabled && config.group_role_mappings.is_empty() {
+        issues.push(validation_issue(
+            "warning",
+            "group_role_mappings",
+            "No group-to-role mappings configured; all provisioned users receive the default role.",
+        ));
+    }
+    if config.enabled && config.default_role == "admin" {
+        issues.push(validation_issue(
+            "warning",
+            "default_role",
+            "Default role is admin; review whether all newly provisioned users should be privileged.",
+        ));
+    }
+
+    IdentityConfigValidation {
+        status: validation_status(config.enabled, &issues),
+        mapping_count: config.group_role_mappings.len(),
+        issues,
     }
 }
 
@@ -2535,6 +2801,14 @@ mod tests {
     use crate::collector::AlertRecord;
     use crate::telemetry::TelemetrySample;
 
+    fn store_test_path(name: &str) -> String {
+        format!(
+            "/tmp/{}_{}.json",
+            name,
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        )
+    }
+
     fn sample_event(id: u64, hostname: &str, level: &str, reasons: &[&str]) -> StoredEvent {
         StoredEvent {
             id,
@@ -2576,10 +2850,7 @@ mod tests {
 
     #[test]
     fn builtin_rules_bootstrap_and_hunt_run() {
-        let path = format!(
-            "/tmp/wardex_enterprise_test_{}.json",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-        );
+        let path = store_test_path("wardex_enterprise_test");
         let mut store = EnterpriseStore::new(&path);
         assert!(!store.builtin_rules().is_empty());
         let hunt = store.create_or_update_hunt(
@@ -2770,5 +3041,92 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(!results[0].executed);
         assert!(results[0].detail.contains("below min_level"));
+    }
+
+    #[test]
+    fn identity_provider_configs_are_normalized_and_validated() {
+        let path = store_test_path("wardex_identity_provider_test");
+        let mut store = EnterpriseStore::new(&path);
+
+        let mut mappings = HashMap::new();
+        mappings.insert(" Engineers ".to_string(), " ANALYST ".to_string());
+
+        let provider = store
+            .create_or_update_idp_provider(
+                None,
+                "OIDC".to_string(),
+                " Corporate SSO ".to_string(),
+                Some(" https://issuer.example.com ".to_string()),
+                None,
+                Some(" wardex-admin ".to_string()),
+                None,
+                true,
+                mappings,
+            )
+            .expect("provider should be created");
+
+        assert_eq!(provider.kind, "oidc");
+        assert_eq!(provider.display_name, "Corporate SSO");
+        assert_eq!(provider.issuer_url.as_deref(), Some("https://issuer.example.com"));
+        assert_eq!(provider.client_id.as_deref(), Some("wardex-admin"));
+        assert_eq!(
+            provider.group_role_mappings.get("Engineers").map(String::as_str),
+            Some("analyst")
+        );
+
+        let summary = store
+            .idp_provider_summaries()
+            .into_iter()
+            .find(|summary| summary.provider.id == provider.id)
+            .expect("provider summary should exist");
+        assert_eq!(summary.validation.status, "ready");
+        assert_eq!(summary.validation.mapping_count, 1);
+        assert!(summary.validation.issues.is_empty());
+    }
+
+    #[test]
+    fn scim_validation_flags_risky_defaults_and_rejects_invalid_roles() {
+        let path = store_test_path("wardex_scim_validation_test");
+        let mut store = EnterpriseStore::new(&path);
+
+        let err = store
+            .update_scim(
+                false,
+                None,
+                None,
+                "manual".to_string(),
+                "owner".to_string(),
+                HashMap::new(),
+            )
+            .expect_err("invalid default roles should be rejected");
+        assert!(err.contains("invalid role 'owner'"));
+
+        let config = store
+            .update_scim(
+                true,
+                Some(" https://scim.example.com ".to_string()),
+                Some(" super-secret-token ".to_string()),
+                "AUTOMATIC".to_string(),
+                " Admin ".to_string(),
+                HashMap::new(),
+            )
+            .expect("valid scim config should be stored");
+
+        assert_eq!(config.base_url.as_deref(), Some("https://scim.example.com"));
+        assert_eq!(config.bearer_token.as_deref(), Some("super-secret-token"));
+        assert_eq!(config.provisioning_mode, "automatic");
+        assert_eq!(config.default_role, "admin");
+
+        let validation = store.scim_validation();
+        assert_eq!(validation.status, "warning");
+        assert_eq!(validation.mapping_count, 0);
+        assert!(validation
+            .issues
+            .iter()
+            .any(|issue| issue.field == "group_role_mappings" && issue.level == "warning"));
+        assert!(validation
+            .issues
+            .iter()
+            .any(|issue| issue.field == "default_role" && issue.level == "warning"));
     }
 }
