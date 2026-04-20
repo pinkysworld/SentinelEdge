@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { ToastProvider, ThemeProvider } from '../hooks.jsx';
+import { AuthProvider, ToastProvider, ThemeProvider } from '../hooks.jsx';
 import ThreatDetection from '../components/ThreatDetection.jsx';
 import Infrastructure from '../components/Infrastructure.jsx';
 import ReportsExports from '../components/ReportsExports.jsx';
@@ -53,9 +53,11 @@ beforeEach(() => {
 function renderWithProviders(node, route = '/') {
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <ThemeProvider>
-        <ToastProvider>{node}</ToastProvider>
-      </ThemeProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <ToastProvider>{node}</ToastProvider>
+        </ThemeProvider>
+      </AuthProvider>
     </MemoryRouter>,
   );
 }

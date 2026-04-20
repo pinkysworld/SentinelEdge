@@ -122,6 +122,7 @@ pub mod ndr;
 pub mod quantum;
 pub mod side_channel;
 pub mod tls;
+pub mod user_preferences;
 
 // ── Observability & Telemetry ────────────────────────────────────────────────
 pub mod api_analytics;

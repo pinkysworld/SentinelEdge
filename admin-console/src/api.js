@@ -61,6 +61,8 @@ export const authCheck = () => get('/api/auth/check');
 export const authRotate = () => post('/api/auth/rotate');
 export const authSession = () => get('/api/auth/session');
 export const sessionInfo = () => get('/api/session/info');
+export const userPreferences = () => get('/api/user/preferences');
+export const setUserPreferences = (body) => put('/api/user/preferences', body);
 
 // ── Health & System ──────────────────────────────────────────
 export const health = () => get('/api/health');
@@ -248,7 +250,25 @@ export const quantumKeyStatus = () => get('/api/quantum/key-status');
 export const quantumRotate = () => post('/api/quantum/rotate');
 
 // ── Audit & Retention ────────────────────────────────────────
-export const auditLog = () => get('/api/audit/log');
+const buildAuditLogQuery = ({ limit, offset, q, method, status, auth } = {}) => {
+  const query = new URLSearchParams();
+  if (limit != null) query.set('limit', String(limit));
+  if (offset != null) query.set('offset', String(offset));
+  if (q) query.set('q', String(q));
+  if (method) query.set('method', String(method));
+  if (status) query.set('status', String(status));
+  if (auth) query.set('auth', String(auth));
+  return query.toString();
+};
+
+export const auditLog = ({ limit = 50, offset = 0, q, method, status, auth } = {}) => {
+  const suffix = buildAuditLogQuery({ limit, offset, q, method, status, auth });
+  return get(`/api/audit/log${suffix ? `?${suffix}` : ''}`);
+};
+export const auditLogExport = ({ q, method, status, auth } = {}) => {
+  const suffix = buildAuditLogQuery({ q, method, status, auth });
+  return get(`/api/audit/log/export${suffix ? `?${suffix}` : ''}`);
+};
 export const auditVerify = () => get('/api/audit/verify');
 export const auditAdmin = () => get('/api/audit/admin');
 export const retentionStatus = () => get('/api/retention/status');

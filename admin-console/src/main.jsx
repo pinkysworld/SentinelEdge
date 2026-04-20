@@ -9,17 +9,17 @@ import './App.css';
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-      <ThemeProvider>
-        <ErrorBoundary>
-          <AuthProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <ErrorBoundary>
             <RoleProvider>
               <ToastProvider>
                 <App />
               </ToastProvider>
             </RoleProvider>
-          </AuthProvider>
-        </ErrorBoundary>
-      </ThemeProvider>
+          </ErrorBoundary>
+        </ThemeProvider>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );

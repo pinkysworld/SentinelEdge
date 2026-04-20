@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate, NavLink, Link } from 'react-router-dom';
 import { useAuth, useTheme, useRole, useApi, useInterval } from './hooks.jsx';
 import * as api from './api.js';
@@ -9,6 +9,8 @@ import OnboardingWizard from './components/OnboardingWizard.jsx';
 
 // ── Recent Items (persisted in localStorage) ─────────────────
 const MAX_RECENT = 10;
+const MAX_PINNED_SECTIONS = 6;
+
 function useRecentItems() {
   const [items, setItems] = useState(() => {
     try {
@@ -28,6 +30,22 @@ function useRecentItems() {
     });
   }, []);
   return { items, add };
+}
+
+function normalizePinnedSections(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean))].slice(
+    0,
+    MAX_PINNED_SECTIONS,
+  );
+}
+
+function readStoredPinnedSections() {
+  try {
+    return normalizePinnedSections(JSON.parse(localStorage.getItem('wardex_pinned_sections') || '[]'));
+  } catch {
+    return [];
+  }
 }
 
 // ── Breadcrumbs ──────────────────────────────────────────────
@@ -209,14 +227,57 @@ export default function App() {
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showInboxLocationKey, setShowInboxLocationKey] = useState(null);
-  const [pinnedSections, setPinnedSections] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('wardex_pinned_sections') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [pinnedSections, setPinnedSections] = useState(() => readStoredPinnedSections());
+  const pinnedSectionsRef = useRef(pinnedSections);
   const showInbox = showInboxLocationKey === location.key;
+
+  useEffect(() => {
+    pinnedSectionsRef.current = pinnedSections;
+  }, [pinnedSections]);
+
+  const applyPinnedSections = useCallback(
+    (nextSections, persistRemote = false) => {
+      const normalized = normalizePinnedSections(nextSections);
+      pinnedSectionsRef.current = normalized;
+      setPinnedSections(normalized);
+      localStorage.setItem('wardex_pinned_sections', JSON.stringify(normalized));
+      if (persistRemote && authenticated) {
+        void api.setUserPreferences({ pinned_sections: normalized }).catch((error) => {
+          void error;
+        });
+      }
+    },
+    [authenticated],
+  );
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    let cancelled = false;
+    const loadPinnedSections = async () => {
+      try {
+        const prefs = await api.userPreferences();
+        if (cancelled) return;
+        const serverPinned = normalizePinnedSections(prefs?.pinned_sections);
+        if (serverPinned.length > 0 || prefs?.updated_at) {
+          applyPinnedSections(serverPinned);
+          return;
+        }
+        const localPinned = readStoredPinnedSections();
+        if (localPinned.length > 0) {
+          applyPinnedSections(localPinned);
+          void api.setUserPreferences({ pinned_sections: localPinned }).catch((error) => {
+            void error;
+          });
+        }
+      } catch (error) {
+        void error;
+      }
+    };
+    void loadPinnedSections();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, applyPinnedSections]);
 
   // Track page visits for recent items
   useEffect(() => {
@@ -314,14 +375,12 @@ export default function App() {
   const inboxPending = inboxItems.filter((item) => !item.acknowledged).length;
 
   const togglePinnedSection = useCallback((sectionId) => {
-    setPinnedSections((prev) => {
-      const next = prev.includes(sectionId)
-        ? prev.filter((id) => id !== sectionId)
-        : [sectionId, ...prev].slice(0, 6);
-      localStorage.setItem('wardex_pinned_sections', JSON.stringify(next));
-      return next;
-    });
-  }, []);
+    const current = pinnedSectionsRef.current;
+    const next = current.includes(sectionId)
+      ? current.filter((id) => id !== sectionId)
+      : [sectionId, ...current].slice(0, MAX_PINNED_SECTIONS);
+    applyPinnedSections(next, true);
+  }, [applyPinnedSections]);
 
   const copyShareLink = useCallback(() => {
     const url = window.location.origin + location.pathname + location.search;

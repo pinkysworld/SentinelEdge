@@ -1,4 +1,4 @@
-import { render, renderHook, screen, act } from '@testing-library/react';
+import { render, renderHook, screen, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -11,6 +11,7 @@ import {
   useToast,
   useWebSocket,
 } from '../hooks.jsx';
+import { setToken } from '../api.js';
 
 // Stub fetch globally
 const fetchMock = vi.fn();
@@ -29,6 +30,7 @@ beforeEach(() => {
   // Default: return a valid JSON response for any call
   fetchMock.mockImplementation(() => Promise.resolve(jsonOk({})));
   localStorage.clear();
+  setToken('');
 });
 
 // Helper to wrap components with all providers
@@ -91,6 +93,28 @@ describe('ThemeProvider', () => {
     });
     const toggled = result.current.dark;
     expect(toggled).not.toBe(initial);
+  });
+
+  it('loads persisted theme after authentication', async () => {
+    localStorage.setItem('wardex_theme', 'light');
+    fetchMock.mockImplementation((url) => {
+      if (url === '/api/user/preferences') return Promise.resolve(jsonOk({ theme: 'dark' }));
+      if (url === '/api/auth/session') return Promise.resolve(jsonOk({ role: 'viewer' }));
+      return Promise.resolve(jsonOk({}));
+    });
+
+    const { result } = renderHook(
+      () => ({ auth: useAuth(), theme: useTheme() }),
+      { wrapper: Providers },
+    );
+
+    await act(async () => {
+      await result.current.auth.connect('valid-token');
+    });
+
+    await waitFor(() => {
+      expect(result.current.theme.dark).toBe(true);
+    });
   });
 });
 
@@ -268,5 +292,31 @@ describe('useWebSocket', () => {
 
     const disconnectCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/ws/disconnect');
     expect(disconnectCalls).toHaveLength(1);
+  });
+
+  it('skips native websocket when a bearer token is active', async () => {
+    const sockets = [];
+
+    setToken('active-token');
+    globalThis.WebSocket = class MockWebSocket {
+      constructor() {
+        sockets.push(this);
+      }
+    };
+
+    fetchMock.mockImplementation((url) => {
+      if (url === '/api/ws/connect') return Promise.resolve(jsonOk({ subscriber_id: 17 }));
+      if (url === '/api/ws/poll') return Promise.resolve(jsonOk([]));
+      if (url === '/api/ws/disconnect') return Promise.resolve(jsonOk({ ok: true }));
+      return Promise.resolve(jsonOk({}));
+    });
+
+    await act(async () => {
+      render(<WebSocketProbe interval={10_000} />);
+      await Promise.resolve();
+    });
+
+    expect(sockets).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ws/connect')).toBe(true);
   });
 });

@@ -44,6 +44,18 @@ impl Method {
             Method::Get
         }
     }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Method::Get => "GET",
+            Method::Post => "POST",
+            Method::Put => "PUT",
+            Method::Delete => "DELETE",
+            Method::Options => "OPTIONS",
+            Method::Patch => "PATCH",
+            Method::Head => "HEAD",
+        }
+    }
 }
 
 use crate::actions::DeviceController;
@@ -89,6 +101,7 @@ use crate::swarm::{DeviceRecord, DeviceStatus, SwarmNode};
 use crate::telemetry::TelemetrySample;
 use crate::threat_intel::{DeceptionEngine, ThreatIntelStore};
 use crate::tls::ListenerMode;
+use crate::user_preferences::{UserPreferencesPatch, UserPreferencesStore};
 use crate::wasm_engine::PolicyVm;
 
 use crate::analyst::{
@@ -201,6 +214,114 @@ struct AuditEntry {
     auth_used: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+struct AuditLogPage {
+    entries: Vec<AuditEntry>,
+    total: usize,
+    offset: usize,
+    limit: usize,
+    count: usize,
+    has_more: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AuditStatusFilter {
+    Exact(u16),
+    Class(u16),
+}
+
+#[derive(Debug, Clone, Default)]
+struct AuditLogFilter {
+    query: Option<String>,
+    method: Option<String>,
+    status: Option<AuditStatusFilter>,
+    auth_used: Option<bool>,
+}
+
+impl AuditLogFilter {
+    fn from_query(query: &HashMap<String, String>) -> Self {
+        Self {
+            query: query
+                .get("q")
+                .map(|value| value.trim().to_ascii_lowercase())
+                .filter(|value| !value.is_empty()),
+            method: query
+                .get("method")
+                .map(|value| value.trim().to_ascii_uppercase())
+                .filter(|value| !value.is_empty()),
+            status: query
+                .get("status")
+                .and_then(|value| parse_audit_status_filter(value)),
+            auth_used: query.get("auth").and_then(|value| parse_bool_query(value)),
+        }
+    }
+
+    fn matches(&self, entry: &AuditEntry) -> bool {
+        if let Some(method) = &self.method
+            && !entry.method.eq_ignore_ascii_case(method)
+        {
+            return false;
+        }
+
+        if let Some(status_filter) = self.status {
+            let status_matches = match status_filter {
+                AuditStatusFilter::Exact(code) => entry.status_code == code,
+                AuditStatusFilter::Class(class) => entry.status_code / 100 == class,
+            };
+            if !status_matches {
+                return false;
+            }
+        }
+
+        if let Some(auth_used) = self.auth_used
+            && entry.auth_used != auth_used
+        {
+            return false;
+        }
+
+        if let Some(query) = &self.query {
+            let auth_state = if entry.auth_used {
+                "authenticated"
+            } else {
+                "anonymous"
+            };
+            let status_code = entry.status_code.to_string();
+            let matches_query = entry.timestamp.to_ascii_lowercase().contains(query)
+                || entry.method.to_ascii_lowercase().contains(query)
+                || entry.path.to_ascii_lowercase().contains(query)
+                || entry.source_ip.to_ascii_lowercase().contains(query)
+                || status_code.contains(query)
+                || auth_state.contains(query);
+            if !matches_query {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+fn parse_audit_status_filter(value: &str) -> Option<AuditStatusFilter> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.len() == 3
+        && normalized.ends_with("xx")
+        && let Some(class) = normalized.chars().next().and_then(|ch| ch.to_digit(10))
+        && (1..=5).contains(&class)
+    {
+        return Some(AuditStatusFilter::Class(class as u16));
+    }
+
+    normalized.parse::<u16>().ok().map(AuditStatusFilter::Exact)
+}
+
+fn parse_bool_query(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "authenticated" => Some(true),
+        "0" | "false" | "no" | "anonymous" => Some(false),
+        _ => None,
+    }
+}
+
 struct AuditLog {
     entries: VecDeque<AuditEntry>,
     max_entries: usize,
@@ -273,6 +394,39 @@ impl AuditLog {
             .into_iter()
             .rev()
             .collect()
+    }
+
+    fn filtered_entries(&self, filter: &AuditLogFilter) -> Vec<AuditEntry> {
+        self.entries
+            .iter()
+            .rev()
+            .filter(|entry| filter.matches(entry))
+            .cloned()
+            .collect()
+    }
+
+    fn page(&self, limit: usize, offset: usize) -> AuditLogPage {
+        self.page_filtered(limit, offset, &AuditLogFilter::default())
+    }
+
+    fn page_filtered(&self, limit: usize, offset: usize, filter: &AuditLogFilter) -> AuditLogPage {
+        let filtered = self.filtered_entries(filter);
+        let total = filtered.len();
+        let effective_offset = offset.min(total);
+        let entries = filtered
+            .into_iter()
+            .skip(effective_offset)
+            .take(limit)
+            .collect::<Vec<_>>();
+        let count = entries.len();
+        AuditLogPage {
+            entries,
+            total,
+            offset: effective_offset,
+            limit,
+            count,
+            has_more: effective_offset.saturating_add(count) < total,
+        }
     }
 }
 
@@ -369,6 +523,7 @@ struct AppState {
     token: String,
     token_issued_at: std::time::Instant,
     session_store: crate::auth::SessionStore,
+    user_preferences: UserPreferencesStore,
     swarm: SwarmNode,
     enforcement: EnforcementEngine,
     threat_intel: ThreatIntelStore,
@@ -976,6 +1131,7 @@ pub async fn run_server(
     };
     let session_store =
         crate::auth::SessionStore::with_persistence(&session_store_path(&config_path));
+    let user_preferences = UserPreferencesStore::new(&user_preferences_store_path(&config_path));
 
     let state = Arc::new(Mutex::new(AppState {
         detector: AnomalyDetector::default(),
@@ -987,6 +1143,7 @@ pub async fn run_server(
         token: token.clone(),
         token_issued_at: std::time::Instant::now(),
         session_store,
+        user_preferences,
         swarm: SwarmNode::new("gateway-0"),
         enforcement: EnforcementEngine::new(),
         threat_intel: ThreatIntelStore::new(),
@@ -1278,6 +1435,9 @@ pub async fn run_server(
                                 s.alerts.pop_front();
                             }
                             s.alerts.push_back(alert.clone());
+                            let alert_event =
+                                alert_json_value(&alert, s.alerts.len().saturating_sub(1));
+                            s.alert_broadcaster.broadcast_alert(alert_event);
 
                             // Phase 33: broadcast high-severity intel to swarm
                             if alert.score >= sev {
@@ -1499,6 +1659,7 @@ pub fn spawn_test_server() -> (u16, String) {
     let config_path = state_root.join("wardex.toml");
     let session_store =
         crate::auth::SessionStore::with_persistence(&session_store_path(&config_path));
+    let user_preferences = UserPreferencesStore::new(&user_preferences_store_path(&config_path));
     let state = Arc::new(Mutex::new(AppState {
         detector: AnomalyDetector::default(),
         checkpoints: CheckpointStore::new(10),
@@ -1509,6 +1670,7 @@ pub fn spawn_test_server() -> (u16, String) {
         token: token.clone(),
         token_issued_at: std::time::Instant::now(),
         session_store,
+        user_preferences,
         swarm: SwarmNode::new("test-node-0"),
         enforcement: EnforcementEngine::new(),
         threat_intel: ThreatIntelStore::new(),
@@ -2015,16 +2177,18 @@ fn recent_alerts_json(
         .rev()
         .skip(offset)
         .take(capped_limit)
-        .map(|(i, a)| {
-            let mut obj = serde_json::to_value(a).unwrap_or_default();
-            if let Some(map) = obj.as_object_mut() {
-                map.insert("id".to_string(), serde_json::json!(i));
-                map.insert("_index".to_string(), serde_json::json!(i));
-            }
-            obj
-        })
+        .map(|(i, a)| alert_json_value(a, i))
         .collect();
     serde_json::to_string(&recent).map_err(|e| format!("serialization error: {e}"))
+}
+
+fn alert_json_value(alert: &AlertRecord, index: usize) -> serde_json::Value {
+    let mut obj = serde_json::to_value(alert).unwrap_or_default();
+    if let Some(map) = obj.as_object_mut() {
+        map.insert("id".to_string(), serde_json::json!(index));
+        map.insert("_index".to_string(), serde_json::json!(index));
+    }
+    obj
 }
 
 fn incidents_json(
@@ -2151,13 +2315,8 @@ fn respond_api(
         if status_code >= 400 {
             s.error_count += 1;
         }
-        s.audit_log.record(
-            &format!("{method:?}"),
-            url,
-            remote_addr,
-            status_code,
-            auth_used,
-        );
+        s.audit_log
+            .record(method.as_str(), url, remote_addr, status_code, auth_used);
     }
     let (mut parts, body) = response.into_parts();
     if let Ok(hv) = req_id.parse() {
@@ -2210,6 +2369,15 @@ fn session_store_path(config_path: &Path) -> String {
         .parent()
         .unwrap_or_else(|| Path::new("var"))
         .join("sessions.json")
+        .to_string_lossy()
+        .to_string()
+}
+
+fn user_preferences_store_path(config_path: &Path) -> String {
+    config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("var"))
+        .join("user_preferences.json")
         .to_string_lossy()
         .to_string()
 }
@@ -3709,6 +3877,28 @@ fn events_to_csv(events: &[&crate::event_forward::StoredEvent]) -> String {
     out
 }
 
+fn audit_entries_to_csv(entries: &[AuditEntry]) -> String {
+    let mut out = String::from("timestamp,method,path,source_ip,status_code,auth_state\n");
+    for entry in entries {
+        let auth_state = if entry.auth_used {
+            "authenticated"
+        } else {
+            "anonymous"
+        };
+        let row = [
+            csv_escape(&entry.timestamp),
+            csv_escape(&entry.method),
+            csv_escape(&entry.path),
+            csv_escape(&entry.source_ip),
+            entry.status_code.to_string(),
+            csv_escape(auth_state),
+        ];
+        out.push_str(&row.join(","));
+        out.push('\n');
+    }
+    out
+}
+
 fn check_rbac(
     state: &Arc<Mutex<AppState>>,
     path: &str,
@@ -4341,6 +4531,8 @@ fn handle_api(
             (Method::Get, "/api/auth/check")
                 | (Method::Post, "/api/auth/rotate")
                 | (Method::Get, "/api/session/info")
+                | (Method::Get, "/api/user/preferences")
+                | (Method::Put, "/api/user/preferences")
                 | (Method::Post, "/api/analyze")
                 | (Method::Post, "/api/graphql")
                 | (Method::Post, "/api/control/mode")
@@ -4487,6 +4679,7 @@ fn handle_api(
         || (method == Method::Post && route_path.starts_with("/api/agents/") && route_path.ends_with("/scope"))
         || (method == Method::Get && route_path.starts_with("/api/agents/") && route_path.ends_with("/scope"))
         || (method == Method::Get && route_path == "/api/audit/log")
+        || (method == Method::Get && route_path == "/api/audit/log/export")
         || (method == Method::Get && route_path == "/api/incidents")
         || (method == Method::Get && route_path.starts_with("/api/incidents/"))
         || (method == Method::Post && route_path == "/api/incidents")
@@ -4589,6 +4782,8 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/retention/status")
         || (method == Method::Post && route_path == "/api/retention/apply")
         || (method == Method::Get && route_path == "/api/session/info")
+        || (method == Method::Get && route_path == "/api/user/preferences")
+        || (method == Method::Put && route_path == "/api/user/preferences")
         // GDPR, backup, SBOM, PII — admin-only
         || (method == Method::Delete && route_path.starts_with("/api/gdpr/forget/"))
         || (method == Method::Post && route_path == "/api/admin/backup")
@@ -4800,6 +4995,35 @@ fn handle_api(
             );
             json_response(&body, 200)
         }
+        (Method::Get, "/api/user/preferences") => {
+            let prefs = {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                s.user_preferences.get(auth_identity.actor())
+            };
+            match serde_json::to_string_pretty(&prefs) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
+        (Method::Put, "/api/user/preferences") => match read_body_limited(body, 64 * 1024) {
+            Ok(raw) => match serde_json::from_str::<UserPreferencesPatch>(&raw) {
+                Ok(patch) => {
+                    let result = {
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        s.user_preferences.upsert(auth_identity.actor(), patch)
+                    };
+                    match result {
+                        Ok(prefs) => match serde_json::to_string_pretty(&prefs) {
+                            Ok(json) => json_response(&json, 200),
+                            Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                        },
+                        Err(e) => error_json(&e, 400),
+                    }
+                }
+                Err(e) => error_json(&format!("invalid JSON: {e}"), 400),
+            },
+            Err(e) => error_json(&e, 400),
+        },
         (Method::Get, "/api/status") => {
             let manifest = runtime::status_manifest();
             match serde_json::to_string_pretty(&manifest) {
@@ -5922,7 +6146,9 @@ fn handle_api(
             if s.alerts.len() >= 10_000 {
                 s.alerts.pop_front();
             }
-            s.alerts.push_back(alert);
+            s.alerts.push_back(alert.clone());
+            let alert_event = alert_json_value(&alert, s.alerts.len().saturating_sub(1));
+            s.alert_broadcaster.broadcast_alert(alert_event);
             json_response(
                 &format!(r#"{{"status":"injected","severity":"{severity}","score":{score:.2}}}"#),
                 200,
@@ -6295,7 +6521,8 @@ fn handle_api(
                 {"method": "GET", "path": "/api/response/requests", "auth": true, "description": "List all response requests with approval state"},
                 {"method": "POST", "path": "/api/response/approve", "auth": true, "description": "Approve or deny a pending response request"},
                 {"method": "POST", "path": "/api/response/execute", "auth": true, "description": "Execute all approved response requests"},
-                {"method": "GET", "path": "/api/audit/log", "auth": true, "description": "Recent API audit log entries"},
+                {"method": "GET", "path": "/api/audit/log", "auth": true, "description": "Paginated API audit log entries with search and filter metadata"},
+                {"method": "GET", "path": "/api/audit/log/export", "auth": true, "description": "Export filtered API audit log entries as CSV"},
                 {"method": "GET", "path": "/api/incidents", "auth": true, "description": "List incidents with optional status/severity filters"},
                 {"method": "GET", "path": "/api/incidents/{id}", "auth": true, "description": "Incident detail with timeline"},
                 {"method": "POST", "path": "/api/incidents", "auth": true, "description": "Manually create an incident from selected events"},
@@ -6326,6 +6553,8 @@ fn handle_api(
                 {"method": "GET", "path": "/api/slo/status", "auth": true, "description": "Service level objective metrics"},
                 {"method": "POST", "path": "/api/auth/rotate", "auth": true, "description": "Rotate admin token and reset TTL"},
                 {"method": "GET", "path": "/api/session/info", "auth": true, "description": "Session info with token TTL and expiry status"},
+                {"method": "GET", "path": "/api/user/preferences", "auth": true, "description": "Retrieve persisted theme and pinned-view preferences for the current actor"},
+                {"method": "PUT", "path": "/api/user/preferences", "auth": true, "description": "Update persisted theme and pinned-view preferences for the current actor"},
                 {"method": "GET", "path": "/api/audit/verify", "auth": true, "description": "Verify integrity of the cryptographic audit chain"},
                 {"method": "GET", "path": "/api/retention/status", "auth": true, "description": "Current retention policy settings and record counts"},
                 {"method": "POST", "path": "/api/retention/apply", "auth": true, "description": "Apply retention policies to trim old records"},
@@ -6632,11 +6861,31 @@ fn handle_api(
             )
         }
 
+        (Method::Get, "/api/audit/log/export") => {
+            let query = parse_query_string(&url);
+            let filter = AuditLogFilter::from_query(&query);
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let entries = s.audit_log.filtered_entries(&filter);
+            csv_response(&audit_entries_to_csv(&entries), 200)
+        }
+
         // ── Audit Log ─────────────────────────────────────────────
         (Method::Get, "/api/audit/log") => {
+            let query = parse_query_string(&url);
+            let filter = AuditLogFilter::from_query(&query);
+            let limit = query
+                .get("limit")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(50)
+                .clamp(1, 200);
+            let offset = query
+                .get("offset")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0)
+                .min(100_000);
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
-            let entries = s.audit_log.recent(200);
-            match serde_json::to_string(&entries) {
+            let page = s.audit_log.page_filtered(limit, offset, &filter);
+            match serde_json::to_string(&page) {
                 Ok(json) => json_response(&json, 200),
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
@@ -14899,6 +15148,243 @@ mod tests {
             Ok(_) => panic!("local console delete unexpectedly succeeded"),
             Err(err) => panic!("unexpected delete error: {err}"),
         }
+    }
+
+    #[test]
+    fn user_preferences_round_trip_and_merge() {
+        let (port, token) = spawn_test_server();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let auth_header = format!("Bearer {token}");
+
+        let initial_response = ureq::get(&format!("{base_url}/api/user/preferences"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("initial preferences response");
+        let initial: serde_json::Value = serde_json::from_str(
+            &initial_response
+                .into_string()
+                .expect("initial preferences body"),
+        )
+        .expect("initial preferences json");
+        assert_eq!(initial["theme"], serde_json::Value::Null);
+        assert_eq!(initial["pinned_sections"], serde_json::json!([]));
+
+        let update_response = ureq::put(&format!("{base_url}/api/user/preferences"))
+            .set("Authorization", &auth_header)
+            .send_string(r#"{"theme":"dark","pinned_sections":["fleet","monitor"]}"#)
+            .expect("update preferences response");
+        let updated: serde_json::Value = serde_json::from_str(
+            &update_response.into_string().expect("update preferences body"),
+        )
+        .expect("update preferences json");
+        assert_eq!(updated["theme"], serde_json::json!("dark"));
+        assert_eq!(updated["pinned_sections"], serde_json::json!(["fleet", "monitor"]));
+        assert!(updated["updated_at"].as_str().is_some());
+
+        let merge_response = ureq::put(&format!("{base_url}/api/user/preferences"))
+            .set("Authorization", &auth_header)
+            .send_string(r#"{"theme":"light"}"#)
+            .expect("merge preferences response");
+        let merged: serde_json::Value = serde_json::from_str(
+            &merge_response.into_string().expect("merge preferences body"),
+        )
+        .expect("merge preferences json");
+        assert_eq!(merged["theme"], serde_json::json!("light"));
+        assert_eq!(merged["pinned_sections"], serde_json::json!(["fleet", "monitor"]));
+
+        let final_response = ureq::get(&format!("{base_url}/api/user/preferences"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("final preferences response");
+        let final_value: serde_json::Value = serde_json::from_str(
+            &final_response.into_string().expect("final preferences body"),
+        )
+        .expect("final preferences json");
+        assert_eq!(final_value["theme"], serde_json::json!("light"));
+        assert_eq!(
+            final_value["pinned_sections"],
+            serde_json::json!(["fleet", "monitor"])
+        );
+    }
+
+    #[test]
+    fn audit_log_page_returns_newest_entries_first_with_metadata() {
+        let mut audit_log = AuditLog::new(10);
+        audit_log.record("GET", "/api/status", "127.0.0.1", 200, true);
+        audit_log.record("POST", "/api/alerts/sample", "127.0.0.1", 202, true);
+        audit_log.record("DELETE", "/api/agents/test", "127.0.0.1", 409, true);
+
+        let first_page = audit_log.page(2, 0);
+        assert_eq!(first_page.total, 3);
+        assert_eq!(first_page.offset, 0);
+        assert_eq!(first_page.limit, 2);
+        assert_eq!(first_page.count, 2);
+        assert!(first_page.has_more);
+        assert_eq!(
+            first_page
+                .entries
+                .iter()
+                .map(|entry| entry.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/api/agents/test", "/api/alerts/sample"]
+        );
+
+        let second_page = audit_log.page(2, 2);
+        assert_eq!(second_page.total, 3);
+        assert_eq!(second_page.offset, 2);
+        assert_eq!(second_page.count, 1);
+        assert!(!second_page.has_more);
+        assert_eq!(second_page.entries[0].path, "/api/status");
+    }
+
+    #[test]
+    fn audit_log_page_filters_entries() {
+        let mut audit_log = AuditLog::new(10);
+        audit_log.record("GET", "/api/status", "127.0.0.1", 200, true);
+        audit_log.record("POST", "/api/alerts/sample", "127.0.0.1", 200, true);
+        audit_log.record("GET", "/api/login", "10.0.0.5", 401, false);
+
+        let filter = AuditLogFilter {
+            query: Some("alerts".into()),
+            method: Some("POST".into()),
+            status: Some(AuditStatusFilter::Class(2)),
+            auth_used: Some(true),
+        };
+
+        let page = audit_log.page_filtered(25, 0, &filter);
+        assert_eq!(page.total, 1);
+        assert_eq!(page.count, 1);
+        assert_eq!(page.entries[0].path, "/api/alerts/sample");
+        assert_eq!(page.entries[0].method, "POST");
+    }
+
+    #[test]
+    fn audit_log_endpoint_supports_limit_and_offset_metadata() {
+        let (port, token) = spawn_test_server();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let auth_header = format!("Bearer {token}");
+
+        for path in ["/api/status", "/api/health", "/api/platform"] {
+            ureq::get(&format!("{base_url}{path}"))
+                .set("Authorization", &auth_header)
+                .call()
+                .expect("seed audit entry");
+        }
+
+        let audit_response = ureq::get(&format!("{base_url}/api/audit/log?limit=2&offset=0"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("audit log response");
+        let audit_page: serde_json::Value = serde_json::from_str(
+            &audit_response.into_string().expect("audit log body"),
+        )
+        .expect("audit log json");
+
+        assert_eq!(audit_page["total"], serde_json::json!(3));
+        assert_eq!(audit_page["offset"], serde_json::json!(0));
+        assert_eq!(audit_page["limit"], serde_json::json!(2));
+        assert_eq!(audit_page["count"], serde_json::json!(2));
+        assert_eq!(audit_page["has_more"], serde_json::json!(true));
+        let entries = audit_page["entries"].as_array().expect("audit entries array");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["path"], serde_json::json!("/api/platform"));
+        assert_eq!(entries[1]["path"], serde_json::json!("/api/health"));
+    }
+
+    #[test]
+    fn audit_log_endpoint_filters_and_exports_csv() {
+        let (port, token) = spawn_test_server();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let auth_header = format!("Bearer {token}");
+
+        ureq::get(&format!("{base_url}/api/status"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("seed authenticated get");
+        ureq::post(&format!("{base_url}/api/alerts/sample"))
+            .set("Authorization", &auth_header)
+            .send_string(r#"{"severity":"warning"}"#)
+            .expect("seed authenticated post");
+
+        match ureq::get(&format!("{base_url}/api/status")).call() {
+            Err(ureq::Error::Status(401, response)) => {
+                let _ = response.into_string().expect("anonymous response body");
+            }
+            Ok(_) => panic!("anonymous request unexpectedly succeeded"),
+            Err(err) => panic!("unexpected anonymous request error: {err}"),
+        }
+
+        let filtered_response = ureq::get(&format!(
+            "{base_url}/api/audit/log?method=POST&status=2xx&auth=authenticated&q=alerts"
+        ))
+        .set("Authorization", &auth_header)
+        .call()
+        .expect("filtered audit log response");
+        let filtered_page: serde_json::Value = serde_json::from_str(
+            &filtered_response
+                .into_string()
+                .expect("filtered audit log body"),
+        )
+        .expect("filtered audit log json");
+        let entries = filtered_page["entries"]
+            .as_array()
+            .expect("filtered entries array");
+        assert_eq!(filtered_page["total"], serde_json::json!(1));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["path"], serde_json::json!("/api/alerts/sample"));
+        assert_eq!(entries[0]["method"], serde_json::json!("POST"));
+
+        let export_response = ureq::get(&format!(
+            "{base_url}/api/audit/log/export?status=401&auth=anonymous"
+        ))
+        .set("Authorization", &auth_header)
+        .call()
+        .expect("audit export response");
+        let csv = export_response.into_string().expect("audit export body");
+        assert!(csv.starts_with("timestamp,method,path,source_ip,status_code,auth_state\n"));
+        assert!(csv.contains("\"'GET\""));
+        assert!(csv.contains("\"'/api/status\""));
+        assert!(csv.contains(",401,"));
+        assert!(csv.contains("\"'anonymous\""));
+        assert!(!csv.contains("/api/alerts/sample"));
+    }
+
+    #[test]
+    fn sample_alerts_are_streamed_to_ws_poll_subscribers() {
+        let (port, token) = spawn_test_server();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let auth_header = format!("Bearer {token}");
+
+        let connect_response = ureq::post(&format!("{base_url}/api/ws/connect"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("connect ws subscriber");
+        let connected: serde_json::Value = serde_json::from_str(
+            &connect_response.into_string().expect("connect response body"),
+        )
+        .expect("connect response json");
+        let subscriber_id = connected["subscriber_id"].as_u64().expect("subscriber id");
+
+        ureq::post(&format!("{base_url}/api/alerts/sample"))
+            .set("Authorization", &auth_header)
+            .send_string(r#"{"severity":"critical"}"#)
+            .expect("inject sample alert");
+
+        let poll_response = ureq::post(&format!("{base_url}/api/ws/poll"))
+            .set("Authorization", &auth_header)
+            .send_string(&format!(r#"{{"subscriber_id":{subscriber_id}}}"#))
+            .expect("poll ws subscriber");
+        let events: serde_json::Value = serde_json::from_str(
+            &poll_response.into_string().expect("poll response body"),
+        )
+        .expect("poll response json");
+        let first_event = events
+            .as_array()
+            .and_then(|entries| entries.first())
+            .expect("streamed alert event");
+        assert_eq!(first_event["type"], serde_json::json!("alert"));
+        assert!(first_event["data"]["id"].is_number());
+        assert_eq!(first_event["data"]["level"], serde_json::json!("Critical"));
     }
 
     #[test]

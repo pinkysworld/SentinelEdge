@@ -1,9 +1,12 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import {
+  getToken,
   setToken,
   authCheck,
   authSession,
+  userPreferences as getUserPreferences,
+  setUserPreferences as updateUserPreferences,
   wsConnect,
   wsDisconnect,
   wsPoll,
@@ -106,19 +109,55 @@ export function useRole() {
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
+  const { authenticated } = useAuth();
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem('wardex_theme');
     if (saved) return saved === 'dark';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+  const darkRef = useRef(dark);
 
   useEffect(() => {
+    darkRef.current = dark;
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
     localStorage.setItem('wardex_theme', dark ? 'dark' : 'light');
   }, [dark]);
 
-  const toggle = useCallback(() => setDark((d) => !d), []);
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    let cancelled = false;
+    const loadThemePreference = async () => {
+      try {
+        const prefs = await getUserPreferences();
+        if (!cancelled && (prefs?.theme === 'dark' || prefs?.theme === 'light')) {
+          const nextDark = prefs.theme === 'dark';
+          darkRef.current = nextDark;
+          setDark(nextDark);
+        }
+      } catch (error) {
+        void error;
+      }
+    };
+    void loadThemePreference();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated]);
+
+  const persistTheme = useCallback((nextDark) => {
+    if (!authenticated) return;
+    void updateUserPreferences({ theme: nextDark ? 'dark' : 'light' }).catch((error) => {
+      void error;
+    });
+  }, [authenticated]);
+
+  const toggle = useCallback(() => {
+    const nextDark = !darkRef.current;
+    darkRef.current = nextDark;
+    setDark(nextDark);
+    persistTheme(nextDark);
+  }, [persistTheme]);
 
   return <ThemeContext.Provider value={{ dark, toggle }}>{children}</ThemeContext.Provider>;
 }
@@ -270,12 +309,15 @@ export function useDraftAutosave(key, initialValue) {
 
 /**
  * Real-time event stream via native WebSocket with long-poll fallback.
- * Attempts WebSocket first; if unavailable, falls back to EventBus polling.
- * Returns { events, connected, clearEvents }.
+ * Bearer-token sessions skip native WebSocket because browsers cannot attach
+ * Authorization headers to the handshake, so they connect directly to the
+ * authenticated polling transport.
+ * Returns { events, connected, transport, clearEvents }.
  */
 export function useWebSocket(pollIntervalMs = 2000) {
   const [events, setEvents] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [transport, setTransport] = useState('connecting');
   const subscriberIdRef = useRef(null);
   const wsRef = useRef(null);
   const mountedRef = useRef(true);
@@ -313,7 +355,9 @@ export function useWebSocket(pollIntervalMs = 2000) {
       const subscriberId = subscriberIdRef.current;
       subscriberIdRef.current = null;
       if (disconnectSubscriber && subscriberId != null) {
-        wsDisconnect(subscriberId).catch(() => {});
+        wsDisconnect(subscriberId).catch((error) => {
+          void error;
+        });
       }
     };
 
@@ -342,6 +386,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
           } catch {
             /* ignore close errors during handshake fallback */
           }
+          setTransport('connecting');
           connectPolling();
         }, 3000);
 
@@ -354,6 +399,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
           clearHandshake();
           stopPolling(true);
           setConnected(true);
+          setTransport('websocket');
           retryDelay = 2000;
         };
 
@@ -377,6 +423,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
           } catch {
             /* ignore close errors after websocket failure */
           }
+          setTransport('connecting');
           connectPolling();
         };
 
@@ -388,6 +435,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
           if (!mountedRef.current) return;
           if (opened) {
             setConnected(false);
+            setTransport('connecting');
             const delay = Math.min(retryDelay, 30000);
             retryDelay = Math.min(retryDelay * 2, 30000);
             clearRetry();
@@ -418,7 +466,9 @@ export function useWebSocket(pollIntervalMs = 2000) {
           throw new Error('Invalid ws connect response');
         }
         if (!mountedRef.current || requestId !== pollingConnectRequestId) {
-          wsDisconnect(result.subscriber_id).catch(() => {});
+          wsDisconnect(result.subscriber_id).catch((error) => {
+            void error;
+          });
           return;
         }
         if (!result?.subscriber_id) {
@@ -426,11 +476,13 @@ export function useWebSocket(pollIntervalMs = 2000) {
         }
         subscriberIdRef.current = result.subscriber_id;
         setConnected(true);
+        setTransport('polling');
         retryDelay = 2000;
         startPolling();
       } catch {
         if (mountedRef.current && requestId === pollingConnectRequestId) {
           setConnected(false);
+          setTransport('connecting');
           stopPolling(false);
           schedulePollingReconnect();
         }
@@ -461,8 +513,11 @@ export function useWebSocket(pollIntervalMs = 2000) {
       }, pollIntervalMs);
     };
 
-    // Try native WebSocket first
-    tryNativeWebSocket();
+    if (getToken()) {
+      connectPolling();
+    } else {
+      tryNativeWebSocket();
+    }
 
     return () => {
       mountedRef.current = false;
@@ -478,5 +533,5 @@ export function useWebSocket(pollIntervalMs = 2000) {
 
   const clearEvents = useCallback(() => setEvents([]), []);
 
-  return { events, connected, clearEvents };
+  return { events, connected, transport, clearEvents };
 }

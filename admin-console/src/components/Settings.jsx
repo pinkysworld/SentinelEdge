@@ -3,6 +3,12 @@ import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { useConfirm } from './ConfirmDialog.jsx';
+import { downloadData } from './operatorUtils.js';
+
+const AUDIT_PAGE_SIZE = 25;
+const AUDIT_METHOD_OPTIONS = ['all', 'GET', 'POST', 'PUT', 'DELETE'];
+const AUDIT_STATUS_OPTIONS = ['all', '2xx', '4xx', '5xx'];
+const AUDIT_AUTH_OPTIONS = ['all', 'authenticated', 'anonymous'];
 
 function parseStructuredConfig(config) {
   if (!config) return null;
@@ -12,6 +18,64 @@ function parseStructuredConfig(config) {
   } catch {
     return null;
   }
+}
+
+function normalizeAuditLogResponse(data) {
+  if (Array.isArray(data)) {
+    return {
+      entries: data,
+      total: data.length,
+      offset: 0,
+      limit: data.length,
+      count: data.length,
+      has_more: false,
+    };
+  }
+  if (!data || typeof data !== 'object') {
+    return {
+      entries: [],
+      total: 0,
+      offset: 0,
+      limit: AUDIT_PAGE_SIZE,
+      count: 0,
+      has_more: false,
+    };
+  }
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  const count = typeof data.count === 'number' ? data.count : entries.length;
+  const offset = typeof data.offset === 'number' ? data.offset : 0;
+  const limit = typeof data.limit === 'number' ? data.limit : AUDIT_PAGE_SIZE;
+  const total = typeof data.total === 'number' ? data.total : offset + count;
+  const hasMore = typeof data.has_more === 'boolean' ? data.has_more : offset + count < total;
+  return {
+    entries,
+    total,
+    offset,
+    limit,
+    count,
+    has_more: hasMore,
+  };
+}
+
+function formatAuditTimestamp(value) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+function auditStatusClass(statusCode) {
+  if (statusCode >= 500) return 'badge-err';
+  if (statusCode >= 400) return 'badge-warn';
+  return 'badge-ok';
+}
+
+function auditRangeLabel(page) {
+  if (!page.count || !page.total) return 'No audit entries captured yet.';
+  return `Showing ${page.offset + 1}-${page.offset + page.count} of ${page.total} entries`;
+}
+
+function auditEmptyMessage(filtersActive) {
+  return filtersActive ? 'No audit entries match the current filters.' : 'No audit entries captured yet.';
 }
 
 function ToggleSwitch({ label, checked, onChange, description }) {
@@ -162,6 +226,11 @@ export default function Settings() {
   const toast = useToast();
   const [confirm, confirmUI] = useConfirm();
   const [tab, setTab] = useState('config');
+  const [auditPage, setAuditPage] = useState(0);
+  const [auditQuery, setAuditQuery] = useState('');
+  const [auditMethod, setAuditMethod] = useState('all');
+  const [auditStatus, setAuditStatus] = useState('all');
+  const [auditAuth, setAuditAuth] = useState('all');
   const { data: config, reload: rConfig } = useApi(api.configCurrent);
   const { data: monOpts } = useApi(api.monitoringOptions);
   const { data: monPaths } = useApi(api.monitoringPaths);
@@ -178,6 +247,34 @@ export default function Settings() {
   const { data: dlqData } = useApi(api.dlqStats);
   const { data: dbSizes, reload: rSizes } = useApi(api.adminDbSizes);
   const { data: storageStats, reload: rStats } = useApi(api.storageStats);
+  const auditQueryValue = auditQuery.trim();
+  const auditMethodValue = auditMethod !== 'all' ? auditMethod : undefined;
+  const auditStatusValue = auditStatus !== 'all' ? auditStatus : undefined;
+  const auditAuthValue = auditAuth !== 'all' ? auditAuth : undefined;
+  const auditFiltersActive = Boolean(
+    auditQueryValue || auditMethodValue || auditStatusValue || auditAuthValue,
+  );
+  const auditOffset = auditPage * AUDIT_PAGE_SIZE;
+  const {
+    data: auditLogData,
+    loading: auditLogLoading,
+    error: auditLogError,
+    reload: rAuditLog,
+  } = useApi(
+    () =>
+      api.auditLog({
+        limit: AUDIT_PAGE_SIZE,
+        offset: auditOffset,
+        q: auditQueryValue,
+        method: auditMethodValue,
+        status: auditStatusValue,
+        auth: auditAuthValue,
+      }),
+    [auditOffset, auditQueryValue, auditMethodValue, auditStatusValue, auditAuthValue],
+    {
+      skip: tab !== 'admin',
+    },
+  );
   const [configEditing, setConfigEditing] = useState(false);
   const [configText, setConfigText] = useState('');
   const [jsonError, setJsonError] = useState(null);
@@ -310,6 +407,46 @@ export default function Settings() {
     if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return [];
     return Object.entries(flags);
   }, [flags]);
+
+  const auditLogPage = useMemo(() => normalizeAuditLogResponse(auditLogData), [auditLogData]);
+  const auditControlStyle = {
+    width: '100%',
+    padding: '6px 10px',
+    borderRadius: 'var(--radius)',
+    border: '1px solid var(--border)',
+    background: 'var(--bg)',
+    color: 'var(--text)',
+    fontSize: 13,
+  };
+  const auditLabelStyle = {
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 500,
+    marginBottom: 4,
+  };
+
+  const clearAuditFilters = () => {
+    setAuditQuery('');
+    setAuditMethod('all');
+    setAuditStatus('all');
+    setAuditAuth('all');
+    setAuditPage(0);
+  };
+
+  const exportAuditLog = async () => {
+    try {
+      const csv = await api.auditLogExport({
+        q: auditQueryValue,
+        method: auditMethodValue,
+        status: auditStatusValue,
+        auth: auditAuthValue,
+      });
+      downloadData(csv, 'wardex-api-audit.csv', 'text/csv;charset=utf-8');
+      toast('Audit log exported', 'success');
+    } catch {
+      toast('Audit export failed', 'error');
+    }
+  };
 
   useEffect(() => {
     if (!configEditing || !configDiff) return undefined;
@@ -1242,6 +1379,231 @@ export default function Settings() {
                   <div className="stat-value">{storageStats.total_agents ?? '—'}</div>
                 </div>
               </div>
+            )}
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header">
+              <span className="card-title">API Audit Trail</span>
+              <div className="btn-group" style={{ alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {auditLogLoading && auditLogPage.count === 0
+                    ? 'Loading audit entries...'
+                    : auditRangeLabel(auditLogPage)}
+                </span>
+                <button className="btn btn-sm" disabled={auditLogLoading} onClick={rAuditLog}>
+                  ↻ Refresh
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                gap: 12,
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <label htmlFor="audit-log-search" style={auditLabelStyle}>
+                  Search
+                </label>
+                <input
+                  id="audit-log-search"
+                  type="search"
+                  placeholder="Path, source, method, status"
+                  value={auditQuery}
+                  onChange={(event) => {
+                    setAuditQuery(event.target.value);
+                    setAuditPage(0);
+                  }}
+                  style={auditControlStyle}
+                />
+              </div>
+              <div>
+                <label htmlFor="audit-log-method" style={auditLabelStyle}>
+                  Method
+                </label>
+                <select
+                  id="audit-log-method"
+                  value={auditMethod}
+                  onChange={(event) => {
+                    setAuditMethod(event.target.value);
+                    setAuditPage(0);
+                  }}
+                  style={auditControlStyle}
+                >
+                  {AUDIT_METHOD_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option === 'all' ? 'All methods' : option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="audit-log-status" style={auditLabelStyle}>
+                  Status
+                </label>
+                <select
+                  id="audit-log-status"
+                  value={auditStatus}
+                  onChange={(event) => {
+                    setAuditStatus(event.target.value);
+                    setAuditPage(0);
+                  }}
+                  style={auditControlStyle}
+                >
+                  {AUDIT_STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option === 'all' ? 'All statuses' : option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="audit-log-auth" style={auditLabelStyle}>
+                  Auth
+                </label>
+                <select
+                  id="audit-log-auth"
+                  value={auditAuth}
+                  onChange={(event) => {
+                    setAuditAuth(event.target.value);
+                    setAuditPage(0);
+                  }}
+                  style={auditControlStyle}
+                >
+                  {AUDIT_AUTH_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option === 'all'
+                        ? 'All requests'
+                        : option === 'authenticated'
+                          ? 'Authenticated'
+                          : 'Anonymous'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+                marginBottom: 12,
+              }}
+            >
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Filters apply to both the paged table and the CSV export.
+              </span>
+              <div className="btn-group">
+                <button className="btn btn-sm" disabled={!auditFiltersActive} onClick={clearAuditFilters}>
+                  Clear Filters
+                </button>
+                <button className="btn btn-sm" disabled={auditLogLoading} onClick={exportAuditLog}>
+                  Export CSV
+                </button>
+              </div>
+            </div>
+
+            {auditLogError ? (
+              <div className="empty">Unable to load the API audit trail.</div>
+            ) : auditLogPage.entries.length > 0 ? (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Method</th>
+                        <th>Path</th>
+                        <th>Source</th>
+                        <th>Status</th>
+                        <th>Auth</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLogPage.entries.map((entry, index) => (
+                        <tr key={`${entry.timestamp || 'audit'}-${entry.path || 'path'}-${index}`}>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {formatAuditTimestamp(entry.timestamp)}
+                          </td>
+                          <td>
+                            <span className="badge badge-info">
+                              {String(entry.method || '—').toUpperCase()}
+                            </span>
+                          </td>
+                          <td
+                            style={{
+                              maxWidth: 360,
+                              fontFamily:
+                                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {entry.path || '—'}
+                          </td>
+                          <td>{entry.source_ip || '—'}</td>
+                          <td>
+                            <span
+                              className={`badge ${auditStatusClass(Number(entry.status_code) || 0)}`}
+                            >
+                              {entry.status_code ?? '—'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`badge ${entry.auth_used ? 'badge-ok' : 'badge-warn'}`}>
+                              {entry.auth_used ? 'Authenticated' : 'Anonymous'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    marginTop: 12,
+                  }}
+                >
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Newest requests appear first. Use Older to walk back through the API trail.
+                  </span>
+                  <div className="btn-group" style={{ alignItems: 'center' }}>
+                    <button
+                      className="btn btn-sm"
+                      disabled={auditLogLoading || auditPage === 0}
+                      onClick={() => setAuditPage((current) => Math.max(0, current - 1))}
+                    >
+                      Newer
+                    </button>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Page {auditPage + 1}
+                    </span>
+                    <button
+                      className="btn btn-sm"
+                      disabled={auditLogLoading || !auditLogPage.has_more}
+                      onClick={() => setAuditPage((current) => current + 1)}
+                    >
+                      Older
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : auditLogLoading ? (
+              <div className="empty">Loading audit log...</div>
+            ) : (
+              <div className="empty">{auditEmptyMessage(auditFiltersActive)}</div>
             )}
           </div>
 

@@ -26,15 +26,15 @@ async function renderApp(initialRoute = '/') {
   await act(async () => {
     view = render(
       <MemoryRouter initialEntries={[initialRoute]}>
-        <ThemeProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <ThemeProvider>
             <RoleProvider>
               <ToastProvider>
                 <App />
               </ToastProvider>
             </RoleProvider>
-          </AuthProvider>
-        </ThemeProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </MemoryRouter>,
     );
   });
@@ -135,5 +135,27 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Toggle navigation menu' })).toHaveTextContent(
       'Hide Menu',
     );
+  });
+
+  it('hydrates pinned views from persisted user preferences', async () => {
+    localStorage.setItem('wardex_token', 'persisted-token');
+    fetchMock.mockImplementation(async (url) => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => {
+        if (url === '/api/user/preferences') {
+          return {
+            pinned_sections: ['live-monitor'],
+            updated_at: '2026-04-20T09:00:00Z',
+          };
+        }
+        if (url === '/api/auth/session') return { role: 'viewer' };
+        return {};
+      },
+    }));
+
+    await renderApp();
+
+    expect(await screen.findByText('Pinned Views')).toBeInTheDocument();
   });
 });

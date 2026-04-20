@@ -446,6 +446,7 @@ pub fn endpoint_permission(method: &str, path: &str) -> Permission {
         (_, p) if p.starts_with("/api/scim/config") => Permission::ManageScim,
 
         // Support
+        (_, "/api/user/preferences") => Permission::ViewSupport,
         ("GET", p)
             if p == "/api/audit/admin"
                 || p == "/api/ocsf/schema"
@@ -767,6 +768,14 @@ mod tests {
         );
         assert_eq!(
             endpoint_permission("GET", "/api/auth/session"),
+            Permission::ViewSupport
+        );
+        assert_eq!(
+            endpoint_permission("GET", "/api/user/preferences"),
+            Permission::ViewSupport
+        );
+        assert_eq!(
+            endpoint_permission("PUT", "/api/user/preferences"),
             Permission::ViewSupport
         );
         assert_eq!(

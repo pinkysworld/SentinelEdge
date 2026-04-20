@@ -513,7 +513,7 @@ impl AlertBroadcaster {
 
     /// Register a new WebSocket client. Returns the subscriber ID.
     pub fn connect(&mut self) -> u64 {
-        let id = self.bus.subscribe(vec!["alerts".into(), "events".into()]);
+        let id = self.bus.subscribe(vec![]);
         self.connections.push(WsConnection::new(id));
         id
     }
@@ -753,6 +753,19 @@ mod tests {
         assert_eq!(conn.frames_sent, 1);
         assert_eq!(conn.frames_received, 1);
         assert!(conn.uptime_secs() < 1.0);
+    }
+
+    #[test]
+    fn alert_broadcaster_connect_receives_alerts() {
+        let mut broadcaster = AlertBroadcaster::new();
+        let subscriber_id = broadcaster.connect();
+
+        broadcaster.broadcast_alert(serde_json::json!({"id": 7, "hostname": "edge-1"}));
+        let events = broadcaster.drain_for(subscriber_id);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "alert");
+        assert_eq!(events[0].data["id"], serde_json::json!(7));
     }
 
     #[test]

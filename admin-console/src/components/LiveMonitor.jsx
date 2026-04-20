@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useApi, useInterval, useToast } from '../hooks.jsx';
+import { useApi, useInterval, useToast, useWebSocket } from '../hooks.jsx';
 import * as api from '../api.js';
 import AlertDrawer from './AlertDrawer.jsx';
 import ProcessDrawer from './ProcessDrawer.jsx';
@@ -28,7 +28,39 @@ const ALERT_VIEWS = [
 ];
 
 function alertIdFor(alert, index) {
-  return alert.id || alert.alert_id || `${alert.timestamp}-${index}`;
+  return alert.id ?? alert.alert_id ?? alert._index ?? `${alert.timestamp}-${index}`;
+}
+
+function normalizeAlert(alert, fallbackIndex) {
+  const reasons = Array.isArray(alert?.reasons) ? alert.reasons.filter(Boolean) : [];
+  const severity = String(alert?.severity || alert?.level || 'unknown').toLowerCase();
+  const narrativeHeadline = alert?.narrative?.headline || alert?.narrative?.summary || '';
+  const category = alert?.category || alert?.type || reasons[0] || 'anomaly';
+  const message =
+    alert?.message ||
+    alert?.description ||
+    narrativeHeadline ||
+    reasons[0] ||
+    `${String(alert?.level || 'Anomaly')} detected on ${alert?.hostname || 'host'}`;
+
+  return {
+    ...alert,
+    id: alert?.id ?? alert?.alert_id ?? alert?._index ?? fallbackIndex,
+    alert_id: alert?.alert_id ?? alert?.id ?? alert?._index ?? fallbackIndex,
+    severity,
+    source: alert?.source || (alert?.platform === 'sample' ? 'sample' : 'local-monitor'),
+    category,
+    type: alert?.type || 'anomaly',
+    message,
+    description: alert?.description || narrativeHeadline || reasons.join('; '),
+    time: alert?.time || alert?.timestamp,
+  };
+}
+
+function alertDedupKey(alert, index) {
+  const primaryId = alert.id ?? alert.alert_id ?? alert._index;
+  if (primaryId != null) return String(primaryId);
+  return `${alert.timestamp || alert.time || 'unknown'}:${alert.hostname || 'host'}:${alert.message || alert.description || index}`;
 }
 
 function TriageEmptyState({ title, description, actionLabel, onAction }) {
@@ -105,6 +137,8 @@ function MobileAlertCard({ alert, index, active, onPreview, onOpen, onMarkFP }) 
 export default function LiveMonitor() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { events: streamEvents, connected: streamConnected, transport: streamTransport } =
+    useWebSocket(2000);
   const { data: alertData, loading, reload } = useApi(api.alerts);
   const { data: countData, reload: reloadCount } = useApi(api.alertsCount);
   const { data: grouped, reload: reloadGrouped } = useApi(api.alertsGrouped);
@@ -151,10 +185,38 @@ export default function LiveMonitor() {
     tab === 'processes' ? 10000 : null,
   );
 
-  const alertList = useMemo(
-    () => (Array.isArray(alertData) ? alertData : alertData?.alerts || []),
-    [alertData],
+  const liveAlertEvents = useMemo(
+    () => streamEvents.filter((event) => (event?.type || event?.event_type) === 'alert'),
+    [streamEvents],
   );
+  const streamAlertList = useMemo(
+    () => liveAlertEvents.map((event, index) => normalizeAlert(event.data || {}, index)),
+    [liveAlertEvents],
+  );
+  const alertList = useMemo(() => {
+    const baseAlerts = (Array.isArray(alertData) ? alertData : alertData?.alerts || []).map(
+      (alert, index) => normalizeAlert(alert, index),
+    );
+    if (streamAlertList.length === 0) return baseAlerts;
+    const merged = [...streamAlertList, ...baseAlerts];
+    const seen = new Set();
+    return merged.filter((alert, index) => {
+      const key = alertDedupKey(alert, index);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [alertData, streamAlertList]);
+
+  const latestStreamAlertKey =
+    streamAlertList.length > 0 ? alertDedupKey(streamAlertList[0], 0) : null;
+
+  useEffect(() => {
+    if (!latestStreamAlertKey) return;
+    reloadCount();
+    reloadGrouped();
+  }, [latestStreamAlertKey, reloadCount, reloadGrouped]);
+
   const sourceOptions = ['all', ...new Set(alertList.map((alert) => alert.source).filter(Boolean))];
   const hostOptions = ['all', ...new Set(alertList.map((alert) => alert.hostname).filter(Boolean))];
 
@@ -377,8 +439,19 @@ export default function LiveMonitor() {
           <span className={`badge ${hp?.status === 'ok' ? 'badge-ok' : 'badge-err'}`}>
             {hp?.status === 'ok' ? 'System Healthy' : 'Degraded'}
           </span>
+          <span className={`badge ${streamConnected ? 'badge-ok' : 'badge-warn'}`}>
+            {streamConnected
+              ? streamTransport === 'websocket'
+                ? 'Live feed: WebSocket'
+                : 'Live feed: Polling'
+              : 'Live feed reconnecting'}
+          </span>
           <span className="badge badge-info">
-            {countData == null ? '…' : typeof countData === 'object' ? countData.count : countData}{' '}
+            {countData == null
+              ? '…'
+              : typeof countData === 'object'
+                ? countData.total ?? countData.count ?? filteredAlerts.length
+                : countData}{' '}
             alerts
           </span>
           <button className="btn btn-sm" onClick={reloadAll}>
