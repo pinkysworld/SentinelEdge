@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776672197139,
+  "lastUpdate": 1776676763111,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -985,6 +985,96 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 33513,
             "range": "± 167",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "distinct": true,
+          "id": "da27c50e3fdf154734c01d82a70c17b943d2ee0f",
+          "message": "Persist admin prefs and expand audit workflows",
+          "timestamp": "2026-04-20T11:13:33+02:00",
+          "tree_id": "2decb81812e1949b75c733965b9c1b51062ef6c4",
+          "url": "https://github.com/pinkysworld/Wardex/commit/da27c50e3fdf154734c01d82a70c17b943d2ee0f"
+        },
+        "date": 1776676762532,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 46682,
+            "range": "± 312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 408215,
+            "range": "± 3742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1896939,
+            "range": "± 102512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 19789636,
+            "range": "± 114346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 559,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 202,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 19766846,
+            "range": "± 115265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 97913,
+            "range": "± 748",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 90885,
+            "range": "± 233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 47,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 37320,
+            "range": "± 219",
             "unit": "ns/iter"
           }
         ]
