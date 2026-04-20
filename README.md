@@ -27,7 +27,7 @@ See [FEATURES.md](FEATURES.md) for the concise capability summary, [CHANGELOG.md
 
 ## Quick start
 
-Build the project:
+The fastest path from a clean checkout to a running local console is:
 
 ```bash
 npm ci --prefix admin-console
@@ -35,6 +35,37 @@ cargo build --release
 ```
 
 The embedded admin console is compiled as part of the Rust build, so a clean checkout needs the admin-console npm dependencies installed first.
+
+Start Wardex:
+
+```bash
+./target/release/wardex start
+```
+
+Read the admin token:
+
+```bash
+cat var/.wardex_token
+```
+
+Open the admin console:
+
+```text
+http://localhost:8080/admin/
+```
+
+Paste the token from `var/.wardex_token` into the login form.
+
+Important:
+
+- `http://localhost:8080/` is the public product website.
+- `http://localhost:8080/admin/` is the actual admin console.
+- If you set `WARDEX_ADMIN_TOKEN` yourself, Wardex uses that value and may not create `var/.wardex_token`.
+- You can confirm which binary you are running with `./target/release/wardex version`.
+
+For development, `cargo run` is equivalent to `wardex start` and also serves the console on `http://localhost:8080/admin/`.
+
+Useful next commands:
 
 Run the included demo trace:
 
@@ -54,7 +85,7 @@ Start the live control plane:
 cargo run
 ```
 
-`cargo run` starts the local Rust control plane on port `8080` and serves the embedded admin console from `http://localhost:8080/admin/`. Open that URL, paste the token printed in the terminal, and you will have access to the live admin console, SOC Workbench, fleet controls, detection engineering views, and reports. If you are developing the frontend separately with `npm run dev`, use `http://localhost:5173/admin/` instead; `:8080` is the backend-served local default, not the standalone Vite dev server. Use `cargo run -- serve` only when you explicitly want the web server without the embedded local monitor.
+`cargo run` starts the local Rust control plane on port `8080` and serves the embedded admin console from `http://localhost:8080/admin/`. Read the token from `var/.wardex_token`, paste it into the login form, and you will have access to the live admin console, SOC Workbench, fleet controls, detection engineering views, and reports. If you are developing the frontend separately with `npm run dev`, use `http://localhost:5173/admin/` instead; `:8080` is the backend-served local default, not the standalone Vite dev server. Use `cargo run -- serve` only when you explicitly want the web server without the embedded local monitor.
 
 ## Core capabilities
 

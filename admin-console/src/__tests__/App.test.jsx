@@ -119,4 +119,21 @@ describe('App', () => {
     await renderApp();
     expect(screen.getByText('Welcome to Wardex Admin Console')).toBeInTheDocument();
   });
+
+  it('does not block unauthenticated login with onboarding', async () => {
+    await renderApp();
+    expect(screen.queryByText('Set up the Wardex admin console')).not.toBeInTheDocument();
+  });
+
+  it('keeps a recovery navigation toggle after collapsing the sidebar', async () => {
+    await renderApp();
+    await userEvent.click(screen.getByLabelText('Toggle sidebar'));
+    const recoveryToggle = screen.getByRole('button', { name: 'Toggle navigation menu' });
+    expect(recoveryToggle).toBeInTheDocument();
+    expect(recoveryToggle).toHaveTextContent('Show Menu');
+    await userEvent.click(recoveryToggle);
+    expect(screen.getByRole('button', { name: 'Toggle navigation menu' })).toHaveTextContent(
+      'Hide Menu',
+    );
+  });
 });

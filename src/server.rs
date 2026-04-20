@@ -63,7 +63,7 @@ use crate::digital_twin::DigitalTwinEngine;
 use crate::edge_cloud::{PatchManager, PlatformCapabilities};
 use crate::energy::EnergyBudget;
 use crate::enforcement::EnforcementEngine;
-use crate::enrollment::{AgentHealth, AgentIdentity, AgentRegistry};
+use crate::enrollment::{AgentHealth, AgentIdentity, AgentRegistry, AgentStatus};
 use crate::enterprise::{
     ContentLifecycle, EnterpriseStore, HuntResponseAction, HuntRun, ResponseActionResult,
     SavedHunt, build_content_rules_view, build_entity_profile, build_entity_timeline,
@@ -769,6 +769,7 @@ struct AgentEventAnalyticsSummary {
 #[derive(Debug, Clone, serde::Serialize)]
 struct AgentActivitySnapshot {
     agent: AgentIdentity,
+    local_console: bool,
     computed_status: String,
     heartbeat_age_secs: Option<u64>,
     deployment: Option<AgentDeployment>,
@@ -780,6 +781,83 @@ struct AgentActivitySnapshot {
     risk_transitions: Vec<serde_json::Value>,
     inventory: Option<AgentInventorySummary>,
     log_summary: AgentLogSummary,
+}
+
+const LOCAL_CONSOLE_AGENT_ID: &str = "local-console";
+
+fn timestamp_ms_to_rfc3339(timestamp_ms: u64) -> Option<String> {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp_ms as i64)
+        .map(|timestamp| timestamp.to_rfc3339())
+}
+
+fn local_console_identity(state: &AppState) -> AgentIdentity {
+    let now = chrono::Utc::now().to_rfc3339();
+    let enrolled_at = state
+        .local_telemetry
+        .front()
+        .and_then(|sample| timestamp_ms_to_rfc3339(sample.timestamp_ms))
+        .unwrap_or_else(|| now.clone());
+    let last_seen = state
+        .local_telemetry
+        .back()
+        .and_then(|sample| timestamp_ms_to_rfc3339(sample.timestamp_ms))
+        .unwrap_or_else(|| now.clone());
+    let mut labels = HashMap::new();
+    labels.insert("local_console".to_string(), "true".to_string());
+    labels.insert("role".to_string(), "control-plane".to_string());
+
+    AgentIdentity {
+        id: LOCAL_CONSOLE_AGENT_ID.to_string(),
+        hostname: state.local_host_info.hostname.clone(),
+        platform: state.local_host_info.platform.to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        enrolled_at,
+        last_seen,
+        status: AgentStatus::Online,
+        labels,
+        health: AgentHealth {
+            pending_alerts: state
+                .alerts
+                .iter()
+                .filter(|alert| alert.hostname == state.local_host_info.hostname)
+                .count(),
+            telemetry_queue_depth: state.local_telemetry.len(),
+            ..AgentHealth::default()
+        },
+        monitor_scope: None,
+    }
+}
+
+fn local_console_agent_summary_json(state: &AppState) -> serde_json::Value {
+    let local_agent = local_console_identity(state);
+    let latest_sample = state.local_telemetry.back();
+    let mut summary = agent_summary_json(
+        &local_agent,
+        None,
+        state.agent_registry.heartbeat_interval(),
+    );
+    if let Some(object) = summary.as_object_mut() {
+        object.insert("local_console".to_string(), serde_json::Value::Bool(true));
+        object.insert("local_monitoring".to_string(), serde_json::Value::Bool(true));
+        object.insert("source".to_string(), serde_json::Value::String("local".to_string()));
+        object.insert(
+            "os_version".to_string(),
+            serde_json::Value::String(state.local_host_info.os_version.clone()),
+        );
+        object.insert(
+            "arch".to_string(),
+            serde_json::Value::String(state.local_host_info.arch.clone()),
+        );
+        object.insert(
+            "telemetry_samples".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(state.local_telemetry.len())),
+        );
+        object.insert(
+            "process_count".to_string(),
+            serde_json::json!(latest_sample.map(|sample| sample.process_count)),
+        );
+    }
+    summary
 }
 
 pub async fn run_server(
@@ -3186,10 +3264,16 @@ fn build_agent_activity_snapshot(
     state: &AppState,
     agent_id: &str,
 ) -> Result<AgentActivitySnapshot, String> {
-    let agent = state
-        .agent_registry
-        .get(agent_id)
-        .ok_or_else(|| "agent not found".to_string())?;
+    let is_local_console = agent_id == LOCAL_CONSOLE_AGENT_ID;
+    let agent = if is_local_console {
+        local_console_identity(state)
+    } else {
+        state
+            .agent_registry
+            .get(agent_id)
+            .cloned()
+            .ok_or_else(|| "agent not found".to_string())?
+    };
     let events = state.event_store.list(Some(agent_id), 500);
     let total_events = events.len();
     let correlated_count = events.iter().filter(|event| event.correlated).count();
@@ -3261,32 +3345,41 @@ fn build_agent_activity_snapshot(
         *log_levels.entry(format!("{:?}", record.level)).or_insert(0) += 1;
     }
 
-    let inventory = state
-        .agent_inventories
-        .get(agent_id)
-        .map(|inventory| AgentInventorySummary {
-            collected_at: inventory.collected_at.clone(),
-            software_count: inventory.software.len(),
-            services_count: inventory.services.len(),
-            network_ports: inventory.network.len(),
-            users_count: inventory.users.len(),
-            hardware: inventory.hardware.clone(),
-        });
+    let inventory = if is_local_console {
+        None
+    } else {
+        state
+            .agent_inventories
+            .get(agent_id)
+            .map(|inventory| AgentInventorySummary {
+                collected_at: inventory.collected_at.clone(),
+                software_count: inventory.software.len(),
+                services_count: inventory.services.len(),
+                network_ports: inventory.network.len(),
+                users_count: inventory.users.len(),
+                hardware: inventory.hardware.clone(),
+            })
+    };
 
     let (computed_status, heartbeat_age_secs) =
-        computed_agent_status(agent, state.agent_registry.heartbeat_interval());
-    let effective_scope = state
-        .agent_registry
-        .get_monitor_scope(agent_id)
-        .cloned()
-        .unwrap_or_else(|| state.config.monitor.scope.clone());
+        computed_agent_status(&agent, state.agent_registry.heartbeat_interval());
+    let effective_scope = if is_local_console {
+        state.config.monitor.scope.clone()
+    } else {
+        state
+            .agent_registry
+            .get_monitor_scope(agent_id)
+            .cloned()
+            .unwrap_or_else(|| state.config.monitor.scope.clone())
+    };
 
     Ok(AgentActivitySnapshot {
         agent: agent.clone(),
+        local_console: is_local_console,
         computed_status,
         heartbeat_age_secs,
         deployment: state.remote_deployments.get(agent_id).cloned(),
-        scope_override: state.agent_registry.get_monitor_scope(agent_id).is_some(),
+        scope_override: !is_local_console && state.agent_registry.get_monitor_scope(agent_id).is_some(),
         effective_scope,
         health: agent.health.clone(),
         analytics: AgentEventAnalyticsSummary {
@@ -5521,18 +5614,21 @@ fn handle_api(
                 Err(e) => e.into_inner(),
             };
             let agents = s.agent_registry.list();
-            let total_agents = agents.len();
+            let heartbeat_interval = s.agent_registry.heartbeat_interval();
+            let local_agent = local_console_identity(&s);
+            let total_agents = agents.len() + 1;
             let online = agents
                 .iter()
-                .filter(|a| matches!(a.status, crate::enrollment::AgentStatus::Online))
+                .filter(|agent| computed_agent_status(agent, heartbeat_interval).0 == "online")
                 .count();
-            let stale = total_agents.saturating_sub(online);
+            let local_online = usize::from(computed_agent_status(&local_agent, heartbeat_interval).0 == "online");
+            let stale = total_agents.saturating_sub(online + local_online);
             let logs_tracked = s.agent_logs.len();
-            let inventories_tracked = s.agent_inventories.len();
+            let inventories_tracked = s.agent_inventories.len() + 1;
             json_response(
                 &serde_json::json!({
                     "total_agents": total_agents,
-                    "online": online,
+                    "online": online + local_online,
                     "stale": stale,
                     "logs_tracked": logs_tracked,
                     "inventories_tracked": inventories_tracked,
@@ -6314,6 +6410,7 @@ fn handle_api(
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let agents = s.agent_registry.list();
+            let heartbeat_interval = s.agent_registry.heartbeat_interval();
             let params = parse_query_string(&url);
             let limit = params
                 .get("limit")
@@ -6324,17 +6421,15 @@ fn handle_api(
                 .get("offset")
                 .and_then(|v| v.parse::<usize>().ok())
                 .unwrap_or(0);
-            let payload: Vec<_> = agents
-                .iter()
+            let mut payload = Vec::with_capacity(agents.len() + 1);
+            payload.push(local_console_agent_summary_json(&s));
+            payload.extend(agents.iter().map(|agent| {
+                agent_summary_json(agent, s.remote_deployments.get(&agent.id), heartbeat_interval)
+            }));
+            let payload = payload
+                .into_iter()
                 .skip(offset)
                 .take(limit)
-                .map(|agent| {
-                    agent_summary_json(
-                        agent,
-                        s.remote_deployments.get(&agent.id),
-                        s.agent_registry.heartbeat_interval(),
-                    )
-                })
                 .collect::<Vec<_>>();
             match serde_json::to_string(&payload) {
                 Ok(json) => json_response(&json, 200),
@@ -6878,12 +6973,16 @@ fn handle_api(
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let agents = s.agent_registry.list();
+            let heartbeat_interval = s.agent_registry.heartbeat_interval();
             let mut counts = HashMap::new();
             for agent in agents.iter().copied() {
-                let (status, _) =
-                    computed_agent_status(agent, s.agent_registry.heartbeat_interval());
+                let (status, _) = computed_agent_status(agent, heartbeat_interval);
                 *counts.entry(status).or_insert(0usize) += 1;
             }
+            let local_agent = local_console_identity(&s);
+            let (local_status, _) = computed_agent_status(&local_agent, heartbeat_interval);
+            *counts.entry(local_status).or_insert(0usize) += 1;
+            let total_agents = agents.len() + 1;
             let total_events = s.event_store.total_events();
             let correlations = s.event_store.recent_correlations();
             let analytics = s.event_store.analytics();
@@ -6899,9 +6998,9 @@ fn handle_api(
             let online_count = *counts.get("online").unwrap_or(&0);
             let info = serde_json::json!({
                 "fleet": {
-                    "total_agents": agents.len(),
+                    "total_agents": total_agents,
                     "status_counts": counts,
-                    "coverage_pct": if agents.is_empty() { 0.0 } else { (online_count as f32 / agents.len() as f32) * 100.0 },
+                    "coverage_pct": if total_agents == 0 { 0.0 } else { (online_count as f32 / total_agents as f32) * 100.0 },
                 },
                 "events": {
                     "total": total_events,
@@ -8935,6 +9034,13 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/status"))
                     .unwrap_or("");
+                if agent_id == LOCAL_CONSOLE_AGENT_ID {
+                    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    return match serde_json::to_string(&local_console_agent_summary_json(&s)) {
+                        Ok(json) => json_response(&json, 200),
+                        Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                    };
+                }
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.agent_registry.get(agent_id) {
                     Some(agent) => match serde_json::to_string(agent) {
@@ -8946,6 +9052,9 @@ fn handle_api(
             } else if method == Method::Delete && url_path.starts_with("/api/agents/") {
                 // DELETE /api/agents/{id}
                 let agent_id = url_path.strip_prefix("/api/agents/").unwrap_or("");
+                if agent_id == LOCAL_CONSOLE_AGENT_ID {
+                    return error_json("local console host cannot be removed", 409);
+                }
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.agent_registry.deregister(agent_id) {
                     Ok(()) => {
@@ -9094,6 +9203,13 @@ fn handle_api(
                     .strip_prefix("/api/agents/")
                     .and_then(|rest| rest.strip_suffix("/inventory"))
                     .unwrap_or("");
+                if agent_id == LOCAL_CONSOLE_AGENT_ID {
+                    let inventory = crate::inventory::collect_inventory();
+                    return match serde_json::to_string(&inventory) {
+                        Ok(json) => json_response(&json, 200),
+                        Err(e) => error_json(&format!("serialization error: {e}"), 500),
+                    };
+                }
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 match s.agent_inventories.get(agent_id) {
                     Some(inv) => match serde_json::to_string(inv) {
@@ -14664,6 +14780,70 @@ mod tests {
             })
             .expect("enroll test agent")
             .agent_id
+    }
+
+    #[test]
+    fn local_console_host_is_exposed_through_fleet_endpoints() {
+        let (port, token) = spawn_test_server();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let auth_header = format!("Bearer {token}");
+
+        let agents_response = ureq::get(&format!("{base_url}/api/agents"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("agents response");
+        let agents: serde_json::Value = serde_json::from_str(
+            &agents_response.into_string().expect("agents response body"),
+        )
+        .expect("agents json");
+        let local_agent = agents
+            .as_array()
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|entry| entry["id"] == serde_json::json!(LOCAL_CONSOLE_AGENT_ID))
+            })
+            .expect("local console agent in fleet list");
+        assert_eq!(local_agent["local_console"], serde_json::json!(true));
+        assert_eq!(local_agent["source"], serde_json::json!("local"));
+
+        let details_response = ureq::get(&format!(
+            "{base_url}/api/agents/{LOCAL_CONSOLE_AGENT_ID}/details"
+        ))
+        .set("Authorization", &auth_header)
+        .call()
+        .expect("agent details response");
+        let details: serde_json::Value = serde_json::from_str(
+            &details_response.into_string().expect("agent details body"),
+        )
+        .expect("agent details json");
+        assert_eq!(details["local_console"], serde_json::json!(true));
+        assert_eq!(details["agent"]["id"], serde_json::json!(LOCAL_CONSOLE_AGENT_ID));
+
+        let fleet_health_response = ureq::get(&format!("{base_url}/api/fleet/health"))
+            .set("Authorization", &auth_header)
+            .call()
+            .expect("fleet health response");
+        let fleet_health: serde_json::Value = serde_json::from_str(
+            &fleet_health_response
+                .into_string()
+                .expect("fleet health body"),
+        )
+        .expect("fleet health json");
+        assert_eq!(fleet_health["total_agents"], serde_json::json!(1));
+        assert_eq!(fleet_health["online"], serde_json::json!(1));
+
+        match ureq::delete(&format!("{base_url}/api/agents/{LOCAL_CONSOLE_AGENT_ID}"))
+            .set("Authorization", &auth_header)
+            .call()
+        {
+            Err(ureq::Error::Status(409, response)) => {
+                let body = response.into_string().expect("delete error body");
+                assert!(body.contains("local console host cannot be removed"));
+            }
+            Ok(_) => panic!("local console delete unexpectedly succeeded"),
+            Err(err) => panic!("unexpected delete error: {err}"),
+        }
     }
 
     #[test]

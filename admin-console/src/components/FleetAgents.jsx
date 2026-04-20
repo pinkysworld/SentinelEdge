@@ -82,14 +82,16 @@ function MobileAgentCard({ agent, active, onOpen, onCopy }) {
 }
 
 function normalizeAgent(agent, index) {
-  const id = agent.id || agent.agent_id || `agent-${index}`;
+  const source = agent.agent || agent;
+  const id = source.id || source.agent_id || `agent-${index}`;
   return {
     id,
-    hostname: agent.hostname || agent.host || id,
-    os: agent.os || agent.platform || 'unknown',
-    version: agent.version || '—',
-    status: agent.status || 'unknown',
-    lastSeen: agent.last_seen || agent.last_heartbeat || null,
+    hostname: source.hostname || source.host || id,
+    os: source.os || source.platform || 'unknown',
+    version: source.version || '—',
+    status: agent.computed_status || source.status || 'unknown',
+    lastSeen: source.last_seen || agent.last_seen || agent.last_heartbeat || null,
+    isLocalConsole: Boolean(agent.local_console || source.labels?.local_console === 'true'),
     raw: agent,
   };
 }
@@ -226,33 +228,49 @@ export default function FleetAgents() {
     [toast],
   );
 
-  const toggleSelect = useCallback((id) => {
+  const toggleSelect = useCallback((agent) => {
+    if (agent.isLocalConsole) {
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(agent.id) ? next.delete(agent.id) : next.add(agent.id);
       return next;
     });
   }, []);
 
+  const removablePagedAgents = pagedAgents.filter((agent) => !agent.isLocalConsole);
   const allSelected =
-    pagedAgents.length > 0 && pagedAgents.every((agent) => selected.has(agent.id));
+    removablePagedAgents.length > 0 && removablePagedAgents.every((agent) => selected.has(agent.id));
   const toggleAll = useCallback(() => {
     setSelected((prev) => {
       const next = new Set(prev);
-      pagedAgents.forEach((agent) => {
+      removablePagedAgents.forEach((agent) => {
         if (allSelected) next.delete(agent.id);
         else next.add(agent.id);
       });
       return next;
     });
-  }, [allSelected, pagedAgents]);
+  }, [allSelected, removablePagedAgents]);
 
   const executeDelete = async (ids) => {
-    const results = await Promise.allSettled(ids.map((id) => api.deleteAgent(id)));
+    const protectedIds = new Set(
+      agentArr.filter((agent) => agent.isLocalConsole).map((agent) => agent.id),
+    );
+    const removableIds = ids.filter((id) => !protectedIds.has(id));
+    if (removableIds.length === 0) {
+      setConfirmState(null);
+      toast('The local console host cannot be removed.', 'warning');
+      return;
+    }
+    const results = await Promise.allSettled(removableIds.map((id) => api.deleteAgent(id)));
     const ok = results.filter((result) => result.status === 'fulfilled').length;
-    toast(`Removed ${ok}/${ids.length} agents`, ok === ids.length ? 'success' : 'warning');
+    toast(
+      `Removed ${ok}/${removableIds.length} agents`,
+      ok === removableIds.length ? 'success' : 'warning',
+    );
     setSelected(new Set());
-    if (selectedAgent && ids.includes(selectedAgent)) {
+    if (selectedAgent && removableIds.includes(selectedAgent)) {
       setSelectedAgent(null);
       setAgentDetail(null);
     }
@@ -518,14 +536,22 @@ export default function FleetAgents() {
                               <td onClick={(event) => event.stopPropagation()}>
                                 <input
                                   type="checkbox"
+                                  disabled={agent.isLocalConsole}
                                   checked={selected.has(agent.id)}
-                                  onChange={() => toggleSelect(agent.id)}
-                                  aria-label={`Select ${agent.hostname}`}
+                                  onChange={() => toggleSelect(agent)}
+                                  aria-label={
+                                    agent.isLocalConsole
+                                      ? `${agent.hostname} is managed by the local console`
+                                      : `Select ${agent.hostname}`
+                                  }
                                 />
                               </td>
                               <td>
                                 <div className="row-primary">{agent.hostname}</div>
-                                <div className="row-secondary">{agent.id}</div>
+                                <div className="row-secondary">
+                                  {agent.id}
+                                  {agent.isLocalConsole ? ' · Local Console Host' : ''}
+                                </div>
                               </td>
                               <td>
                                 <span
@@ -602,18 +628,20 @@ export default function FleetAgents() {
                   <button className="btn btn-sm" onClick={() => copyRow(currentPreview)}>
                     Copy
                   </button>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() =>
-                      setConfirmState({
-                        type: 'single-delete',
-                        id: currentPreview.id,
-                        hostname: currentPreview.hostname,
-                      })
-                    }
-                  >
-                    Remove
-                  </button>
+                  {!currentPreview.isLocalConsole && (
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() =>
+                        setConfirmState({
+                          type: 'single-delete',
+                          id: currentPreview.id,
+                          hostname: currentPreview.hostname,
+                        })
+                      }
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -658,7 +686,9 @@ export default function FleetAgents() {
                   <div>
                     <div className="detail-hero-title">{currentPreview.hostname}</div>
                     <div className="detail-hero-copy">
-                      {currentPreview.status === 'offline'
+                      {currentPreview.isLocalConsole
+                        ? 'Local Wardex console host with direct process and telemetry access'
+                        : currentPreview.status === 'offline'
                         ? 'Needs operator attention'
                         : 'Healthy endpoint context available'}
                     </div>
@@ -693,7 +723,9 @@ export default function FleetAgents() {
                   </div>
                 </div>
                 <div className="detail-callout" style={{ marginTop: 16 }}>
-                  {currentPreview.status === 'offline'
+                  {currentPreview.isLocalConsole
+                    ? 'This host is running the Wardex control plane locally. Use the live monitor and process views to inspect this machine directly without deregistration workflows.'
+                    : currentPreview.status === 'offline'
                     ? 'This endpoint is offline. Review recent heartbeat time and recovery readiness before rolling out changes.'
                     : 'This endpoint is healthy. Use this panel to verify version, platform, and detailed inventory quickly.'}
                 </div>

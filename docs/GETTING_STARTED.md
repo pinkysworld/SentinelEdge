@@ -53,7 +53,7 @@ Default output is `var/last-run.report.json`.
 cargo run
 ```
 
-This starts the HTTP server on port `8080`, launches the embedded local monitor, and prints a one-time admin token to the terminal. Open `http://localhost:8080/admin/`, paste the token, and use the console to:
+This starts the HTTP server on port `8080`, launches the embedded local monitor, and writes the admin token to `var/.wardex_token` unless you already set `WARDEX_ADMIN_TOKEN` yourself. Open `http://localhost:8080/admin/`, paste the token, and use the console to:
 
 `http://localhost:8080/admin/` is the local backend-served console that comes from `cargo run`. If you launch the frontend with `cd admin-console && npm run dev`, the browser URL is `http://localhost:5173/admin/` while the Vite dev server proxies API traffic back to `127.0.0.1:8080`.
 
@@ -105,7 +105,7 @@ npm run dev
 
 The frontend dev server runs on `http://localhost:5173/admin/` and proxies all `/api` requests to `http://127.0.0.1:8080`. Use `:5173` only for frontend development; the embedded production-like local console from `cargo run` remains `http://localhost:8080/admin/`.
 
-Paste the admin token (printed by the backend or written to `var/.wardex_token`) into the login form.
+Paste the admin token from `var/.wardex_token` into the login form, or use the value you set in `WARDEX_ADMIN_TOKEN`.
 
 ### Testing
 

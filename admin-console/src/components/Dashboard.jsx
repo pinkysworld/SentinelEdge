@@ -620,26 +620,28 @@ export default function Dashboard() {
                     <div className="card-title" style={{ marginBottom: 8, paddingLeft: 8 }}>
                       By Severity
                     </div>
-                    <ResponsiveContainer width="100%" height={140}>
-                      <PieChart>
-                        <Pie
-                          data={sevBreakdown}
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={50}
-                          innerRadius={25}
-                          paddingAngle={2}
-                          dataKey="value"
-                          label={({ name, value }) => `${name} (${value})`}
-                          style={{ fontSize: 10 }}
-                        >
-                          {sevBreakdown.map((entry, i) => (
-                            <Cell key={i} fill={SEV_COLORS[entry.name] || '#6b7280'} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <div aria-hidden="true">
+                      <ResponsiveContainer width="100%" height={140}>
+                        <PieChart>
+                          <Pie
+                            data={sevBreakdown}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={50}
+                            innerRadius={25}
+                            paddingAngle={2}
+                            dataKey="value"
+                            label={({ name, value }) => `${name} (${value})`}
+                            style={{ fontSize: 10 }}
+                          >
+                            {sevBreakdown.map((entry, i) => (
+                              <Cell key={i} fill={SEV_COLORS[entry.name] || '#6b7280'} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 )}
               </div>

@@ -519,9 +519,21 @@ export default function App() {
       <main className="main" role="main" aria-label="Main content">
         {/* Top Bar */}
         <header className="topbar" role="banner">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <h1 className="topbar-title">{currentSection.label}</h1>
-            <Breadcrumbs sections={SECTIONS} pathname={location.pathname} />
+          <div className="topbar-left">
+            <button
+              className="btn btn-sm sidebar-toggle-topbar"
+              type="button"
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              aria-label="Toggle navigation menu"
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="sidebar-nav"
+            >
+              {sidebarCollapsed ? 'Show Menu' : 'Hide Menu'}
+            </button>
+            <div className="topbar-title-group">
+              <h1 className="topbar-title">{currentSection.label}</h1>
+              <Breadcrumbs sections={SECTIONS} pathname={location.pathname} />
+            </div>
           </div>
           <div className="topbar-right">
             {hp?.version && (
@@ -749,7 +761,9 @@ export default function App() {
             <div className="auth-prompt">
               <h2>Welcome to Wardex Admin Console</h2>
               <p>Enter your API token to connect to the Wardex backend.</p>
-              <p className="hint">The token is displayed in the terminal when you start Wardex.</p>
+              <p className="hint">
+                Read it from var/.wardex_token, or start Wardex with WARDEX_ADMIN_TOKEN.
+              </p>
             </div>
           ) : (
             <Routes>
@@ -930,7 +944,7 @@ export default function App() {
         }}
       />
       <NotificationToast />
-      {showOnboarding && (
+      {authenticated && showOnboarding && (
         <OnboardingWizard
           onComplete={() => {
             localStorage.setItem('wardex_onboarded', '1');

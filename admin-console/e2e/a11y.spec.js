@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { installAppMocks, resetStoredSession, seedAuthenticatedSession } from './support/mockApi.js';
 
 // ════════════════════════════════════════════════════════════════════
 // Accessibility smoke tests (advisory)
@@ -24,10 +25,19 @@ async function report(page, label) {
 
   if (summary.length > 0) {
     const blocking = summary.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+    const nodeDetails = results.violations.map((violation) => ({
+      id: violation.id,
+      nodes: violation.nodes.map((node) => ({
+        target: node.target,
+        html: node.html,
+      })),
+    }));
     // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] ${summary.length} total, ${blocking.length} serious/critical`);
     // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] details:`, JSON.stringify(summary, null, 2));
+    // eslint-disable-next-line no-console
+    console.log(`[a11y:${label}] nodes:`, JSON.stringify(nodeDetails, null, 2));
   } else {
     // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] clean`);
@@ -39,12 +49,8 @@ async function report(page, label) {
 
 test.describe('Accessibility (axe-core, advisory)', () => {
   test('unauthenticated welcome screen', async ({ page }) => {
-    await page.goto('./');
-    await page.evaluate(() => {
-      localStorage.removeItem('wardex_token');
-      localStorage.setItem('wardex_onboarded', '1');
-    });
-    await page.reload({ waitUntil: 'load' });
+    await installAppMocks(page);
+    await resetStoredSession(page, { onboarded: true });
     await expect(page.locator('text=Welcome to Wardex Admin Console')).toBeVisible({
       timeout: 15000,
     });
@@ -52,13 +58,9 @@ test.describe('Accessibility (axe-core, advisory)', () => {
   });
 
   test('onboarding wizard first step', async ({ page }) => {
-    await page.goto('./');
-    await page.evaluate(() => {
-      localStorage.removeItem('wardex_token');
-      localStorage.removeItem('wardex_onboarded');
-    });
-    await page.reload({ waitUntil: 'load' });
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await installAppMocks(page);
+    await seedAuthenticatedSession(page, { onboarded: false });
+    await expect(page.getByText('Set up the Wardex admin console')).toBeVisible({ timeout: 15000 });
     await report(page, 'onboarding');
   });
 });
