@@ -8,11 +8,13 @@ derived from the OpenAPI specification at `docs/openapi.yaml`.
 Run from the repository root:
 
 ```bash
-cd sdk && bash generate.sh
+bash sdk/generate.sh
 ```
 
 This uses the OpenAPI Generator CLI to produce client libraries in
-`sdk/python/` and `sdk/typescript/`.
+`sdk/python/` and `sdk/typescript/`. The generator script reads the release
+version directly from `Cargo.toml`, so the SDK package versions stay aligned
+with the Rust release version.
 
 ### Prerequisites
 
@@ -100,15 +102,19 @@ await client.ingest.csv(csvPayload);
 
 ## API reference
 
-The full API is documented at `docs/openapi.yaml` (174 paths).  Key areas:
+The full API is documented at `docs/openapi.yaml`. Key areas include:
 
 | Area              | Endpoints                              |
 |-------------------|----------------------------------------|
 | Alerts            | `/api/alerts`, `/api/alerts/{id}`      |
 | Fleet             | `/api/fleet/*`, `/api/agents/*`        |
 | Detection content | `/api/rules/*`, `/api/sigma/*`         |
+| Hunt bundles      | `/api/hunts`, `/api/content/packs`     |
 | Investigation     | `/api/cases/*`, `/api/incidents/*`     |
+| Workbench         | `/api/workbench/overview`              |
 | Analyst           | `/api/ask`, `/api/analyst/*`           |
 | Compliance        | `/api/compliance/*`                    |
 | Feature flags     | `/api/feature-flags/*`                 |
 | Health            | `/api/healthz/*`, `/api/status-json`   |
+
+Recent 0.53.0 additions reflected in the generated SDKs include the auth-session identity fields (`groups`, `user_id`, `source`), saved-hunt lifecycle and target-group fields, content-pack bundle metadata, the consolidated workbench overview model, and the live playbook execution record shape.

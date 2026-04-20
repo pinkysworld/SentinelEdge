@@ -490,7 +490,13 @@ fn auth_session_accepts_sso_session_token_and_logout_revokes_it() {
     let (port, _token) = spawn_test_server();
     let session_path = test_state_path(port, "sessions.json");
     let store = SessionStore::with_persistence(&session_path);
-    let session_id = store.create_session("sso-user", "sso@example.com", "analyst", 8);
+    let session_id = store.create_session(
+        "sso-user",
+        "sso@example.com",
+        "analyst",
+        &["soc-analysts".to_string()],
+        8,
+    );
 
     let resp = ureq::get(&format!("{}/api/auth/session", base(port)))
         .set("Authorization", &auth_header(&session_id))
@@ -501,6 +507,8 @@ fn auth_session_accepts_sso_session_token_and_logout_revokes_it() {
     assert_eq!(body["authenticated"], true);
     assert_eq!(body["role"], "analyst");
     assert_eq!(body["user_id"], "sso-user");
+    assert_eq!(body["source"], "session");
+    assert_eq!(body["groups"], serde_json::json!(["soc-analysts"]));
 
     let logout = ureq::post(&format!("{}/api/auth/logout", base(port)))
         .set("Authorization", &auth_header(&session_id))
@@ -5042,6 +5050,66 @@ fn playbook_run_without_id_returns_400() {
         Err(ureq::Error::Status(400, _)) => {}
         other => panic!("expected 400 for empty playbook_id, got {other:?}"),
     }
+}
+
+#[test]
+fn playbook_executions_keeps_live_execution_shape_after_history_exists() {
+    let (port, token) = spawn_test_server();
+    let created_at = chrono::Utc::now().to_rfc3339();
+
+    ureq::post(&format!("{}/api/playbooks", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({
+            "id": "pb-shape-check",
+            "name": "Shape Check",
+            "description": "Verify recent execution contract remains stable",
+            "version": 1,
+            "enabled": true,
+            "trigger": {
+                "min_severity": null,
+                "alert_reasons": [],
+                "mitre_techniques": [],
+                "kill_chain_phases": [],
+                "host_patterns": [],
+                "manual_only": true
+            },
+            "steps": [],
+            "timeout_secs": 300,
+            "created_at": created_at,
+            "updated_at": created_at
+        }))
+        .expect("register playbook");
+
+    let started: serde_json::Value = ureq::post(&format!("{}/api/playbooks/execute", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({
+            "playbook_id": "pb-shape-check",
+            "alert_id": "alert-shape-1"
+        }))
+        .expect("start execution")
+        .into_json()
+        .unwrap();
+    let execution_id = started["execution_id"]
+        .as_str()
+        .expect("execution id")
+        .to_string();
+
+    let executions: serde_json::Value = ureq::get(&format!("{}/api/playbooks/executions", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("list executions")
+        .into_json()
+        .unwrap();
+    let execution = executions
+        .as_array()
+        .and_then(|items| {
+            items.iter()
+                .find(|entry| entry["execution_id"].as_str() == Some(execution_id.as_str()))
+        })
+        .expect("live execution present");
+
+    assert_eq!(execution["status"], "Running");
+    assert!(execution["step_results"].is_array());
 }
 
 // ── Alert deduplication ────────────────────────────────────────────

@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import ProcessDrawer from './ProcessDrawer.jsx';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 import InvestigationTimeline from './InvestigationTimeline.jsx';
-import { downloadData } from './operatorUtils.js';
+import { downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
 
 import PlaybookEditor from './PlaybookEditor.jsx';
 
@@ -90,6 +90,13 @@ const buildPlannerHuntQuery = (context) => {
 const buildPlannerHuntName = (context) => {
   const label = context?.title || context?.summary || context?.message || context?.id || 'Signal';
   return `Hunt ${label}`;
+};
+
+const formatPct = (value) => `${Math.round((Number(value) || 0) * 100)}%`;
+
+const formatMs = (value) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? `${Math.round(numeric)} ms` : '—';
 };
 
 // ── Campaign Correlation Graph (SVG) ───────────────────────────
@@ -280,6 +287,27 @@ export default function SOCWorkbench() {
   const [commentText, setCommentText] = useState('');
   const [caseComments, setCaseComments] = useState([]);
 
+  const openOverviewAction = useCallback(
+    (category) => {
+      if (category === 'rollout' || category === 'content') {
+        navigate('/detection');
+        return;
+      }
+      if (category === 'identity') {
+        navigate('/settings');
+        return;
+      }
+      if (category === 'analytics') {
+        navigate('/infrastructure');
+        return;
+      }
+      if (category === 'automation') {
+        setTab('playbooks');
+      }
+    },
+    [navigate, setTab],
+  );
+
   // ── Investigation Checklists (persisted) ──
   const [checklist, setChecklist] = useState(() => {
     try {
@@ -421,19 +449,330 @@ export default function SOCWorkbench() {
       </div>
 
       {tab === 'overview' && (
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            Workbench Overview
-          </div>
-          {overview ? (
-            <>
+        overview ? (
+          <>
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>
+                Workbench Overview
+              </div>
+              <div className="card-grid">
+                <div className="card metric">
+                  <div className="metric-label">Identity Routing</div>
+                  <div className="metric-value">
+                    {overview.identity?.ready_providers || 0}/{overview.identity?.providers_configured || 0}
+                  </div>
+                  <div className="metric-sub">
+                    Ready providers aligned with {overview.identity?.mapped_groups || 0} mapped group
+                    {overview.identity?.mapped_groups === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="card metric">
+                  <div className="metric-label">Canary Content</div>
+                  <div className="metric-value">
+                    {(overview.rollouts?.canary_rules || 0) + (overview.rollouts?.canary_hunts || 0)}
+                  </div>
+                  <div className="metric-sub">
+                    {overview.rollouts?.promotion_ready_rules || 0} promotion-ready rule
+                    {(overview.rollouts?.promotion_ready_rules || 0) === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="card metric">
+                  <div className="metric-label">Saved Search Library</div>
+                  <div className="metric-value">{overview.content?.saved_searches || 0}</div>
+                  <div className="metric-sub">
+                    {(overview.content?.packs || 0)} pack bundle
+                    {(overview.content?.packs || 0) === 1 ? '' : 's'} and {(overview.content?.hunt_library || 0)} hunt
+                    {(overview.content?.hunt_library || 0) === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="card metric">
+                  <div className="metric-label">Automation Queue</div>
+                  <div className="metric-value">{overview.automation?.pending_approvals || 0}</div>
+                  <div className="metric-sub">
+                    {overview.automation?.active_executions || 0} active execution
+                    {(overview.automation?.active_executions || 0) === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="card metric">
+                  <div className="metric-label">API Health</div>
+                  <div className="metric-value">{formatMs(overview.analytics?.worst_p95_ms)}</div>
+                  <div className="metric-sub">
+                    {formatPct(1 - (overview.analytics?.api_error_rate || 0))} request success across{' '}
+                    {overview.analytics?.api_requests || 0} API call
+                    {(overview.analytics?.api_requests || 0) === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="card metric">
+                  <div className="metric-label">Investigations In Flight</div>
+                  <div className="metric-value">{overview.automation?.active_investigations || 0}</div>
+                  <div className="metric-sub">
+                    {overview.automation?.workflow_templates || 0} workflow template
+                    {(overview.automation?.workflow_templates || 0) === 1 ? '' : 's'} available
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card-grid" style={{ marginTop: 16 }}>
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Identity Program
+                </div>
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <div className="summary-label">SCIM Status</div>
+                    <div className="summary-value">{overview.identity?.scim_status || 'disabled'}</div>
+                    <div className="summary-meta">
+                      {overview.identity?.automation_targets_aligned || 0} automation target
+                      {(overview.identity?.automation_targets_aligned || 0) === 1 ? '' : 's'} aligned
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Providers With Gaps</div>
+                    <div className="summary-value">{overview.identity?.providers_with_gaps || 0}</div>
+                    <div className="summary-meta">
+                      Review group mappings before broad rollout.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Rollout Control
+                </div>
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <div className="summary-label">Canary Hunts</div>
+                    <div className="summary-value">{overview.rollouts?.canary_hunts || 0}</div>
+                    <div className="summary-meta">
+                      Avg canary {overview.rollouts?.average_canary_percentage || 0}%
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Rollout Targets</div>
+                    <div className="summary-value">{overview.rollouts?.rollout_targets || 0}</div>
+                    <div className="summary-meta">
+                      {overview.rollouts?.active_hunts || 0} active hunt
+                      {(overview.rollouts?.active_hunts || 0) === 1 ? '' : 's'} attached to delivery lanes
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Historical Events</div>
+                    <div className="summary-value">{overview.rollouts?.historical_events || 0}</div>
+                    <div className="summary-meta">
+                      {overview.rollouts?.rollback_events || 0} rollback event
+                      {(overview.rollouts?.rollback_events || 0) === 1 ? '' : 's'} • latest{' '}
+                      {overview.rollouts?.last_rollout_at
+                        ? formatRelativeTime(overview.rollouts.last_rollout_at)
+                        : 'not recorded'}
+                    </div>
+                  </div>
+                </div>
+                {Array.isArray(overview.rollouts?.recent_history) &&
+                overview.rollouts.recent_history.length > 0 ? (
+                  <div style={{ marginTop: 12 }}>
+                    {overview.rollouts.recent_history.map((event) => (
+                      <div
+                        key={event.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          padding: '10px 0',
+                          borderBottom: '1px solid var(--border)',
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div className="row-primary">
+                            {event.action} • {event.version}
+                          </div>
+                          <div className="row-secondary">
+                            {(event.agent_id || event.platform || 'shared rollout')} • {event.status}
+                          </div>
+                        </div>
+                        <div className="hint" style={{ textAlign: 'right' }}>
+                          {formatRelativeTime(event.recorded_at)}
+                          <div>{formatDateTime(event.recorded_at)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Content Bundles
+                </div>
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <div className="summary-label">Packs With Workflows</div>
+                    <div className="summary-value">{overview.content?.packs_with_workflows || 0}</div>
+                    <div className="summary-meta">
+                      {overview.content?.enabled_packs || 0}/{overview.content?.packs || 0} enabled packs
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Scheduled Hunts</div>
+                    <div className="summary-value">{overview.content?.scheduled_hunts || 0}</div>
+                    <div className="summary-meta">
+                      Latest pack update {overview.content?.latest_pack_update || 'not recorded'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Automation Program
+                </div>
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <div className="summary-label">Coverage</div>
+                    <div className="summary-value">
+                      {(overview.automation?.playbooks || 0) + (overview.automation?.dynamic_templates || 0)}
+                    </div>
+                    <div className="summary-meta">
+                      {overview.automation?.playbooks || 0} static playbook
+                      {(overview.automation?.playbooks || 0) === 1 ? '' : 's'} • {overview.automation?.dynamic_templates || 0} dynamic
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Success Rate</div>
+                    <div className="summary-value">{formatPct(overview.automation?.success_rate || 0)}</div>
+                    <div className="summary-meta">
+                      Avg runtime {formatMs(overview.automation?.avg_execution_ms)}
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Historical Runs</div>
+                    <div className="summary-value">{overview.automation?.historical_runs || 0}</div>
+                    <div className="summary-meta">
+                      Latest {overview.automation?.last_execution_at
+                        ? formatRelativeTime(overview.automation.last_execution_at)
+                        : 'not recorded'}
+                    </div>
+                  </div>
+                </div>
+                {Array.isArray(overview.automation?.recent_history) &&
+                overview.automation.recent_history.length > 0 ? (
+                  <div style={{ marginTop: 12 }}>
+                    {overview.automation.recent_history.map((execution) => (
+                      <div
+                        key={execution.execution_id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          padding: '10px 0',
+                          borderBottom: '1px solid var(--border)',
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div className="row-primary">
+                            {execution.playbook_id} • {execution.status}
+                          </div>
+                          <div className="row-secondary">
+                            {execution.executed_by} • {execution.duration_ms ? formatMs(execution.duration_ms) : 'runtime pending'}
+                          </div>
+                        </div>
+                        <div className="hint" style={{ textAlign: 'right' }}>
+                          {formatRelativeTime(execution.finished_at || execution.started_at)}
+                          <div>{formatDateTime(execution.finished_at || execution.started_at)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Operational Analytics
+                </div>
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <div className="summary-label">Busiest Endpoint</div>
+                    <div className="summary-value" style={{ fontSize: 16 }}>
+                      {overview.analytics?.busiest_endpoint || '—'}
+                    </div>
+                    <div className="summary-meta">
+                      {overview.analytics?.unique_endpoints || 0} unique endpoint
+                      {(overview.analytics?.unique_endpoints || 0) === 1 ? '' : 's'} tracked
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Latency Snapshots</div>
+                    <div className="summary-value">{formatMs(overview.analytics?.last_hunt_latency_ms)}</div>
+                    <div className="summary-meta">
+                      Response {formatMs(overview.analytics?.last_response_latency_ms)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header">
+                <span className="card-title">Recommendation Queue</span>
+              </div>
+              {Array.isArray(overview.recommendations) && overview.recommendations.length > 0 ? (
+                overview.recommendations.map((item, index) => (
+                  <div
+                    key={`${item.category}-${index}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: 12,
+                      padding: '10px 0',
+                      borderBottom: index === overview.recommendations.length - 1 ? 'none' : '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div className="row-primary">{item.title}</div>
+                      <div className="row-secondary">{item.summary}</div>
+                      <div className="hint" style={{ marginTop: 4 }}>
+                        {item.action_hint}
+                      </div>
+                    </div>
+                    <div className="btn-group" style={{ alignItems: 'center' }}>
+                      <span
+                        className={`badge ${item.priority === 'high' ? 'badge-err' : item.priority === 'medium' ? 'badge-warn' : 'badge-info'}`}
+                      >
+                        {item.priority}
+                      </span>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => openOverviewAction(item.category)}
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="empty">No program-level recommendations right now.</div>
+              )}
+            </div>
+
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-title" style={{ marginBottom: 12 }}>
+                Raw Overview Data
+              </div>
               <SummaryGrid data={overview} limit={10} />
               <JsonDetails data={overview} />
-            </>
-          ) : (
+            </div>
+          </>
+        ) : (
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 12 }}>
+              Workbench Overview
+            </div>
             <div className="empty">Loading...</div>
-          )}
-        </div>
+          </div>
+        )
       )}
 
       {tab === 'incidents' && (

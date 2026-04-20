@@ -3,9 +3,9 @@
    Product-oriented landing page with lightweight progressive enhancement.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const RELEASE_VERSION = "0.52.5";
+const RELEASE_VERSION = "0.53.0";
 const MODULE_COUNT = "134";
-const API_COUNT = "138";
+const API_COUNT = "163";
 const TEST_COUNT = "1500+";
 
 const stats = [

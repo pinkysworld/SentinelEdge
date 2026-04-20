@@ -17,6 +17,25 @@ fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+fn millis_to_rfc3339(value: u64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(value as i64)
+        .unwrap_or_else(chrono::Utc::now)
+        .to_rfc3339()
+}
+
+fn playbook_status_label(status: &crate::playbook::ExecutionStatus) -> &'static str {
+    match status {
+        crate::playbook::ExecutionStatus::Pending => "pending",
+        crate::playbook::ExecutionStatus::Running => "running",
+        crate::playbook::ExecutionStatus::Succeeded => "succeeded",
+        crate::playbook::ExecutionStatus::Failed => "failed",
+        crate::playbook::ExecutionStatus::TimedOut => "timed_out",
+        crate::playbook::ExecutionStatus::Skipped => "skipped",
+        crate::playbook::ExecutionStatus::AwaitingApproval => "awaiting_approval",
+        crate::playbook::ExecutionStatus::Cancelled => "cancelled",
+    }
+}
+
 fn contains_ci(haystack: &str, needle: &str) -> bool {
     haystack
         .to_ascii_lowercase()
@@ -44,6 +63,7 @@ fn severity_rank(severity: &str) -> u8 {
 
 const IDENTITY_ROLES: [&str; 3] = ["admin", "analyst", "viewer"];
 const SCIM_PROVISIONING_MODES: [&str; 2] = ["manual", "automatic"];
+const ANALYTICS_HISTORY_LIMIT: usize = 250;
 
 fn normalize_optional_text(value: Option<String>) -> Option<String> {
     value.and_then(|entry| {
@@ -81,6 +101,21 @@ fn normalize_group_role_mappings(
         normalized.insert(group_name.to_string(), normalized_role);
     }
     Ok(normalized)
+}
+
+fn normalize_string_list(values: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let candidate = trimmed.to_string();
+        if !normalized.contains(&candidate) {
+            normalized.push(candidate);
+        }
+    }
+    normalized
 }
 
 fn validation_issue(level: &str, field: &str, message: &str) -> IdentityConfigIssue {
@@ -140,6 +175,85 @@ fn response_action_label(action: &ResponseAction) -> String {
 
 fn response_status_label(status: &ApprovalStatus) -> String {
     format!("{status:?}")
+}
+
+fn default_pack_saved_searches(id: &str) -> Vec<String> {
+    match id {
+        "identity-attacks" => vec![
+            "failed logins by user".to_string(),
+            "password spray by source".to_string(),
+            "mfa bypass follow-up".to_string(),
+        ],
+        "lateral-movement" => vec![
+            "shared admin tools by host".to_string(),
+            "remote service creation".to_string(),
+        ],
+        "cloud-audit" => vec![
+            "new admin role grants".to_string(),
+            "cross-region console activity".to_string(),
+        ],
+        "insider-risk" => vec![
+            "bulk access to sensitive files".to_string(),
+            "archive and transfer staging".to_string(),
+        ],
+        "ransomware" => vec![
+            "encryption velocity by host".to_string(),
+            "shadow copy tampering".to_string(),
+        ],
+        "admin-abuse" => vec![
+            "unexpected privileged shell".to_string(),
+            "service persistence changes".to_string(),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn default_pack_workflows(id: &str) -> Vec<String> {
+    match id {
+        "identity-attacks" => vec!["credential-storm".to_string()],
+        "lateral-movement" => vec!["lateral-movement".to_string()],
+        "cloud-audit" => vec!["container-escape".to_string()],
+        "insider-risk" => vec!["credential-storm".to_string()],
+        "ransomware" => vec!["ransomware-triage".to_string()],
+        "admin-abuse" => vec!["lateral-movement".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+fn default_pack_target_group(id: &str) -> Option<String> {
+    match id {
+        "identity-attacks" | "lateral-movement" | "ransomware" => {
+            Some("soc-analysts".to_string())
+        }
+        "admin-abuse" => Some("soc-admins".to_string()),
+        "cloud-audit" => Some("cloud-responders".to_string()),
+        "insider-risk" => Some("insider-risk-reviewers".to_string()),
+        _ => None,
+    }
+}
+
+fn default_pack_rollout_notes(id: &str) -> Option<String> {
+    match id {
+        "identity-attacks" => {
+            Some("Keep identity hunts in canary until group mappings and SCIM sync validate cleanly.".to_string())
+        }
+        "lateral-movement" => {
+            Some("Promote only after shared-host hunts show stable match rates across managed endpoints.".to_string())
+        }
+        "cloud-audit" => {
+            Some("Route escalations to cloud responders before enabling automatic account containment.".to_string())
+        }
+        "insider-risk" => {
+            Some("Pair with analyst review workflows to reduce false positives before broad rollout.".to_string())
+        }
+        "ransomware" => {
+            Some("Use canary promotion with containment approval gates before activating enterprise-wide.".to_string())
+        }
+        "admin-abuse" => {
+            Some("Map this pack to privileged admin groups so approval paths follow enterprise identity ownership.".to_string())
+        }
+        _ => None,
+    }
 }
 
 fn default_pack_list() -> Vec<ContentPack> {
@@ -378,6 +492,12 @@ pub struct ContentPack {
     pub use_case: String,
     pub enabled: bool,
     pub rule_ids: Vec<String>,
+    #[serde(default)]
+    pub saved_searches: Vec<String>,
+    #[serde(default)]
+    pub recommended_workflows: Vec<String>,
+    pub target_group: Option<String>,
+    pub rollout_notes: Option<String>,
     pub updated_at: String,
 }
 
@@ -390,9 +510,21 @@ impl ContentPack {
             use_case: id.to_string(),
             enabled: true,
             rule_ids: Vec::new(),
+            saved_searches: default_pack_saved_searches(id),
+            recommended_workflows: default_pack_workflows(id),
+            target_group: default_pack_target_group(id),
+            rollout_notes: default_pack_rollout_notes(id),
             updated_at: now_rfc3339(),
         }
     }
+}
+
+fn default_hunt_lifecycle() -> ContentLifecycle {
+    ContentLifecycle::Draft
+}
+
+fn default_canary_percentage() -> u8 {
+    100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -410,6 +542,14 @@ pub struct SavedHunt {
     pub query: SearchQuery,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default = "default_hunt_lifecycle")]
+    pub lifecycle: ContentLifecycle,
+    #[serde(default = "default_canary_percentage")]
+    pub canary_percentage: u8,
+    pub pack_id: Option<String>,
+    #[serde(default)]
+    pub recommended_workflows: Vec<String>,
+    pub target_group: Option<String>,
     /// Automated response actions triggered when threshold is exceeded.
     #[serde(default)]
     pub response_actions: Vec<HuntResponseAction>,
@@ -748,6 +888,35 @@ pub struct OperationalMetrics {
     pub last_ticket_sync_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaybookAnalyticsRecord {
+    pub execution_id: String,
+    pub playbook_id: String,
+    pub alert_id: Option<String>,
+    pub executed_by: String,
+    pub status: String,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub step_count: usize,
+    pub error: Option<String>,
+    pub recorded_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RolloutAnalyticsRecord {
+    pub id: String,
+    pub action: String,
+    pub version: String,
+    pub platform: Option<String>,
+    pub agent_id: Option<String>,
+    pub rollout_group: Option<String>,
+    pub status: String,
+    pub requested_by: String,
+    pub notes: Option<String>,
+    pub recorded_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct EnterpriseSnapshot {
     builtin_rules: Vec<ManagedRuleMetadata>,
@@ -763,6 +932,10 @@ struct EnterpriseSnapshot {
     scim: ScimConfig,
     change_control: Vec<ChangeControlEntry>,
     metrics: OperationalMetrics,
+    #[serde(default)]
+    playbook_history: Vec<PlaybookAnalyticsRecord>,
+    #[serde(default)]
+    rollout_history: Vec<RolloutAnalyticsRecord>,
     next_counter: u64,
 }
 
@@ -1032,6 +1205,14 @@ impl EnterpriseStore {
         &self.snapshot.metrics
     }
 
+    pub fn playbook_history(&self) -> &[PlaybookAnalyticsRecord] {
+        &self.snapshot.playbook_history
+    }
+
+    pub fn rollout_history(&self) -> &[RolloutAnalyticsRecord] {
+        &self.snapshot.rollout_history
+    }
+
     pub fn record_change(
         &mut self,
         category: &str,
@@ -1084,6 +1265,74 @@ impl EnterpriseStore {
         self.snapshot.metrics.last_ticket_sync_latency_ms = latency_ms;
         self.snapshot.metrics.last_ticket_sync_at = Some(now_rfc3339());
         self.persist();
+    }
+
+    pub fn record_playbook_execution(
+        &mut self,
+        execution: &crate::playbook::PlaybookExecution,
+    ) -> PlaybookAnalyticsRecord {
+        let record = PlaybookAnalyticsRecord {
+            execution_id: execution.execution_id.clone(),
+            playbook_id: execution.playbook_id.clone(),
+            alert_id: execution.alert_id.clone(),
+            executed_by: execution.executed_by.clone(),
+            status: playbook_status_label(&execution.status).to_string(),
+            started_at: millis_to_rfc3339(execution.started_at),
+            finished_at: execution.finished_at.map(millis_to_rfc3339),
+            duration_ms: execution
+                .finished_at
+                .map(|finished_at| finished_at.saturating_sub(execution.started_at)),
+            step_count: execution.step_results.len(),
+            error: execution.error.clone(),
+            recorded_at: now_rfc3339(),
+        };
+        if let Some(index) = self
+            .snapshot
+            .playbook_history
+            .iter()
+            .position(|entry| entry.execution_id == record.execution_id)
+        {
+            self.snapshot.playbook_history.remove(index);
+        }
+        self.snapshot.playbook_history.push(record.clone());
+        if self.snapshot.playbook_history.len() > ANALYTICS_HISTORY_LIMIT {
+            let overflow = self.snapshot.playbook_history.len() - ANALYTICS_HISTORY_LIMIT;
+            self.snapshot.playbook_history.drain(0..overflow);
+        }
+        self.persist();
+        record
+    }
+
+    pub fn record_rollout_event(
+        &mut self,
+        action: &str,
+        version: &str,
+        platform: Option<String>,
+        agent_id: Option<String>,
+        rollout_group: Option<String>,
+        status: &str,
+        requested_by: &str,
+        notes: Option<String>,
+    ) -> RolloutAnalyticsRecord {
+        let record = RolloutAnalyticsRecord {
+            id: self.next_id("rollout"),
+            action: action.trim().to_ascii_lowercase(),
+            version: version.trim().to_string(),
+            platform: normalize_optional_text(platform),
+            agent_id: normalize_optional_text(agent_id),
+            rollout_group: normalize_optional_text(rollout_group),
+            status: status.trim().to_ascii_lowercase(),
+            requested_by: requested_by.to_string(),
+            notes: normalize_optional_text(notes),
+            recorded_at: now_rfc3339(),
+        };
+        self.snapshot.rollout_history.push(record.clone());
+        if self.snapshot.rollout_history.len() > ANALYTICS_HISTORY_LIMIT {
+            let overflow = self.snapshot.rollout_history.len() - ANALYTICS_HISTORY_LIMIT;
+            self.snapshot.rollout_history.drain(0..overflow);
+        }
+        self.persist();
+        record
     }
 
     pub fn active_suppression_count(&self) -> usize {
@@ -1156,7 +1405,20 @@ impl EnterpriseStore {
         suppression_window_secs: u64,
         schedule_interval_secs: Option<u64>,
         query: SearchQuery,
+        lifecycle: ContentLifecycle,
+        canary_percentage: u8,
+        pack_id: Option<String>,
+        recommended_workflows: Vec<String>,
+        target_group: Option<String>,
     ) -> SavedHunt {
+        let normalized_canary = if matches!(lifecycle, ContentLifecycle::Canary) {
+            canary_percentage.clamp(1, 100)
+        } else {
+            100
+        };
+        let normalized_pack_id = normalize_optional_text(pack_id);
+        let normalized_workflows = normalize_string_list(recommended_workflows);
+        let normalized_target_group = normalize_optional_text(target_group);
         if let Some(existing_id) = id
             && let Some(index) = self
                 .snapshot
@@ -1173,6 +1435,11 @@ impl EnterpriseStore {
                 hunt.suppression_window_secs = suppression_window_secs;
                 hunt.schedule_interval_secs = schedule_interval_secs;
                 hunt.query = query;
+                hunt.lifecycle = lifecycle;
+                hunt.canary_percentage = normalized_canary;
+                hunt.pack_id = normalized_pack_id;
+                hunt.recommended_workflows = normalized_workflows;
+                hunt.target_group = normalized_target_group;
                 hunt.updated_at = now_rfc3339();
                 hunt.clone()
             };
@@ -1196,6 +1463,11 @@ impl EnterpriseStore {
             query,
             created_at: created_at.clone(),
             updated_at: created_at,
+            lifecycle,
+            canary_percentage: normalized_canary,
+            pack_id: normalized_pack_id,
+            recommended_workflows: normalized_workflows,
+            target_group: normalized_target_group,
             response_actions: Vec::new(),
             tags: Vec::new(),
             mitre_techniques: Vec::new(),
@@ -1644,7 +1916,16 @@ impl EnterpriseStore {
         description: String,
         enabled: bool,
         rule_ids: Vec<String>,
+        saved_searches: Vec<String>,
+        recommended_workflows: Vec<String>,
+        target_group: Option<String>,
+        rollout_notes: Option<String>,
     ) -> ContentPack {
+        let normalized_rule_ids = normalize_string_list(rule_ids);
+        let normalized_saved_searches = normalize_string_list(saved_searches);
+        let normalized_workflows = normalize_string_list(recommended_workflows);
+        let normalized_target_group = normalize_optional_text(target_group);
+        let normalized_rollout_notes = normalize_optional_text(rollout_notes);
         if let Some(id) = id
             && let Some(index) = self.snapshot.packs.iter().position(|pack| pack.id == id)
         {
@@ -1654,34 +1935,61 @@ impl EnterpriseStore {
                 pack.name = name;
                 pack.description = description;
                 pack.enabled = enabled;
-                pack.rule_ids = rule_ids.clone();
+                pack.rule_ids = normalized_rule_ids.clone();
+                pack.saved_searches = normalized_saved_searches.clone();
+                pack.recommended_workflows = normalized_workflows.clone();
+                pack.target_group = normalized_target_group.clone();
+                pack.rollout_notes = normalized_rollout_notes.clone();
                 pack.updated_at = now_rfc3339();
                 pack.clone()
             };
             for rule in &mut self.snapshot.builtin_rules {
-                if rule_ids.contains(&rule.id) && !rule.pack_ids.contains(&pack_id) {
-                    rule.pack_ids.push(pack_id.clone());
+                if normalized_rule_ids.contains(&rule.id) {
+                    if !rule.pack_ids.contains(&pack_id) {
+                        rule.pack_ids.push(pack_id.clone());
+                    }
+                } else {
+                    rule.pack_ids.retain(|existing| existing != &pack_id);
                 }
             }
             for rule in &mut self.snapshot.native_rules {
-                if rule_ids.contains(&rule.metadata.id)
-                    && !rule.metadata.pack_ids.contains(&pack_id)
-                {
-                    rule.metadata.pack_ids.push(pack_id.clone());
+                if normalized_rule_ids.contains(&rule.metadata.id) {
+                    if !rule.metadata.pack_ids.contains(&pack_id) {
+                        rule.metadata.pack_ids.push(pack_id.clone());
+                    }
+                } else {
+                    rule.metadata.pack_ids.retain(|existing| existing != &pack_id);
                 }
             }
             self.persist();
             return updated;
         }
+        let pack_id = id.unwrap_or(&self.next_id("pack")).to_string();
         let pack = ContentPack {
-            id: id.unwrap_or(&self.next_id("pack")).to_string(),
+            id: pack_id.clone(),
             name,
             description,
             use_case: "custom".to_string(),
             enabled,
-            rule_ids,
+            rule_ids: normalized_rule_ids.clone(),
+            saved_searches: normalized_saved_searches,
+            recommended_workflows: normalized_workflows,
+            target_group: normalized_target_group,
+            rollout_notes: normalized_rollout_notes,
             updated_at: now_rfc3339(),
         };
+        for rule in &mut self.snapshot.builtin_rules {
+            if normalized_rule_ids.contains(&rule.id) && !rule.pack_ids.contains(&pack_id) {
+                rule.pack_ids.push(pack_id.clone());
+            }
+        }
+        for rule in &mut self.snapshot.native_rules {
+            if normalized_rule_ids.contains(&rule.metadata.id)
+                && !rule.metadata.pack_ids.contains(&pack_id)
+            {
+                rule.metadata.pack_ids.push(pack_id.clone());
+            }
+        }
         self.snapshot.packs.push(pack.clone());
         self.persist();
         pack
@@ -2870,6 +3178,11 @@ mod tests {
                 to_ts: None,
                 limit: Some(100),
             },
+            ContentLifecycle::Canary,
+            15,
+            Some("identity-attacks".to_string()),
+            vec!["credential-storm".to_string()],
+            Some("soc-analysts".to_string()),
         );
         let run = store
             .run_hunt(
@@ -2883,6 +3196,59 @@ mod tests {
             )
             .expect("hunt run");
         assert_eq!(run.match_count, 1);
+    }
+
+    #[test]
+    fn playbook_and_rollout_history_persist_round_trip() {
+        let path = store_test_path("wardex_enterprise_history_test");
+        {
+            let mut store = EnterpriseStore::new(&path);
+            let execution = crate::playbook::PlaybookExecution {
+                execution_id: "exec-42".to_string(),
+                playbook_id: "credential-storm".to_string(),
+                alert_id: Some("alert-7".to_string()),
+                executed_by: "analyst-1".to_string(),
+                status: crate::playbook::ExecutionStatus::Succeeded,
+                started_at: 1_700_000_000_000,
+                finished_at: Some(1_700_000_000_450),
+                step_results: vec![crate::playbook::StepResult {
+                    step_id: "step-1".to_string(),
+                    status: crate::playbook::ExecutionStatus::Succeeded,
+                    started_at: 1_700_000_000_000,
+                    finished_at: Some(1_700_000_000_450),
+                    output: Some("ok".to_string()),
+                    error: None,
+                }],
+                variables: HashMap::new(),
+                error: None,
+            };
+            let playbook_record = store.record_playbook_execution(&execution);
+            assert_eq!(playbook_record.status, "succeeded");
+            assert_eq!(playbook_record.duration_ms, Some(450));
+
+            let rollout_record = store.record_rollout_event(
+                "deploy",
+                "1.2.3",
+                Some("linux".to_string()),
+                Some("agent-7".to_string()),
+                Some("canary".to_string()),
+                "assigned",
+                "analyst-1",
+                Some("Canary rollout".to_string()),
+            );
+            assert_eq!(rollout_record.action, "deploy");
+            assert_eq!(rollout_record.version, "1.2.3");
+        }
+
+        let store = EnterpriseStore::new(&path);
+        assert_eq!(store.playbook_history().len(), 1);
+        assert_eq!(store.playbook_history()[0].execution_id, "exec-42");
+        assert_eq!(store.playbook_history()[0].status, "succeeded");
+        assert_eq!(store.rollout_history().len(), 1);
+        assert_eq!(store.rollout_history()[0].action, "deploy");
+        assert_eq!(store.rollout_history()[0].agent_id.as_deref(), Some("agent-7"));
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -2909,6 +3275,11 @@ mod tests {
             },
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),
+            lifecycle: ContentLifecycle::Canary,
+            canary_percentage: 20,
+            pack_id: Some("identity-attacks".into()),
+            recommended_workflows: vec!["credential-storm".into()],
+            target_group: Some("soc-analysts".into()),
             response_actions: vec![
                 HuntResponseAction::Notify {
                     channel: "ops-slack".into(),
@@ -2968,6 +3339,11 @@ mod tests {
             },
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),
+            lifecycle: ContentLifecycle::Draft,
+            canary_percentage: 100,
+            pack_id: None,
+            recommended_workflows: vec![],
+            target_group: None,
             response_actions: vec![HuntResponseAction::IsolateAgent],
             tags: vec![],
             mitre_techniques: vec![],
@@ -3015,6 +3391,11 @@ mod tests {
             },
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),
+            lifecycle: ContentLifecycle::Test,
+            canary_percentage: 100,
+            pack_id: None,
+            recommended_workflows: vec![],
+            target_group: None,
             response_actions: vec![HuntResponseAction::Notify {
                 channel: "pagerduty".into(),
                 min_level: "critical".into(),

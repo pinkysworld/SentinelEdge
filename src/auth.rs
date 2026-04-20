@@ -67,6 +67,8 @@ pub struct Session {
     pub user_id: String,
     pub email: String,
     pub role: String,
+    #[serde(default)]
+    pub groups: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -147,7 +149,14 @@ impl SessionStore {
     }
 
     /// Create a new session and return an opaque session ID (random hex).
-    pub fn create_session(&self, user_id: &str, email: &str, role: &str, ttl_hours: i64) -> String {
+    pub fn create_session(
+        &self,
+        user_id: &str,
+        email: &str,
+        role: &str,
+        groups: &[String],
+        ttl_hours: i64,
+    ) -> String {
         let mut rng = rand::thread_rng();
         let mut buf = [0u8; 32];
         rng.fill(&mut buf);
@@ -158,6 +167,7 @@ impl SessionStore {
             user_id: user_id.to_string(),
             email: email.to_string(),
             role: role.to_string(),
+            groups: groups.to_vec(),
             created_at: now,
             expires_at: now + Duration::hours(ttl_hours),
         };
@@ -347,19 +357,26 @@ mod tests {
     #[test]
     fn session_create_and_get() {
         let store = SessionStore::new();
-        let sid = store.create_session("u1", "u1@example.com", "admin", 8);
+        let sid = store.create_session(
+            "u1",
+            "u1@example.com",
+            "admin",
+            &["soc-admins".to_string(), "credential-routing".to_string()],
+            8,
+        );
 
         assert_eq!(sid.len(), 64); // 32 bytes hex-encoded
         let session = store.get_session(&sid).expect("session should exist");
         assert_eq!(session.user_id, "u1");
         assert_eq!(session.email, "u1@example.com");
         assert_eq!(session.role, "admin");
+        assert_eq!(session.groups, vec!["soc-admins", "credential-routing"]);
     }
 
     #[test]
     fn session_destroy() {
         let store = SessionStore::new();
-        let sid = store.create_session("u2", "u2@example.com", "viewer", 1);
+        let sid = store.create_session("u2", "u2@example.com", "viewer", &[], 1);
 
         assert!(store.destroy_session(&sid));
         assert!(store.get_session(&sid).is_none());
@@ -371,7 +388,7 @@ mod tests {
     fn session_expired_is_none() {
         let store = SessionStore::new();
         // Create a session with 0-hour TTL — already expired.
-        let sid = store.create_session("u3", "u3@example.com", "analyst", 0);
+        let sid = store.create_session("u3", "u3@example.com", "analyst", &[], 0);
         // The session expires_at == created_at, so Utc::now() >= expires_at.
         assert!(store.get_session(&sid).is_none());
     }
@@ -379,8 +396,8 @@ mod tests {
     #[test]
     fn cleanup_expired_sessions() {
         let store = SessionStore::new();
-        let _expired = store.create_session("old", "old@example.com", "viewer", 0);
-        let alive = store.create_session("new", "new@example.com", "admin", 8);
+        let _expired = store.create_session("old", "old@example.com", "viewer", &[], 0);
+        let alive = store.create_session("new", "new@example.com", "admin", &[], 8);
 
         store.cleanup_expired();
         assert!(store.get_session(&_expired).is_none());
@@ -471,9 +488,16 @@ mod tests {
         let mgr = AuthManager::new(test_config());
         let sid = mgr
             .sessions
-            .create_session("u5", "u5@example.com", "analyst", 8);
+            .create_session(
+                "u5",
+                "u5@example.com",
+                "analyst",
+                &["soc-analysts".to_string()],
+                8,
+            );
         let session = mgr.validate_session_cookie(&sid).expect("should be valid");
         assert_eq!(session.email, "u5@example.com");
+        assert_eq!(session.groups, vec!["soc-analysts"]);
     }
 
     #[test]
@@ -491,7 +515,13 @@ mod tests {
         // Create store with a session, which triggers save
         {
             let store = SessionStore::with_persistence(&path_str);
-            store.create_session("u1", "u1@example.com", "admin", 8);
+            store.create_session(
+                "u1",
+                "u1@example.com",
+                "admin",
+                &["soc-admins".to_string()],
+                8,
+            );
         }
 
         // Load into a new store and verify the session survived
@@ -501,6 +531,7 @@ mod tests {
         let session = sessions.values().next().unwrap();
         assert_eq!(session.email, "u1@example.com");
         assert_eq!(session.role, "admin");
+        assert_eq!(session.groups, vec!["soc-admins"]);
         drop(sessions);
 
         let _ = std::fs::remove_file(&path);
@@ -531,7 +562,7 @@ mod tests {
 
         {
             let store = SessionStore::with_persistence(&path_str);
-            store.create_session("u9", "u9@example.com", "admin", 8);
+            store.create_session("u9", "u9@example.com", "admin", &[], 8);
         }
 
         assert!(path.exists());

@@ -1,6 +1,6 @@
 //! Axum-based HTTP API server serving REST endpoints, the admin console, and static assets.
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -814,14 +814,93 @@ struct WorkbenchResponseOverview {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+struct WorkbenchIdentityOverview {
+    providers_configured: usize,
+    ready_providers: usize,
+    providers_with_gaps: usize,
+    scim_status: String,
+    mapped_groups: usize,
+    automation_targets_aligned: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WorkbenchRolloutOverview {
+    canary_rules: usize,
+    canary_hunts: usize,
+    promotion_ready_rules: usize,
+    active_hunts: usize,
+    rollout_targets: usize,
+    average_canary_percentage: Option<u8>,
+    historical_events: usize,
+    rollback_events: usize,
+    last_rollout_at: Option<String>,
+    recent_history: Vec<crate::enterprise::RolloutAnalyticsRecord>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WorkbenchContentOverview {
+    packs: usize,
+    enabled_packs: usize,
+    hunt_library: usize,
+    scheduled_hunts: usize,
+    saved_searches: usize,
+    packs_with_workflows: usize,
+    latest_pack_update: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WorkbenchAutomationOverview {
+    playbooks: usize,
+    workflow_templates: usize,
+    dynamic_templates: usize,
+    active_executions: usize,
+    pending_approvals: usize,
+    success_rate: f64,
+    avg_execution_ms: Option<u64>,
+    active_investigations: usize,
+    historical_runs: usize,
+    last_execution_at: Option<String>,
+    recent_history: Vec<crate::enterprise::PlaybookAnalyticsRecord>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WorkbenchAnalyticsOverview {
+    api_requests: u64,
+    api_error_rate: f64,
+    unique_endpoints: usize,
+    busiest_endpoint: Option<String>,
+    worst_p95_ms: Option<u64>,
+    search_queries_total: u64,
+    hunt_runs_total: u64,
+    response_exec_total: u64,
+    last_hunt_latency_ms: u64,
+    last_response_latency_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct WorkbenchRecommendation {
+    category: String,
+    priority: String,
+    title: String,
+    summary: String,
+    action_hint: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 struct WorkbenchOverview {
     generated_at: String,
     queue: WorkbenchQueueOverview,
     cases: WorkbenchCasesOverview,
     incidents: WorkbenchIncidentsOverview,
     response: WorkbenchResponseOverview,
+    identity: WorkbenchIdentityOverview,
+    rollouts: WorkbenchRolloutOverview,
+    content: WorkbenchContentOverview,
+    automation: WorkbenchAutomationOverview,
+    analytics: WorkbenchAnalyticsOverview,
     hot_agents: Vec<HotAgentSummary>,
     urgent_items: Vec<UrgentItem>,
+    recommendations: Vec<WorkbenchRecommendation>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -2331,6 +2410,7 @@ enum AuthIdentity {
     None,
     AdminToken,
     UserToken(User),
+    SessionToken { user: User, groups: Vec<String> },
 }
 
 impl AuthIdentity {
@@ -2346,7 +2426,23 @@ impl AuthIdentity {
         match self {
             AuthIdentity::None => "anonymous",
             AuthIdentity::AdminToken => "admin",
-            AuthIdentity::UserToken(user) => &user.username,
+            AuthIdentity::UserToken(user) | AuthIdentity::SessionToken { user, .. } => {
+                &user.username
+            }
+        }
+    }
+
+    fn user(&self) -> Option<&User> {
+        match self {
+            AuthIdentity::UserToken(user) | AuthIdentity::SessionToken { user, .. } => Some(user),
+            _ => None,
+        }
+    }
+
+    fn groups(&self) -> &[String] {
+        match self {
+            AuthIdentity::SessionToken { groups, .. } => groups,
+            _ => &[],
         }
     }
 }
@@ -2392,15 +2488,124 @@ fn role_from_session_role(role: &str) -> Role {
     }
 }
 
+fn role_label(role: Role) -> &'static str {
+    match role {
+        Role::Admin => "admin",
+        Role::Analyst => "analyst",
+        Role::Viewer => "viewer",
+        Role::ServiceAccount => "service_account",
+    }
+}
+
+fn playbook_status_label(status: &crate::playbook::ExecutionStatus) -> &'static str {
+    match status {
+        crate::playbook::ExecutionStatus::Pending => "pending",
+        crate::playbook::ExecutionStatus::Running => "running",
+        crate::playbook::ExecutionStatus::Succeeded => "succeeded",
+        crate::playbook::ExecutionStatus::Failed => "failed",
+        crate::playbook::ExecutionStatus::TimedOut => "timed_out",
+        crate::playbook::ExecutionStatus::Skipped => "skipped",
+        crate::playbook::ExecutionStatus::AwaitingApproval => "awaiting_approval",
+        crate::playbook::ExecutionStatus::Cancelled => "cancelled",
+    }
+}
+
+fn playbook_timestamp_to_rfc3339(value: u64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(value as i64)
+        .unwrap_or_else(chrono::Utc::now)
+        .to_rfc3339()
+}
+
+fn playbook_analytics_record_from_execution(
+    execution: &crate::playbook::PlaybookExecution,
+) -> crate::enterprise::PlaybookAnalyticsRecord {
+    crate::enterprise::PlaybookAnalyticsRecord {
+        execution_id: execution.execution_id.clone(),
+        playbook_id: execution.playbook_id.clone(),
+        alert_id: execution.alert_id.clone(),
+        executed_by: execution.executed_by.clone(),
+        status: playbook_status_label(&execution.status).to_string(),
+        started_at: playbook_timestamp_to_rfc3339(execution.started_at),
+        finished_at: execution.finished_at.map(playbook_timestamp_to_rfc3339),
+        duration_ms: execution
+            .finished_at
+            .map(|finished_at| finished_at.saturating_sub(execution.started_at)),
+        step_count: execution.step_results.len(),
+        error: execution.error.clone(),
+        recorded_at: playbook_timestamp_to_rfc3339(
+            execution.finished_at.unwrap_or(execution.started_at),
+        ),
+    }
+}
+
+fn merge_playbook_history(
+    persisted_history: &[crate::enterprise::PlaybookAnalyticsRecord],
+    recent_executions: &[&crate::playbook::PlaybookExecution],
+    limit: usize,
+) -> Vec<crate::enterprise::PlaybookAnalyticsRecord> {
+    let mut merged = persisted_history.to_vec();
+
+    for execution in recent_executions {
+        let record = playbook_analytics_record_from_execution(execution);
+        if let Some(index) = merged
+            .iter()
+            .position(|entry| entry.execution_id == record.execution_id)
+        {
+            merged.remove(index);
+        }
+        merged.push(record);
+    }
+
+    merged.sort_by(|left, right| {
+        left.recorded_at
+            .cmp(&right.recorded_at)
+            .then_with(|| left.execution_id.cmp(&right.execution_id))
+    });
+
+    if merged.len() > limit {
+        let overflow = merged.len() - limit;
+        merged.drain(0..overflow);
+    }
+
+    merged
+}
+
+fn ensure_target_group_access(
+    auth: &AuthIdentity,
+    target_group: Option<&str>,
+) -> Result<(), String> {
+    let Some(target_group) = target_group.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    match auth {
+        AuthIdentity::SessionToken { groups, .. } => {
+            if groups
+                .iter()
+                .any(|group| group.eq_ignore_ascii_case(target_group))
+            {
+                Ok(())
+            } else {
+                Err(format!(
+                    "target group '{target_group}' is not assigned to the active session"
+                ))
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
 fn auth_identity_from_session(token: String, session: crate::auth::Session) -> AuthIdentity {
-    AuthIdentity::UserToken(User {
-        username: session.user_id,
-        role: role_from_session_role(&session.role),
-        token_hash: token,
-        enabled: true,
-        created_at: session.created_at.to_rfc3339(),
-        tenant_id: None,
-    })
+    AuthIdentity::SessionToken {
+        user: User {
+            username: session.user_id,
+            role: role_from_session_role(&session.role),
+            token_hash: token,
+            enabled: true,
+            created_at: session.created_at.to_rfc3339(),
+            tenant_id: None,
+        },
+        groups: session.groups,
+    }
 }
 
 fn authenticate_request(headers: &HeaderMap, state: &Arc<Mutex<AppState>>) -> AuthIdentity {
@@ -3096,6 +3301,11 @@ fn build_workbench_overview(
     event_store: &EventStore,
     agent_registry: &AgentRegistry,
     deployments: &HashMap<String, AgentDeployment>,
+    enterprise: &crate::enterprise::EnterpriseStore,
+    playbook_engine: &crate::playbook::PlaybookEngine,
+    playbook_dsl: &crate::playbook_dsl::PlaybookDslStore,
+    workflow_store: &crate::investigation::WorkflowStore,
+    api_analytics: &crate::api_analytics::AnalyticsSummary,
 ) -> WorkbenchOverview {
     let mut queue_items: Vec<QueueAlertSummary> = alert_queue
         .pending()
@@ -3197,6 +3407,180 @@ fn build_workbench_overview(
         })
         .collect::<Vec<_>>();
 
+    let identity_summaries = enterprise.idp_provider_summaries();
+    let ready_providers = identity_summaries
+        .iter()
+        .filter(|summary| summary.validation.status == "ready")
+        .count();
+    let providers_with_gaps = identity_summaries
+        .iter()
+        .filter(|summary| summary.validation.status != "ready")
+        .count();
+    let scim_validation = enterprise.scim_validation();
+    let mut mapped_groups = HashSet::new();
+    for summary in &identity_summaries {
+        mapped_groups.extend(summary.provider.group_role_mappings.keys().cloned());
+    }
+    mapped_groups.extend(enterprise.scim().group_role_mappings.keys().cloned());
+
+    let hunts = enterprise.hunts();
+    let packs = enterprise.packs();
+    let automation_targets: HashSet<String> = packs
+        .iter()
+        .filter_map(|pack| pack.target_group.clone())
+        .chain(hunts.iter().filter_map(|hunt| hunt.target_group.clone()))
+        .collect();
+    let automation_targets_aligned = automation_targets
+        .iter()
+        .filter(|group| mapped_groups.contains(*group))
+        .count();
+
+    let canary_rules = enterprise
+        .builtin_rules()
+        .iter()
+        .filter(|rule| {
+            rule.enabled
+                && rule.lifecycle == crate::enterprise::ContentLifecycle::Canary
+        })
+        .count()
+        + enterprise
+            .native_rules()
+            .iter()
+            .filter(|rule| {
+                rule.metadata.enabled
+                    && rule.metadata.lifecycle == crate::enterprise::ContentLifecycle::Canary
+            })
+            .count();
+    let promotion_ready_rules = enterprise
+        .builtin_rules()
+        .iter()
+        .filter(|rule| {
+            matches!(
+                rule.lifecycle,
+                crate::enterprise::ContentLifecycle::Test
+                    | crate::enterprise::ContentLifecycle::Canary
+            ) && rule.last_test_at.is_some()
+        })
+        .count()
+        + enterprise
+            .native_rules()
+            .iter()
+            .filter(|rule| {
+                matches!(
+                    rule.metadata.lifecycle,
+                    crate::enterprise::ContentLifecycle::Test
+                        | crate::enterprise::ContentLifecycle::Canary
+                ) && rule.metadata.last_test_at.is_some()
+            })
+            .count();
+    let canary_hunts = hunts
+        .iter()
+        .filter(|hunt| hunt.lifecycle == crate::enterprise::ContentLifecycle::Canary)
+        .count();
+    let active_hunts = hunts.iter().filter(|hunt| hunt.enabled).count();
+    let average_canary_percentage = if canary_hunts > 0 {
+        Some(
+            (hunts
+                .iter()
+                .filter(|hunt| hunt.lifecycle == crate::enterprise::ContentLifecycle::Canary)
+                .map(|hunt| hunt.canary_percentage as usize)
+                .sum::<usize>()
+                / canary_hunts) as u8,
+        )
+    } else {
+        None
+    };
+
+    let saved_searches = hunts.len()
+        + packs
+            .iter()
+            .map(|pack| pack.saved_searches.len())
+            .sum::<usize>();
+    let latest_pack_update = packs.iter().map(|pack| pack.updated_at.clone()).max();
+
+    let rollout_history = enterprise.rollout_history();
+    let historical_rollout_events = rollout_history.len();
+    let rollback_events = rollout_history
+        .iter()
+        .filter(|event| event.action == "rollback")
+        .count();
+    let last_rollout_at = rollout_history.last().map(|event| event.recorded_at.clone());
+    let mut recent_rollout_history = rollout_history
+        .iter()
+        .rev()
+        .take(4)
+        .cloned()
+        .collect::<Vec<_>>();
+    recent_rollout_history.reverse();
+
+    let recent_playbook_executions = playbook_engine.recent_executions(50);
+    let merged_playbook_history =
+        merge_playbook_history(enterprise.playbook_history(), &recent_playbook_executions, 50);
+    let historical_playbook_runs = merged_playbook_history.len();
+    let completed_playbook_history: Vec<&crate::enterprise::PlaybookAnalyticsRecord> =
+        merged_playbook_history
+            .iter()
+            .filter(|execution| {
+                matches!(
+                    execution.status.as_str(),
+                    "succeeded" | "failed" | "timed_out" | "cancelled"
+                )
+            })
+            .collect();
+    let succeeded_historical_runs = completed_playbook_history
+        .iter()
+        .filter(|execution| execution.status == "succeeded")
+        .count();
+    let avg_execution_ms = if !completed_playbook_history.is_empty() {
+        let durations = completed_playbook_history
+            .iter()
+            .filter_map(|execution| execution.duration_ms)
+            .collect::<Vec<_>>();
+        if durations.is_empty() {
+            None
+        } else {
+            Some(durations.iter().sum::<u64>() / durations.len() as u64)
+        }
+    } else {
+        None
+    };
+    let mut recent_playbook_history = merged_playbook_history
+        .iter()
+        .rev()
+        .take(4)
+        .cloned()
+        .collect::<Vec<_>>();
+    recent_playbook_history.reverse();
+    let last_execution_at = merged_playbook_history.last().map(|execution| {
+        execution
+            .finished_at
+            .clone()
+            .unwrap_or_else(|| execution.started_at.clone())
+    });
+    let pending_automation_approvals = merged_playbook_history
+        .iter()
+        .filter(|execution| execution.status == "awaiting_approval")
+        .count()
+        .max(
+            recent_playbook_executions
+                .iter()
+                .filter(|execution| {
+                    execution.status == crate::playbook::ExecutionStatus::AwaitingApproval
+                })
+                .count(),
+        );
+
+    let enterprise_metrics = enterprise.metrics();
+    let busiest_endpoint = api_analytics
+        .top_endpoints
+        .first()
+        .map(|endpoint| format!("{} {}", endpoint.method, endpoint.path));
+    let worst_p95_ms = api_analytics
+        .top_endpoints
+        .iter()
+        .map(|endpoint| endpoint.p95_latency_ms.round() as u64)
+        .max();
+
     let hot_agents = build_hot_agent_summaries(analytics, agent_registry, deployments);
 
     let mut urgent_items = Vec::new();
@@ -3257,6 +3641,113 @@ fn build_workbench_overview(
             reference_id: agent.agent_id.clone(),
         });
     }
+    if pending_automation_approvals > 0 {
+        urgent_items.push(UrgentItem {
+            kind: "automation".to_string(),
+            severity: "Elevated".to_string(),
+            title: format!(
+                "{pending_automation_approvals} automation approval(s) waiting"
+            ),
+            subtitle: "Playbook executions have paused for human approval".to_string(),
+            reference_id: "automation-approvals".to_string(),
+        });
+    }
+    if !automation_targets.is_empty() && automation_targets_aligned < automation_targets.len() {
+        urgent_items.push(UrgentItem {
+            kind: "identity".to_string(),
+            severity: "Elevated".to_string(),
+            title: "Automation targets are not fully identity-mapped".to_string(),
+            subtitle: format!(
+                "{} of {} target groups align with IdP or SCIM mappings",
+                automation_targets_aligned,
+                automation_targets.len()
+            ),
+            reference_id: "identity-routing".to_string(),
+        });
+    }
+    if canary_rules + canary_hunts > 0 {
+        urgent_items.push(UrgentItem {
+            kind: "content".to_string(),
+            severity: "Info".to_string(),
+            title: format!(
+                "{} canary content item(s) need promotion tracking",
+                canary_rules + canary_hunts
+            ),
+            subtitle: "Review validation results before promoting hunts and rules broadly"
+                .to_string(),
+            reference_id: "content-rollout".to_string(),
+        });
+    }
+
+    let mut recommendations = Vec::new();
+    if ready_providers == 0 || scim_validation.status != "ready" {
+        recommendations.push(WorkbenchRecommendation {
+            category: "identity".to_string(),
+            priority: "high".to_string(),
+            title: "Complete identity routing".to_string(),
+            summary: if identity_summaries.is_empty() {
+                "No identity provider is ready for targeted automation routing yet.".to_string()
+            } else {
+                "Provider or SCIM validation still blocks clean group-based routing.".to_string()
+            },
+            action_hint: "Review IdP and SCIM mappings before widening automated response coverage."
+                .to_string(),
+        });
+    }
+    if canary_rules + canary_hunts > 0 {
+        recommendations.push(WorkbenchRecommendation {
+            category: "rollout".to_string(),
+            priority: "medium".to_string(),
+            title: "Promote validated canaries".to_string(),
+            summary: format!(
+                "{} rule(s) and {} hunt(s) are still in canary.",
+                canary_rules, canary_hunts
+            ),
+            action_hint: "Use the detection workspace to confirm tests and push mature content to active."
+                .to_string(),
+        });
+    }
+    if packs.iter().any(|pack| pack.recommended_workflows.is_empty())
+        || packs.iter().any(|pack| pack.saved_searches.is_empty())
+    {
+        recommendations.push(WorkbenchRecommendation {
+            category: "content".to_string(),
+            priority: "medium".to_string(),
+            title: "Finish pack automation bundles".to_string(),
+            summary: "Some content packs still lack saved-search templates or investigation routing."
+                .to_string(),
+            action_hint: "Attach saved searches and workflow recommendations so packs ship as reusable bundles."
+                .to_string(),
+        });
+    }
+    if api_analytics.error_rate > 0.02 || enterprise_metrics.last_hunt_latency_ms > 2_000 {
+        recommendations.push(WorkbenchRecommendation {
+            category: "analytics".to_string(),
+            priority: "medium".to_string(),
+            title: "Tighten operational analytics".to_string(),
+            summary: format!(
+                "API error rate is {:.1}% and the most recent hunt latency is {} ms.",
+                api_analytics.error_rate * 100.0,
+                enterprise_metrics.last_hunt_latency_ms
+            ),
+            action_hint: "Use the analytics and infrastructure views to investigate latency and endpoint hotspots."
+                .to_string(),
+        });
+    }
+    if pending_automation_approvals > 0 || workflow_store.active_investigations().len() > 0 {
+        recommendations.push(WorkbenchRecommendation {
+            category: "automation".to_string(),
+            priority: "medium".to_string(),
+            title: "Clear automation backpressure".to_string(),
+            summary: format!(
+                "{} approval(s) and {} active investigation(s) are in flight.",
+                pending_automation_approvals,
+                workflow_store.active_investigations().len()
+            ),
+            action_hint: "Review approvals and active investigations so response playbooks do not stall."
+                .to_string(),
+        });
+    }
 
     WorkbenchOverview {
         generated_at: chrono::Utc::now().to_rfc3339(),
@@ -3294,8 +3785,73 @@ fn build_workbench_overview(
             recent_requests,
             recent_approvals,
         },
+        identity: WorkbenchIdentityOverview {
+            providers_configured: identity_summaries.len(),
+            ready_providers,
+            providers_with_gaps,
+            scim_status: scim_validation.status,
+            mapped_groups: mapped_groups.len(),
+            automation_targets_aligned,
+        },
+        rollouts: WorkbenchRolloutOverview {
+            canary_rules,
+            canary_hunts,
+            promotion_ready_rules,
+            active_hunts,
+            rollout_targets: automation_targets.len(),
+            average_canary_percentage,
+            historical_events: historical_rollout_events,
+            rollback_events,
+            last_rollout_at,
+            recent_history: recent_rollout_history,
+        },
+        content: WorkbenchContentOverview {
+            packs: packs.len(),
+            enabled_packs: packs.iter().filter(|pack| pack.enabled).count(),
+            hunt_library: hunts.len(),
+            scheduled_hunts: hunts
+                .iter()
+                .filter(|hunt| hunt.schedule_interval_secs.is_some())
+                .count(),
+            saved_searches,
+            packs_with_workflows: packs
+                .iter()
+                .filter(|pack| !pack.recommended_workflows.is_empty())
+                .count(),
+            latest_pack_update,
+        },
+        automation: WorkbenchAutomationOverview {
+            playbooks: playbook_engine.list_playbooks().len(),
+            workflow_templates: workflow_store.workflow_count(),
+            dynamic_templates: playbook_dsl.list().len(),
+            active_executions: playbook_engine.active_count() + playbook_dsl.active_executions().len(),
+            pending_approvals: pending_automation_approvals,
+            success_rate: if completed_playbook_history.is_empty() {
+                0.0
+            } else {
+                succeeded_historical_runs as f64 / completed_playbook_history.len() as f64
+            },
+            avg_execution_ms,
+            active_investigations: workflow_store.active_investigations().len(),
+            historical_runs: historical_playbook_runs,
+            last_execution_at,
+            recent_history: recent_playbook_history,
+        },
+        analytics: WorkbenchAnalyticsOverview {
+            api_requests: api_analytics.total_requests,
+            api_error_rate: api_analytics.error_rate,
+            unique_endpoints: api_analytics.unique_endpoints,
+            busiest_endpoint,
+            worst_p95_ms,
+            search_queries_total: enterprise_metrics.search_queries_total,
+            hunt_runs_total: enterprise_metrics.hunt_runs_total,
+            response_exec_total: enterprise_metrics.response_exec_total,
+            last_hunt_latency_ms: enterprise_metrics.last_hunt_latency_ms,
+            last_response_latency_ms: enterprise_metrics.last_response_latency_ms,
+        },
         hot_agents,
         urgent_items,
+        recommendations,
     }
 }
 
@@ -3910,7 +4466,7 @@ fn check_rbac(
         return true;
     }
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
-    let AuthIdentity::UserToken(user) = auth else {
+    let Some(user) = auth.user() else {
         return false;
     };
     let method_str = match method {
@@ -6779,10 +7335,14 @@ fn handle_api(
         (Method::Post, "/api/policy/publish") => handle_policy_publish(body, state),
 
         // ── XDR Update Distribution ──────────────────────────────
-        (Method::Post, "/api/updates/publish") => handle_update_publish(body, state),
-        (Method::Post, "/api/updates/deploy") => handle_update_deploy(body, state),
-        (Method::Post, "/api/updates/rollback") => handle_update_rollback(body, state),
-        (Method::Post, "/api/updates/cancel") => handle_update_cancel(body, state),
+        (Method::Post, "/api/updates/publish") => {
+            handle_update_publish(body, state, &auth_identity)
+        }
+        (Method::Post, "/api/updates/deploy") => handle_update_deploy(body, state, &auth_identity),
+        (Method::Post, "/api/updates/rollback") => {
+            handle_update_rollback(body, state, &auth_identity)
+        }
+        (Method::Post, "/api/updates/cancel") => handle_update_cancel(body, state, &auth_identity),
         (Method::Post, "/api/events/bulk-triage") => handle_bulk_triage(body, state),
 
         // ── Detection Analysis ─────────────────────────────────
@@ -7345,6 +7905,7 @@ fn handle_api(
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.agent_registry.refresh_staleness();
             let analytics = s.event_store.analytics();
+            let api_analytics = s.api_analytics.summary();
             let overview = build_workbench_overview(
                 &s.alert_queue,
                 &s.case_store,
@@ -7355,6 +7916,11 @@ fn handle_api(
                 &s.event_store,
                 &s.agent_registry,
                 &s.remote_deployments,
+                &s.enterprise,
+                &s.playbook_engine,
+                &s.playbook_dsl,
+                &s.workflow_store,
+                &api_analytics,
             );
             match serde_json::to_string(&overview) {
                 Ok(json) => json_response(&json, 200),
@@ -7405,6 +7971,11 @@ fn handle_api(
                         "name": hunt.name,
                         "owner": hunt.owner,
                         "enabled": hunt.enabled,
+                        "lifecycle": hunt.lifecycle,
+                        "canary_percentage": hunt.canary_percentage,
+                        "pack_id": hunt.pack_id,
+                        "recommended_workflows": hunt.recommended_workflows,
+                        "target_group": hunt.target_group,
                         "severity": hunt.severity,
                         "threshold": hunt.threshold,
                         "suppression_window_secs": hunt.suppression_window_secs,
@@ -7434,7 +8005,102 @@ fn handle_api(
                 });
                 match serde_json::from_value::<crate::analyst::SearchQuery>(query) {
                     Ok(query) => {
+                        let lifecycle = match v
+                            .get("lifecycle")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("draft")
+                        {
+                            "test" => crate::enterprise::ContentLifecycle::Test,
+                            "canary" => crate::enterprise::ContentLifecycle::Canary,
+                            "active" => crate::enterprise::ContentLifecycle::Active,
+                            "deprecated" => crate::enterprise::ContentLifecycle::Deprecated,
+                            "rolled_back" => crate::enterprise::ContentLifecycle::RolledBack,
+                            _ => crate::enterprise::ContentLifecycle::Draft,
+                        };
+                        let recommended_workflows = v
+                            .get("recommended_workflows")
+                            .and_then(|value| value.as_array())
+                            .map(|values| {
+                                values
+                                    .iter()
+                                    .filter_map(|value| value.as_str().map(|s| s.to_string()))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        let requested_pack_id = v
+                            .get("pack_id")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string());
+                        let requested_target_group = v
+                            .get("target_group")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string());
+                        let pack_id_field_present = v.get("pack_id").is_some();
+                        let target_group_field_present = v.get("target_group").is_some();
+                        let workflow_field_present = v.get("recommended_workflows").is_some();
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        let existing_hunt = v["id"].as_str().and_then(|hunt_id| {
+                            s.enterprise
+                                .hunts()
+                                .iter()
+                                .find(|hunt| hunt.id == hunt_id)
+                                .cloned()
+                        });
+                        let pack_id = if pack_id_field_present {
+                            requested_pack_id.clone()
+                        } else {
+                            existing_hunt.as_ref().and_then(|hunt| hunt.pack_id.clone())
+                        };
+                        let inherited_pack = pack_id.as_ref().and_then(|pack_id| {
+                            s.enterprise
+                                .packs()
+                                .iter()
+                                .find(|pack| pack.id == pack_id.as_str())
+                                .cloned()
+                        });
+                        let target_group = if target_group_field_present {
+                            requested_target_group.clone()
+                        } else {
+                            existing_hunt
+                                .as_ref()
+                                .and_then(|hunt| hunt.target_group.clone())
+                                .or_else(|| {
+                                    inherited_pack
+                                        .as_ref()
+                                        .and_then(|pack| pack.target_group.clone())
+                                })
+                        };
+                        let effective_target_group = target_group
+                            .clone()
+                            .or_else(|| {
+                                existing_hunt
+                                    .as_ref()
+                                    .and_then(|hunt| hunt.target_group.clone())
+                            })
+                            .or_else(|| {
+                                inherited_pack
+                                    .as_ref()
+                                    .and_then(|pack| pack.target_group.clone())
+                            });
+                        if let Err(message) =
+                            ensure_target_group_access(&auth_identity, effective_target_group.as_deref())
+                        {
+                            return error_json(&message, 403);
+                        }
+                        let persisted_workflows = if workflow_field_present {
+                            recommended_workflows
+                        } else {
+                            existing_hunt
+                                .as_ref()
+                                .map(|hunt| hunt.recommended_workflows.clone())
+                                .filter(|workflows| !workflows.is_empty())
+                                .or_else(|| {
+                                    inherited_pack
+                                        .as_ref()
+                                        .map(|pack| pack.recommended_workflows.clone())
+                                })
+                                .unwrap_or_default()
+                        };
                         let hunt = s.enterprise.create_or_update_hunt(
                             v["id"].as_str(),
                             v["name"].as_str().unwrap_or("Untitled Hunt").to_string(),
@@ -7447,6 +8113,11 @@ fn handle_api(
                             v["suppression_window_secs"].as_u64().unwrap_or(0),
                             v["schedule_interval_secs"].as_u64(),
                             query,
+                            lifecycle,
+                            v["canary_percentage"].as_u64().unwrap_or(100) as u8,
+                            pack_id,
+                            persisted_workflows,
+                            target_group,
                         );
                         let _ = s.enterprise.record_change(
                             "hunt",
@@ -7584,7 +8255,54 @@ fn handle_api(
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
+                let saved_searches = v
+                    .get("saved_searches")
+                    .and_then(|value| value.as_array())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|value| value.as_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let recommended_workflows = v
+                    .get("recommended_workflows")
+                    .and_then(|value| value.as_array())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|value| value.as_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let requested_target_group = v
+                    .get("target_group")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string());
+                let target_group_field_present = v.get("target_group").is_some();
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let existing_pack = v["id"].as_str().and_then(|pack_id| {
+                    s.enterprise
+                        .packs()
+                        .iter()
+                        .find(|pack| pack.id == pack_id)
+                        .cloned()
+                });
+                let target_group = if target_group_field_present {
+                    requested_target_group.clone()
+                } else {
+                    existing_pack
+                        .as_ref()
+                        .and_then(|pack| pack.target_group.clone())
+                };
+                let effective_target_group = target_group
+                    .clone()
+                    .or_else(|| existing_pack.as_ref().and_then(|pack| pack.target_group.clone()));
+                if let Err(message) =
+                    ensure_target_group_access(&auth_identity, effective_target_group.as_deref())
+                {
+                    return error_json(&message, 403);
+                }
                 let pack = s.enterprise.create_or_update_pack(
                     v["id"].as_str(),
                     v["name"].as_str().unwrap_or("Untitled Pack").to_string(),
@@ -7593,6 +8311,12 @@ fn handle_api(
                         .and_then(|value| value.as_bool())
                         .unwrap_or(true),
                     rule_ids,
+                    saved_searches,
+                    recommended_workflows,
+                    target_group,
+                    v.get("rollout_notes")
+                        .and_then(|value| value.as_str())
+                        .map(|s| s.to_string()),
                 );
                 let _ = s.enterprise.record_change(
                     "content_pack",
@@ -9873,37 +10597,41 @@ fn handle_api(
                     .trim_end_matches('/');
                 let started = std::time::Instant::now();
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let hunt = match s
+                    .enterprise
+                    .hunts()
+                    .iter()
+                    .find(|hunt| hunt.id == hunt_id)
+                    .cloned()
+                {
+                    Some(hunt) => hunt,
+                    None => return error_json("hunt not found", 404),
+                };
+                if let Err(message) =
+                    ensure_target_group_access(&auth_identity, hunt.target_group.as_deref())
+                {
+                    return error_json(&message, 403);
+                }
                 let events = s.event_store.all_events().to_vec();
                 match s.enterprise.run_hunt(hunt_id, &events) {
                     Ok(run) => {
-                        let hunt = s
-                            .enterprise
-                            .hunts()
-                            .iter()
-                            .find(|hunt| hunt.id == run.hunt_id)
-                            .cloned();
-                        let response_results = if let Some(hunt) = hunt {
-                            let AppState {
-                                incident_store,
-                                enterprise,
-                                response_orchestrator,
-                                ..
-                            } = &mut *s;
-                            let response_orchestrator_value = std::mem::take(response_orchestrator);
-                            let results = execute_hunt_response_actions(
-                                &hunt,
-                                &run,
-                                &events,
-                                incident_store,
-                                enterprise,
-                                &response_orchestrator_value,
-                                auth_identity.actor(),
-                            );
-                            *response_orchestrator = response_orchestrator_value;
-                            results
-                        } else {
-                            Vec::new()
-                        };
+                        let AppState {
+                            incident_store,
+                            enterprise,
+                            response_orchestrator,
+                            ..
+                        } = &mut *s;
+                        let response_orchestrator_value = std::mem::take(response_orchestrator);
+                        let response_results = execute_hunt_response_actions(
+                            &hunt,
+                            &run,
+                            &events,
+                            incident_store,
+                            enterprise,
+                            &response_orchestrator_value,
+                            auth_identity.actor(),
+                        );
+                        *response_orchestrator = response_orchestrator_value;
                         s.enterprise
                             .record_hunt_metrics(started.elapsed().as_millis() as u64);
                         let _ = s.enterprise.record_change(
@@ -10429,6 +11157,9 @@ fn handle_api(
                             .start_execution(pb_id, alert_id, &executed_by, now)
                         {
                             Some(eid) => {
+                                if let Some(execution) = s.playbook_engine.get_execution(&eid).cloned() {
+                                    s.enterprise.record_playbook_execution(&execution);
+                                }
                                 eprintln!(
                                     "[AUDIT] playbook_execute id={pb_id} execution={eid} by={executed_by} alert={}",
                                     alert_id.unwrap_or("none")
@@ -11236,19 +11967,39 @@ fn handle_api(
             } else if method == Method::Get && url_path == "/api/auth/session" {
                 // Check current authentication state from bearer token
                 let identity = authenticate_request(headers, state);
-                let (user_id, role, authenticated) = match &identity {
-                    AuthIdentity::AdminToken => ("admin".to_string(), "admin".to_string(), true),
+                let groups = identity.groups().to_vec();
+                let (user_id, role, authenticated, source) = match &identity {
+                    AuthIdentity::AdminToken => (
+                        "admin".to_string(),
+                        "admin".to_string(),
+                        true,
+                        "admin_token",
+                    ),
                     AuthIdentity::UserToken(u) => (
                         u.username.clone(),
-                        format!("{:?}", u.role).to_lowercase(),
+                        role_label(u.role).to_string(),
                         true,
+                        "rbac_token",
                     ),
-                    AuthIdentity::None => ("anonymous".to_string(), "viewer".to_string(), false),
+                    AuthIdentity::SessionToken { user, .. } => (
+                        user.username.clone(),
+                        role_label(user.role).to_string(),
+                        true,
+                        "session",
+                    ),
+                    AuthIdentity::None => (
+                        "anonymous".to_string(),
+                        "viewer".to_string(),
+                        false,
+                        "anonymous",
+                    ),
                 };
                 let body = serde_json::json!({
                     "user_id": user_id,
                     "role": role,
+                    "groups": groups,
                     "authenticated": authenticated,
+                    "source": source,
                 });
                 json_response(&body.to_string(), 200)
             } else if method == Method::Post && url_path == "/api/auth/logout" {
@@ -12011,17 +12762,19 @@ fn handle_api(
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64;
+                        let executed_by = playbook_executor(&auth_identity);
                         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                         match s.playbook_engine.run_playbook(
                             playbook_id,
                             alert_id,
-                            "api",
+                            &executed_by,
                             variables,
                             now,
                         ) {
                             Ok(exec_id) => {
-                                if let Some(exec) = s.playbook_engine.get_execution(&exec_id) {
-                                    let body = serde_json::to_string(exec).unwrap_or_default();
+                                if let Some(exec) = s.playbook_engine.get_execution(&exec_id).cloned() {
+                                    s.enterprise.record_playbook_execution(&exec);
+                                    let body = serde_json::to_string(&exec).unwrap_or_default();
                                     json_response(&body, 200)
                                 } else {
                                     json_response(
@@ -13730,7 +14483,11 @@ fn handle_agent_update_check(
     }
 }
 
-fn handle_update_deploy(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
+fn handle_update_deploy(
+    body: &[u8],
+    state: &Arc<Mutex<AppState>>,
+    auth: &AuthIdentity,
+) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -13796,6 +14553,16 @@ fn handle_update_deploy(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<B
     s.remote_deployments
         .insert(req.agent_id.clone(), deployment.clone());
     save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
+    s.enterprise.record_rollout_event(
+        "deploy",
+        &deployment.version,
+        Some(deployment.platform.clone()),
+        Some(deployment.agent_id.clone()),
+        Some(deployment.rollout_group.clone()),
+        &deployment.status,
+        auth.actor(),
+        deployment.status_reason.clone().or_else(|| Some(deployment.release_notes.clone())),
+    );
 
     let payload = serde_json::json!({
         "status": "assigned",
@@ -13965,7 +14732,11 @@ fn handle_bulk_triage(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Bod
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_update_rollback(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
+fn handle_update_rollback(
+    body: &[u8],
+    state: &Arc<Mutex<AppState>>,
+    auth: &AuthIdentity,
+) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -14013,6 +14784,16 @@ fn handle_update_rollback(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response
     s.remote_deployments
         .insert(req.agent_id.clone(), deployment.clone());
     save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
+    s.enterprise.record_rollout_event(
+        "rollback",
+        &deployment.version,
+        Some(deployment.platform.clone()),
+        Some(deployment.agent_id.clone()),
+        Some(deployment.rollout_group.clone()),
+        &deployment.status,
+        auth.actor(),
+        deployment.status_reason.clone(),
+    );
     let payload = serde_json::json!({
         "status": "rollback_assigned",
         "agent_id": req.agent_id,
@@ -14021,7 +14802,11 @@ fn handle_update_rollback(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response
     json_response(&payload.to_string(), 200)
 }
 
-fn handle_update_cancel(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
+fn handle_update_cancel(
+    body: &[u8],
+    state: &Arc<Mutex<AppState>>,
+    auth: &AuthIdentity,
+) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -14043,7 +14828,18 @@ fn handle_update_cancel(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<B
             deployment.status = "cancelled".to_string();
             deployment.status_reason = Some("cancelled by admin".to_string());
             deployment.completed_at = Some(chrono::Utc::now().to_rfc3339());
+            let deployment_snapshot = deployment.clone();
             save_remote_deployments(&s.deployment_store_path, &s.remote_deployments);
+            s.enterprise.record_rollout_event(
+                "cancel",
+                &deployment_snapshot.version,
+                Some(deployment_snapshot.platform.clone()),
+                Some(deployment_snapshot.agent_id.clone()),
+                Some(deployment_snapshot.rollout_group.clone()),
+                &deployment_snapshot.status,
+                auth.actor(),
+                deployment_snapshot.status_reason.clone(),
+            );
             json_response(
                 &serde_json::json!({"status": "cancelled", "agent_id": req.agent_id}).to_string(),
                 200,
@@ -14137,7 +14933,11 @@ fn handle_policy_publish(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<
     )
 }
 
-fn handle_update_publish(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<Body> {
+fn handle_update_publish(
+    body: &[u8],
+    state: &Arc<Mutex<AppState>>,
+    auth: &AuthIdentity,
+) -> Response<Body> {
     let body = match read_body_limited(body, 10 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => return error_json(&e, 400),
@@ -14171,10 +14971,22 @@ fn handle_update_publish(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<
         &req.release_notes,
         req.mandatory,
     ) {
-        Ok(release) => match serde_json::to_string(&release) {
-            Ok(json) => json_response(&json, 200),
-            Err(e) => error_json(&format!("serialization error: {e}"), 500),
-        },
+        Ok(release) => {
+            s.enterprise.record_rollout_event(
+                "publish",
+                &release.version,
+                Some(release.platform.clone()),
+                None,
+                None,
+                "published",
+                auth.actor(),
+                Some(release.release_notes.clone()),
+            );
+            match serde_json::to_string(&release) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
         Err(e) => error_json(&e, 500),
     }
 }
@@ -15650,6 +16462,7 @@ mod tests {
         let case_path = temp_path("cases");
         let incident_path = temp_path("incidents");
         let agent_path = temp_path("agents");
+        let enterprise_path = temp_path("workbench_enterprise");
 
         let mut queue = AlertQueue::new();
         let mut case_store = CaseStore::new(case_path.to_str().unwrap());
@@ -15658,6 +16471,11 @@ mod tests {
         let response = ResponseOrchestrator::new();
         let mut events = EventStore::new(100);
         let mut registry = AgentRegistry::new(agent_path.to_str().unwrap());
+        let mut enterprise = EnterpriseStore::new(enterprise_path.to_str().unwrap());
+        let mut playbook_engine = crate::playbook::PlaybookEngine::new();
+        let mut playbook_dsl = crate::playbook_dsl::PlaybookDslStore::new();
+        let mut workflow_store = crate::investigation::WorkflowStore::new();
+        let mut api_analytics = crate::api_analytics::ApiAnalytics::new();
 
         let agent_id = enroll_test_agent(&mut registry, "workbench-host", "linux", "1.0.0");
         events.ingest(&EventBatch {
@@ -15743,7 +16561,149 @@ mod tests {
             "validated".to_string(),
         );
 
+        let mut group_mappings = StdHashMap::new();
+        group_mappings.insert("soc-analysts".to_string(), "analyst".to_string());
+        enterprise
+            .create_or_update_idp_provider(
+                None,
+                "oidc".to_string(),
+                "Corp Identity".to_string(),
+                Some("https://id.example.com".to_string()),
+                None,
+                Some("wardex-admin".to_string()),
+                None,
+                true,
+                group_mappings.clone(),
+            )
+            .expect("idp config");
+        enterprise
+            .update_scim(
+                true,
+                Some("https://scim.example.com".to_string()),
+                Some("token".to_string()),
+                "automatic".to_string(),
+                "analyst".to_string(),
+                group_mappings,
+            )
+            .expect("scim config");
+        enterprise.create_or_update_hunt(
+            None,
+            "Credential Storm Hunt".to_string(),
+            "analyst-1".to_string(),
+            "high".to_string(),
+            1,
+            0,
+            Some(300),
+            crate::analyst::SearchQuery {
+                text: Some("credential".to_string()),
+                hostname: None,
+                level: None,
+                agent_id: None,
+                from_ts: None,
+                to_ts: None,
+                limit: Some(50),
+            },
+            crate::enterprise::ContentLifecycle::Canary,
+            15,
+            Some("identity-attacks".to_string()),
+            vec!["credential-storm".to_string()],
+            Some("soc-analysts".to_string()),
+        );
+        enterprise.record_hunt_metrics(220);
+        enterprise.record_response_metrics(90);
+
+        let created_at = chrono::Utc::now().to_rfc3339();
+        let approval_playbook = crate::playbook::Playbook {
+            id: "pb-approval".to_string(),
+            name: "Approval Route".to_string(),
+            description: "Approval-gated response".to_string(),
+            version: 1,
+            enabled: true,
+            trigger: crate::playbook::PlaybookTrigger {
+                min_severity: None,
+                alert_reasons: Vec::new(),
+                mitre_techniques: Vec::new(),
+                kill_chain_phases: Vec::new(),
+                host_patterns: Vec::new(),
+                manual_only: true,
+            },
+            steps: Vec::new(),
+            timeout_secs: 300,
+            created_at: created_at.clone(),
+            updated_at: created_at.clone(),
+        };
+        let success_playbook = crate::playbook::Playbook {
+            id: "pb-success".to_string(),
+            name: "Success Route".to_string(),
+            description: "Successful automation path".to_string(),
+            version: 1,
+            enabled: true,
+            trigger: crate::playbook::PlaybookTrigger {
+                min_severity: None,
+                alert_reasons: Vec::new(),
+                mitre_techniques: Vec::new(),
+                kill_chain_phases: Vec::new(),
+                host_patterns: Vec::new(),
+                manual_only: true,
+            },
+            steps: Vec::new(),
+            timeout_secs: 300,
+            created_at: created_at.clone(),
+            updated_at: created_at.clone(),
+        };
+        playbook_engine.register(approval_playbook);
+        playbook_engine.register(success_playbook);
+        let approval_exec = playbook_engine
+            .start_execution("pb-approval", None, "analyst-1", 1_000)
+            .expect("approval execution");
+        assert!(playbook_engine.finish_execution(
+            &approval_exec,
+            crate::playbook::ExecutionStatus::AwaitingApproval,
+            None,
+            1_200,
+        ));
+        let success_exec = playbook_engine
+            .start_execution("pb-success", None, "analyst-1", 2_000)
+            .expect("success execution");
+        assert!(playbook_engine.finish_execution(
+            &success_exec,
+            crate::playbook::ExecutionStatus::Succeeded,
+            None,
+            2_450,
+        ));
+
+        playbook_dsl.create(crate::playbook_dsl::PlaybookDefinition {
+            id: "dsl-credential".to_string(),
+            name: "Credential Branching".to_string(),
+            description: "Dynamic investigation routing".to_string(),
+            version: "1.0.0".to_string(),
+            author: "analyst-1".to_string(),
+            severity: "high".to_string(),
+            mitre_techniques: vec!["T1110".to_string()],
+            trigger_conditions: vec!["credential".to_string()],
+            nodes: vec![crate::playbook_dsl::PlaybookNode::Step {
+                id: "step-1".to_string(),
+                title: "Review auth failures".to_string(),
+                description: "Inspect auth anomalies".to_string(),
+                api_pivot: None,
+                actions: vec!["Query auth logs".to_string()],
+                evidence: vec!["Affected usernames".to_string()],
+                auto_queries: Vec::new(),
+            }],
+            entry_nodes: vec!["step-1".to_string()],
+            created_at: created_at.clone(),
+            updated_at: created_at.clone(),
+            status: crate::playbook_dsl::PlaybookStatus::Active,
+        });
+        workflow_store
+            .start_investigation("credential-storm", "analyst-1", None)
+            .expect("workflow progress");
+
+        api_analytics.record("GET", "/api/workbench/overview", 12.0, false);
+        api_analytics.record("POST", "/api/hunts", 145.0, false);
+
         let analytics = events.analytics();
+        let api_summary = api_analytics.summary();
         let overview = build_workbench_overview(
             &queue,
             &case_store,
@@ -15754,6 +16714,11 @@ mod tests {
             &events,
             &registry,
             &StdHashMap::new(),
+            &enterprise,
+            &playbook_engine,
+            &playbook_dsl,
+            &workflow_store,
+            &api_summary,
         );
 
         assert_eq!(overview.queue.pending, 2);
@@ -15761,17 +16726,27 @@ mod tests {
         assert_eq!(overview.cases.total, 1);
         assert_eq!(overview.incidents.total, 1);
         assert_eq!(overview.response.ready_to_execute, 1);
+        assert_eq!(overview.identity.ready_providers, 1);
+        assert_eq!(overview.rollouts.canary_hunts, 1);
+        assert!(overview.content.saved_searches > 0);
+        assert_eq!(overview.automation.pending_approvals, 1);
+        assert_eq!(overview.analytics.api_requests, 2);
+        assert!(overview
+            .recommendations
+            .iter()
+            .any(|item| item.category == "rollout" || item.category == "automation"));
         assert!(
             overview
                 .urgent_items
                 .iter()
-                .any(|item| item.kind == "queue" || item.kind == "response")
+                .any(|item| item.kind == "queue" || item.kind == "response" || item.kind == "automation")
         );
         assert_eq!(overview.hot_agents.len(), 1);
 
         let _ = fs::remove_file(case_path);
         let _ = fs::remove_file(incident_path);
         let _ = fs::remove_file(agent_path);
+        let _ = fs::remove_file(enterprise_path);
     }
 
     #[test]
@@ -15991,6 +16966,11 @@ mod tests {
             },
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            lifecycle: crate::enterprise::ContentLifecycle::Canary,
+            canary_percentage: 10,
+            pack_id: Some("identity-attacks".to_string()),
+            recommended_workflows: vec!["credential-storm".to_string()],
+            target_group: Some("soc-analysts".to_string()),
             response_actions: vec![
                 HuntResponseAction::Notify {
                     channel: "ops-slack".to_string(),
@@ -16110,6 +17090,11 @@ mod tests {
             },
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            lifecycle: crate::enterprise::ContentLifecycle::Canary,
+            canary_percentage: 25,
+            pack_id: Some("lateral-movement".to_string()),
+            recommended_workflows: vec!["lateral-movement".to_string()],
+            target_group: Some("soc-analysts".to_string()),
             response_actions: vec![HuntResponseAction::IsolateAgent],
             tags: vec![],
             mitre_techniques: vec![],
@@ -16194,6 +17179,11 @@ mod tests {
             },
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            lifecycle: crate::enterprise::ContentLifecycle::Active,
+            canary_percentage: 100,
+            pack_id: Some("identity-attacks".to_string()),
+            recommended_workflows: vec!["credential-storm".to_string()],
+            target_group: Some("soc-analysts".to_string()),
             response_actions: vec![HuntResponseAction::CreateIncident {
                 severity: "high".to_string(),
                 title_template: "{hunt_name}: {match_count} hits".to_string(),
@@ -16301,6 +17291,40 @@ mod tests {
 
         assert_eq!(playbook_executor(&auth), "analyst-2");
         assert_eq!(live_response_operator(&auth), "analyst-2");
+    }
+
+    #[test]
+    fn session_identity_enforces_target_group_access() {
+        let auth = auth_identity_from_session(
+            "session-token".to_string(),
+            crate::auth::Session {
+                user_id: "analyst-3".to_string(),
+                email: "analyst-3@example.test".to_string(),
+                role: "analyst".to_string(),
+                groups: vec!["soc-analysts".to_string(), "canary-lane".to_string()],
+                created_at: chrono::Utc::now(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            },
+        );
+
+        assert!(ensure_target_group_access(&auth, Some("soc-analysts")).is_ok());
+        assert!(ensure_target_group_access(&auth, Some("SOC-ANALYSTS")).is_ok());
+        assert!(ensure_target_group_access(&auth, Some("tier-3")).is_err());
+    }
+
+    #[test]
+    fn non_session_identity_bypasses_target_group_guard() {
+        let auth = AuthIdentity::UserToken(User {
+            username: "analyst-4".into(),
+            role: Role::Analyst,
+            token_hash: "rbac-token".into(),
+            enabled: true,
+            created_at: "now".into(),
+            tenant_id: None,
+        });
+
+        assert!(ensure_target_group_access(&auth, Some("soc-analysts")).is_ok());
+        assert!(ensure_target_group_access(&AuthIdentity::AdminToken, Some("soc-analysts")).is_ok());
     }
 
     #[test]

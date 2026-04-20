@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.52.5`
+- **Version:** `0.53.0`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 134 Rust source modules
-- **API contract:** 138 documented OpenAPI paths
-- **Verification:** Rust and SDK validation, production builds, and focused Playwright smoke coverage for investigation and hunt workflows
+- **API contract:** versioned OpenAPI surface synchronized to the generated Python and TypeScript SDKs
+- **Verification:** Rust integration coverage, SDK regeneration checks, and focused admin-console regression coverage for auth routing, workbench overview, and saved-hunt editing
 - **Production hardening:** 100% (59/59 controls implemented)
 
 ## Shipped in the current platform
@@ -40,7 +40,7 @@
 ### SOC operations
 
 - Dashboard with Recharts visualizations (severity pie, 24h alert timeline, CPU/memory area chart), severity filter, and clickable alert drill-down
-- SOC Workbench with queue, cases, investigation pivots, storyline views, response approval flows, escalation management, and planner-to-hunt handoffs
+- SOC Workbench with queue, cases, investigation pivots, storyline views, response approval flows, escalation management, planner-to-hunt handoffs, identity-routing readiness, rollout history, content bundle posture, automation history, and operational analytics recommendations
 - Structured incident detail view with severity badge, storyline timeline, related events/agents, close/export actions
 - Event search, incident timelines, process-tree inspection, and evidence package export
 
@@ -48,7 +48,8 @@
 
 - Sigma and native managed rules
 - Rule testing, promotion, rollback, suppressions, content packs, MITRE coverage, and inline false-positive advisor actions
-- Saved hunts with thresholds, schedules, owners, history, and scheduled execution
+- Saved hunts with thresholds, schedules, owners, history, scheduled execution, lifecycle promotion state, canary percentages, target-group routing, and workflow recommendations
+- Content pack bundles with saved-search templates, workflow routes, target groups, and rollout notes directly editable from the detection workspace
 - Suppression rules management with inline creation form (rule_id, hostname, severity filters)
 - Hunt drawer UX with route-driven run-hunt intent, live execution, saved-hunt reopening, and workflow suggestions from selected rule context
 
@@ -60,9 +61,9 @@
 
 ### Governance and enterprise controls
 
-- RBAC, session TTL, token rotation, audit and retention controls
+- RBAC, session TTL, token rotation, session-backed identity groups, audit and retention controls
 - IDP and SCIM configuration surfaces
-- Change control entries, admin audit export, diagnostics bundle, and dependency health endpoints
+- Change control entries, admin audit export, diagnostics bundle, dependency health endpoints, persisted rollout history, and persisted playbook analytics history
 
 ### Integrations and evidence
 
@@ -75,8 +76,8 @@
 The current release has been verified with:
 
 - `cargo test` passing across unit and integration suites
-- targeted API regression coverage for hunts, content lifecycle, suppressions, storylines, governance, and supportability
-- deterministic browser smoke coverage of run-hunt routing, investigation planner start, and queue-to-hunt pivots
+- targeted API regression coverage for session auth routing, hunt/content lifecycle, playbook execution shape, suppressions, storylines, governance, and supportability
+- deterministic browser regression coverage of run-hunt routing, saved-hunt reopen/update behavior, investigation planner start, queue-to-hunt pivots, and the expanded SOC workbench overview
 
 ## Current product posture
 

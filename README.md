@@ -9,7 +9,7 @@ Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted s
 ## What ships in `v0.53.0`
 
 - 134 Rust source modules covering telemetry collection, detection engineering, hunt/search, SOC workflows, fleet operations, governance, and automated incident response.
-- 138 documented OpenAPI paths with authenticated admin-console workflows, fleet controls, reports, hunts, investigations, NDR, and enterprise support surfaces.
+- A versioned OpenAPI contract with regenerated Python and TypeScript SDKs for authenticated admin-console workflows, fleet controls, reports, hunts, investigations, NDR, and enterprise support surfaces.
 - 1500+ automated tests and smoke checks spanning Rust, SDK, admin-console, and Playwright browser coverage.
 - **NEW: Detection rules marketplace** — browsable rules index on the site with filters for kind, severity, and MITRE ATT&CK, plus contribution paths for YARA and Sigma packs.
 - **NEW: Tiered pricing & checkout** — Community / Starter (€49/mo) / Team / Business / Enterprise, with an annual prepay toggle, a transparent comparison table, and a self-serve checkout landing page.
@@ -17,7 +17,7 @@ Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted s
 - **NEW: Public status & integrations pages** — release status, uptime signals, signing keys, and first-class integration guides for Splunk, Sentinel, Elastic, Slack, Jira, and more.
 - **NEW: Admin-console UX polish** — `ConfirmDialog`, `EmptyState`, copy-to-clipboard helpers, and accessibility fixes across Settings, Fleet, and Reports.
 - **NEW: Site presentation fixes** — rebuilt `styles.css` sections for pricing tiers, comparison tables, rules marketplace, feature/architecture pages, and the 404/changelog layouts.
-- Investigation and hunt workflow UX (hunt drawer, saved-hunt execution, workflow suggestions).
+- Investigation, hunt, and content-bundle workflow UX (hunt drawer, saved-hunt execution, workflow suggestions, pack bundle editor, and target-group routing).
 - Analyst-quality tuning signals (false-positive advisor prefilled suppressions and rule-specific feedback).
 - Deeper NDR visibility (beaconing cadence detection, dedicated anomaly endpoints, protocol distribution).
 - Better threat context seeding (default intel feed sources, phishing heuristics, LOLBin reasoning).

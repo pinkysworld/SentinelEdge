@@ -63,11 +63,19 @@ export function useAuth() {
 
 // ── Role Context ─────────────────────────────────────────────
 
-const RoleContext = createContext({ role: 'viewer' });
+const RoleContext = createContext({
+  role: 'viewer',
+  groups: [],
+  userId: 'anonymous',
+  source: 'anonymous',
+});
 
 export function RoleProvider({ children }) {
   const { authenticated } = useAuth();
   const [role, setRole] = useState('viewer');
+  const [groups, setGroups] = useState([]);
+  const [userId, setUserId] = useState('anonymous');
+  const [source, setSource] = useState('anonymous');
 
   useEffect(() => {
     if (!authenticated) return undefined;
@@ -76,13 +84,20 @@ export function RoleProvider({ children }) {
     const fetchRole = (retries = 2) => {
       authSession()
         .then((data) => {
-          if (!cancelled && data.role) setRole(data.role);
+          if (cancelled) return;
+          setRole(data.role || 'viewer');
+          setGroups(Array.isArray(data.groups) ? data.groups : []);
+          setUserId(data.user_id || 'anonymous');
+          setSource(data.source || 'session');
         })
         .catch(() => {
           if (!cancelled && retries > 0) {
             retryTimer = setTimeout(() => fetchRole(retries - 1), 1000);
           } else if (!cancelled) {
             setRole('viewer');
+            setGroups([]);
+            setUserId('anonymous');
+            setSource('anonymous');
           }
         });
     };
@@ -94,7 +109,15 @@ export function RoleProvider({ children }) {
   }, [authenticated]);
 
   return (
-    <RoleContext.Provider value={{ role: authenticated ? role : 'viewer', setRole }}>
+    <RoleContext.Provider
+      value={{
+        role: authenticated ? role : 'viewer',
+        groups: authenticated ? groups : [],
+        userId: authenticated ? userId : 'anonymous',
+        source: authenticated ? source : 'anonymous',
+        setRole,
+      }}
+    >
       {children}
     </RoleContext.Provider>
   );

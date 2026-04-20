@@ -24,6 +24,17 @@ All notable changes to Wardex are documented in this file.
 - **Empty-state component** — New `<EmptyState>` for contextual "no results" screens with primary/secondary CTAs.
 - **Copy-to-clipboard** — Reusable button behavior on code snippets and rule names with 1.5s visual feedback.
 
+### Detection Engineering & SOC Operations
+- **Identity-routed automation targets** — Auth sessions now expose `user_id`, `role`, `groups`, and `source`, and session-backed operators are checked against hunt and content-pack `target_group` assignments before saving or executing targeted automation.
+- **Content pack bundle editor** — Threat Detection can create and edit content bundles directly from rule context, including saved-search templates, recommended workflow routes, target groups, and rollout notes.
+- **Persisted program analytics** — Enterprise state now records playbook execution analytics and rollout history so automation and deployment activity survive restarts and feed the SOC workbench overview.
+- **Expanded workbench overview** — SOC Workbench now surfaces identity readiness, rollout history, content bundle adoption, automation history, operational analytics, and a recommendation queue with direct pivots into detection, settings, and infrastructure views.
+
+### Fixed
+- **Playbook execution API contract** — `/api/playbooks/executions` continues returning live `PlaybookExecution` records even when persisted analytics history exists, avoiding stale or shape-shifted execution responses.
+- **Saved hunt reopen flow** — Reopening an existing saved hunt now preserves the original hunt id and update semantics instead of clearing the id and creating duplicates on save.
+- **Focused regression coverage** — Added backend coverage for the playbook execution response shape and frontend coverage for saved-hunt reopen/save behavior in the workspace shell suite.
+
 ### Packaging & Distribution
 - **Rule index in Pages** — Pages deploy workflow regenerates `site/rules-index.json` from the on-disk rule packs so the marketplace always reflects the released rule content.
 

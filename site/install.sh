@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wardex quick-install — downloads the latest release for your platform.
 # Usage:  curl -sSfL https://pinkysworld.github.io/Wardex/install.sh | bash
-#         curl -sSfL https://pinkysworld.github.io/Wardex/install.sh | bash -s -- --version v0.52.5
+#         curl -sSfL https://pinkysworld.github.io/Wardex/install.sh | bash -s -- --version v0.53.0
 set -euo pipefail
 
 REPO="pinkysworld/Wardex"

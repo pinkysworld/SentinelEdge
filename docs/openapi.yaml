@@ -6,7 +6,7 @@ info:
     All mutating endpoints and sensitive monitoring endpoints require
     Bearer token authentication via the `Authorization` header.
     Agent-facing enrollment and heartbeat endpoints bypass admin auth.
-  version: "0.52.5"
+  version: "0.53.0"
   contact:
     name: Wardex Project
   license:
@@ -170,6 +170,527 @@ components:
         uptime_seconds: { type: integer }
         request_count: { type: integer }
 
+    AuthSession:
+      type: object
+      properties:
+        user_id: { type: string }
+        role: { type: string, enum: [admin, analyst, viewer, service_account] }
+        groups:
+          type: array
+          items: { type: string }
+        authenticated: { type: boolean }
+        source:
+          type: string
+          enum: [anonymous, admin_token, rbac_token, session]
+      required: [user_id, role, groups, authenticated, source]
+
+    LogoutResponse:
+      type: object
+      properties:
+        logged_out: { type: boolean }
+        session_revoked: { type: boolean }
+      required: [logged_out, session_revoked]
+
+    SearchQuery:
+      type: object
+      properties:
+        text: { type: string }
+        hostname: { type: string }
+        level: { type: string }
+        agent_id: { type: string }
+        from_ts: { type: string, format: date-time }
+        to_ts: { type: string, format: date-time }
+        limit: { type: integer, minimum: 1, maximum: 1000 }
+
+    ContentLifecycle:
+      type: string
+      enum: [draft, test, canary, active, deprecated, rolled_back]
+
+    HuntRunSummary:
+      type: object
+      properties:
+        id: { type: string }
+        hunt_id: { type: string }
+        run_at: { type: string, format: date-time }
+        match_count: { type: integer }
+        suppressed_count: { type: integer }
+        threshold_exceeded: { type: boolean }
+        severity: { type: string }
+        matched_event_ids:
+          type: array
+          items: { type: integer }
+        matched_agent_ids:
+          type: array
+          items: { type: string }
+        sample_event_ids:
+          type: array
+          items: { type: integer }
+        summary: { type: string }
+      required: [id, hunt_id, run_at, match_count, suppressed_count, threshold_exceeded, severity, matched_event_ids, matched_agent_ids, sample_event_ids, summary]
+
+    SavedHunt:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        owner: { type: string }
+        enabled: { type: boolean }
+        severity: { type: string }
+        threshold: { type: integer }
+        suppression_window_secs: { type: integer }
+        schedule_interval_secs: { type: integer, nullable: true }
+        last_run_at: { type: string, format: date-time, nullable: true }
+        next_run_at: { type: string, format: date-time, nullable: true }
+        query: { $ref: "#/components/schemas/SearchQuery" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        lifecycle: { $ref: "#/components/schemas/ContentLifecycle" }
+        canary_percentage: { type: integer, minimum: 1, maximum: 100 }
+        pack_id: { type: string, nullable: true }
+        recommended_workflows:
+          type: array
+          items: { type: string }
+        target_group: { type: string, nullable: true }
+        response_actions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        tags:
+          type: array
+          items: { type: string }
+        mitre_techniques:
+          type: array
+          items: { type: string }
+      required: [id, name, owner, enabled, severity, threshold, suppression_window_secs, query, created_at, updated_at, lifecycle, canary_percentage, recommended_workflows, response_actions, tags, mitre_techniques]
+
+    SavedHuntListItem:
+      allOf:
+        - $ref: "#/components/schemas/SavedHunt"
+        - type: object
+          properties:
+            latest_run:
+              allOf:
+                - $ref: "#/components/schemas/HuntRunSummary"
+              nullable: true
+
+    SavedHuntRequest:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        owner: { type: string }
+        severity: { type: string }
+        threshold: { type: integer }
+        suppression_window_secs: { type: integer }
+        schedule_interval_secs: { type: integer, nullable: true }
+        lifecycle: { $ref: "#/components/schemas/ContentLifecycle" }
+        canary_percentage: { type: integer, minimum: 1, maximum: 100 }
+        pack_id: { type: string, nullable: true }
+        recommended_workflows:
+          type: array
+          items: { type: string }
+        target_group: { type: string, nullable: true }
+        query: { $ref: "#/components/schemas/SearchQuery" }
+      required: [name, severity, threshold, suppression_window_secs, query]
+
+    HuntListResponse:
+      type: object
+      properties:
+        hunts:
+          type: array
+          items: { $ref: "#/components/schemas/SavedHuntListItem" }
+        count: { type: integer }
+      required: [hunts, count]
+
+    SavedHuntMutationResponse:
+      type: object
+      properties:
+        status: { type: string, example: saved }
+        hunt: { $ref: "#/components/schemas/SavedHunt" }
+      required: [status, hunt]
+
+    ContentPack:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        use_case: { type: string }
+        enabled: { type: boolean }
+        rule_ids:
+          type: array
+          items: { type: string }
+        saved_searches:
+          type: array
+          items: { type: string }
+        recommended_workflows:
+          type: array
+          items: { type: string }
+        target_group: { type: string, nullable: true }
+        rollout_notes: { type: string, nullable: true }
+        updated_at: { type: string, format: date-time }
+      required: [id, name, description, use_case, enabled, rule_ids, saved_searches, recommended_workflows, updated_at]
+
+    ContentPackRequest:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
+        rule_ids:
+          type: array
+          items: { type: string }
+        saved_searches:
+          type: array
+          items: { type: string }
+        recommended_workflows:
+          type: array
+          items: { type: string }
+        target_group: { type: string, nullable: true }
+        rollout_notes: { type: string, nullable: true }
+      required: [name]
+
+    ContentPackListResponse:
+      type: object
+      properties:
+        packs:
+          type: array
+          items: { $ref: "#/components/schemas/ContentPack" }
+        count: { type: integer }
+      required: [packs, count]
+
+    ContentPackMutationResponse:
+      type: object
+      properties:
+        status: { type: string, example: saved }
+        pack: { $ref: "#/components/schemas/ContentPack" }
+      required: [status, pack]
+
+    PlaybookExecutionStartRequest:
+      type: object
+      properties:
+        playbook_id: { type: string }
+        alert_id: { type: string, nullable: true }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+      required: [playbook_id]
+
+    PlaybookExecutionStartResponse:
+      type: object
+      properties:
+        execution_id: { type: string }
+      required: [execution_id]
+
+    PlaybookStepResult:
+      type: object
+      properties:
+        step_id: { type: string }
+        status:
+          type: string
+          enum: [Pending, Running, Succeeded, Failed, TimedOut, Skipped, AwaitingApproval, Cancelled]
+        started_at: { type: integer }
+        finished_at: { type: integer, nullable: true }
+        output: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+      required: [step_id, status, started_at]
+
+    PlaybookExecution:
+      type: object
+      properties:
+        execution_id: { type: string }
+        playbook_id: { type: string }
+        alert_id: { type: string, nullable: true }
+        executed_by: { type: string }
+        status:
+          type: string
+          enum: [Pending, Running, Succeeded, Failed, TimedOut, Skipped, AwaitingApproval, Cancelled]
+        started_at: { type: integer }
+        finished_at: { type: integer, nullable: true }
+        step_results:
+          type: array
+          items: { $ref: "#/components/schemas/PlaybookStepResult" }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        error: { type: string, nullable: true }
+      required: [execution_id, playbook_id, executed_by, status, started_at, step_results, variables]
+
+    RolloutAnalyticsRecord:
+      type: object
+      properties:
+        id: { type: string }
+        action: { type: string }
+        version: { type: string }
+        platform: { type: string, nullable: true }
+        agent_id: { type: string, nullable: true }
+        rollout_group: { type: string, nullable: true }
+        status: { type: string }
+        requested_by: { type: string }
+        notes: { type: string, nullable: true }
+        recorded_at: { type: string, format: date-time }
+      required: [id, action, version, status, requested_by, recorded_at]
+
+    PlaybookAnalyticsRecord:
+      type: object
+      properties:
+        execution_id: { type: string }
+        playbook_id: { type: string }
+        alert_id: { type: string, nullable: true }
+        executed_by: { type: string }
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, timed_out, skipped, awaiting_approval, cancelled]
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }
+        duration_ms: { type: integer, nullable: true }
+        step_count: { type: integer }
+        error: { type: string, nullable: true }
+        recorded_at: { type: string, format: date-time }
+      required: [execution_id, playbook_id, executed_by, status, started_at, step_count, recorded_at]
+
+    QueueAlertSummary:
+      type: object
+      properties:
+        event_id: { type: integer }
+        agent_id: { type: string, nullable: true }
+        score: { type: number }
+        severity: { type: string }
+        hostname: { type: string }
+        status: { type: string }
+        assignee: { type: string, nullable: true }
+        timestamp: { type: string, format: date-time }
+        age_secs: { type: integer, nullable: true }
+        sla_deadline: { type: string, format: date-time, nullable: true }
+        sla_breached: { type: boolean }
+        reasons:
+          type: array
+          items: { type: string }
+      required: [event_id, score, severity, hostname, status, timestamp, sla_breached, reasons]
+
+    WorkbenchQueueOverview:
+      type: object
+      properties:
+        pending: { type: integer }
+        acknowledged: { type: integer }
+        assigned: { type: integer }
+        sla_breached: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/QueueAlertSummary" }
+      required: [pending, acknowledged, assigned, sla_breached, items]
+
+    CaseSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        assignee: { type: string, nullable: true }
+        incident_count: { type: integer }
+        event_count: { type: integer }
+        updated_at: { type: string, format: date-time }
+        tags:
+          type: array
+          items: { type: string }
+      required: [id, title, status, priority, incident_count, event_count, updated_at, tags]
+
+    WorkbenchCasesOverview:
+      type: object
+      properties:
+        total: { type: integer }
+        open: { type: integer }
+        resolved: { type: integer }
+        active: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CaseSummary" }
+      required: [total, open, resolved, active, items]
+
+    IncidentSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        severity: { type: string }
+        status: { type: string }
+        assignee: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        agent_count: { type: integer }
+        event_count: { type: integer }
+      required: [id, title, severity, status, created_at, updated_at, agent_count, event_count]
+
+    WorkbenchIncidentsOverview:
+      type: object
+      properties:
+        total: { type: integer }
+        open: { type: integer }
+        critical_open: { type: integer }
+        by_status:
+          type: object
+          additionalProperties: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/IncidentSummary" }
+      required: [total, open, critical_open, by_status, items]
+
+    WorkbenchResponseOverview:
+      type: object
+      properties:
+        pending_approval: { type: integer }
+        ready_to_execute: { type: integer }
+        denied: { type: integer }
+        executed: { type: integer }
+        protected_assets: { type: integer }
+        recent_requests:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        recent_approvals:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: [pending_approval, ready_to_execute, denied, executed, protected_assets, recent_requests, recent_approvals]
+
+    WorkbenchIdentityOverview:
+      type: object
+      properties:
+        providers_configured: { type: integer }
+        ready_providers: { type: integer }
+        providers_with_gaps: { type: integer }
+        scim_status: { type: string }
+        mapped_groups: { type: integer }
+        automation_targets_aligned: { type: integer }
+      required: [providers_configured, ready_providers, providers_with_gaps, scim_status, mapped_groups, automation_targets_aligned]
+
+    WorkbenchRolloutOverview:
+      type: object
+      properties:
+        canary_rules: { type: integer }
+        canary_hunts: { type: integer }
+        promotion_ready_rules: { type: integer }
+        active_hunts: { type: integer }
+        rollout_targets: { type: integer }
+        average_canary_percentage: { type: integer, nullable: true }
+        historical_events: { type: integer }
+        rollback_events: { type: integer }
+        last_rollout_at: { type: string, format: date-time, nullable: true }
+        recent_history:
+          type: array
+          items: { $ref: "#/components/schemas/RolloutAnalyticsRecord" }
+      required: [canary_rules, canary_hunts, promotion_ready_rules, active_hunts, rollout_targets, historical_events, rollback_events, recent_history]
+
+    WorkbenchContentOverview:
+      type: object
+      properties:
+        packs: { type: integer }
+        enabled_packs: { type: integer }
+        hunt_library: { type: integer }
+        scheduled_hunts: { type: integer }
+        saved_searches: { type: integer }
+        packs_with_workflows: { type: integer }
+        latest_pack_update: { type: string, format: date-time, nullable: true }
+      required: [packs, enabled_packs, hunt_library, scheduled_hunts, saved_searches, packs_with_workflows]
+
+    WorkbenchAutomationOverview:
+      type: object
+      properties:
+        playbooks: { type: integer }
+        workflow_templates: { type: integer }
+        dynamic_templates: { type: integer }
+        active_executions: { type: integer }
+        pending_approvals: { type: integer }
+        success_rate: { type: number }
+        avg_execution_ms: { type: integer, nullable: true }
+        active_investigations: { type: integer }
+        historical_runs: { type: integer }
+        last_execution_at: { type: string, format: date-time, nullable: true }
+        recent_history:
+          type: array
+          items: { $ref: "#/components/schemas/PlaybookAnalyticsRecord" }
+      required: [playbooks, workflow_templates, dynamic_templates, active_executions, pending_approvals, success_rate, active_investigations, historical_runs, recent_history]
+
+    WorkbenchAnalyticsOverview:
+      type: object
+      properties:
+        api_requests: { type: integer }
+        api_error_rate: { type: number }
+        unique_endpoints: { type: integer }
+        busiest_endpoint: { type: string, nullable: true }
+        worst_p95_ms: { type: integer, nullable: true }
+        search_queries_total: { type: integer }
+        hunt_runs_total: { type: integer }
+        response_exec_total: { type: integer }
+        last_hunt_latency_ms: { type: integer }
+        last_response_latency_ms: { type: integer }
+      required: [api_requests, api_error_rate, unique_endpoints, search_queries_total, hunt_runs_total, response_exec_total, last_hunt_latency_ms, last_response_latency_ms]
+
+    HotAgentSummary:
+      type: object
+      properties:
+        agent_id: { type: string }
+        hostname: { type: string, nullable: true }
+        risk: { type: string }
+        status: { type: string }
+        event_count: { type: integer }
+        correlated_count: { type: integer }
+        max_score: { type: number }
+        current_version: { type: string, nullable: true }
+        target_version: { type: string, nullable: true }
+        rollout_group: { type: string, nullable: true }
+        deployment_status: { type: string, nullable: true }
+      required: [agent_id, risk, status, event_count, correlated_count, max_score]
+
+    UrgentItem:
+      type: object
+      properties:
+        kind: { type: string }
+        severity: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        reference_id: { type: string }
+      required: [kind, severity, title, subtitle, reference_id]
+
+    WorkbenchRecommendation:
+      type: object
+      properties:
+        category: { type: string }
+        priority: { type: string, enum: [low, medium, high] }
+        title: { type: string }
+        summary: { type: string }
+        action_hint: { type: string }
+      required: [category, priority, title, summary, action_hint]
+
+    WorkbenchOverview:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        queue: { $ref: "#/components/schemas/WorkbenchQueueOverview" }
+        cases: { $ref: "#/components/schemas/WorkbenchCasesOverview" }
+        incidents: { $ref: "#/components/schemas/WorkbenchIncidentsOverview" }
+        response: { $ref: "#/components/schemas/WorkbenchResponseOverview" }
+        identity: { $ref: "#/components/schemas/WorkbenchIdentityOverview" }
+        rollouts: { $ref: "#/components/schemas/WorkbenchRolloutOverview" }
+        content: { $ref: "#/components/schemas/WorkbenchContentOverview" }
+        automation: { $ref: "#/components/schemas/WorkbenchAutomationOverview" }
+        analytics: { $ref: "#/components/schemas/WorkbenchAnalyticsOverview" }
+        hot_agents:
+          type: array
+          items: { $ref: "#/components/schemas/HotAgentSummary" }
+        urgent_items:
+          type: array
+          items: { $ref: "#/components/schemas/UrgentItem" }
+        recommendations:
+          type: array
+          items: { $ref: "#/components/schemas/WorkbenchRecommendation" }
+      required: [generated_at, queue, cases, incidents, response, identity, rollouts, content, automation, analytics, hot_agents, urgent_items, recommendations]
+
   headers:
     X-RateLimit-Limit:
       description: Maximum requests allowed in the current window
@@ -202,6 +723,8 @@ tags:
     description: Host telemetry data
   - name: Detection
     description: Threat detection and analysis
+  - name: Hunts
+    description: Threat hunting, saved hunts, and content bundles
   - name: Control
     description: Detection mode and baseline control
   - name: Alerts
@@ -272,7 +795,7 @@ paths:
                   platform: { type: string }
               example:
                 status: ok
-                version: "0.52.5"
+                version: "0.53.0"
                 uptime: "4h 12m 3s"
                 platform: aarch64-apple-darwin
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -367,6 +890,28 @@ paths:
           description: Token is valid
         "401":
           description: Unauthorized
+
+  /api/auth/session:
+    get:
+      tags: [Auth]
+      summary: Resolve the active auth identity
+      responses:
+        "200":
+          description: Active auth session details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout and revoke a persisted session if present
+      responses:
+        "200":
+          description: Logout result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogoutResponse" }
 
   # ── Telemetry ─────────────────────────────────────────────
   /api/telemetry/current:
@@ -575,7 +1120,7 @@ paths:
                 - agent_id: a1b2c3d4
                   hostname: prod-web-01
                   platform: x86_64-unknown-linux-musl
-                  version: "0.52.5"
+                  version: "0.53.0"
                   status: healthy
                   last_heartbeat: "2026-04-08T12:01:30Z"
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -1176,6 +1721,100 @@ paths:
         "200":
           description: Execution result
 
+  # ── Hunts & Content ───────────────────────────────────────
+  /api/hunts:
+    get:
+      tags: [Hunts]
+      summary: List saved hunts with lifecycle, routing, and latest run context
+      responses:
+        "200":
+          description: Saved hunts and count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HuntListResponse" }
+    post:
+      tags: [Hunts]
+      summary: Create or update a saved hunt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavedHuntRequest" }
+      responses:
+        "201":
+          description: Hunt saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedHuntMutationResponse" }
+        "400":
+          description: Invalid hunt query
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Active session is not assigned to the requested target group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  "/api/hunts/{id}/run":
+    post:
+      tags: [Hunts]
+      summary: Execute a saved hunt immediately
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Hunt execution result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          description: Active session is not assigned to the hunt target group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Hunt not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/content/packs:
+    get:
+      tags: [Hunts]
+      summary: List content packs with saved searches, workflow routes, and target groups
+      responses:
+        "200":
+          description: Content packs and count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContentPackListResponse" }
+    post:
+      tags: [Hunts]
+      summary: Create or update a content pack bundle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContentPackRequest" }
+      responses:
+        "201":
+          description: Content pack saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContentPackMutationResponse" }
+        "403":
+          description: Active session is not assigned to the requested target group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   # ── RBAC ───────────────────────────────────────────────────
   /api/rbac/users:
     get:
@@ -1490,6 +2129,17 @@ paths:
       responses:
         "200":
           description: Cross-report summary
+
+  /api/workbench/overview:
+    get:
+      tags: [Incidents]
+      summary: SOC workbench overview across queue, cases, response, identity, and automation
+      responses:
+        "200":
+          description: Consolidated workbench overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkbenchOverview" }
 
   "/api/reports/{id}":
     get:
@@ -2188,37 +2838,41 @@ paths:
           description: Summary with overall score and per-framework breakdown
 
   # ── v0.43.0 Playbook Execution ────────────────────────────────────
-  /api/playbooks/run:
+  /api/playbooks/execute:
     post:
-      tags: [Playbooks]
-      summary: Execute a playbook
+      tags: [Response]
+      summary: Start a playbook execution for a specific alert
       security: [{ BearerAuth: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [playbook_id]
-              properties:
-                playbook_id: { type: string }
-                alert_id: { type: string, nullable: true }
-                variables: { type: object, additionalProperties: { type: string } }
+            schema: { $ref: "#/components/schemas/PlaybookExecutionStartRequest" }
       responses:
         "200":
-          description: Execution result with execution_id and step outcomes
+          description: Execution started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlaybookExecutionStartResponse" }
+        "404":
+          description: Playbook not found or disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/playbooks/executions:
+    get:
+      tags: [Response]
+      summary: List recent live playbook execution records
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Recent playbook executions in live engine format
           content:
             application/json:
               schema:
-                type: object
-              example:
-                execution_id: exec-a1b2c3
-                playbook_id: isolate-host
-                status: completed
-                steps_completed: 4
-                steps_total: 4
-        "400":
-          description: Empty playbook_id or execution error
+                type: array
+                items: { $ref: "#/components/schemas/PlaybookExecution" }
 
   # ── v0.43.0 Alert Deduplication ────────────────────────────────────
   /api/alerts/dedup:

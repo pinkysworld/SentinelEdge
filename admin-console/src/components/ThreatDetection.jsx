@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApi, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid, SideDrawer } from './operator.jsx';
 import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
+import { useConfirm } from './useConfirm.jsx';
 
 const SAVED_VIEWS = [
   {
@@ -90,6 +91,30 @@ const buildDefaultHuntQuery = (rule, explicitQuery = '') => {
   return terms.join(' ').trim() || 'severity:high';
 };
 
+const buildHuntQuickStarts = (rule) => {
+  const base = buildDefaultHuntQuery(rule);
+  return [
+    {
+      id: 'seed',
+      label: 'Rule seed',
+      description: 'Start with the rule severity and identifiers before widening the scope.',
+      query: base,
+    },
+    {
+      id: 'devices',
+      label: 'Device rollup',
+      description: 'Group by device to see which endpoints need containment or validation first.',
+      query: `${base} | count by device_id`,
+    },
+    {
+      id: 'sources',
+      label: 'Source hotspots',
+      description: 'Surface the loudest source IPs before you tune or suppress the rule.',
+      query: `${base} | top 5 src_ip`,
+    },
+  ];
+};
+
 const buildInvestigationReasons = (rule) => {
   if (!rule) return [];
 
@@ -138,8 +163,99 @@ const summarizeHuntResult = (result) => {
   return { mode: 'raw', count: 0, label: 'Raw hunt response available' };
 };
 
+const bundleListToText = (values) =>
+  (Array.isArray(values) ? values : []).filter((value) => String(value || '').trim()).join('\n');
+
+const textToBundleList = (value) =>
+  [
+    ...new Set(
+      String(value || '')
+        .split(/\n|,/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  ];
+
+const derivePackRuleIds = (pack, rules, selectedRuleId) => {
+  if (Array.isArray(pack?.rule_ids) && pack.rule_ids.length > 0) {
+    return [...new Set(pack.rule_ids.filter(Boolean))];
+  }
+  if (pack?.id) {
+    const linkedRuleIds = (Array.isArray(rules) ? rules : [])
+      .filter((candidate) => (candidate.pack_ids || []).includes(pack.id))
+      .map((candidate) => candidate.id)
+      .filter(Boolean);
+    if (linkedRuleIds.length > 0) return [...new Set(linkedRuleIds)];
+  }
+  return selectedRuleId ? [selectedRuleId] : [];
+};
+
+const buildPackDraft = ({ pack = null, rule = null, rules = [], suggestions = [] } = {}) => ({
+  id: pack?.id || '',
+  name: pack?.name || `Bundle ${rule?.title || rule?.id || 'Signals'}`,
+  description: pack?.description || rule?.description || '',
+  enabled: pack?.enabled ?? true,
+  savedSearchesText: bundleListToText(pack?.saved_searches),
+  recommendedWorkflowsText:
+    bundleListToText(pack?.recommended_workflows) ||
+    suggestions
+      .slice(0, 3)
+      .map((workflow) => workflow?.id)
+      .filter(Boolean)
+      .join('\n'),
+  targetGroup: pack?.target_group || '',
+  rolloutNotes: pack?.rollout_notes || '',
+  ruleIds: derivePackRuleIds(pack, rules, rule?.id),
+});
+
+const buildPromotionChecklist = ({ rule, liveSuppressions, packCount, targetGroup }) => {
+  const validationReady = Boolean(rule?.last_test_at);
+  const matchCount = Number(rule?.last_test_match_count) || 0;
+  const noiseReady = matchCount < 5 || liveSuppressions > 0;
+  const routingReady = Boolean(String(targetGroup || '').trim());
+  const bundleReady = packCount > 0;
+
+  return [
+    {
+      id: 'validation',
+      label: 'Replay validation',
+      done: validationReady,
+      detail: validationReady
+        ? `${matchCount} visible match${matchCount === 1 ? '' : 'es'} from the most recent replay.`
+        : 'Run a rule test before moving this rule into canary or active rollout.',
+    },
+    {
+      id: 'noise',
+      label: 'Noise plan',
+      done: noiseReady,
+      detail: noiseReady
+        ? liveSuppressions > 0
+          ? `${liveSuppressions} scoped suppression${liveSuppressions === 1 ? '' : 's'} already exist for noisy cases.`
+          : 'Replay hit volume is low enough to promote without new suppressions.'
+        : 'High replay volume needs either scoped suppressions or a lower weight before promotion.',
+    },
+    {
+      id: 'routing',
+      label: 'Automation routing',
+      done: routingReady,
+      detail: routingReady
+        ? `Automation is routed to ${targetGroup}.`
+        : 'Assign an identity-mapped target group before broad automation rollout.',
+    },
+    {
+      id: 'bundle',
+      label: 'Analyst pivots',
+      done: bundleReady,
+      detail: bundleReady
+        ? `${packCount} content pack bundle${packCount === 1 ? '' : 's'} provide saved-search and workflow pivots.`
+        : 'Attach a content pack or saved hunt so analysts can pivot from the signal quickly.',
+    },
+  ];
+};
+
 export default function ThreatDetection() {
   const toast = useToast();
+  const [confirm, confirmUI] = useConfirm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: profile } = useApi(api.detectionProfile);
@@ -147,7 +263,7 @@ export default function ThreatDetection() {
   const { data: weights, reload: reloadWeights } = useApi(api.detectionWeights);
   const { data: fpStats } = useApi(api.fpFeedbackStats);
   const { data: contentRulesData, reload: reloadRules } = useApi(api.contentRules);
-  const { data: packsData } = useApi(api.contentPacks);
+  const { data: packsData, reload: reloadPacks } = useApi(api.contentPacks);
   const { data: huntsData, reload: reloadHunts } = useApi(api.hunts);
   const { data: suppressionsData, reload: reloadSuppressions } = useApi(api.suppressions);
   const { data: mitreCoverage } = useApi(api.mitreCoverageAlt);
@@ -155,6 +271,7 @@ export default function ThreatDetection() {
   const [drawerMode, setDrawerMode] = useState(null);
   const [weightInput, setWeightInput] = useState('0.50');
   const [huntDraft, setHuntDraft] = useState({
+    id: '',
     name: '',
     query: '',
     severity: 'medium',
@@ -163,11 +280,30 @@ export default function ThreatDetection() {
     threshold: '1',
     suppressionWindowSecs: '0',
     scheduleIntervalSecs: '',
+    lifecycle: 'draft',
+    canaryPercentage: '100',
+    packId: '',
+    targetGroup: '',
+    recommendedWorkflows: [],
+  });
+  const [packDraft, setPackDraft] = useState({
+    id: '',
+    name: '',
+    description: '',
+    enabled: true,
+    savedSearchesText: '',
+    recommendedWorkflowsText: '',
+    targetGroup: '',
+    rolloutNotes: '',
+    ruleIds: [],
   });
   const [huntResult, setHuntResult] = useState(null);
   const [huntRunning, setHuntRunning] = useState(false);
   const [huntSaving, setHuntSaving] = useState(false);
+  const [packSaving, setPackSaving] = useState(false);
   const [runningSavedHuntId, setRunningSavedHuntId] = useState(null);
+  const [drawerSessionId, setDrawerSessionId] = useState(0);
+  const [drawerBaseline, setDrawerBaseline] = useState(null);
   const [investigationSuggestions, setInvestigationSuggestions] = useState([]);
   const [suggestingInvestigations, setSuggestingInvestigations] = useState(false);
   const [startingInvestigationId, setStartingInvestigationId] = useState(null);
@@ -178,12 +314,16 @@ export default function ThreatDetection() {
     text: '',
   });
 
-  const allRules = Array.isArray(contentRulesData?.rules) ? contentRulesData.rules : [];
-  const packs = Array.isArray(packsData?.packs) ? packsData.packs : [];
-  const hunts = Array.isArray(huntsData?.hunts) ? huntsData.hunts : [];
-  const suppressions = Array.isArray(suppressionsData?.suppressions)
-    ? suppressionsData.suppressions
-    : [];
+  const allRules = useMemo(
+    () => (Array.isArray(contentRulesData?.rules) ? contentRulesData.rules : []),
+    [contentRulesData],
+  );
+  const packs = useMemo(() => (Array.isArray(packsData?.packs) ? packsData.packs : []), [packsData]);
+  const hunts = useMemo(() => (Array.isArray(huntsData?.hunts) ? huntsData.hunts : []), [huntsData]);
+  const suppressions = useMemo(
+    () => (Array.isArray(suppressionsData?.suppressions) ? suppressionsData.suppressions : []),
+    [suppressionsData],
+  );
   const suppressionCount = suppressions.reduce((acc, suppression) => {
     if (suppression.rule_id) acc[suppression.rule_id] = (acc[suppression.rule_id] || 0) + 1;
     return acc;
@@ -194,6 +334,7 @@ export default function ThreatDetection() {
   const ownerFilter = searchParams.get('owner') || 'all';
   const selectedRuleId = searchParams.get('rule');
   const tuneOpen = searchParams.get('tune') === '1';
+  const activeDrawerMode = drawerMode || (tuneOpen ? 'tune' : null);
   const intent = searchParams.get('intent') || '';
   const huntIntent = intent === 'run-hunt';
   const huntQueryParam = searchParams.get('huntQuery') || '';
@@ -224,9 +365,56 @@ export default function ThreatDetection() {
     filteredRules[0] ||
     allRules[0] ||
     null;
+  const selectedPacks = useMemo(
+    () => packs.filter((pack) => (selectedRule?.pack_ids || []).includes(pack.id)),
+    [packs, selectedRule],
+  );
   const currentWeight = Number(
     weights?.weights?.[selectedRule?.id] ?? weights?.[selectedRule?.id] ?? 0.5,
   );
+  const activeDrawerSnapshot =
+    activeDrawerMode === 'tune'
+      ? JSON.stringify({ weightInput })
+      : activeDrawerMode === 'suppress'
+        ? JSON.stringify(suppressionForm)
+        : activeDrawerMode === 'pack'
+          ? JSON.stringify(packDraft)
+          : activeDrawerMode === 'hunt'
+            ? JSON.stringify(huntDraft)
+            : null;
+  const isDrawerDirty =
+    Boolean(activeDrawerMode) &&
+    drawerBaseline?.mode === activeDrawerMode &&
+    drawerBaseline?.sessionId === drawerSessionId &&
+    drawerBaseline?.value !== activeDrawerSnapshot;
+
+  useEffect(() => {
+    if (!activeDrawerMode) {
+      if (drawerBaseline !== null) setDrawerBaseline(null);
+      return;
+    }
+    if (
+      !drawerBaseline ||
+      drawerBaseline.mode !== activeDrawerMode ||
+      drawerBaseline.sessionId !== drawerSessionId
+    ) {
+      setDrawerBaseline({
+        mode: activeDrawerMode,
+        sessionId: drawerSessionId,
+        value: activeDrawerSnapshot,
+      });
+    }
+  }, [activeDrawerMode, activeDrawerSnapshot, drawerBaseline, drawerSessionId]);
+
+  useEffect(() => {
+    if (!isDrawerDirty) return undefined;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDrawerDirty]);
 
   useEffect(() => {
     if (!selectedRule || selectedRule.id === selectedRuleId) return;
@@ -236,10 +424,11 @@ export default function ThreatDetection() {
   }, [selectedRule, selectedRuleId, searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (huntIntent && drawerMode !== 'hunt') {
+    if (huntIntent && activeDrawerMode !== 'hunt') {
+      setDrawerSessionId((value) => value + 1);
       setDrawerMode('hunt');
     }
-  }, [huntIntent, drawerMode]);
+  }, [huntIntent, activeDrawerMode]);
 
   useEffect(() => {
     if (!selectedRule) return;
@@ -284,16 +473,52 @@ export default function ThreatDetection() {
     if (!selectedRule) return;
     if (drawerMode === 'hunt' && !huntIntent && !huntQueryParam && !huntNameParam) return;
 
+    const primaryPack = packs.find((pack) => (selectedRule.pack_ids || []).includes(pack.id));
+
     setHuntDraft((draft) => ({
       ...draft,
+      id: '',
       name: huntNameParam || `Hunt ${selectedRule.title || selectedRule.id}`,
       query: buildDefaultHuntQuery(selectedRule, huntQueryParam),
       severity: String(selectedRule.severity_mapping || draft.severity || 'medium').toLowerCase(),
       level: String(selectedRule.severity_mapping || draft.level || '').toLowerCase(),
+      lifecycle: String(selectedRule.lifecycle || 'draft').toLowerCase(),
+      canaryPercentage: selectedRule.lifecycle === 'canary' ? '10' : '100',
+      packId: primaryPack?.id || '',
+      targetGroup: primaryPack?.target_group || '',
+      recommendedWorkflows: Array.isArray(primaryPack?.recommended_workflows)
+        ? primaryPack.recommended_workflows
+        : [],
     }));
-  }, [selectedRule, drawerMode, huntIntent, huntQueryParam, huntNameParam]);
+  }, [selectedRule, packs, drawerMode, huntIntent, huntQueryParam, huntNameParam]);
 
-  const openDrawer = (mode) => {
+  useEffect(() => {
+    if (!selectedRule || drawerMode === 'pack') return;
+    setPackDraft(
+      buildPackDraft({
+        pack: selectedPacks[0] || null,
+        rule: selectedRule,
+        rules: allRules,
+        suggestions: investigationSuggestions,
+      }),
+    );
+  }, [selectedRule, selectedPacks, allRules, investigationSuggestions, drawerMode]);
+
+  const openPackEditor = (pack = null) => {
+    setPackDraft(
+      buildPackDraft({
+        pack,
+        rule: selectedRule,
+        rules: allRules,
+        suggestions: investigationSuggestions,
+      }),
+    );
+    setDrawerSessionId((value) => value + 1);
+    setDrawerMode('pack');
+  };
+
+  const openDrawer = (mode, options = {}) => {
+    const { withHuntIntent = mode === 'hunt' } = options;
     const next = new URLSearchParams(searchParams);
     if (selectedRule) next.set('rule', selectedRule.id);
     next.delete('tune');
@@ -301,12 +526,13 @@ export default function ThreatDetection() {
     next.delete('huntQuery');
     next.delete('huntName');
     if (mode === 'tune') next.set('tune', '1');
-    if (mode === 'hunt') next.set('intent', 'run-hunt');
+    if (withHuntIntent) next.set('intent', 'run-hunt');
     setSearchParams(next, { replace: true });
+    setDrawerSessionId((value) => value + 1);
     setDrawerMode(mode);
   };
 
-  const closeDrawer = () => {
+  const finalizeDrawerClose = () => {
     const next = new URLSearchParams(searchParams);
     next.delete('tune');
     next.delete('intent');
@@ -314,6 +540,37 @@ export default function ThreatDetection() {
     next.delete('huntName');
     setSearchParams(next, { replace: true });
     setDrawerMode(null);
+    setDrawerBaseline(null);
+  };
+
+  const closeDrawer = async () => {
+    if (isDrawerDirty && activeDrawerMode) {
+      const labels = {
+        tune: 'tuning changes',
+        suppress: 'suppression draft changes',
+        pack: 'content pack bundle edits',
+        hunt: 'hunt draft changes',
+      };
+      const shouldDiscard = await confirm({
+        title: 'Discard unsaved changes?',
+        message: `You have unsaved ${labels[activeDrawerMode] || 'changes'}. Close this drawer and lose them?`,
+        confirmLabel: 'Discard changes',
+        cancelLabel: 'Keep editing',
+        tone: 'warning',
+      });
+      if (!shouldDiscard) return;
+    }
+    finalizeDrawerClose();
+  };
+
+  const renderDrawerDraftNotice = (mode, message) => {
+    if (activeDrawerMode !== mode || !isDrawerDirty) return null;
+    return (
+      <div className="detail-callout" style={{ marginBottom: 16 }}>
+        <strong>Unsaved changes</strong>
+        <div style={{ marginTop: 6 }}>{message}</div>
+      </div>
+    );
   };
 
   const saveWeight = async () => {
@@ -327,7 +584,7 @@ export default function ThreatDetection() {
       await api.setDetectionWeights({ rule_id: selectedRule.id, weight: parsed });
       toast('Detection weight updated.', 'success');
       reloadWeights();
-      closeDrawer();
+      finalizeDrawerClose();
     } catch {
       toast('Unable to save detection weight.', 'error');
     }
@@ -399,9 +656,52 @@ export default function ThreatDetection() {
       });
       toast('Suppression saved.', 'success');
       reloadSuppressions();
-      closeDrawer();
+      finalizeDrawerClose();
     } catch {
       toast('Failed to save suppression.', 'error');
+    }
+  };
+
+  const savePackDraft = async () => {
+    if (!selectedRule) return;
+    const name = String(packDraft.name || '').trim();
+    if (!name) {
+      toast('Enter a content pack name before saving.', 'error');
+      return;
+    }
+
+    const ruleIds = [...new Set((packDraft.ruleIds || []).filter(Boolean))];
+    if (ruleIds.length === 0) ruleIds.push(selectedRule.id);
+
+    setPackSaving(true);
+    try {
+      await api.createContentPack({
+        id: packDraft.id || undefined,
+        name,
+        description: String(packDraft.description || '').trim(),
+        enabled: packDraft.enabled !== false,
+        rule_ids: ruleIds,
+        saved_searches: textToBundleList(packDraft.savedSearchesText),
+        recommended_workflows: textToBundleList(packDraft.recommendedWorkflowsText),
+        target_group: String(packDraft.targetGroup || '').trim() || undefined,
+        rollout_notes: String(packDraft.rolloutNotes || '').trim() || undefined,
+      });
+      toast(
+        packDraft.id ? 'Content pack bundle updated.' : 'Content pack bundle created.',
+        'success',
+      );
+      reloadPacks();
+      reloadRules();
+      finalizeDrawerClose();
+    } catch (error) {
+      toast(
+        error?.status === 403
+          ? 'Session is not assigned to the selected target group.'
+          : 'Failed to save content pack bundle.',
+        'error',
+      );
+    } finally {
+      setPackSaving(false);
     }
   };
 
@@ -417,7 +717,7 @@ export default function ThreatDetection() {
       const result = await api.hunt(queryText);
       setHuntResult(result);
       toast('Hunt completed.', 'success');
-      if (drawerMode !== 'hunt') openDrawer('hunt');
+      if (activeDrawerMode !== 'hunt') openDrawer('hunt');
     } catch {
       toast('Hunt failed.', 'error');
     } finally {
@@ -432,9 +732,19 @@ export default function ThreatDetection() {
       return;
     }
 
+    const selectedPack = packs.find((pack) => pack.id === huntDraft.packId) || selectedPacks[0];
+    const recommendedWorkflows = [
+      ...new Set([
+        ...((huntDraft.recommendedWorkflows || []).filter(Boolean)),
+        ...((selectedPack?.recommended_workflows || []).filter(Boolean)),
+        ...investigationSuggestions.slice(0, 3).map((workflow) => workflow?.id).filter(Boolean),
+      ]),
+    ];
+
     setHuntSaving(true);
     try {
       await api.createHunt({
+        id: huntDraft.id || undefined,
         name: huntDraft.name || `Hunt ${selectedRule?.title || selectedRule?.id || 'Signals'}`,
         severity: huntDraft.severity || selectedRule?.severity_mapping || 'medium',
         threshold: Number(huntDraft.threshold) || 1,
@@ -442,6 +752,12 @@ export default function ThreatDetection() {
         schedule_interval_secs: huntDraft.scheduleIntervalSecs
           ? Number(huntDraft.scheduleIntervalSecs)
           : undefined,
+        lifecycle: huntDraft.lifecycle || 'draft',
+        canary_percentage:
+          huntDraft.lifecycle === 'canary' ? Number(huntDraft.canaryPercentage) || 10 : 100,
+        pack_id: huntDraft.packId || selectedPack?.id || undefined,
+        target_group: huntDraft.targetGroup || selectedPack?.target_group || undefined,
+        recommended_workflows: recommendedWorkflows,
         query: {
           text: queryText,
           level: huntDraft.level || undefined,
@@ -450,8 +766,22 @@ export default function ThreatDetection() {
       });
       toast('Hunt saved.', 'success');
       reloadHunts();
-    } catch {
-      toast('Failed to save hunt.', 'error');
+      setDrawerBaseline((current) =>
+        activeDrawerMode === 'hunt'
+          ? {
+              mode: 'hunt',
+              sessionId: drawerSessionId,
+              value: activeDrawerSnapshot,
+            }
+          : current,
+      );
+    } catch (error) {
+      toast(
+        error?.status === 403
+          ? 'Session is not assigned to the selected target group.'
+          : 'Failed to save hunt.',
+        'error',
+      );
     } finally {
       setHuntSaving(false);
     }
@@ -466,8 +796,13 @@ export default function ThreatDetection() {
       openDrawer('hunt');
       toast('Saved hunt executed.', 'success');
       reloadHunts();
-    } catch {
-      toast('Failed to run saved hunt.', 'error');
+    } catch (error) {
+      toast(
+        error?.status === 403
+          ? 'Session is not assigned to that hunt target group.'
+          : 'Failed to run saved hunt.',
+        'error',
+      );
     } finally {
       setRunningSavedHuntId(null);
     }
@@ -493,6 +828,7 @@ export default function ThreatDetection() {
       typeof hunt.query === 'string' ? hunt.query : hunt.query?.text || hunt.query?.query || '';
 
     setHuntDraft({
+      id: hunt.id || '',
       name: hunt.name || `Hunt ${selectedRule?.title || selectedRule?.id || 'Signals'}`,
       query: queryText,
       severity: String(hunt.severity || selectedRule?.severity_mapping || 'medium').toLowerCase(),
@@ -501,19 +837,36 @@ export default function ThreatDetection() {
       threshold: String(hunt.threshold || 1),
       suppressionWindowSecs: String(hunt.suppression_window_secs || 0),
       scheduleIntervalSecs: hunt.schedule_interval_secs ? String(hunt.schedule_interval_secs) : '',
+      lifecycle: String(hunt.lifecycle || 'draft').toLowerCase(),
+      canaryPercentage: String(hunt.canary_percentage || 100),
+      packId: hunt.pack_id || '',
+      targetGroup: hunt.target_group || '',
+      recommendedWorkflows: Array.isArray(hunt.recommended_workflows)
+        ? hunt.recommended_workflows
+        : [],
     });
-    openDrawer('hunt');
+    openDrawer('hunt', { withHuntIntent: false });
   };
 
-  const packNames = (selectedRule?.pack_ids || []).map(
-    (packId) => packs.find((pack) => pack.id === packId)?.name || packId,
-  );
+  const packNames = selectedPacks.map((pack) => pack.name || pack.id);
+  const packSavedSearches = [
+    ...new Set(selectedPacks.flatMap((pack) => (Array.isArray(pack.saved_searches) ? pack.saved_searches : []))),
+  ];
+  const packWorkflowIds = [
+    ...new Set(
+      selectedPacks.flatMap((pack) =>
+        Array.isArray(pack.recommended_workflows) ? pack.recommended_workflows : [],
+      ),
+    ),
+  ];
   const relatedHunts = hunts.filter((hunt) => {
     const text = `${hunt.name || ''} ${JSON.stringify(hunt.query || {})}`.toLowerCase();
+    const packMatch = selectedRule && hunt.pack_id && (selectedRule.pack_ids || []).includes(hunt.pack_id);
     return (
       selectedRule &&
       (text.includes(String(selectedRule.id).toLowerCase()) ||
-        text.includes(String(selectedRule.title || '').toLowerCase()))
+        text.includes(String(selectedRule.title || '').toLowerCase()) ||
+        packMatch)
     );
   });
   const huntSummary = summarizeHuntResult(huntResult);
@@ -547,12 +900,19 @@ export default function ThreatDetection() {
     : [];
   const suppressionAdvisor = ruleFpSignals[0] || null;
   const fpPreview = (ruleFpSignals.length > 0 ? ruleFpSignals : fpEntries).slice(0, 3);
+  const huntQuickStarts = buildHuntQuickStarts(selectedRule);
 
   const queueCounts = SAVED_VIEWS.reduce((acc, item) => {
     acc[item.id] = allRules.filter((rule) => item.match(rule, { suppressionCount })).length;
     return acc;
   }, {});
   const owners = ['all', ...new Set(allRules.map((rule) => rule.owner || 'system'))];
+  const promotionChecklist = buildPromotionChecklist({
+    rule: selectedRule,
+    liveSuppressions: selectedRule ? suppressionCount[selectedRule.id] || 0 : 0,
+    packCount: selectedPacks.length,
+    targetGroup: selectedPacks[0]?.target_group || huntDraft.targetGroup,
+  });
 
   const prefillSuppressionFromSignal = (entry) => {
     if (!selectedRule) return;
@@ -893,7 +1253,27 @@ export default function ThreatDetection() {
                     <div className="summary-label">Content Packs</div>
                     <div className="summary-value">{packNames.length}</div>
                     <div className="summary-meta">
-                      {packNames.slice(0, 2).join(' • ') || 'No pack membership recorded.'}
+                      {selectedPacks[0]
+                        ? `${selectedPacks[0].target_group || 'Unassigned'} • ${packWorkflowIds.length} workflow route${packWorkflowIds.length === 1 ? '' : 's'}`
+                        : 'No pack membership recorded.'}
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Automation Target</div>
+                    <div className="summary-value">
+                      {selectedPacks[0]?.target_group || huntDraft.targetGroup || 'Unassigned'}
+                    </div>
+                    <div className="summary-meta">
+                      {selectedPacks[0]?.rollout_notes ||
+                        'Assign an IdP-mapped group before broad automation rollout.'}
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Pack Searches</div>
+                    <div className="summary-value">{packSavedSearches.length}</div>
+                    <div className="summary-meta">
+                      {packSavedSearches.slice(0, 2).join(' • ') ||
+                        'No saved-search bundle attached to this rule yet.'}
                     </div>
                   </div>
                 </div>
@@ -910,6 +1290,39 @@ export default function ThreatDetection() {
                           .join(' • ')
                       : 'No ATT&CK mapping is attached yet. Add one before broad promotion so analysts understand coverage intent.'}
                   </div>
+                </div>
+
+                <div
+                  className="card"
+                  style={{ marginTop: 16, padding: 16, background: 'var(--bg)' }}
+                >
+                  <div className="card-title" style={{ marginBottom: 10 }}>
+                    Promotion checklist
+                  </div>
+                  <div className="hint" style={{ marginBottom: 10 }}>
+                    Use this preflight before you move the rule into canary or active rollout.
+                  </div>
+                  {promotionChecklist.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 12,
+                        padding: '10px 0',
+                        borderBottom: '1px solid var(--border)',
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div className="row-primary">{item.label}</div>
+                        <div className="row-secondary">{item.detail}</div>
+                      </div>
+                      <span className={`badge ${item.done ? 'badge-ok' : 'badge-warn'}`}>
+                        {item.done ? 'Ready' : 'Needs work'}
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
                 <div
@@ -1048,9 +1461,97 @@ export default function ThreatDetection() {
                           : 'No promotion event recorded yet.'}
                       </div>
                     </div>
+                    <div className="summary-card">
+                      <div className="summary-label">Pack Workflows</div>
+                      <div className="summary-value">{packWorkflowIds.length}</div>
+                      <div className="summary-meta">
+                        {packWorkflowIds[0] || 'No workflow routes packaged yet.'}
+                      </div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-label">Target Group</div>
+                      <div className="summary-value">
+                        {selectedPacks[0]?.target_group || huntDraft.targetGroup || 'Unassigned'}
+                      </div>
+                      <div className="summary-meta">
+                        {packSavedSearches.length} search template
+                        {packSavedSearches.length === 1 ? '' : 's'} bundled for this rule family
+                      </div>
+                    </div>
                   </div>
 
                   <div style={{ marginTop: 12 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div className="row-primary">Pack automation bundles</div>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => openPackEditor(selectedPacks[0] || null)}
+                        disabled={!selectedRule}
+                      >
+                        {selectedPacks.length === 0 ? 'Create Bundle' : 'Edit Primary Bundle'}
+                      </button>
+                    </div>
+                    {selectedPacks.length === 0 ? (
+                      <div className="hint">
+                        This rule is not attached to a content pack bundle yet. Create one to
+                        manage saved searches, workflow routes, and target-group rollout notes from
+                        this workspace.
+                      </div>
+                    ) : (
+                      selectedPacks.slice(0, 2).map((pack) => (
+                        <div
+                          key={pack.id}
+                          style={{
+                            padding: '10px 0',
+                            borderBottom: '1px solid var(--border)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 12,
+                              alignItems: 'flex-start',
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div className="row-primary">{pack.name}</div>
+                              <div className="row-secondary">
+                                {(Array.isArray(pack.saved_searches) ? pack.saved_searches : [])
+                                  .slice(0, 3)
+                                  .join(' • ') || 'No saved-search bundle attached.'}
+                              </div>
+                              <div className="hint" style={{ marginTop: 4 }}>
+                                {(Array.isArray(pack.recommended_workflows)
+                                  ? pack.recommended_workflows
+                                  : []
+                                ).join(', ') || 'No workflow routes'}{' '}
+                                • Target {pack.target_group || 'unassigned'}
+                              </div>
+                              {pack.rollout_notes && (
+                                <div className="hint" style={{ marginTop: 4 }}>
+                                  {pack.rollout_notes}
+                                </div>
+                              )}
+                            </div>
+                            <button className="btn btn-sm" onClick={() => openPackEditor(pack)}>
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 16 }}>
                     <div className="row-primary" style={{ marginBottom: 8 }}>
                       Rule-aligned saved hunts
                     </div>
@@ -1075,6 +1576,11 @@ export default function ThreatDetection() {
                             <div className="row-primary">{hunt.name || hunt.id}</div>
                             <div className="row-secondary">
                               {hunt.query?.text || JSON.stringify(hunt.query || {})}
+                            </div>
+                            <div className="hint" style={{ marginTop: 4 }}>
+                              {(hunt.lifecycle || 'draft').replace(/_/g, ' ')} • {hunt.canary_percentage || 100}% rollout •{' '}
+                              {hunt.target_group || 'unassigned target'}
+                              {hunt.pack_id ? ` • ${hunt.pack_id}` : ''}
                             </div>
                             <div className="hint" style={{ marginTop: 4 }}>
                               {hunt.latest_run?.started_at
@@ -1165,7 +1671,7 @@ export default function ThreatDetection() {
       </div>
 
       <SideDrawer
-        open={drawerMode === 'tune' || tuneOpen}
+        open={activeDrawerMode === 'tune'}
         title={selectedRule ? `Tune ${selectedRule.title || selectedRule.id}` : 'Tune rule'}
         subtitle="Move weighting changes into a side panel so validation and save actions are harder to trigger accidentally."
         onClose={closeDrawer}
@@ -1175,6 +1681,10 @@ export default function ThreatDetection() {
           </button>
         }
       >
+        {renderDrawerDraftNotice(
+          'tune',
+          'Save the new weight or discard this tuning draft before leaving the drawer.',
+        )}
         <div className="form-group">
           <label className="form-label" htmlFor="rule-weight">
             Detection Weight
@@ -1225,6 +1735,10 @@ export default function ThreatDetection() {
           </button>
         }
       >
+        {renderDrawerDraftNotice(
+          'suppress',
+          'This suppression draft has changed. Save it or discard it before closing the drawer.',
+        )}
         <div className="form-group">
           <label className="form-label" htmlFor="suppression-name">
             Name
@@ -1280,6 +1794,143 @@ export default function ThreatDetection() {
       </SideDrawer>
 
       <SideDrawer
+        open={drawerMode === 'pack'}
+        title={packDraft.id ? `Edit ${packDraft.name || 'Content Pack Bundle'}` : 'Create Content Pack Bundle'}
+        subtitle="Manage saved-search bundles, workflow routes, and target-group rollout notes without leaving the detection workspace."
+        onClose={closeDrawer}
+        actions={
+          <button className="btn btn-sm btn-primary" onClick={savePackDraft} disabled={packSaving}>
+            {packSaving ? 'Saving…' : 'Save Bundle'}
+          </button>
+        }
+      >
+        {renderDrawerDraftNotice(
+          'pack',
+          'Bundle routing, saved searches, or rollout notes changed and have not been saved yet.',
+        )}
+        <div className="form-group">
+          <label className="form-label" htmlFor="pack-name">
+            Pack Name
+          </label>
+          <input
+            id="pack-name"
+            className="form-input"
+            value={packDraft.name}
+            onChange={(event) => setPackDraft((draft) => ({ ...draft, name: event.target.value }))}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="pack-description">
+            Description
+          </label>
+          <textarea
+            id="pack-description"
+            className="form-textarea"
+            rows="3"
+            value={packDraft.description}
+            onChange={(event) =>
+              setPackDraft((draft) => ({ ...draft, description: event.target.value }))
+            }
+          />
+        </div>
+        <div className="summary-grid" style={{ marginBottom: 16 }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="pack-target-group">
+              Target Group
+            </label>
+            <input
+              id="pack-target-group"
+              className="form-input"
+              value={packDraft.targetGroup}
+              onChange={(event) =>
+                setPackDraft((draft) => ({ ...draft, targetGroup: event.target.value }))
+              }
+              placeholder="soc-analysts"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="pack-enabled">
+              Bundle State
+            </label>
+            <label
+              htmlFor="pack-enabled"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 38 }}
+            >
+              <input
+                id="pack-enabled"
+                type="checkbox"
+                checked={packDraft.enabled}
+                onChange={(event) =>
+                  setPackDraft((draft) => ({ ...draft, enabled: event.target.checked }))
+                }
+              />
+              <span>{packDraft.enabled ? 'Enabled for packaging' : 'Disabled bundle'}</span>
+            </label>
+          </div>
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="pack-searches">
+            Saved Searches
+          </label>
+          <textarea
+            id="pack-searches"
+            className="form-textarea"
+            rows="5"
+            value={packDraft.savedSearchesText}
+            onChange={(event) =>
+              setPackDraft((draft) => ({ ...draft, savedSearchesText: event.target.value }))
+            }
+            placeholder={'failed logins by user\ngeo anomalies by src_ip'}
+          />
+          <div className="hint">Use one saved-search template per line or separate values with commas.</div>
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="pack-workflows">
+            Workflow Routes
+          </label>
+          <textarea
+            id="pack-workflows"
+            className="form-textarea"
+            rows="4"
+            value={packDraft.recommendedWorkflowsText}
+            onChange={(event) =>
+              setPackDraft((draft) => ({
+                ...draft,
+                recommendedWorkflowsText: event.target.value,
+              }))
+            }
+            placeholder={'credential-storm\nidentity-abuse'}
+          />
+          <div className="hint">These workflow ids are attached to new hunts and rule context for this bundle.</div>
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="pack-rollout-notes">
+            Rollout Notes
+          </label>
+          <textarea
+            id="pack-rollout-notes"
+            className="form-textarea"
+            rows="4"
+            value={packDraft.rolloutNotes}
+            onChange={(event) =>
+              setPackDraft((draft) => ({ ...draft, rolloutNotes: event.target.value }))
+            }
+            placeholder="Map identity content to analysts before broad rollout."
+          />
+        </div>
+        <div className="detail-callout" style={{ marginBottom: 16 }}>
+          <strong>Bundle coverage</strong>
+          <div style={{ marginTop: 6 }}>
+            {packDraft.ruleIds.length} rule{packDraft.ruleIds.length === 1 ? '' : 's'} attached •{' '}
+            {textToBundleList(packDraft.savedSearchesText).length} saved search
+            {textToBundleList(packDraft.savedSearchesText).length === 1 ? '' : 'es'} •{' '}
+            {textToBundleList(packDraft.recommendedWorkflowsText).length} workflow route
+            {textToBundleList(packDraft.recommendedWorkflowsText).length === 1 ? '' : 's'}
+          </div>
+        </div>
+      </SideDrawer>
+
+      <SideDrawer
         open={drawerMode === 'hunt'}
         title={selectedRule ? `Hunt ${selectedRule.title || selectedRule.id}` : 'Threat Hunt'}
         subtitle="Run an ad-hoc hunt, save it for reuse, and pivot into an investigation workflow from the same rule context."
@@ -1299,6 +1950,10 @@ export default function ThreatDetection() {
           </div>
         }
       >
+        {renderDrawerDraftNotice(
+          'hunt',
+          'This hunt draft has changed. Save it for reuse or discard it explicitly before leaving.',
+        )}
         <div className="form-group">
           <label className="form-label" htmlFor="hunt-name">
             Hunt Name
@@ -1324,6 +1979,63 @@ export default function ThreatDetection() {
           <div className="hint">
             Use the live hunt DSL for pivots like `severity:high`, `process_name:mimikatz | count by
             device_id`, or `src_ip:10.* | top 5 dst_ip`.
+          </div>
+        </div>
+        <div className="detail-callout" style={{ marginBottom: 16 }}>
+          <strong>Query starters</strong>
+          <div style={{ marginTop: 6 }}>
+            Start with the current rule context, then switch into host or source pivots before you
+            save the hunt.
+          </div>
+          <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+            {huntQuickStarts.map((starter) => (
+              <div
+                key={starter.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  padding: '10px 0',
+                  borderBottom: '1px solid var(--border)',
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div className="row-primary">{starter.label}</div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      color: 'var(--text)',
+                    }}
+                  >
+                    {starter.query}
+                  </div>
+                  <div className="hint" style={{ marginTop: 4 }}>
+                    {starter.description}
+                  </div>
+                </div>
+                <div className="btn-group" style={{ alignItems: 'center' }}>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => setHuntDraft((draft) => ({ ...draft, query: starter.query }))}
+                  >
+                    Use
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => {
+                      setHuntDraft((draft) => ({ ...draft, query: starter.query }));
+                      runLiveHunt(starter.query);
+                    }}
+                    disabled={huntRunning}
+                  >
+                    {huntRunning ? 'Running…' : 'Run'}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         <div className="summary-grid" style={{ marginBottom: 16 }}>
@@ -1425,6 +2137,86 @@ export default function ThreatDetection() {
               placeholder="Optional"
             />
           </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="hunt-lifecycle">
+              Promotion Lifecycle
+            </label>
+            <select
+              id="hunt-lifecycle"
+              className="form-select"
+              value={huntDraft.lifecycle}
+              onChange={(event) =>
+                setHuntDraft((draft) => ({ ...draft, lifecycle: event.target.value }))
+              }
+            >
+              {['draft', 'test', 'canary', 'active'].map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="hunt-canary">
+              Canary Percentage
+            </label>
+            <input
+              id="hunt-canary"
+              className="form-input"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              value={huntDraft.canaryPercentage}
+              disabled={huntDraft.lifecycle !== 'canary'}
+              onChange={(event) =>
+                setHuntDraft((draft) => ({ ...draft, canaryPercentage: event.target.value }))
+              }
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="hunt-pack">
+              Content Pack
+            </label>
+            <select
+              id="hunt-pack"
+              className="form-select"
+              value={huntDraft.packId}
+              onChange={(event) => {
+                const nextPackId = event.target.value;
+                const nextPack = packs.find((pack) => pack.id === nextPackId);
+                setHuntDraft((draft) => ({
+                  ...draft,
+                  packId: nextPackId,
+                  targetGroup: nextPack?.target_group || draft.targetGroup,
+                  recommendedWorkflows: Array.isArray(nextPack?.recommended_workflows)
+                    ? nextPack.recommended_workflows
+                    : draft.recommendedWorkflows,
+                }));
+              }}
+            >
+              <option value="">No pack</option>
+              {packs.map((pack) => (
+                <option key={pack.id} value={pack.id}>
+                  {pack.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="hunt-target-group">
+              Target Group
+            </label>
+            <input
+              id="hunt-target-group"
+              className="form-input"
+              value={huntDraft.targetGroup}
+              onChange={(event) =>
+                setHuntDraft((draft) => ({ ...draft, targetGroup: event.target.value }))
+              }
+              placeholder="soc-analysts"
+            />
+          </div>
         </div>
 
         <div className="detail-callout" style={{ marginBottom: 16 }}>
@@ -1436,6 +2228,15 @@ export default function ThreatDetection() {
                   .slice(0, 2)
                   .map((workflow) => workflow.name)
                   .join(' • ')}
+          </div>
+        </div>
+
+        <div className="detail-callout" style={{ marginBottom: 16 }}>
+          <strong>Content bundle</strong>
+          <div style={{ marginTop: 6 }}>
+            {selectedPacks[0]
+              ? `${selectedPacks[0].name} • ${(selectedPacks[0].recommended_workflows || []).join(', ') || 'no workflow routes'} • ${selectedPacks[0].target_group || 'unassigned target'}`
+              : 'This hunt is not attached to a content pack yet. Choose a pack to inherit saved-search and workflow routing.'}
           </div>
         </div>
 
@@ -1468,6 +2269,8 @@ export default function ThreatDetection() {
           )}
         </div>
       </SideDrawer>
+
+      {confirmUI}
     </div>
   );
 }

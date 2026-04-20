@@ -59,6 +59,24 @@ Wardex follows an edge-first control loop:
    - Evidence collection from audit, detection, and enforcement.
    - Quantitative compliance score per framework.
 
+## Enterprise control plane overlays
+
+The operator-facing control plane layers additional enterprise state on top of the core runtime loop:
+
+1. **Identity-aware sessions and routing**
+  - Requests can resolve as admin tokens, RBAC tokens, or persisted SSO sessions.
+  - Session-backed identities carry role, `user_id`, group membership, and auth `source` metadata.
+  - Hunt and content-pack mutations can declare a `target_group`; session-backed operators must belong to that group before the mutation or saved-hunt execution is accepted.
+2. **Content lifecycle and bundle management**
+  - Saved hunts and content packs are persisted in the enterprise snapshot alongside lifecycle state, canary percentage, recommended workflows, target groups, and rollout notes.
+  - Detection engineers can move between rule tuning, hunt creation, and content-pack editing without leaving the detection workspace.
+3. **Persisted automation and rollout history**
+  - Playbook execution analytics and release rollout events are recorded into the enterprise snapshot as historical records.
+  - Historical records survive restarts and are merged with live engine state so dashboards stay fresh without losing continuity.
+4. **Program-level workbench aggregation**
+  - The SOC workbench overview aggregates queue, cases, incidents, response posture, identity routing readiness, rollout history, content bundle adoption, automation history, and API analytics into one program surface.
+  - Recommendation items are attached to that overview so the UI can pivot directly into settings, detection, infrastructure, or playbook review flows.
+
 ## Implemented modules
 
 - `src/config.rs`
@@ -236,7 +254,7 @@ All state management uses React Context + `useReducer`/`useState`:
 | Context | Purpose | Persistence |
 |---------|---------|-------------|
 | `AuthContext` | Token, `authenticated` flag, `connect()`/`disconnect()` | `localStorage` |
-| `RoleContext` | Current role (`viewer`/`analyst`/`admin`) | None (fetched on auth) |
+| `RoleContext` | Current role plus session `groups`, `userId`, and auth `source` | None (fetched on auth) |
 | `ThemeContext` | Dark mode toggle | `localStorage` |
 | `ToastContext` | Notification queue with auto-dismiss | In-memory |
 
