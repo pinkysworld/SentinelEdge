@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Changelog — Wardex</title>
+    <meta name="description" content="Wardex release history, upgrade highlights, and links to full release notes.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Wardex">
+    <meta property="og:title" content="Changelog — Wardex">
+    <meta property="og:description" content="Release highlights, upgrade notes, and full changelog links for Wardex.">
+    <meta property="og:url" content="https://pinkysworld.github.io/Wardex/changelog.html">
+    <meta property="og:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Changelog — Wardex">
+    <meta name="twitter:description" content="Release highlights, upgrade notes, and full changelog links for Wardex.">
+    <meta name="twitter:image" content="https://pinkysworld.github.io/Wardex/og-cover.svg">
+    <link rel="canonical" href="https://pinkysworld.github.io/Wardex/changelog.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=15">
+    <script defer src="app.js?v=15"></script>
+  </head>
+  <body>
+    <nav class="site-nav" id="site-nav" data-shared-nav="true">
+      <div class="nav-inner">
+        <a class="nav-brand" href="index.html">
+          <span class="nav-logo">WX</span>
+          <span class="nav-title">Wardex</span>
+        </a>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="index.html" class="nav-link">Overview</a>
+          <a href="features.html" class="nav-link">Features</a>
+          <a href="architecture.html" class="nav-link">Architecture</a>
+          <a href="rules.html" class="nav-link">Rules</a>
+          <a href="resources.html" class="nav-link">Resources</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+          <a href="donate.html" class="nav-link">Support</a>
+          <div class="nav-dropdown">
+            <button type="button" class="nav-link nav-dropdown-trigger active" aria-haspopup="true" aria-expanded="false">
+              More
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.47 6.97a.75.75 0 0 1 1.06 0L8 9.44l2.47-2.47a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 0 1 0-1.06z"/></svg>
+            </button>
+            <div class="nav-dropdown-menu">
+              <a href="comparison.html">Comparison</a>
+              <a href="integrations.html">Integrations</a>
+              <a href="api.html">API</a>
+              <a href="status.html">Status</a>
+              <a href="changelog.html" class="active">Changelog</a>
+            </div>
+          </div>
+          <a href="https://github.com/pinkysworld/Wardex" class="nav-link nav-link-icon" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section class="section page-hero">
+        <div class="container">
+          <p class="label">Release History</p>
+          <h1>What changed, and when it shipped.</h1>
+          <p class="page-hero-desc">
+            Wardex publishes feature, packaging, site, and operational changes in-repo with every tagged release. Use this page for a quick upgrade scan, then jump into the full markdown changelog or GitHub release artifacts for the exact details.
+          </p>
+          <div class="hero-cta">
+            <a href="../CHANGELOG.md" class="btn btn-primary" target="_blank" rel="noopener">Open full CHANGELOG.md</a>
+            <a href="https://github.com/pinkysworld/Wardex/releases" class="btn btn-outline" target="_blank" rel="noopener">GitHub releases</a>
+            <a href="status.html" class="btn btn-ghost">Project status →</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Recent Highlights</p>
+            <h2>Three releases that changed the product surface.</h2>
+            <p class="section-desc">
+              These are the recent milestones most likely to matter during evaluation, rollout planning, or upgrade review.
+            </p>
+          </div>
+          <div class="start-grid">
+            <article class="start-card">
+              <p class="label">v0.53.0</p>
+              <h3>Rules marketplace, pricing, and operator diagnostics.</h3>
+              <p>Added the public rules marketplace, tiered pricing and checkout pages, the status and integrations pages, API reference, comparison page, and the <code>wardex doctor</code> preflight command.</p>
+            </article>
+            <article class="start-card">
+              <p class="label">v0.52.5</p>
+              <h3>Release distribution stabilization.</h3>
+              <p>Fixed release workflow fan-out so GitHub Pages publication and Homebrew tap synchronization can be dispatched from tagged releases without token permission failures.</p>
+            </article>
+            <article class="start-card">
+              <p class="label">v0.52.0</p>
+              <h3>Hunt workflow maturity and NDR depth.</h3>
+              <p>Shipped run-hunt routing, planner handoff improvements, false-positive advisor UX, default intel seeding, and expanded NDR anomaly APIs and browser smoke coverage.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header">
+            <p class="label">Reading Paths</p>
+            <h2>Pick the level of release detail you need.</h2>
+          </div>
+          <div class="capability-grid">
+            <div class="capability-card">
+              <h3>Fast upgrade scan</h3>
+              <p>Read the top sections in <a href="../CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a> to see feature themes, API additions, and fixed regressions before you update a running deployment.</p>
+            </div>
+            <div class="capability-card">
+              <h3>Artifact verification</h3>
+              <p>Use the <a href="status.html">status page</a> plus the published GitHub release assets to verify signatures, SBOM availability, and current packaging health.</p>
+            </div>
+            <div class="capability-card">
+              <h3>Deployment planning</h3>
+              <p>Use <a href="resources.html">Resources</a>, <a href="architecture.html">Architecture</a>, and <a href="pricing.html">Pricing</a> to connect release notes to the deployment model and feature tier you actually need.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-grid">
+            <div class="footer-col footer-about">
+              <span class="nav-logo footer-logo">WX</span>
+              <p>Private-cloud XDR &amp; SIEM built in Rust. One binary. Full data sovereignty.</p>
+              <p class="footer-version"><span id="footer-version">v0.53.0</span> · BSL 1.1</p>
+            </div>
+            <div class="footer-col">
+              <h4>Product</h4>
+              <a href="features.html">Features</a>
+              <a href="architecture.html">Architecture</a>
+              <a href="pricing.html">Pricing</a>
+              <a href="rules.html">Rules</a>
+            </div>
+            <div class="footer-col">
+              <h4>Resources</h4>
+              <a href="resources.html">Documentation</a>
+              <a href="status.html">Status</a>
+              <a href="api.html">API</a>
+              <a href="integrations.html">Integrations</a>
+            </div>
+            <div class="footer-col">
+              <h4>Project</h4>
+              <a href="https://github.com/pinkysworld/Wardex" target="_blank" rel="noopener">GitHub</a>
+              <a href="donate.html">Support</a>
+              <a href="../CHANGELOG.md" target="_blank" rel="noopener">Markdown changelog</a>
+              <a href="mailto:michel_ng@icloud.com">Contact</a>
+            </div>
+          </div>
+          <div class="footer-bottom">
+            <p>Wardex · © 2024–2026 · <a href="../LICENSE" style="color:inherit;">BSL 1.1</a> · Commercial production use requires a <a href="pricing.html" style="color: var(--nav-accent);">separate license</a>.</p>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

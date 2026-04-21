@@ -20,11 +20,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=15">
-    <script defer src="app.js?v=14"></script>
+    <link rel="stylesheet" href="styles.css?v=16">
+    <script defer src="app.js?v=15"></script>
   </head>
   <body>
-    <nav class="site-nav" id="site-nav">
+    <nav class="site-nav" id="site-nav" data-shared-nav="true">
       <div class="nav-inner">
         <a class="nav-brand" href="index.html">
           <span class="nav-logo">WX</span>
@@ -40,6 +40,23 @@
           <a href="rules.html" class="nav-link active">Rules</a>
           <a href="resources.html" class="nav-link">Resources</a>
           <a href="pricing.html" class="nav-link">Pricing</a>
+          <a href="donate.html" class="nav-link">Support</a>
+          <div class="nav-dropdown">
+            <button type="button" class="nav-link nav-dropdown-trigger" aria-haspopup="true" aria-expanded="false">
+              More
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.47 6.97a.75.75 0 0 1 1.06 0L8 9.44l2.47-2.47a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 0 1 0-1.06z"/></svg>
+            </button>
+            <div class="nav-dropdown-menu">
+              <a href="comparison.html">Comparison</a>
+              <a href="integrations.html">Integrations</a>
+              <a href="api.html">API</a>
+              <a href="status.html">Status</a>
+              <a href="changelog.html">Changelog</a>
+            </div>
+          </div>
+          <a href="https://github.com/pinkysworld/Wardex" class="nav-link nav-link-icon" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          </a>
         </div>
       </div>
     </nav>
@@ -56,29 +73,46 @@
 
       <section class="section section-alt">
         <div class="container">
-          <div class="rules-toolbar" role="region" aria-label="Rule filters">
-            <label class="rules-search">
-              <span class="visually-hidden">Search rules</span>
-              <input type="search" id="rules-search" placeholder="Search by name, description, MITRE ID…" autocomplete="off">
-            </label>
-            <div class="rules-filter-group" role="group" aria-label="Kind">
-              <button type="button" class="rules-chip active" data-filter-kind="all">All</button>
-              <button type="button" class="rules-chip" data-filter-kind="yara">YARA</button>
-              <button type="button" class="rules-chip" data-filter-kind="sigma">Sigma</button>
+          <div class="rules-explorer">
+            <div class="rules-toolbar" role="search" aria-label="Rule catalogue search">
+              <label class="rules-search">
+                <span class="rules-control-label">Search rules</span>
+                <input type="search" id="rules-search" placeholder="Search title, pack, MITRE, or author" autocomplete="off">
+              </label>
+              <div class="rules-controls">
+                <label class="rules-select">
+                  <span class="rules-control-label">Kind</span>
+                  <select id="rules-kind">
+                    <option value="all">All formats</option>
+                    <option value="yara">YARA</option>
+                    <option value="sigma">Sigma</option>
+                  </select>
+                </label>
+                <label class="rules-select">
+                  <span class="rules-control-label">Severity</span>
+                  <select id="rules-severity">
+                    <option value="all">Any severity</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+                <button type="button" class="btn btn-outline rules-reset" id="rules-reset">Reset</button>
+              </div>
             </div>
-            <div class="rules-filter-group" role="group" aria-label="Severity">
-              <button type="button" class="rules-chip active" data-filter-severity="all">Any</button>
-              <button type="button" class="rules-chip sev-critical" data-filter-severity="critical">Critical</button>
-              <button type="button" class="rules-chip sev-high" data-filter-severity="high">High</button>
-              <button type="button" class="rules-chip sev-medium" data-filter-severity="medium">Medium</button>
-              <button type="button" class="rules-chip sev-low" data-filter-severity="low">Low</button>
+
+            <div class="rules-results-bar">
+              <p class="rules-count">Showing <span id="rules-visible">0</span> of <span id="rules-matched">0</span> matching rules</p>
+              <p class="rules-results-copy">Start with search, then narrow by format or severity if needed.</p>
             </div>
           </div>
-
-          <p class="rules-count"><span id="rules-visible">0</span> rules match</p>
           <div class="rules-grid" id="rules-grid" aria-live="polite"></div>
+          <div class="rules-load-more-wrap" id="rules-load-more-wrap" hidden>
+            <button type="button" class="btn btn-outline rules-load-more" id="rules-load-more">Load more rules</button>
+          </div>
           <div class="rules-empty" id="rules-empty" hidden>
-            <p>No rules match these filters. <button type="button" class="btn-link" id="rules-clear">Clear filters</button></p>
+            <p>No rules match these filters. <button type="button" class="btn-link" id="rules-clear-empty">Reset filters</button></p>
           </div>
         </div>
       </section>
@@ -137,25 +171,35 @@
         const grid = document.getElementById('rules-grid');
         const template = document.getElementById('rule-card-template');
         const searchEl = document.getElementById('rules-search');
+        const kindEl = document.getElementById('rules-kind');
+        const severityEl = document.getElementById('rules-severity');
         const emptyEl = document.getElementById('rules-empty');
-        const clearBtn = document.getElementById('rules-clear');
+        const resetBtn = document.getElementById('rules-reset');
+        const clearEmptyBtn = document.getElementById('rules-clear-empty');
+        const loadMoreWrap = document.getElementById('rules-load-more-wrap');
+        const loadMoreBtn = document.getElementById('rules-load-more');
         const totalEl = document.getElementById('rules-total');
         const yaraEl = document.getElementById('rules-yara');
         const sigmaEl = document.getElementById('rules-sigma');
         const visibleEl = document.getElementById('rules-visible');
+        const matchedEl = document.getElementById('rules-matched');
+        const INITIAL_LIMIT = 12;
+        const LOAD_STEP = 12;
         let rules = [];
+        let visibleLimit = INITIAL_LIMIT;
         let filters = { kind: 'all', severity: 'all', query: '' };
 
         try {
           const res = await fetch('rules-index.json');
           if (!res.ok) throw new Error('index not found');
           const payload = await res.json();
-          rules = payload.rules || [];
+          rules = Array.isArray(payload.rules) ? payload.rules : [];
           totalEl.textContent = payload.meta?.total ?? rules.length;
           yaraEl.textContent = payload.meta?.yara ?? rules.filter(r => r.kind === 'yara').length;
           sigmaEl.textContent = payload.meta?.sigma ?? rules.filter(r => r.kind === 'sigma').length;
         } catch (err) {
           grid.innerHTML = '<p class="rules-error">Could not load rule index. View rules on <a href="https://github.com/pinkysworld/Wardex/tree/main/rules" target="_blank" rel="noopener">GitHub</a>.</p>';
+          loadMoreWrap.hidden = true;
           return;
         }
 
@@ -166,28 +210,45 @@
           return 'medium';
         };
 
-        function render() {
+        function filteredRules() {
           const q = filters.query.trim().toLowerCase();
-          grid.innerHTML = '';
-          let shown = 0;
-          for (const rule of rules) {
+          return rules.filter((rule) => {
             const sev = normalizeSeverity(rule.severity);
-            if (filters.kind !== 'all' && rule.kind !== filters.kind) continue;
-            if (filters.severity !== 'all' && sev !== filters.severity) continue;
+            if (filters.kind !== 'all' && rule.kind !== filters.kind) return false;
+            if (filters.severity !== 'all' && sev !== filters.severity) return false;
             if (q) {
               const hay = [rule.name, rule.description, rule.pack, rule.author, ...(rule.mitre || [])].join(' ').toLowerCase();
-              if (!hay.includes(q)) continue;
+              if (!hay.includes(q)) return false;
             }
+            return true;
+          });
+        }
+
+        function formatPackLabel(value) {
+          return String(value || 'core').replace(/_/g, ' ');
+        }
+
+        function render() {
+          const matches = filteredRules();
+          const visibleRules = matches.slice(0, visibleLimit);
+          const fragment = document.createDocumentFragment();
+          grid.innerHTML = '';
+
+          for (const rule of visibleRules) {
+            const sev = normalizeSeverity(rule.severity);
             const node = template.content.cloneNode(true);
-            node.querySelector('.rule-kind').textContent = rule.kind.toUpperCase();
-            node.querySelector('.rule-kind').classList.add('kind-' + rule.kind);
+            const kind = String(rule.kind || 'rule').toLowerCase();
+            node.querySelector('.rule-kind').textContent = kind.toUpperCase();
+            node.querySelector('.rule-kind').classList.add('kind-' + kind);
             const sevEl = node.querySelector('.rule-severity');
             sevEl.textContent = sev;
             sevEl.classList.add('sev-' + sev);
             node.querySelector('.rule-name').textContent = rule.name;
             node.querySelector('.rule-description').textContent = rule.description || 'No description';
             const mitreEl = node.querySelector('.rule-mitre');
-            (rule.mitre || []).slice(0, 4).forEach((id) => {
+            const mitre = Array.isArray(rule.mitre) ? rule.mitre.filter(Boolean).slice(0, 3) : [];
+            mitreEl.hidden = mitre.length === 0;
+            mitre.forEach((id) => {
               const li = document.createElement('li');
               const a = document.createElement('a');
               a.href = 'https://attack.mitre.org/techniques/' + String(id).replace('.', '/');
@@ -197,7 +258,7 @@
               li.appendChild(a);
               mitreEl.appendChild(li);
             });
-            node.querySelector('.rule-pack').textContent = rule.pack;
+            node.querySelector('.rule-pack').textContent = formatPackLabel(rule.pack);
             const copyBtn = node.querySelector('.rule-copy');
             copyBtn.addEventListener('click', async () => {
               try {
@@ -206,38 +267,44 @@
                 setTimeout(() => { copyBtn.textContent = 'Copy name'; }, 1500);
               } catch { /* no-op */ }
             });
-            grid.appendChild(node);
-            shown += 1;
+            fragment.appendChild(node);
           }
-          visibleEl.textContent = shown;
-          emptyEl.hidden = shown !== 0;
+
+          grid.appendChild(fragment);
+          visibleEl.textContent = visibleRules.length;
+          matchedEl.textContent = matches.length;
+          emptyEl.hidden = matches.length !== 0;
+
+          const remaining = matches.length - visibleRules.length;
+          loadMoreWrap.hidden = remaining <= 0;
+          if (remaining > 0) {
+            loadMoreBtn.textContent = 'Load more rules (' + remaining + ' remaining)';
+          }
         }
 
-        searchEl.addEventListener('input', (e) => {
-          filters.query = e.target.value;
+        function applyFilters(next) {
+          filters = { ...filters, ...next };
+          visibleLimit = INITIAL_LIMIT;
           render();
-        });
-        clearBtn.addEventListener('click', () => {
+        }
+
+        function resetFilters() {
           filters = { kind: 'all', severity: 'all', query: '' };
+          visibleLimit = INITIAL_LIMIT;
           searchEl.value = '';
-          document.querySelectorAll('.rules-chip').forEach((c) => {
-            c.classList.toggle('active', c.dataset.filterKind === 'all' || c.dataset.filterSeverity === 'all');
-          });
+          kindEl.value = 'all';
+          severityEl.value = 'all';
           render();
-        });
-        document.querySelectorAll('[data-filter-kind]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            filters.kind = btn.dataset.filterKind;
-            document.querySelectorAll('[data-filter-kind]').forEach((b) => b.classList.toggle('active', b === btn));
-            render();
-          });
-        });
-        document.querySelectorAll('[data-filter-severity]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            filters.severity = btn.dataset.filterSeverity;
-            document.querySelectorAll('[data-filter-severity]').forEach((b) => b.classList.toggle('active', b === btn));
-            render();
-          });
+        }
+
+        searchEl.addEventListener('input', (e) => applyFilters({ query: e.target.value }));
+        kindEl.addEventListener('change', (e) => applyFilters({ kind: e.target.value }));
+        severityEl.addEventListener('change', (e) => applyFilters({ severity: e.target.value }));
+        resetBtn.addEventListener('click', resetFilters);
+        clearEmptyBtn.addEventListener('click', resetFilters);
+        loadMoreBtn.addEventListener('click', () => {
+          visibleLimit += LOAD_STEP;
+          render();
         });
 
         render();

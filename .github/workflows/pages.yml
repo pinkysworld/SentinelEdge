@@ -106,6 +106,35 @@ jobs:
             echo "No published release available; skipping APT repo generation."
           fi
 
+      - name: Generate /site/ backward-compat redirects
+        run: |
+          # Some external links still reference /Wardex/site/<page>.html (from the
+          # pre-Pages layout when the repo was browsed directly on GitHub). Emit
+          # redirect stubs so those URLs resolve to the real published pages
+          # instead of hitting the custom 404 page.
+          mkdir -p site-build/site
+          shopt -s nullglob
+          for src in site-build/*.html; do
+            name="$(basename "$src")"
+            cat > "site-build/site/${name}" <<HTML
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>Redirecting…</title>
+              <link rel="canonical" href="../${name}">
+              <meta http-equiv="refresh" content="0; url=../${name}">
+              <meta name="robots" content="noindex">
+              <script>location.replace("../${name}" + location.search + location.hash);</script>
+            </head>
+            <body>
+              <p>Redirecting to <a href="../${name}">../${name}</a>…</p>
+            </body>
+          </html>
+          HTML
+          done
+          shopt -u nullglob
+
       - name: Upload static site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:

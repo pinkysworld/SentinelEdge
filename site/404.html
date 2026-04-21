@@ -6,11 +6,34 @@
     <title>Page not found — Wardex</title>
     <meta name="description" content="The page you were looking for doesn't exist. Head back to the Wardex overview.">
     <meta name="robots" content="noindex">
+    <script>
+      (function () {
+        const trimmedPath = window.location.pathname.replace(/\/+$/, "");
+        const segments = trimmedPath.split("/").filter(Boolean);
+        const leaf = segments.at(-1) || "";
+        let basePath = "/";
+
+        if (!leaf) {
+          basePath = "/";
+        } else if (leaf === "site") {
+          basePath = trimmedPath;
+        } else if (leaf.endsWith(".html")) {
+          basePath = trimmedPath.slice(0, -(leaf.length + 1)) || "/";
+        } else {
+          basePath = segments.length > 1 ? `/${segments.slice(0, -1).join("/")}` : "/";
+        }
+
+        const base = document.createElement("base");
+        base.href = `${basePath === "/" ? "/" : `${basePath}/`}`;
+        document.head.appendChild(base);
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css?v=15">
+    <script defer src="app.js?v=15"></script>
   </head>
   <body>
     <main class="main notfound">
