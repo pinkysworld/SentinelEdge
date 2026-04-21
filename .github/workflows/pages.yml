@@ -106,32 +106,49 @@ jobs:
             echo "No published release available; skipping APT repo generation."
           fi
 
-      - name: Generate /site/ backward-compat redirects
+      - name: Generate backward-compat and directory-style redirects
         run: |
           # Some external links still reference /Wardex/site/<page>.html (from the
           # pre-Pages layout when the repo was browsed directly on GitHub). Emit
-          # redirect stubs so those URLs resolve to the real published pages
-          # instead of hitting the custom 404 page.
-          mkdir -p site-build/site
-          shopt -s nullglob
-          for src in site-build/*.html; do
-            name="$(basename "$src")"
-            cat > "site-build/site/${name}" <<HTML
+          # redirect stubs so those URLs resolve to the real published pages.
+          #
+          # Also generate folder-style aliases like /Wardex/architecture/ and
+          # /Wardex/site/architecture/ so incoming links without the .html suffix
+          # stop falling through to the custom 404 page.
+          write_redirect() {
+            local out_path="$1"
+            local target="$2"
+
+            mkdir -p "$(dirname "$out_path")"
+            cat > "$out_path" <<HTML
           <!DOCTYPE html>
           <html lang="en">
             <head>
               <meta charset="utf-8">
-              <title>Redirecting…</title>
-              <link rel="canonical" href="../${name}">
-              <meta http-equiv="refresh" content="0; url=../${name}">
+              <title>Redirecting...</title>
+              <link rel="canonical" href="${target}">
+              <meta http-equiv="refresh" content="0; url=${target}">
               <meta name="robots" content="noindex">
-              <script>location.replace("../${name}" + location.search + location.hash);</script>
+              <script>location.replace("${target}" + location.search + location.hash);</script>
             </head>
             <body>
-              <p>Redirecting to <a href="../${name}">../${name}</a>…</p>
+              <p>Redirecting to <a href="${target}">${target}</a>...</p>
             </body>
           </html>
           HTML
+          }
+
+          shopt -s nullglob
+          for src in site-build/*.html; do
+            name="$(basename "$src")"
+            stem="${name%.html}"
+
+            write_redirect "site-build/site/${name}" "../${name}"
+
+            if [[ "$name" != "index.html" ]]; then
+              write_redirect "site-build/${stem}/index.html" "../${name}"
+              write_redirect "site-build/site/${stem}/index.html" "../../${name}"
+            fi
           done
           shopt -u nullglob
 
