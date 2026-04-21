@@ -11,12 +11,38 @@
         const trimmedPath = window.location.pathname.replace(/\/+$/, "");
         const segments = trimmedPath.split("/").filter(Boolean);
         const leaf = segments.at(-1) || "";
+        const isSiteAlias = segments.at(-2) === "site";
+        const redirectablePages = new Set([
+          "api",
+          "architecture",
+          "changelog",
+          "checkout",
+          "comparison",
+          "donate",
+          "features",
+          "integrations",
+          "pricing",
+          "resources",
+          "rules",
+          "status"
+        ]);
+
+        if (leaf === "site") {
+          window.location.replace(`${trimmedPath}/index.html${window.location.search}${window.location.hash}`);
+          return;
+        }
+
+        if (redirectablePages.has(leaf)) {
+          const prefixSegments = isSiteAlias ? segments.slice(0, -2) : segments.slice(0, -1);
+          const targetPath = `/${prefixSegments.concat(`${leaf}.html`).join("/")}`;
+          window.location.replace(`${targetPath}${window.location.search}${window.location.hash}`);
+          return;
+        }
+
         let basePath = "/";
 
         if (!leaf) {
           basePath = "/";
-        } else if (leaf === "site") {
-          basePath = trimmedPath;
         } else if (leaf.endsWith(".html")) {
           basePath = trimmedPath.slice(0, -(leaf.length + 1)) || "/";
         } else {
