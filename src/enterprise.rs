@@ -1995,48 +1995,49 @@ impl EnterpriseStore {
             let eff = efficacy_map.get(rule_id.as_str());
 
             // Rollback: FP rate exceeds threshold
-            if let Some(e) = eff {
-                if e.total_alerts >= min_alerts && e.fp_rate > max_fp_rate {
-                    if let Ok(meta) = self.rollback_rule(rule_id, "canary-auto-promote") {
-                        results.push(CanaryPromotionResult {
-                            rule_id: rule_id.clone(),
-                            rule_name: meta.title.clone(),
-                            action: CanaryAction::RolledBack,
-                            reason: format!(
-                                "FP rate {:.1}% exceeds threshold {:.1}%",
-                                e.fp_rate * 100.0,
-                                max_fp_rate * 100.0
-                            ),
-                        });
-                        continue;
-                    }
-                }
+            if let Some(e) = eff
+                && e.total_alerts >= min_alerts
+                && e.fp_rate > max_fp_rate
+                && let Ok(meta) = self.rollback_rule(rule_id, "canary-auto-promote")
+            {
+                results.push(CanaryPromotionResult {
+                    rule_id: rule_id.clone(),
+                    rule_name: meta.title.clone(),
+                    action: CanaryAction::RolledBack,
+                    reason: format!(
+                        "FP rate {:.1}% exceeds threshold {:.1}%",
+                        e.fp_rate * 100.0,
+                        max_fp_rate * 100.0
+                    ),
+                });
+                continue;
             }
 
             // Promote: enough alerts, zero FPs, enough time in canary
-            if let Some(e) = eff {
-                if in_canary_long_enough && e.total_alerts >= min_alerts && e.false_positives == 0 {
-                    if let Ok(meta) = self.promote_rule(
-                        rule_id,
-                        ContentLifecycle::Active,
-                        "canary-auto-promote",
-                        &format!(
-                            "auto-promoted after {} alerts with 0 FPs over {}+ days",
-                            e.total_alerts, min_days
-                        ),
-                    ) {
-                        results.push(CanaryPromotionResult {
-                            rule_id: rule_id.clone(),
-                            rule_name: meta.title.clone(),
-                            action: CanaryAction::Promoted,
-                            reason: format!(
-                                "{} alerts, 0 FPs, canary duration satisfied",
-                                e.total_alerts
-                            ),
-                        });
-                        continue;
-                    }
-                }
+            if let Some(e) = eff
+                && in_canary_long_enough
+                && e.total_alerts >= min_alerts
+                && e.false_positives == 0
+                && let Ok(meta) = self.promote_rule(
+                    rule_id,
+                    ContentLifecycle::Active,
+                    "canary-auto-promote",
+                    &format!(
+                        "auto-promoted after {} alerts with 0 FPs over {}+ days",
+                        e.total_alerts, min_days
+                    ),
+                )
+            {
+                results.push(CanaryPromotionResult {
+                    rule_id: rule_id.clone(),
+                    rule_name: meta.title.clone(),
+                    action: CanaryAction::Promoted,
+                    reason: format!(
+                        "{} alerts, 0 FPs, canary duration satisfied",
+                        e.total_alerts
+                    ),
+                });
+                continue;
             }
 
             // No action yet

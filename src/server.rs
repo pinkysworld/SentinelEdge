@@ -3747,7 +3747,7 @@ fn build_workbench_overview(
                 .to_string(),
         });
     }
-    if pending_automation_approvals > 0 || workflow_store.active_investigations().len() > 0 {
+    if pending_automation_approvals > 0 || !workflow_store.active_investigations().is_empty() {
         recommendations.push(WorkbenchRecommendation {
             category: "automation".to_string(),
             priority: "medium".to_string(),
