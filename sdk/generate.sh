@@ -8,6 +8,49 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION=$(grep '^version' "$ROOT_DIR/Cargo.toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+
+python_version_from_cargo() {
+  local cargo_version="$1"
+  local base suffix number
+
+  if [[ "$cargo_version" != *-* ]]; then
+    printf '%s\n' "$cargo_version"
+    return
+  fi
+
+  base="${cargo_version%%-*}"
+  suffix="${cargo_version#*-}"
+  case "$suffix" in
+    alpha|alpha.*)
+      number="${suffix#alpha}"
+      number="${number#.}"
+      printf '%sa%s\n' "$base" "${number:-0}"
+      ;;
+    beta|beta.*)
+      number="${suffix#beta}"
+      number="${number#.}"
+      printf '%sb%s\n' "$base" "${number:-0}"
+      ;;
+    rc|rc.*)
+      number="${suffix#rc}"
+      number="${number#.}"
+      printf '%src%s\n' "$base" "${number:-0}"
+      ;;
+    dev|dev.*)
+      number="${suffix#dev}"
+      number="${number#.}"
+      printf '%s.dev%s\n' "$base" "${number:-0}"
+      ;;
+    local|local.*)
+      printf '%s+%s\n' "$base" "$suffix"
+      ;;
+    *)
+      printf '%s.dev0+%s\n' "$base" "${suffix//-/.}"
+      ;;
+  esac
+}
+
+PYTHON_VERSION="$(python_version_from_cargo "$VERSION")"
 SPEC="docs/openapi.yaml"
 PYTHON_OUTPUT="sdk/python-generated"
 TYPESCRIPT_OUTPUT="sdk/typescript-generated"
@@ -52,7 +95,7 @@ echo "  → Python SDK"
   -i "$SPEC" \
   -g python \
   -o "$PYTHON_OUTPUT" \
-  --additional-properties=packageName=wardex,packageVersion="$VERSION",projectName=wardex \
+  --additional-properties=packageName=wardex,packageVersion="$PYTHON_VERSION",projectName=wardex \
   --global-property=skipFormModel=false
 
 # Merge generated models into existing SDK
@@ -61,9 +104,11 @@ if [ -d "$PYTHON_OUTPUT/wardex/models" ] && [ "$PYTHON_MODELS_TRACKED" -eq 1 ]; 
   echo "    ✓ Python models updated"
 fi
 
-# Update version in pyproject.toml
-sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" "sdk/python/pyproject.toml"
+# Update Python package metadata with a PEP 440-compatible version.
+sed -i.bak "s/^version = \".*\"/version = \"$PYTHON_VERSION\"/" "sdk/python/pyproject.toml"
 rm -f "sdk/python/pyproject.toml.bak"
+sed -i.bak "s/^__version__ = \".*\"/__version__ = \"$PYTHON_VERSION\"/" "sdk/python/wardex/__init__.py"
+rm -f "sdk/python/wardex/__init__.py.bak"
 
 # ── TypeScript SDK ────────────────────────────────────────────────────────────
 echo "  → TypeScript SDK"
