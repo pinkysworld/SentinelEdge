@@ -327,7 +327,13 @@ export default function AttackGraph() {
         id: 'reports',
         title: 'Export Evidence Bundle',
         description: 'Package graph context into evidence and executive reporting workflows.',
-        to: buildHref('/reports', { params: { tab: 'evidence' } }),
+        to: buildHref('/reports', {
+          params: {
+            tab: 'evidence',
+            source: 'attack-graph',
+            target: focalNode || undefined,
+          },
+        }),
         minRole: 'viewer',
         badge: 'Report',
       },

@@ -103,6 +103,7 @@ function buildSocLink({
   incidentId,
   investigationId,
   source,
+  target,
   drawer,
   casePanel,
   incidentPanel,
@@ -114,6 +115,7 @@ function buildSocLink({
       incident: incidentId || undefined,
       investigation: investigationId || undefined,
       source: source || undefined,
+      target: target || undefined,
       drawer: drawer || undefined,
       casePanel: casePanel || undefined,
       incidentPanel: incidentPanel || undefined,
@@ -273,6 +275,32 @@ function buildEvidenceBundle(report, complianceSummary, privacyBudget, attestati
   };
 }
 
+function buildArtifactRunScope({ caseId, incidentId, investigationId, fallback = 'global' }) {
+  if (investigationId) return 'investigation';
+  if (incidentId) return 'incident';
+  if (caseId) return 'case';
+  return fallback;
+}
+
+function responseEntryMatchesTarget(entry, target) {
+  if (!target) return true;
+  const normalizedTarget = String(target).trim().toLowerCase();
+  if (!normalizedTarget || normalizedTarget.startsWith('case:')) return true;
+  const candidates = [
+    entry?.target,
+    entry?.target_hostname,
+    entry?.target_agent_uid,
+    entry?.target?.hostname,
+    entry?.target?.agent_uid,
+    entry?.target?.ip,
+  ]
+    .filter(Boolean)
+    .map((value) =>
+      typeof value === 'string' ? value.toLowerCase() : JSON.stringify(value).toLowerCase(),
+    );
+  return candidates.some((candidate) => candidate.includes(normalizedTarget));
+}
+
 export default function ReportsExports() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -281,6 +309,7 @@ export default function ReportsExports() {
   const activeIncidentId = searchParams.get('incident') || '';
   const activeInvestigationId = searchParams.get('investigation') || '';
   const activeSource = searchParams.get('source') || '';
+  const activeResponseTarget = searchParams.get('target') || '';
   const hasScopeSelection = Boolean(activeCaseId || activeIncidentId || activeInvestigationId);
   const [templateScopeFilter, setTemplateScopeFilter] = useState('all');
   const [artifactSearch, setArtifactSearch] = useState('');
@@ -288,6 +317,7 @@ export default function ReportsExports() {
   const [republishingLegacyId, setRepublishingLegacyId] = useState(null);
   const [attachingLegacyId, setAttachingLegacyId] = useState(null);
   const [savingScopedTemplate, setSavingScopedTemplate] = useState(false);
+  const [persistingArtifactKey, setPersistingArtifactKey] = useState(null);
   const { data: execSum } = useApi(api.executiveSummary);
   const { data: reportsData, reload: reloadReports } = useApi(api.reports);
   const artifactReportQuery =
@@ -370,6 +400,22 @@ export default function ReportsExports() {
     error: attestationError,
     reload: reloadAttestation,
   } = useApi(api.attestationStatus);
+  const { data: responsePendingData, reload: reloadResponsePending } = useApi(api.responsePending, [], {
+    skip: activeTab !== 'delivery',
+  });
+  const { data: responseRequestData, reload: reloadResponseRequests } = useApi(
+    api.responseRequests,
+    [],
+    {
+      skip: activeTab !== 'delivery',
+    },
+  );
+  const { data: responseAuditData, reload: reloadResponseAudit } = useApi(api.responseAudit, [], {
+    skip: activeTab !== 'delivery',
+  });
+  const { data: responseStatsData, reload: reloadResponseStats } = useApi(api.responseStats, [], {
+    skip: activeTab !== 'delivery',
+  });
   const templates = Array.isArray(templateData?.templates) ? templateData.templates : [];
   const runs = Array.isArray(runData?.runs) ? runData.runs : [];
   const schedules = Array.isArray(scheduleData?.schedules) ? scheduleData.schedules : [];
@@ -387,6 +433,19 @@ export default function ReportsExports() {
   const complianceSummaryFrameworks = Array.isArray(complianceSummaryData?.frameworks)
     ? complianceSummaryData.frameworks
     : [];
+  const responsePendingItems = Array.isArray(responsePendingData?.pending)
+    ? responsePendingData.pending
+    : [];
+  const responseRequestItems = Array.isArray(responseRequestData?.requests)
+    ? responseRequestData.requests
+    : Array.isArray(responseRequestData)
+      ? responseRequestData
+      : [];
+  const responseAuditItems = Array.isArray(responseAuditData?.audit_log)
+    ? responseAuditData.audit_log
+    : Array.isArray(responseAuditData)
+      ? responseAuditData
+      : [];
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [selectedComplianceId, setSelectedComplianceId] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
@@ -428,18 +487,25 @@ export default function ReportsExports() {
       ? selectedInvestigation.workflow_name || selectedInvestigation.id
       : activeInvestigationId || 'No investigation',
     source: formatScopeSource(activeSource),
+    response_target: activeResponseTarget || 'Not pinned',
   };
   const reportScopeParams = {
     case: activeCaseId || undefined,
     incident: activeIncidentId || undefined,
     investigation: activeInvestigationId || undefined,
     source: activeSource || undefined,
+    target: activeResponseTarget || undefined,
   };
   const activeExecutionContext = buildExecutionContextPayload({
     caseId: activeCaseId,
     incidentId: activeIncidentId,
     investigationId: activeInvestigationId,
     source: activeSource,
+  });
+  const activeArtifactScope = buildArtifactRunScope({
+    caseId: activeCaseId,
+    incidentId: activeIncidentId,
+    investigationId: activeInvestigationId,
   });
   const scopedArtifactRuns = runs.filter((run) => {
     const query = artifactSearch.trim().toLowerCase();
@@ -481,6 +547,15 @@ export default function ReportsExports() {
     if (!matchesQuery) return false;
     return true;
   });
+  const filteredResponsePending = responsePendingItems.filter((entry) =>
+    responseEntryMatchesTarget(entry, activeResponseTarget),
+  );
+  const filteredResponseRequests = responseRequestItems.filter((entry) =>
+    responseEntryMatchesTarget(entry, activeResponseTarget),
+  );
+  const filteredResponseAudit = responseAuditItems.filter((entry) =>
+    responseEntryMatchesTarget(entry, activeResponseTarget),
+  );
 
   const activeTemplateId = templates.some((template) => template.id === selectedTemplateId)
     ? selectedTemplateId
@@ -548,6 +623,25 @@ export default function ReportsExports() {
     attestation_status: attestationData?.passed ? 'Ready' : 'Blocked',
     outstanding_checks: failingAttestationChecks.length,
   };
+  const responseSnapshot = {
+    target: activeResponseTarget || 'All response targets',
+    pending_approvals: filteredResponsePending.length,
+    total_requests: filteredResponseRequests.length,
+    ready_to_execute: filteredResponseRequests.filter(
+      (request) => String(request.status || '').toLowerCase() === 'approved' && !request.dry_run,
+    ).length,
+    dry_runs: filteredResponseRequests.filter((request) => Boolean(request.dry_run)).length,
+    executed: filteredResponseAudit.filter(
+      (entry) => String(entry.outcome || '').toLowerCase() === 'executed',
+    ).length,
+    denied: filteredResponseAudit.filter(
+      (entry) => String(entry.outcome || '').toLowerCase() === 'denied',
+    ).length,
+    protected_assets:
+      activeResponseTarget && !activeResponseTarget.startsWith('case:')
+        ? 'Filtered view'
+        : responseStatsData?.protected_assets ?? '—',
+  };
   const workflowItems = [
     {
       id: 'dashboard',
@@ -613,6 +707,7 @@ export default function ReportsExports() {
         incidentId: activeIncidentId || undefined,
         investigationId: activeInvestigationId || undefined,
         source: activeSource || undefined,
+        target: activeResponseTarget || undefined,
         drawer: 'case-workspace',
         casePanel: 'summary',
         hash: 'cases',
@@ -624,6 +719,7 @@ export default function ReportsExports() {
         incidentId: activeIncidentId,
         investigationId: activeInvestigationId || undefined,
         source: activeSource || undefined,
+        target: activeResponseTarget || undefined,
         drawer: 'incident-detail',
         incidentPanel: 'summary',
         hash: 'cases',
@@ -634,6 +730,7 @@ export default function ReportsExports() {
         caseId: activeCaseId || undefined,
         investigationId: activeInvestigationId,
         source: activeSource || undefined,
+        target: activeResponseTarget || undefined,
         hash: 'investigations',
       })
     : null;
@@ -799,6 +896,57 @@ export default function ReportsExports() {
     reloadAttestation();
   };
 
+  const refreshDeliveryContext = () => {
+    reloadResponsePending();
+    reloadResponseRequests();
+    reloadResponseAudit();
+    reloadResponseStats();
+  };
+
+  const persistArtifactRun = async ({
+    key,
+    name,
+    kind,
+    format = 'json',
+    audience = 'analyst',
+    summary,
+    payload,
+    contentType = 'application/json',
+    downloadName,
+    scope = activeArtifactScope,
+    metadata = {},
+  }) => {
+    setPersistingArtifactKey(key);
+    try {
+      await api.createReportRun({
+        name,
+        kind,
+        scope,
+        format,
+        audience,
+        status: 'completed',
+        summary,
+        preview_override: {
+          generated_at: new Date().toISOString(),
+          artifact_type: kind,
+          download_name: downloadName,
+          content_type: contentType,
+          payload,
+          metadata,
+          execution_context: hasActiveScope ? activeExecutionContext : null,
+        },
+        ...activeExecutionContext,
+      });
+      reloadRuns();
+      if (hasActiveScope) setArtifactScopeFilter('current');
+      toast('Artifact saved to report run history.', 'success');
+    } catch {
+      toast('Unable to persist this artifact right now.', 'error');
+    } finally {
+      setPersistingArtifactKey(null);
+    }
+  };
+
   const downloadComplianceJson = (report) => {
     if (!report) return;
     downloadData(report, `${sanitizeFilename(report.framework_id)}-compliance-report.json`);
@@ -833,6 +981,75 @@ export default function ReportsExports() {
     toast('Evidence bundle downloaded.', 'success');
   };
 
+  const saveComplianceJsonArtifact = async (report) => {
+    if (!report) return;
+    await persistArtifactRun({
+      key: `compliance-json-${report.framework_id}`,
+      name: `${report.framework_name} Compliance JSON`,
+      kind: 'compliance_report',
+      format: 'json',
+      audience: 'audit',
+      summary: `Persisted compliance report artifact for ${report.framework_name}.`,
+      payload: report,
+      downloadName: `${sanitizeFilename(report.framework_id)}-compliance-report.json`,
+      metadata: {
+        framework_id: report.framework_id,
+        framework_name: report.framework_name,
+        score_percent: report.score_percent,
+      },
+    });
+  };
+
+  const saveComplianceMarkdownArtifact = async (report) => {
+    if (!report) return;
+    const markdown = buildComplianceMarkdown(report);
+    await persistArtifactRun({
+      key: `compliance-markdown-${report.framework_id}`,
+      name: `${report.framework_name} Compliance Markdown`,
+      kind: 'compliance_markdown',
+      format: 'markdown',
+      audience: 'audit',
+      summary: `Persisted markdown compliance brief for ${report.framework_name}.`,
+      payload: markdown,
+      contentType: 'text/markdown;charset=utf-8',
+      downloadName: `${sanitizeFilename(report.framework_id)}-compliance-report.md`,
+      metadata: {
+        framework_id: report.framework_id,
+        framework_name: report.framework_name,
+      },
+    });
+  };
+
+  const saveEvidenceBundleArtifact = async (report) => {
+    if (!report) return;
+    const bundle = {
+      ...buildEvidenceBundle(
+        report,
+        complianceSummaryData,
+        privacyBudgetData,
+        attestationData,
+        storedReports,
+      ),
+      report_scope: hasActiveScope ? activeExecutionContext : null,
+    };
+    await persistArtifactRun({
+      key: `evidence-bundle-${report.framework_id}`,
+      name: `${report.framework_name} Evidence Bundle`,
+      kind: 'compliance_evidence_bundle',
+      format: 'json',
+      audience: 'audit',
+      summary: `Persisted evidence bundle for ${report.framework_name}.`,
+      payload: bundle,
+      downloadName: `${sanitizeFilename(report.framework_id)}-evidence-bundle.json`,
+      metadata: {
+        framework_id: report.framework_id,
+        framework_name: report.framework_name,
+        includes_privacy_budget: true,
+        includes_attestation: true,
+      },
+    });
+  };
+
   const exportAlerts = async () => {
     setExportingAlerts(true);
     try {
@@ -850,6 +1067,42 @@ export default function ReportsExports() {
     }
   };
 
+  const saveAlertExportArtifact = async () => {
+    setPersistingArtifactKey('alert-export');
+    try {
+      const payload = await api.exportAlerts(activeAlertExport.id);
+      await api.createReportRun({
+        name: `${activeAlertExport.label} Alert Export`,
+        kind: 'alert_export',
+        scope: activeArtifactScope,
+        format: activeAlertExport.extension,
+        audience: 'analyst',
+        status: 'completed',
+        summary: `Persisted backend-native alert export in ${activeAlertExport.label}.`,
+        preview_override: {
+          generated_at: new Date().toISOString(),
+          artifact_type: 'alert_export',
+          download_name: `alerts-${sanitizeFilename(activeAlertExport.id)}.${activeAlertExport.extension}`,
+          content_type: activeAlertExport.mime,
+          payload,
+          metadata: {
+            export_format: activeAlertExport.id,
+            export_label: activeAlertExport.label,
+          },
+          execution_context: hasActiveScope ? activeExecutionContext : null,
+        },
+        ...activeExecutionContext,
+      });
+      reloadRuns();
+      if (hasActiveScope) setArtifactScopeFilter('current');
+      toast(`Alert export saved to run history in ${activeAlertExport.label}.`, 'success');
+    } catch {
+      toast('Unable to persist the selected alert export.', 'error');
+    } finally {
+      setPersistingArtifactKey(null);
+    }
+  };
+
   const exportAuditLog = async () => {
     setExportingAudit(true);
     try {
@@ -861,6 +1114,120 @@ export default function ReportsExports() {
     } finally {
       setExportingAudit(false);
     }
+  };
+
+  const saveAuditLogArtifact = async () => {
+    setPersistingArtifactKey('audit-export');
+    try {
+      const payload = await api.auditLogExport(auditFilters);
+      await api.createReportRun({
+        name: 'Audit Log CSV Artifact',
+        kind: 'audit_export',
+        scope: activeArtifactScope,
+        format: 'csv',
+        audience: 'compliance',
+        status: 'completed',
+        summary: 'Persisted audit-log evidence export with the current filters.',
+        preview_override: {
+          generated_at: new Date().toISOString(),
+          artifact_type: 'audit_export',
+          download_name: 'audit-log-evidence.csv',
+          content_type: 'text/csv;charset=utf-8',
+          payload,
+          metadata: {
+            filters: auditFilters,
+          },
+          execution_context: hasActiveScope ? activeExecutionContext : null,
+        },
+        ...activeExecutionContext,
+      });
+      reloadRuns();
+      if (hasActiveScope) setArtifactScopeFilter('current');
+      toast('Audit export saved to run history.', 'success');
+    } catch {
+      toast('Unable to persist the audit export right now.', 'error');
+    } finally {
+      setPersistingArtifactKey(null);
+    }
+  };
+
+  const savePrivacySnapshotArtifact = async () => {
+    await persistArtifactRun({
+      key: 'privacy-snapshot',
+      name: 'Privacy and Attestation Snapshot',
+      kind: 'privacy_attestation_snapshot',
+      format: 'json',
+      audience: 'compliance',
+      summary: 'Persisted privacy budget and attestation snapshot for downstream review.',
+      payload: {
+        privacy_budget: privacyBudgetData,
+        attestation: attestationData,
+        failing_checks: failingAttestationChecks,
+      },
+      downloadName: 'privacy-attestation-snapshot.json',
+      metadata: {
+        failing_check_count: failingAttestationChecks.length,
+        budget_remaining: privacyBudgetData?.budget_remaining ?? null,
+      },
+    });
+  };
+
+  const downloadResponseSnapshot = () => {
+    const payload = {
+      generated_at: new Date().toISOString(),
+      response_target: activeResponseTarget || null,
+      response_source: activeSource || null,
+      stats: responseSnapshot,
+      pending: filteredResponsePending,
+      requests: filteredResponseRequests,
+      audit_log: filteredResponseAudit,
+    };
+    downloadData(payload, 'response-approval-snapshot.json');
+    toast('Response snapshot downloaded.', 'success');
+  };
+
+  const saveResponseSnapshotArtifact = async () => {
+    await persistArtifactRun({
+      key: 'response-snapshot',
+      name: activeResponseTarget
+        ? `Response Snapshot for ${activeResponseTarget}`
+        : 'Response Approval Snapshot',
+      kind: 'response_approval_snapshot',
+      format: 'json',
+      audience: 'analyst',
+      summary: 'Persisted response approvals, pending actions, and audit evidence.',
+      payload: {
+        generated_at: new Date().toISOString(),
+        response_target: activeResponseTarget || null,
+        response_source: activeSource || null,
+        stats: responseSnapshot,
+        pending: filteredResponsePending,
+        requests: filteredResponseRequests,
+        audit_log: filteredResponseAudit,
+      },
+      downloadName: 'response-approval-snapshot.json',
+      metadata: {
+        response_target: activeResponseTarget || null,
+        pending_approvals: filteredResponsePending.length,
+        request_count: filteredResponseRequests.length,
+      },
+    });
+  };
+
+  const downloadRunArtifact = (run) => {
+    const preview = run?.preview;
+    if (preview && typeof preview === 'object' && !Array.isArray(preview)) {
+      const payload = Object.prototype.hasOwnProperty.call(preview, 'payload')
+        ? preview.payload
+        : null;
+      const downloadName = preview.download_name;
+      const contentType = preview.content_type;
+      if (downloadName && payload != null) {
+        downloadData(payload, downloadName, contentType || undefined);
+        return;
+      }
+    }
+    downloadData(run.preview, `${run.kind}-${run.id}.json`);
   };
 
   const runPiiScan = async () => {
@@ -1270,9 +1637,7 @@ export default function ReportsExports() {
                           <div className="btn-group">
                             <button
                               className="btn btn-sm"
-                              onClick={() =>
-                                downloadData(run.preview, `${run.kind}-${run.id}.json`)
-                              }
+                              onClick={() => downloadRunArtifact(run)}
                             >
                               Download
                             </button>
@@ -1661,6 +2026,71 @@ export default function ReportsExports() {
 
           <div className="card">
             <div className="card-title" style={{ marginBottom: 12 }}>
+              Response Approval Snapshot
+            </div>
+            <div className="hint" style={{ marginBottom: 12 }}>
+              Package pending approvals, request posture, and response audit context into a
+              delivery-ready artifact without leaving the report center.
+            </div>
+            <div className="btn-group" style={{ marginBottom: 12 }}>
+              <button className="btn btn-sm" onClick={refreshDeliveryContext}>
+                Refresh Response
+              </button>
+              <button className="btn btn-sm" onClick={downloadResponseSnapshot}>
+                Download Snapshot
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={persistingArtifactKey === 'response-snapshot'}
+                onClick={saveResponseSnapshotArtifact}
+              >
+                {persistingArtifactKey === 'response-snapshot'
+                  ? 'Saving Response Artifact...'
+                  : 'Save Response Artifact'}
+              </button>
+            </div>
+            <SummaryGrid data={responseSnapshot} limit={8} />
+            {filteredResponseRequests.length > 0 ? (
+              <div className="table-wrap" style={{ marginTop: 16 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Action</th>
+                      <th>Target</th>
+                      <th>Status</th>
+                      <th>Requester</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredResponseRequests.slice(0, 5).map((request) => (
+                      <tr key={request.id}>
+                        <td>{request.action_label || request.action || 'Action'}</td>
+                        <td>{request.target_hostname || request.target?.hostname || '—'}</td>
+                        <td>{request.status || '—'}</td>
+                        <td>{request.requested_by || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty" style={{ marginTop: 16 }}>
+                No response requests match the current target scope.
+              </div>
+            )}
+            <JsonDetails
+              data={{
+                target: activeResponseTarget || null,
+                pending: filteredResponsePending,
+                requests: filteredResponseRequests,
+                audit_log: filteredResponseAudit,
+              }}
+              label="Response snapshot detail"
+            />
+          </div>
+
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 12 }}>
               Executive Summary Snapshot
             </div>
             <SummaryGrid data={execSum} limit={10} />
@@ -1844,15 +2274,46 @@ export default function ReportsExports() {
                       </button>
                       <button
                         className="btn btn-sm"
+                        disabled={persistingArtifactKey === `compliance-json-${selectedReport.framework_id}`}
+                        onClick={() => saveComplianceJsonArtifact(selectedReport)}
+                      >
+                        {persistingArtifactKey === `compliance-json-${selectedReport.framework_id}`
+                          ? 'Saving JSON Artifact...'
+                          : 'Save JSON Artifact'}
+                      </button>
+                      <button
+                        className="btn btn-sm"
                         onClick={() => downloadComplianceMarkdown(selectedReport)}
                       >
                         Download Markdown
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        disabled={
+                          persistingArtifactKey === `compliance-markdown-${selectedReport.framework_id}`
+                        }
+                        onClick={() => saveComplianceMarkdownArtifact(selectedReport)}
+                      >
+                        {persistingArtifactKey === `compliance-markdown-${selectedReport.framework_id}`
+                          ? 'Saving Markdown Artifact...'
+                          : 'Save Markdown Artifact'}
                       </button>
                       <button
                         className="btn btn-sm btn-primary"
                         onClick={() => downloadEvidenceBundle(selectedReport)}
                       >
                         Download Evidence Bundle
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        disabled={
+                          persistingArtifactKey === `evidence-bundle-${selectedReport.framework_id}`
+                        }
+                        onClick={() => saveEvidenceBundleArtifact(selectedReport)}
+                      >
+                        {persistingArtifactKey === `evidence-bundle-${selectedReport.framework_id}`
+                          ? 'Saving Evidence Artifact...'
+                          : 'Save Evidence Artifact'}
                       </button>
                     </div>
 
@@ -1998,6 +2459,15 @@ export default function ReportsExports() {
               </button>
               <button
                 className="btn btn-sm"
+                disabled={persistingArtifactKey === 'alert-export'}
+                onClick={saveAlertExportArtifact}
+              >
+                {persistingArtifactKey === 'alert-export'
+                  ? 'Saving Alert Artifact...'
+                  : 'Save Alert Artifact'}
+              </button>
+              <button
+                className="btn btn-sm"
                 disabled={!auditExportTemplate}
                 onClick={() => createRun(auditExportTemplate)}
               >
@@ -2082,6 +2552,16 @@ export default function ReportsExports() {
             >
               {exportingAudit ? 'Exporting...' : 'Download Audit CSV'}
             </button>
+            <button
+              className="btn btn-sm"
+              disabled={persistingArtifactKey === 'audit-export'}
+              onClick={saveAuditLogArtifact}
+              style={{ marginTop: 12 }}
+            >
+              {persistingArtifactKey === 'audit-export'
+                ? 'Saving Audit Artifact...'
+                : 'Save Audit Artifact'}
+            </button>
           </div>
 
           <div className="card">
@@ -2112,6 +2592,17 @@ export default function ReportsExports() {
                     onClick={() => downloadEvidenceBundle(selectedReport)}
                   >
                     Download Bundle
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    disabled={
+                      persistingArtifactKey === `evidence-bundle-${selectedReport.framework_id}`
+                    }
+                    onClick={() => saveEvidenceBundleArtifact(selectedReport)}
+                  >
+                    {persistingArtifactKey === `evidence-bundle-${selectedReport.framework_id}`
+                      ? 'Saving Bundle Artifact...'
+                      : 'Save Bundle Artifact'}
                   </button>
                   <button
                     className="btn btn-sm"
@@ -2176,6 +2667,17 @@ export default function ReportsExports() {
                   data={{ privacy_budget: privacyBudgetData, attestation: attestationData }}
                   label="Privacy and attestation payload"
                 />
+                <div className="btn-group" style={{ marginTop: 16 }}>
+                  <button
+                    className="btn btn-sm"
+                    disabled={persistingArtifactKey === 'privacy-snapshot'}
+                    onClick={savePrivacySnapshotArtifact}
+                  >
+                    {persistingArtifactKey === 'privacy-snapshot'
+                      ? 'Saving Privacy Artifact...'
+                      : 'Save Privacy Snapshot'}
+                  </button>
+                </div>
               </>
             )}
           </div>

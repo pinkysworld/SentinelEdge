@@ -6,7 +6,7 @@
 
 Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted security operations. It combines cross-platform telemetry collection, detection engineering, analyst workflows, approval-gated response, agent lifecycle management, SIEM integrations, and tamper-evident evidence handling in a single deployable product.
 
-## What ships in `v0.53.2`
+## What ships in `v0.53.3`
 
 - 139 Rust source modules covering telemetry collection, detection engineering, hunt/search, SOC workflows, fleet operations, governance, and automated incident response.
 - A versioned OpenAPI contract with regenerated Python and TypeScript SDKs for authenticated admin-console workflows, explainability, onboarding readiness, threat-intel enrichment, malware analysis, reports, hunts, investigations, NDR, and enterprise support surfaces.
@@ -15,8 +15,9 @@ Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted s
 - **Operator-readiness onboarding** — onboarding is now driven by server readiness checks that verify token validity, first agent health, telemetry flow, alert visibility, intel-source health, malware scan readiness, and response dry-run coverage.
 - **Incident-first SOC workflows** — SOC Workbench now keeps cases, incidents, notes, evidence, narrative context, and pivots into investigations, response, assistant, and reporting in URL-addressable drawers that can be reopened and shared.
 - **Scoped reporting and artifacts** — reports, report runs, schedules, templates, and stored artifacts can now carry case / incident / investigation execution context, with backend filtering and republish flows for older unscoped reports.
+- **Artifact persistence and response closure** — compliance exports, evidence bundles, audit exports, privacy snapshots, backend-native alert exports, and response-approval snapshots can now be persisted into scoped run history and reopened with their original payloads.
 - **Threat-intel and malware depth** — richer threat-intel `v2` metadata, indicator sightings, deep malware scan `v2` static and behavior profiles, and analyst-facing provenance views are now wired through the console.
-- **Manager and analyst efficiency** — morning-brief style dashboard summaries, saved queue filters, deep-linked alert/case selection, and scoped assistant/reporting handoffs reduce console re-navigation and make exact workflows shareable.
+- **Manager and analyst efficiency** — morning-brief style dashboard summaries, saved queue filters, deep-linked alert/case selection, and target-aware assistant/reporting handoffs from SOC, NDR, UEBA, detection, attack-graph, and infrastructure flows reduce console re-navigation and make exact workflows shareable.
 - **Deterministic regression coverage** — focused Rust and admin-console tests now cover explainability, onboarding readiness, deep malware scan profiles, threat-intel sightings, and scoped report/report-template persistence.
 
 See [FEATURES.md](FEATURES.md) for the concise capability summary, [CHANGELOG.md](CHANGELOG.md) for release history, and [docs/README.md](docs/README.md) for the full documentation map.

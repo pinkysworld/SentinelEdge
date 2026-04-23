@@ -120,7 +120,13 @@ export default function NDRDashboard() {
         id: 'reports',
         title: 'Package Delivery Evidence',
         description: 'Open report delivery and evidence workflows for executive or audit-ready exports.',
-        to: buildHref('/reports', { params: { tab: 'delivery' } }),
+        to: buildHref('/reports', {
+          params: {
+            tab: 'delivery',
+            source: 'ndr',
+            target: leadAddress || undefined,
+          },
+        }),
         minRole: 'viewer',
         badge: 'Report',
       },

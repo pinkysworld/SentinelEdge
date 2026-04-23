@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.53.2` delivers the current private-cloud XDR and SIEM control-plane baseline:
+`v0.53.3` delivers the current private-cloud XDR and SIEM control-plane baseline:
 
 - SOC Workbench for queue, cases, investigations, guided workflows, response approvals, escalation management, and incident-first case/incident drawers
 - Analyst Assistant for case-aware questions, citations, ticket-sync pivots, and investigation-scope handoffs inside analyst workflows
@@ -11,7 +11,7 @@
 - UEBA, NDR, attack-graph, vulnerability, malware, certificate, and drift-analysis surfaces with threat-intel `v2` metadata, sightings, and deep malware scan profiles
 - unified asset inventory, fleet release operations, rollout history, and per-agent activity context
 - enterprise controls for RBAC, SCIM, OIDC/SAML SSO, session management, audit, retention, and diagnostics
-- authenticated WebSocket event streaming, ClickHouse-backed long-retention integration foundations, and execution-context-aware reporting across reports, runs, schedules, templates, and stored artifacts
+- authenticated WebSocket event streaming, ClickHouse-backed long-retention integration foundations, and execution-context-aware reporting across reports, runs, schedules, templates, stored artifacts, persisted exports, and response-approval snapshots
 
 ## Next priorities
 
@@ -52,7 +52,7 @@
 
 ## Success criteria
 
-| Metric | Current (`v0.53.2`) | Target |
+| Metric | Current (`v0.53.3`) | Target |
 |---|---|---|
 | Automated tests | 1272 lib + 190 integration + focused browser/admin regressions | maintained and expanded on every release |
 | OpenAPI and SDK contract | versioned OpenAPI plus generated Python and TypeScript SDKs | kept in lockstep on every release |

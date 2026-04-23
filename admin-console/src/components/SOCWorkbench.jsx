@@ -787,6 +787,7 @@ export default function SOCWorkbench() {
           incident: focusedIncidentParam || undefined,
           investigation: focusedInvestigationParam || undefined,
           source: responseSource || 'soc-workbench',
+          target: responseTarget || investigationResponseTarget || undefined,
         },
       }),
       minRole: 'viewer',
@@ -2425,6 +2426,7 @@ export default function SOCWorkbench() {
                               focusedInvestigationParam ||
                               undefined,
                             source: responseSource || 'case-workspace',
+                            target: responseTarget || undefined,
                           },
                         }),
                       )
@@ -4812,6 +4814,7 @@ export default function SOCWorkbench() {
                               focusedInvestigationParam ||
                               undefined,
                             source: responseSource || 'case-drawer',
+                            target: responseTarget || undefined,
                           },
                         }),
                       )

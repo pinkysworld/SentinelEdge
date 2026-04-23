@@ -1393,7 +1393,13 @@ export default function ThreatDetection() {
       id: 'reports',
       title: 'Package Validation Evidence',
       description: `${selectedPacks.length} content pack${selectedPacks.length === 1 ? '' : 's'} and current rollout notes can move straight into evidence exports.`,
-      to: buildHref('/reports', { params: { tab: 'evidence' } }),
+      to: buildHref('/reports', {
+        params: {
+          tab: 'evidence',
+          source: 'detection',
+          target: selectedRule?.id || selectedRule?.title || undefined,
+        },
+      }),
       minRole: 'viewer',
       badge: 'Report',
     },

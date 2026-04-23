@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.53.2`
+- **Version:** `0.53.3`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
-- **Verification:** Rust integration coverage, focused explainability/onboarding/reporting persistence tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, long-retention history, and collector/secrets setup flows
+- **Verification:** Rust integration coverage, focused explainability/onboarding/reporting persistence tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
 - **Production hardening:** 100% (59/59 controls implemented)
 
 ## Shipped in the current platform
@@ -83,7 +83,7 @@
 ### Integrations and evidence
 
 - SIEM output, OCSF normalization, TAXII pull, threat-intel `v2` enrichment metadata, and indicator sightings
-- Ticket sync, forensic evidence export, context-aware report artifacts/templates, tamper-evident audit chain, encrypted event buffering, and deep malware scan `v2` profiles
+- Ticket sync, forensic evidence export, context-aware report artifacts/templates, persisted response/compliance/audit evidence snapshots, tamper-evident audit chain, encrypted event buffering, and deep malware scan `v2` profiles
 - Deployment, disaster recovery, threat model, SLO, and runbook documentation
 
 ## Verification snapshot
@@ -99,7 +99,7 @@ The current release has been verified with:
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
 
-## Recently shipped (v0.53.2)
+## Recently shipped (v0.53.3)
 
 - **Explainable detections and analyst feedback** — detection explainability, persisted analyst feedback, model-registry status, shadow-mode visibility, and rollback-aware control paths now back the alert workflow.
 - **Operator-readiness onboarding** — onboarding is now driven by server readiness checks for token validity, first-agent presence, telemetry flow, alert visibility, threat-intel health, malware scan readiness, and response dry-run coverage.
@@ -107,7 +107,9 @@ Wardex is now positioned as a professional XDR/SIEM control plane with incident-
 - **Incident-first case workspace** — SOC Workbench now treats cases as durable investigation workspaces with evidence, notes, storyline context, linked incidents, and direct pivots into assistant, reports, investigations, and response.
 - **Threat-intel and malware `v2` depth** — the console now consumes richer threat-intel metadata and sightings plus deep malware static/behavior profiles with provenance-oriented analyst views.
 - **Execution-context-aware reporting** — reports, report runs, schedules, templates, stored artifacts, and report handoff flows now preserve `case` / `incident` / `investigation` context and support scoped backend filtering.
-- **Regression expansion** — focused Rust and admin-console tests now cover readiness, explainability, scoped reporting persistence/filtering, and threat-intel/malware depth APIs.
+- **Persisted artifact closure** — compliance markdown/JSON, evidence bundles, privacy snapshots, backend-native alert exports, and response approval snapshots can now be saved into scoped run history and reopened with the original payload format.
+- **Cross-workspace reporting pivots** — SOC, NDR, UEBA, detection, attack-graph, and infrastructure report pivots now preserve `source` and `target` context for tighter evidence and response handoffs.
+- **Regression expansion** — focused Rust and admin-console tests now cover readiness, explainability, scoped reporting persistence/filtering, persisted artifact downloads, response snapshots, and threat-intel/malware depth APIs.
 
 ## Recently shipped (v0.39.5)
 

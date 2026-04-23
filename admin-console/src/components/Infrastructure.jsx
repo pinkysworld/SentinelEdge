@@ -360,7 +360,13 @@ export default function Infrastructure() {
       id: 'reports',
       title: 'Open Compliance And Evidence',
       description: 'Use reporting workflows to package compliance, attestation, and evidence for the current backlog.',
-      to: buildHref('/reports', { params: { tab: 'compliance' } }),
+      to: buildHref('/reports', {
+        params: {
+          tab: 'compliance',
+          source: 'infrastructure',
+          target: focalQuery || undefined,
+        },
+      }),
       minRole: 'viewer',
       badge: 'Report',
     },

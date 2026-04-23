@@ -235,7 +235,13 @@ export default function UEBADashboard() {
         id: 'reports',
         title: 'Capture Privacy And Evidence',
         description: 'Export analyst context into privacy-budget and evidence review workflows.',
-        to: buildHref('/reports', { params: { tab: 'privacy' } }),
+        to: buildHref('/reports', {
+          params: {
+            tab: 'privacy',
+            source: 'ueba',
+            target: focusEntity || undefined,
+          },
+        }),
         minRole: 'viewer',
         badge: 'Report',
       },

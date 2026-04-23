@@ -102,6 +102,81 @@ const attestationStatus = {
   ],
 };
 
+const responsePending = {
+  pending: [
+    {
+      id: 'resp-1',
+      action: 'Isolate',
+      action_label: 'Isolate host',
+      target: { hostname: 'finance-admin-01', agent_uid: 'agent-42' },
+      target_hostname: 'finance-admin-01',
+      target_agent_uid: 'agent-42',
+      status: 'Pending',
+      requested_by: 'analyst-1',
+      dry_run: false,
+    },
+  ],
+};
+
+const responseRequests = {
+  requests: [
+    {
+      id: 'resp-1',
+      action: 'Isolate',
+      action_label: 'Isolate host',
+      target: { hostname: 'finance-admin-01', agent_uid: 'agent-42' },
+      target_hostname: 'finance-admin-01',
+      target_agent_uid: 'agent-42',
+      status: 'Approved',
+      requested_by: 'analyst-1',
+      dry_run: false,
+    },
+    {
+      id: 'resp-2',
+      action: 'Alert',
+      action_label: 'Alert',
+      target: { hostname: 'dev-workstation-07', agent_uid: 'agent-7' },
+      target_hostname: 'dev-workstation-07',
+      target_agent_uid: 'agent-7',
+      status: 'Pending',
+      requested_by: 'analyst-2',
+      dry_run: true,
+    },
+  ],
+};
+
+const responseAudit = {
+  audit_log: [
+    {
+      request_id: 'resp-1',
+      action: 'Isolate',
+      target: 'finance-admin-01',
+      target_hostname: 'finance-admin-01',
+      outcome: 'Executed',
+      timestamp: '2026-04-21T12:20:00Z',
+      approvers: ['analyst-1'],
+    },
+    {
+      request_id: 'resp-2',
+      action: 'Alert',
+      target: 'dev-workstation-07',
+      target_hostname: 'dev-workstation-07',
+      outcome: 'Denied',
+      timestamp: '2026-04-21T12:25:00Z',
+      approvers: ['analyst-2'],
+    },
+  ],
+};
+
+const responseStats = {
+  pending: 1,
+  pending_approval: 1,
+  ready_to_execute: 1,
+  total_requests: 2,
+  denied: 1,
+  protected_assets: 3,
+};
+
 const scopedCases = [
   {
     id: 42,
@@ -499,6 +574,18 @@ beforeEach(() => {
     if (pathname === '/api/attestation/status') {
       return jsonResponse(attestationStatus);
     }
+    if (pathname === '/api/response/pending') {
+      return jsonResponse(responsePending);
+    }
+    if (pathname === '/api/response/requests') {
+      return jsonResponse(responseRequests);
+    }
+    if (pathname === '/api/response/audit') {
+      return jsonResponse(responseAudit);
+    }
+    if (pathname === '/api/response/stats') {
+      return jsonResponse(responseStats);
+    }
     if (pathname === '/api/export/alerts') {
       const format = searchParams.get('format');
       if (format === 'cef') {
@@ -576,6 +663,153 @@ describe('ReportsExports', () => {
       '/api/export/alerts?format=cef',
       expect.objectContaining({ method: 'GET' }),
     );
+  });
+
+  it('persists compliance markdown artifacts and re-downloads the original payload from run history', async () => {
+    renderWithProviders('/reports?tab=compliance&case=42&incident=7&investigation=inv-7&source=case');
+
+    expect(await screen.findByText('Compliance Snapshot')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Markdown Artifact' }));
+
+    await waitFor(() => {
+      const markdownArtifactRequest = globalThis.fetch.mock.calls.find(([url, options]) => {
+        if (String(url) !== '/api/report-runs' || options?.method !== 'POST') return false;
+        const payload = JSON.parse(options.body || '{}');
+        return payload.kind === 'compliance_markdown';
+      });
+      expect(markdownArtifactRequest).toBeTruthy();
+      expect(JSON.parse(markdownArtifactRequest[1].body)).toEqual(
+        expect.objectContaining({
+          case_id: '42',
+          incident_id: '7',
+          investigation_id: 'inv-7',
+          source: 'case',
+          kind: 'compliance_markdown',
+          format: 'markdown',
+        }),
+      );
+      expect(JSON.parse(markdownArtifactRequest[1].body).preview_override).toEqual(
+        expect.objectContaining({
+          download_name: 'cis-v8-compliance-report.md',
+          content_type: 'text/markdown;charset=utf-8',
+          payload: expect.stringContaining('# Compliance Report: CIS Controls v8'),
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Runs' }));
+    const runHistoryCard = screen.getByText('Run History').closest('.card');
+    expect(runHistoryCard).toBeTruthy();
+    const artifactRow = (
+      await within(runHistoryCard).findByText('CIS Controls Compliance Markdown')
+    ).closest('tr');
+    expect(artifactRow).toBeTruthy();
+
+    fireEvent.click(within(artifactRow).getByRole('button', { name: 'Download' }));
+
+    expect(downloadData).toHaveBeenCalledWith(
+      expect.stringContaining('# Compliance Report: CIS Controls v8'),
+      'cis-v8-compliance-report.md',
+      'text/markdown;charset=utf-8',
+    );
+  });
+
+  it('persists backend-native alert exports as scoped artifacts', async () => {
+    renderWithProviders('/reports?tab=evidence&case=42&incident=7&investigation=inv-7&source=case');
+
+    expect(await screen.findByText('Alert Export Formats')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Export Format'), { target: { value: 'cef' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Alert Artifact' }));
+
+    await waitFor(() => {
+      expect(
+        globalThis.fetch.mock.calls.some(
+          ([url, options]) =>
+            String(url) === '/api/export/alerts?format=cef' &&
+            (options?.method || 'GET') === 'GET',
+        ),
+      ).toBe(true);
+    });
+
+    await waitFor(() => {
+      const alertArtifactRequest = globalThis.fetch.mock.calls.find(([url, options]) => {
+        if (String(url) !== '/api/report-runs' || options?.method !== 'POST') return false;
+        const payload = JSON.parse(options.body || '{}');
+        return payload.kind === 'alert_export';
+      });
+      expect(alertArtifactRequest).toBeTruthy();
+      expect(JSON.parse(alertArtifactRequest[1].body)).toEqual(
+        expect.objectContaining({
+          case_id: '42',
+          incident_id: '7',
+          investigation_id: 'inv-7',
+          source: 'case',
+          kind: 'alert_export',
+          format: 'cef',
+        }),
+      );
+      expect(JSON.parse(alertArtifactRequest[1].body).preview_override).toEqual(
+        expect.objectContaining({
+          download_name: 'alerts-cef.cef',
+          content_type: 'text/plain;charset=utf-8',
+          payload: 'CEF:0|Wardex|Wardex|1.0|alert-1|Credential storm|8|src=203.0.113.42',
+          metadata: expect.objectContaining({
+            export_format: 'cef',
+            export_label: 'CEF',
+          }),
+        }),
+      );
+    });
+  });
+
+  it('persists a response approval snapshot scoped to the active response target', async () => {
+    renderWithProviders(
+      '/reports?tab=delivery&case=42&incident=7&investigation=inv-7&source=investigation&target=finance-admin-01',
+    );
+
+    const responseCard = (await screen.findByText('Response Approval Snapshot')).closest('.card');
+    expect(responseCard).toBeTruthy();
+    expect((await within(responseCard).findAllByText('finance-admin-01')).length).toBeGreaterThan(0);
+    expect((await within(responseCard).findAllByText('Isolate host')).length).toBeGreaterThan(0);
+    expect(within(responseCard).queryByText('dev-workstation-07')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Response Artifact' }));
+
+    await waitFor(() => {
+      const responseArtifactRequest = globalThis.fetch.mock.calls.find(([url, options]) => {
+        if (String(url) !== '/api/report-runs' || options?.method !== 'POST') return false;
+        const payload = JSON.parse(options.body || '{}');
+        return payload.kind === 'response_approval_snapshot';
+      });
+      expect(responseArtifactRequest).toBeTruthy();
+      expect(JSON.parse(responseArtifactRequest[1].body)).toEqual(
+        expect.objectContaining({
+          case_id: '42',
+          incident_id: '7',
+          investigation_id: 'inv-7',
+          source: 'investigation',
+          kind: 'response_approval_snapshot',
+        }),
+      );
+      expect(JSON.parse(responseArtifactRequest[1].body).preview_override).toEqual(
+        expect.objectContaining({
+          download_name: 'response-approval-snapshot.json',
+          metadata: expect.objectContaining({
+            response_target: 'finance-admin-01',
+            pending_approvals: 1,
+            request_count: 1,
+          }),
+          payload: expect.objectContaining({
+            response_target: 'finance-admin-01',
+            requests: [
+              expect.objectContaining({
+                target_hostname: 'finance-admin-01',
+              }),
+            ],
+          }),
+        }),
+      );
+    });
   });
 
   it('keeps case and investigation handoff context attached to the reporting workspace', async () => {

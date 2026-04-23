@@ -2,6 +2,21 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [0.53.3] — Scoped Artifact Persistence & Response-Aware Reporting
+
+### Reporting workflow closure
+- **Persisted export artifacts** — Compliance JSON/markdown exports, evidence bundles, audit CSV exports, privacy snapshots, and backend-native alert exports can now be saved into report run history with active `case_id`, `incident_id`, `investigation_id`, and `source` context attached.
+- **Original-payload artifact downloads** — Stored run-history artifacts now reopen with their original payload and content type when possible instead of always falling back to generic JSON downloads.
+- **Response approval snapshots** — Reports & Exports now captures pending approvals, response requests, and response audit evidence into a dedicated scoped artifact, including target-specific filtering and response-target metadata.
+
+### Investigation handoff consistency
+- **Target-aware report pivots** — SOC Workbench, NDR, UEBA, Threat Detection, Attack Graph, and Infrastructure now pass `source` and `target` context into `/reports` so evidence and delivery workflows reopen with the exact operational slice that launched them.
+- **Response-aware deep links** — Report links back into SOC, assistant, and investigation views now preserve response target scope so analysts can move between approval review and evidence packaging without losing context.
+
+### Verification and release sync
+- **Focused admin-console coverage** — Added regression coverage for persisted compliance markdown artifacts, backend-native alert export artifacts, and target-scoped response approval snapshot persistence.
+- **Release-document refresh** — README, status, roadmap, SDK guide, reproducibility notes, and OpenAPI metadata now reflect the scoped artifact persistence and response-aware reporting closure delivered in `v0.53.3`.
+
 ## [0.53.2] — Explainable Detection, Incident-First Workflows & Scoped Reporting
 
 ### Detection trust and analyst confidence
