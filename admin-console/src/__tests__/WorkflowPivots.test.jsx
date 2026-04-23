@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import Dashboard from '../components/Dashboard.jsx';
 import UEBADashboard from '../components/UEBADashboard.jsx';
 import NDRDashboard from '../components/NDRDashboard.jsx';
 import AttackGraph from '../components/AttackGraph.jsx';
@@ -89,6 +90,64 @@ describe('Workflow pivots', () => {
     localStorage.clear();
     localStorage.setItem('wardex_token', 'test-token');
     installCanvasStub();
+  });
+
+  it('routes the dashboard reporting pivot with priority-alert context', async () => {
+    mockSharedRoutes({
+      '/api/status': jsonOk({ version: '0.53.3', uptime_secs: 3600 }),
+      '/api/fleet/dashboard': jsonOk({
+        fleet: { total_agents: 2, status_counts: { online: 2 } },
+      }),
+      '/api/alerts': jsonOk([
+        {
+          id: 'alert-1',
+          timestamp: '2026-04-23T10:00:00Z',
+          severity: 'critical',
+          category: 'Credential Access',
+          hostname: 'playwright-host.local',
+          message: 'Credential spray against the local console host',
+        },
+      ]),
+      '/api/telemetry/current': jsonOk({
+        cpu: 22,
+        memory: 48,
+        disk: 61,
+        network: 1200,
+        auth_failures: 4,
+        processes: 188,
+      }),
+      '/api/health': jsonOk({ status: 'ok', version: '0.53.3' }),
+      '/api/detection/summary': jsonOk({}),
+      '/api/threat-intel/status': jsonOk({ ioc_count: 4 }),
+      '/api/queue/stats': jsonOk({}),
+      '/api/response/stats': jsonOk({ pending: 2 }),
+      '/api/detection/profile': jsonOk({}),
+      '/api/processes/analysis': jsonOk({ status: 'clean' }),
+      '/api/host/info': jsonOk({
+        hostname: 'playwright-host.local',
+        platform: 'macOS',
+        os_version: '14.5',
+        arch: 'arm64',
+      }),
+      '/api/telemetry/history': jsonOk([]),
+      '/api/user/preferences': jsonOk({}),
+      '/api/malware/stats': jsonOk({}),
+      '/api/coverage/gaps': jsonOk({ gaps: [{ technique_id: 'T1059' }] }),
+      '/api/quarantine/stats': jsonOk({}),
+      '/api/lifecycle/stats': jsonOk({}),
+      '/api/feeds/stats': jsonOk({}),
+      '/api/manager/queue-digest': jsonOk({}),
+      '/api/dns-threat/summary': jsonOk({}),
+    });
+
+    renderWithProviders(<Dashboard />);
+
+    const reportCard = (await screen.findByText('Package Evidence')).closest('article');
+    expect(reportCard).toBeTruthy();
+    expect(within(reportCard).getByRole('link', { name: 'Open' })).toHaveAttribute(
+      'href',
+      '/reports?tab=delivery&source=dashboard&target=playwright-host.local',
+    );
   });
 
   it('restores UEBA selection from the route and renders entity pivots', async () => {

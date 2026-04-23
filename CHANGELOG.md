@@ -2,6 +2,14 @@
 
 All notable changes to Wardex are documented in this file.
 
+## [Unreleased]
+
+### Reporting handoff consistency
+- **Dashboard report pivots** — The global dashboard now carries `source=dashboard`, the lead priority-alert target, and a delivery-first tab choice into `/reports`, so the last generic report-center entry point no longer drops operator context.
+
+### Verification
+- **Dashboard workflow-pivot coverage** — Added focused admin-console coverage for the dashboard-to-report handoff to keep reporting context aligned across overview, SOC, NDR, UEBA, detection, attack-graph, and infrastructure pivots.
+
 ## [0.53.3] — Scoped Artifact Persistence & Response-Aware Reporting
 
 ### Reporting workflow closure

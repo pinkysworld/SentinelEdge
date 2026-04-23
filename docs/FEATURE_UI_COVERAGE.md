@@ -13,7 +13,7 @@ Status legend:
 |---|---|---|---|
 | Detection engineering (rules, hunts, suppressions, packs) | `Threat Detection`, `Dashboard`, `Attack Graph` | Partial | Broaden regression coverage and refine remaining long-tail lifecycle promotion flows around the new efficacy, ATT&CK gap, suppression-noise, and rollout drill-downs |
 | SOC operations (queue, cases, timelines, approvals) | `SOC Workbench`, `Live Monitor` | Implemented | Expand browser regression coverage around the new route-aware queue, case, investigation, and response pivots |
-| Dashboard customization and shared views | `Dashboard` | Implemented | Broaden browser regression coverage around persisted personal presets and shared analyst/admin layouts |
+| Dashboard customization and shared views | `Dashboard` | Implemented | Keep the new priority-alert-aware report-center handoffs and persisted personal/shared layouts covered as the overview evolves |
 | UEBA, NDR, graph analytics | `UEBA`, `NDR`, `Attack Graph` | Partial | Deepen anomaly narratives, entity/network evidence correlation, and response-specific playbooks on top of the new cross-surface pivots |
 | Fleet, rollout, and release operations | `Fleet & Agents` | Partial | Add stronger rollout history, recovery, and deployment-health actions |
 | Vulnerability, exposure, drift, certificates, assets | `Infrastructure` | Partial | Finish guided remediation and configuration-review workflows |

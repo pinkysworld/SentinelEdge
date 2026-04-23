@@ -188,6 +188,21 @@ function alertNarrative(alert) {
   return 'Open alert details';
 }
 
+function alertReportTarget(alert) {
+  if (!alert) return '';
+  return (
+    alert.hostname ||
+    alert.target_hostname ||
+    alert.target?.hostname ||
+    alert.agent_uid ||
+    alert.target_agent_uid ||
+    alert.target?.agent_uid ||
+    alert.id ||
+    alert.alert_id ||
+    ''
+  );
+}
+
 export default function Dashboard() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -528,6 +543,10 @@ export default function Dashboard() {
         .slice(0, 5),
     [alertList],
   );
+  const leadPriorityAlert = priorityAlerts[0] || filteredAlerts[0] || alertList[0] || null;
+  const dashboardReportTarget = alertReportTarget(leadPriorityAlert);
+  const dashboardReportTab = (respStats?.pending ?? 0) > 0 ? 'delivery' : 'evidence';
+  const dashboardReportSubject = dashboardReportTarget || 'the current priority stack';
   const situationCards = [
     {
       title: 'Critical Now',
@@ -598,8 +617,17 @@ export default function Dashboard() {
     {
       id: 'reports',
       title: 'Package Evidence',
-      description: 'Export evidence, compliance posture, and delivery artifacts for leadership or audit review.',
-      to: buildHref('/reports', { params: { tab: 'evidence' } }),
+      description:
+        dashboardReportTab === 'delivery'
+          ? `Package response posture and evidence for ${dashboardReportSubject} into delivery workflows.`
+          : `Export evidence, compliance posture, and delivery artifacts for ${dashboardReportSubject}.`,
+      to: buildHref('/reports', {
+        params: {
+          tab: dashboardReportTab,
+          source: 'dashboard',
+          target: dashboardReportTarget || undefined,
+        },
+      }),
       minRole: 'viewer',
       badge: 'Report',
     },
