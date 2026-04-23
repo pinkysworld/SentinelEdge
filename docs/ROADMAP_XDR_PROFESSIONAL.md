@@ -2,15 +2,16 @@
 
 ## Current release baseline
 
-`v0.53.0` delivers the current private-cloud XDR and SIEM control-plane baseline:
+`v0.53.2` delivers the current private-cloud XDR and SIEM control-plane baseline:
 
-- SOC Workbench for queue, cases, investigations, guided workflows, response approvals, and escalation management
-- Analyst Assistant for case-aware questions, citations, and ticket-sync pivots inside analyst workflows
+- SOC Workbench for queue, cases, investigations, guided workflows, response approvals, escalation management, and incident-first case/incident drawers
+- Analyst Assistant for case-aware questions, citations, ticket-sync pivots, and investigation-scope handoffs inside analyst workflows
 - detection engineering with hunts, rule lifecycle, suppressions, content packs, efficacy tracking, and MITRE coverage
-- UEBA, NDR, attack-graph, vulnerability, malware, certificate, and drift-analysis surfaces
+- explainable detections, model-registry status, analyst feedback capture, and readiness-driven onboarding
+- UEBA, NDR, attack-graph, vulnerability, malware, certificate, and drift-analysis surfaces with threat-intel `v2` metadata, sightings, and deep malware scan profiles
 - unified asset inventory, fleet release operations, rollout history, and per-agent activity context
 - enterprise controls for RBAC, SCIM, OIDC/SAML SSO, session management, audit, retention, and diagnostics
-- authenticated WebSocket event streaming and ClickHouse-backed long-retention integration foundations
+- authenticated WebSocket event streaming, ClickHouse-backed long-retention integration foundations, and execution-context-aware reporting across reports, runs, schedules, templates, and stored artifacts
 
 ## Next priorities
 
@@ -39,17 +40,19 @@
 | Searchable docs site | versioned operator documentation with console-linked runbooks | Shipped |
 | Browser workflow coverage | deterministic coverage for advanced analyst and admin paths | Shipped |
 | Packaging breadth | package-manager distribution and install-path validation | Planned |
-| Release-document accuracy | backlog, status, roadmap, and support docs remain synchronized with shipped state | Shipped |
+| Release-document accuracy | backlog, status, roadmap, and support docs remain synchronized with shipped state | In progress |
 
 ## Current gaps
 
 - Full end-to-end federated SSO redirect and callback exchange remains incomplete; the shipped login shell now exposes configured providers, but provider discovery is ahead of full external IdP validation.
 - Remaining SaaS and identity collector breadth still extends beyond the shipped cloud, secrets-manager, and case ticket-sync surfaces.
 - UEBA, NDR, and infrastructure workflows still need deeper remediation and narrative drill-down closure.
+- Entity-centric scoring and sequence/graph detection remain behind the new explainability and case-workspace layers.
+- Malware analysis now has deeper API profiles, but the analyst-facing verdict workspace still needs the same end-to-end closure as reporting and cases.
 
 ## Success criteria
 
-| Metric | Current (`v0.53.0`) | Target |
+| Metric | Current (`v0.53.2`) | Target |
 |---|---|---|
 | Automated tests | 1272 lib + 190 integration + focused browser/admin regressions | maintained and expanded on every release |
 | OpenAPI and SDK contract | versioned OpenAPI plus generated Python and TypeScript SDKs | kept in lockstep on every release |

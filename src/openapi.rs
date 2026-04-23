@@ -891,6 +891,40 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             ),
         )
         .path(
+            "/api/report-templates",
+            "get",
+            with_parameters(
+                op("listReportTemplates", "List reusable report templates and presets", &["reports"]),
+                vec![
+                    string_parameter("case_id", "query", "Filter templates by case handoff id", false),
+                    string_parameter(
+                        "incident_id",
+                        "query",
+                        "Filter templates by incident handoff id",
+                        false,
+                    ),
+                    string_parameter(
+                        "investigation_id",
+                        "query",
+                        "Filter templates by investigation handoff id",
+                        false,
+                    ),
+                    string_parameter(
+                        "source",
+                        "query",
+                        "Filter templates by execution-context source",
+                        false,
+                    ),
+                    string_parameter(
+                        "scope",
+                        "query",
+                        "Return all, scoped, or unscoped templates (`all`, `scoped`, `unscoped`)",
+                        false,
+                    ),
+                ],
+            ),
+        )
+        .path(
             "/api/report-runs",
             "get",
             with_parameters(

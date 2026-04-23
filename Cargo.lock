@@ -2998,7 +2998,7 @@ dependencies = [
 
 [[package]]
 name = "wardex"
-version = "0.53.1-local"
+version = "0.53.2"
 dependencies = [
  "aes-gcm",
  "axum",

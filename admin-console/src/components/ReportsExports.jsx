@@ -79,6 +79,7 @@ const ALERT_EXPORT_FORMATS = [
 
 const COMMON_HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const ARTIFACT_SCOPE_FILTERS = ['all', 'current', 'unscoped'];
+const TEMPLATE_SCOPE_FILTERS = ['all', 'current', 'unscoped'];
 
 function mergeReportParams(searchParams, updates = {}) {
   const next = new URLSearchParams(searchParams);
@@ -281,10 +282,12 @@ export default function ReportsExports() {
   const activeInvestigationId = searchParams.get('investigation') || '';
   const activeSource = searchParams.get('source') || '';
   const hasScopeSelection = Boolean(activeCaseId || activeIncidentId || activeInvestigationId);
+  const [templateScopeFilter, setTemplateScopeFilter] = useState('all');
   const [artifactSearch, setArtifactSearch] = useState('');
   const [artifactScopeFilter, setArtifactScopeFilter] = useState('all');
   const [republishingLegacyId, setRepublishingLegacyId] = useState(null);
   const [attachingLegacyId, setAttachingLegacyId] = useState(null);
+  const [savingScopedTemplate, setSavingScopedTemplate] = useState(false);
   const { data: execSum } = useApi(api.executiveSummary);
   const { data: reportsData, reload: reloadReports } = useApi(api.reports);
   const artifactReportQuery =
@@ -303,7 +306,22 @@ export default function ReportsExports() {
     () => api.reports(artifactReportQuery),
     [artifactScopeFilter, activeCaseId, activeIncidentId, activeInvestigationId, activeSource],
   );
-  const { data: templateData, reload: reloadTemplates } = useApi(api.reportTemplates);
+  const templateQuery =
+    templateScopeFilter === 'current' && hasScopeSelection
+      ? {
+          caseId: activeCaseId || undefined,
+          incidentId: activeIncidentId || undefined,
+          investigationId: activeInvestigationId || undefined,
+          source: activeSource || undefined,
+          scope: 'scoped',
+        }
+      : templateScopeFilter === 'unscoped'
+        ? { scope: 'unscoped' }
+        : {};
+  const { data: templateData, reload: reloadTemplates } = useApi(
+    () => api.reportTemplates(templateQuery),
+    [templateScopeFilter, activeCaseId, activeIncidentId, activeInvestigationId, activeSource],
+  );
   const scopedHistoryQuery = hasScopeSelection
     ? {
         caseId: activeCaseId || undefined,
@@ -644,6 +662,31 @@ export default function ReportsExports() {
     }
   };
 
+  const saveScopedTemplate = async (template) => {
+    if (!template || !hasActiveScope) return;
+    setSavingScopedTemplate(true);
+    try {
+      const scopedTemplateName = `${template.name} for ${scopeSummary.case}`;
+      await api.saveReportTemplate({
+        name: scopedTemplateName,
+        kind: template.kind,
+        scope: template.scope,
+        format: template.format,
+        status: template.status || 'ready',
+        audience: template.audience,
+        description: template.description,
+        ...activeExecutionContext,
+      });
+      setTemplateScopeFilter('current');
+      reloadTemplates();
+      toast('Scoped template saved for the active investigation context.', 'success');
+    } catch {
+      toast('Unable to save a scoped template for the current context.', 'error');
+    } finally {
+      setSavingScopedTemplate(false);
+    }
+  };
+
   const createSchedule = async () => {
     try {
       await api.saveReportSchedule({
@@ -967,45 +1010,92 @@ export default function ReportsExports() {
           <div className="triage-layout">
             <section className="triage-list">
               <div className="card">
-                <div className="card-title" style={{ marginBottom: 12 }}>
-                  Reusable Templates
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    alignItems: 'flex-start',
+                    marginBottom: 12,
+                  }}
+                >
+                  <div>
+                    <div className="card-title">Reusable Templates</div>
+                    <div className="hint" style={{ marginTop: 6 }}>
+                      Keep the default library visible, or narrow to scoped presets for the active
+                      investigation handoff.
+                    </div>
+                  </div>
+                  <div className="btn-group">
+                    {TEMPLATE_SCOPE_FILTERS.map((filter) => (
+                      <button
+                        key={filter}
+                        className={`btn btn-sm ${templateScopeFilter === filter ? 'btn-primary' : ''}`}
+                        disabled={filter === 'current' && !hasActiveScope}
+                        onClick={() => setTemplateScopeFilter(filter)}
+                      >
+                        {filter === 'all'
+                          ? 'All'
+                          : filter === 'current'
+                            ? 'Current Scope'
+                            : 'Unscoped'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  {templates.map((template) => (
-                    <button
-                      key={template.id}
-                      className="card"
-                      style={{
-                        textAlign: 'left',
-                        padding: 16,
-                        borderColor:
-                          activeTemplateId === template.id ? 'var(--accent)' : 'var(--border)',
-                        background:
-                          activeTemplateId === template.id ? 'var(--bg)' : 'var(--bg-card)',
-                      }}
-                      onClick={() => setSelectedTemplateId(template.id)}
-                    >
-                      <div
+                  {templates.length === 0 ? (
+                    <div className="empty">
+                      {templateScopeFilter === 'current' && hasActiveScope
+                        ? 'No scoped templates match the active investigation context yet.'
+                        : templateScopeFilter === 'current'
+                          ? 'Select a case or investigation scope to filter scoped templates.'
+                          : templateScopeFilter === 'unscoped'
+                            ? 'No unscoped templates match the current filters.'
+                            : 'No report template is available yet.'}
+                    </div>
+                  ) : (
+                    templates.map((template) => (
+                      <button
+                        key={template.id}
+                        className="card"
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          gap: 12,
-                          alignItems: 'flex-start',
+                          textAlign: 'left',
+                          padding: 16,
+                          borderColor:
+                            activeTemplateId === template.id ? 'var(--accent)' : 'var(--border)',
+                          background:
+                            activeTemplateId === template.id ? 'var(--bg)' : 'var(--bg-card)',
                         }}
+                        onClick={() => setSelectedTemplateId(template.id)}
                       >
-                        <div>
-                          <div className="row-primary">{template.name}</div>
-                          <div className="row-secondary">{template.description}</div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            gap: 12,
+                            alignItems: 'flex-start',
+                          }}
+                        >
+                          <div>
+                            <div className="row-primary">{template.name}</div>
+                            <div className="row-secondary">{template.description}</div>
+                          </div>
+                          <span className="badge badge-info">{template.audience}</span>
                         </div>
-                        <span className="badge badge-info">{template.audience}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                        <span className="badge badge-info">{template.kind}</span>
-                        <span className="badge badge-info">{template.scope}</span>
-                        <span className="badge badge-info">{template.format}</span>
-                      </div>
-                    </button>
-                  ))}
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                          <span className="badge badge-info">{template.kind}</span>
+                          <span className="badge badge-info">{template.scope}</span>
+                          <span className="badge badge-info">{template.format}</span>
+                          {describeExecutionContext(template.execution_context).map((label) => (
+                            <span key={`${template.id}-${label}`} className="badge badge-info">
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             </section>
@@ -1013,7 +1103,11 @@ export default function ReportsExports() {
             <aside className="triage-detail">
               <div className="card">
                 {!selectedTemplate ? (
-                  <div className="empty">No report template is available yet.</div>
+                  <div className="empty">
+                    {templateScopeFilter === 'current' && hasActiveScope
+                      ? 'No scoped template is selected because this investigation does not have a saved preset yet.'
+                      : 'No report template is available yet.'}
+                  </div>
                 ) : (
                   <>
                     <div className="detail-hero">
@@ -1088,6 +1182,15 @@ export default function ReportsExports() {
                       >
                         Schedule Delivery
                       </button>
+                      {hasActiveScope ? (
+                        <button
+                          className="btn btn-sm"
+                          disabled={savingScopedTemplate}
+                          onClick={() => saveScopedTemplate(selectedTemplate)}
+                        >
+                          {savingScopedTemplate ? 'Saving Scoped Template...' : 'Save As Scoped Template'}
+                        </button>
+                      ) : null}
                     </div>
 
                     {previewPayload && (

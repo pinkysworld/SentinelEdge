@@ -333,7 +333,16 @@ export const reportById = (id) => get(`/api/reports/${encodeURIComponent(id)}`);
 export const annotateReportContext = (id, body) =>
   post(`/api/reports/${encodeURIComponent(id)}/context`, body);
 export const deleteReport = (id) => del(`/api/reports/${encodeURIComponent(id)}`);
-export const reportTemplates = () => get('/api/report-templates');
+export const reportTemplates = ({ caseId, incidentId, investigationId, source, scope } = {}) => {
+  const query = new URLSearchParams();
+  if (caseId) query.set('case_id', String(caseId));
+  if (incidentId) query.set('incident_id', String(incidentId));
+  if (investigationId) query.set('investigation_id', String(investigationId));
+  if (source) query.set('source', String(source));
+  if (scope) query.set('scope', String(scope));
+  const suffix = query.toString();
+  return get(`/api/report-templates${suffix ? `?${suffix}` : ''}`);
+};
 export const saveReportTemplate = (body) => post('/api/report-templates', body);
 export const reportRuns = ({ caseId, incidentId, investigationId, source, scope } = {}) => {
   const query = new URLSearchParams();

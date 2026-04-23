@@ -18,6 +18,8 @@ pub struct ReportTemplateRecord {
     pub status: String,
     pub audience: String,
     pub description: String,
+    #[serde(default)]
+    pub execution_context: Option<ReportExecutionContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +129,7 @@ fn default_templates() -> Vec<ReportTemplateRecord> {
             description:
                 "Leadership-ready overview of queue pressure, incidents, and fleet posture."
                     .to_string(),
+            execution_context: None,
         },
         ReportTemplateRecord {
             id: "tpl-audit-export".to_string(),
@@ -139,6 +142,7 @@ fn default_templates() -> Vec<ReportTemplateRecord> {
             status: "ready".to_string(),
             audience: "security".to_string(),
             description: "Operational audit evidence for investigations and reviews.".to_string(),
+            execution_context: None,
         },
         ReportTemplateRecord {
             id: "tpl-incident-package".to_string(),
@@ -152,6 +156,7 @@ fn default_templates() -> Vec<ReportTemplateRecord> {
             audience: "analyst".to_string(),
             description: "Case-oriented bundle with queue, incident, and response context."
                 .to_string(),
+            execution_context: None,
         },
         ReportTemplateRecord {
             id: "tpl-compliance-snapshot".to_string(),
@@ -164,6 +169,7 @@ fn default_templates() -> Vec<ReportTemplateRecord> {
             status: "ready".to_string(),
             audience: "audit".to_string(),
             description: "Current compliance and control health posture.".to_string(),
+            execution_context: None,
         },
         ReportTemplateRecord {
             id: "tpl-formal-verification".to_string(),
@@ -176,6 +182,7 @@ fn default_templates() -> Vec<ReportTemplateRecord> {
             status: "ready".to_string(),
             audience: "engineering".to_string(),
             description: "Artifacts and metadata for formal verification exports.".to_string(),
+            execution_context: None,
         },
     ]
 }
@@ -244,6 +251,18 @@ impl SupportStore {
         &self.snapshot.templates
     }
 
+    pub fn report_templates_filtered(
+        &self,
+        filter: &ReportExecutionContextFilter,
+    ) -> Vec<ReportTemplateRecord> {
+        self.snapshot
+            .templates
+            .iter()
+            .filter(|template| execution_context_matches(template.execution_context.as_ref(), filter))
+            .cloned()
+            .collect()
+    }
+
     pub fn report_runs(&self) -> &[ReportRunRecord] {
         &self.snapshot.runs
     }
@@ -290,6 +309,7 @@ impl SupportStore {
         status: String,
         audience: String,
         description: String,
+        execution_context: Option<ReportExecutionContext>,
     ) -> ReportTemplateRecord {
         if let Some(existing_id) = id
             && let Some(template) = self
@@ -305,6 +325,7 @@ impl SupportStore {
             template.status = status;
             template.audience = audience;
             template.description = description;
+            template.execution_context = execution_context;
             let updated = template.clone();
             self.persist();
             return updated;
@@ -321,6 +342,7 @@ impl SupportStore {
             status,
             audience,
             description,
+            execution_context,
         };
         self.snapshot.templates.push(created.clone());
         self.persist();
@@ -655,6 +677,57 @@ mod tests {
         assert_eq!(store.report_schedules_filtered(&scoped_filter).len(), 1);
         assert_eq!(store.report_runs_filtered(&unscoped_filter).len(), 1);
         assert_eq!(store.report_schedules_filtered(&unscoped_filter).len(), 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn report_templates_preserve_and_filter_execution_context() {
+        let path = temp_store_path("template-filters");
+        let mut store = SupportStore::new(&path);
+        let scoped_context = ReportExecutionContext {
+            case_id: Some("42".to_string()),
+            incident_id: Some("7".to_string()),
+            investigation_id: Some("inv-7".to_string()),
+            source: Some("case".to_string()),
+        };
+
+        let scoped_template = store.upsert_report_template(
+            None,
+            "Scoped incident package".to_string(),
+            "incident_package".to_string(),
+            "incidents".to_string(),
+            "json".to_string(),
+            "ready".to_string(),
+            "analyst".to_string(),
+            "Scoped preset".to_string(),
+            Some(scoped_context.clone()),
+        );
+
+        assert_eq!(
+            scoped_template
+                .execution_context
+                .as_ref()
+                .and_then(|context| context.case_id.as_deref()),
+            Some("42")
+        );
+
+        let reloaded = SupportStore::new(&path);
+        let filtered = reloaded.report_templates_filtered(&ReportExecutionContextFilter {
+            case_id: Some("42".to_string()),
+            incident_id: Some("7".to_string()),
+            investigation_id: Some("inv-7".to_string()),
+            source: Some("case".to_string()),
+            scope: ReportExecutionScopeFilter::Scoped,
+        });
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "Scoped incident package");
+
+        let unscoped = reloaded.report_templates_filtered(&ReportExecutionContextFilter {
+            scope: ReportExecutionScopeFilter::Unscoped,
+            ..ReportExecutionContextFilter::default()
+        });
+        assert!(unscoped.iter().any(|template| template.id == "tpl-executive-status"));
 
         let _ = std::fs::remove_file(path);
     }

@@ -173,6 +173,20 @@ describe('GET endpoints', () => {
     );
   });
 
+  it('reportTemplates() includes scope filter query params', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ templates: [] }));
+    await api.reportTemplates({
+      caseId: '42',
+      incidentId: '7',
+      investigationId: 'inv-7',
+      source: 'case',
+      scope: 'scoped',
+    });
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      '/api/report-templates?case_id=42&incident_id=7&investigation_id=inv-7&source=case&scope=scoped',
+    );
+  });
+
   it('reportSchedules() includes scope filter query params', async () => {
     mockFetch.mockResolvedValueOnce(jsonOk({ schedules: [] }));
     await api.reportSchedules({

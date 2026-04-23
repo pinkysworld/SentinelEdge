@@ -252,6 +252,41 @@ beforeEach(() => {
   vi.clearAllMocks();
   const currentRunArtifacts = structuredClone(storedRunArtifacts);
   const currentSchedules = structuredClone(storedSchedules);
+  const currentTemplates = [
+    {
+      id: 'tpl-1',
+      name: 'Executive Status',
+      kind: 'executive_status',
+      scope: 'global',
+      format: 'json',
+      status: 'ready',
+      audience: 'executive',
+      description: 'Leadership snapshot',
+      execution_context: null,
+    },
+    {
+      id: 'tpl-audit-export',
+      name: 'Audit Export',
+      kind: 'audit_export',
+      scope: 'global',
+      format: 'csv',
+      status: 'ready',
+      audience: 'compliance',
+      description: 'Filtered API audit trail export',
+      execution_context: null,
+    },
+    {
+      id: 'tpl-compliance-snapshot',
+      name: 'Compliance Snapshot',
+      kind: 'compliance_snapshot',
+      scope: 'global',
+      format: 'json',
+      status: 'ready',
+      audience: 'compliance',
+      description: 'Framework snapshot for audits',
+      execution_context: null,
+    },
+  ];
   const currentStoredReports = [
     {
       id: 101,
@@ -309,40 +344,47 @@ beforeEach(() => {
       return jsonResponse({ status: 'updated', report: currentStoredReports[0] });
     }
     if (pathname === '/api/report-templates') {
-      return jsonResponse({
-        templates: [
-          {
-            id: 'tpl-1',
-            name: 'Executive Status',
-            kind: 'executive_status',
-            scope: 'global',
-            format: 'json',
-            status: 'ready',
-            audience: 'executive',
-            description: 'Leadership snapshot',
+      if (method === 'POST') {
+        const payload = JSON.parse(options.body || '{}');
+        currentTemplates.unshift({
+          id: `tpl-scoped-${currentTemplates.length + 1}`,
+          name: payload.name || 'Scoped Template',
+          kind: payload.kind || 'executive_status',
+          scope: payload.scope || 'global',
+          format: payload.format || 'json',
+          status: payload.status || 'ready',
+          audience: payload.audience || 'operations',
+          description: payload.description || 'Reusable report template',
+          execution_context: {
+            case_id: payload.case_id || null,
+            incident_id: payload.incident_id || null,
+            investigation_id: payload.investigation_id || null,
+            source: payload.source || null,
           },
-          {
-            id: 'tpl-audit-export',
-            name: 'Audit Export',
-            kind: 'audit_export',
-            scope: 'global',
-            format: 'csv',
-            status: 'ready',
-            audience: 'compliance',
-            description: 'Filtered API audit trail export',
-          },
-          {
-            id: 'tpl-compliance-snapshot',
-            name: 'Compliance Snapshot',
-            kind: 'compliance_snapshot',
-            scope: 'global',
-            format: 'json',
-            status: 'ready',
-            audience: 'compliance',
-            description: 'Framework snapshot for audits',
-          },
-        ],
+        });
+        return jsonResponse({ status: 'saved', template: currentTemplates[0] }, 201);
+      }
+      const templates = currentTemplates.filter((template) => {
+        const scope = searchParams.get('scope');
+        if (scope === 'unscoped') {
+          return !template.execution_context;
+        }
+        if (scope === 'scoped') {
+          if (!template.execution_context) return false;
+          const fieldPairs = [
+            ['case_id', template.execution_context.case_id],
+            ['incident_id', template.execution_context.incident_id],
+            ['investigation_id', template.execution_context.investigation_id],
+            ['source', template.execution_context.source],
+          ];
+          return fieldPairs.every(([key, value]) => {
+            const expected = searchParams.get(key);
+            return !expected || expected === value;
+          });
+        }
+        return true;
       });
+      return jsonResponse({ templates });
     }
     if (pathname === '/api/report-runs') {
       if (method === 'POST') {
@@ -574,6 +616,39 @@ describe('ReportsExports', () => {
     renderWithProviders('/reports?tab=templates&case=42&incident=7&investigation=inv-7&source=case');
 
     expect(await screen.findByText('Reusable Templates')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save As Scoped Template' }));
+
+    await waitFor(() => {
+      const templateRequest = globalThis.fetch.mock.calls.find(
+        ([url, options]) => String(url) === '/api/report-templates' && options?.method === 'POST',
+      );
+      expect(templateRequest).toBeTruthy();
+      expect(JSON.parse(templateRequest[1].body)).toEqual(
+        expect.objectContaining({
+          case_id: '42',
+          incident_id: '7',
+          investigation_id: 'inv-7',
+          source: 'case',
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Current Scope' }));
+    await waitFor(() => {
+      expect(
+        globalThis.fetch.mock.calls.some(
+          ([url]) =>
+            String(url) ===
+            '/api/report-templates?case_id=42&incident_id=7&investigation_id=inv-7&source=case&scope=scoped',
+        ),
+      ).toBe(true);
+    });
+    expect(
+      (
+        await screen.findAllByText('Executive Status for #42 Credential misuse on finance admin')
+      ).length,
+    ).toBeGreaterThan(0);
+
     fireEvent.click(screen.getByText('Create Run'));
 
     await waitFor(() => {

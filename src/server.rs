@@ -9484,16 +9484,45 @@ fn handle_api(
             }
         }
         (Method::Get, "/api/report-templates") => {
+            let query = parse_query_string(&url);
+            let filter = report_execution_context_filter_from_query(&query);
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let templates = s.support_store.report_templates_filtered(&filter);
             let body = serde_json::json!({
-                "templates": s.support_store.report_templates(),
-                "count": s.support_store.report_templates().len(),
+                "templates": templates,
+                "count": templates.len(),
             });
             json_response(&body.to_string(), 200)
         }
         (Method::Post, "/api/report-templates") => match read_json_value(body, 12 * 1024) {
             Ok(v) => {
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let execution_context = crate::support::ReportExecutionContext {
+                    case_id: v
+                        .get("case_id")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    incident_id: v
+                        .get("incident_id")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    investigation_id: v
+                        .get("investigation_id")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    source: v
+                        .get("source")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                };
+                let has_execution_context = [
+                    execution_context.case_id.as_ref(),
+                    execution_context.incident_id.as_ref(),
+                    execution_context.investigation_id.as_ref(),
+                    execution_context.source.as_ref(),
+                ]
+                .into_iter()
+                .any(|value| value.is_some());
                 let template = s.support_store.upsert_report_template(
                     v.get("id").and_then(|value| value.as_str()),
                     v["name"].as_str().unwrap_or("Saved Template").to_string(),
@@ -9506,6 +9535,7 @@ fn handle_api(
                         .as_str()
                         .unwrap_or("Reusable report template")
                         .to_string(),
+                    has_execution_context.then_some(execution_context),
                 );
                 json_response(
                     &serde_json::json!({"status": "saved", "template": template}).to_string(),
