@@ -96,7 +96,9 @@ test.describe('Admin console smoke', () => {
 
     const pinButton = page.locator('.topbar-right').getByRole('button', { name: 'Pin Dashboard' });
     await pinButton.click();
-    await expect(page.locator('.topbar-right').getByRole('button', { name: 'Unpin Dashboard' })).toHaveText('Pinned');
+    await expect(
+      page.locator('.topbar-right').getByRole('button', { name: 'Unpin Dashboard' }),
+    ).toHaveText('Pinned');
 
     await page.getByRole('button', { name: 'Search' }).click();
     const searchInput = page.getByRole('combobox', { name: 'Global search' });
@@ -121,5 +123,49 @@ test.describe('Admin console smoke', () => {
     const initialTheme = await page.locator('html').getAttribute('data-theme');
     await page.locator('button[title="Light mode"], button[title="Dark mode"]').click();
     await expect(page.locator('html')).not.toHaveAttribute('data-theme', initialTheme || 'light');
+  });
+
+  test('dashboard refresh re-fetches grouped overview and signal endpoints', async ({ page }) => {
+    const trackedKeys = [
+      'GET /api/status',
+      'GET /api/fleet/dashboard',
+      'GET /api/alerts',
+      'GET /api/telemetry/current',
+      'GET /api/health',
+      'GET /api/detection/summary',
+      'GET /api/threat-intel/status',
+      'GET /api/queue/stats',
+      'GET /api/response/stats',
+      'GET /api/processes/analysis',
+      'GET /api/malware/stats',
+      'GET /api/coverage/gaps',
+      'GET /api/quarantine/stats',
+      'GET /api/lifecycle/stats',
+      'GET /api/feeds/stats',
+      'GET /api/manager/queue-digest',
+      'GET /api/dns-threat/summary',
+    ];
+    const counts = Object.fromEntries(trackedKeys.map((key) => [key, 0]));
+
+    await installAppMocks(page, {
+      onRequest: async ({ key }) => {
+        if (Object.prototype.hasOwnProperty.call(counts, key)) {
+          counts[key] += 1;
+        }
+        return false;
+      },
+    });
+    await seedAuthenticatedSession(page);
+
+    await expect(page.getByText('Security Overview')).toBeVisible();
+    await expect.poll(() => trackedKeys.every((key) => counts[key] > 0)).toBe(true);
+
+    const initialCounts = { ...counts };
+
+    await page.getByRole('button', { name: '↻ Refresh' }).click();
+
+    await expect
+      .poll(() => trackedKeys.every((key) => counts[key] === initialCounts[key] + 1))
+      .toBe(true);
   });
 });

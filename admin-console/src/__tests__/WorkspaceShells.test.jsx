@@ -1837,6 +1837,144 @@ describe('workspace shells', () => {
     expect(await screen.findByText('Malware static and behavior profiles')).toBeInTheDocument();
   });
 
+  it('refreshes grouped infrastructure asset data from the assets workspace', async () => {
+    const callCounts = {
+      assetSummary: 0,
+      vulnerabilitySummary: 0,
+      certsSummary: 0,
+      certsAlerts: 0,
+      containerStats: 0,
+      malwareStats: 0,
+      malwareRecent: 0,
+      driftStatus: 0,
+    };
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+
+      if (href.includes('/api/assets/summary')) {
+        callCounts.assetSummary += 1;
+        return jsonResponse({
+          assets: [
+            {
+              id: 'host-1',
+              name: 'Critical asset host',
+              platform: 'Linux',
+              kind: 'asset',
+              status: 'degraded',
+              severity: 'high',
+              priority: 'critical',
+            },
+          ],
+        });
+      }
+      if (href.includes('/api/vulnerability/summary')) {
+        callCounts.vulnerabilitySummary += 1;
+        return jsonResponse({
+          findings: [
+            {
+              id: 'cve-1',
+              asset_name: 'Critical asset host',
+              cve: 'CVE-2026-0001',
+              severity: 'critical',
+            },
+          ],
+        });
+      }
+      if (href.includes('/api/certs/summary')) {
+        callCounts.certsSummary += 1;
+        return jsonResponse({ certificates: [] });
+      }
+      if (href.includes('/api/certs/alerts')) {
+        callCounts.certsAlerts += 1;
+        return jsonResponse({
+          alerts: [
+            {
+              id: 'cert-1',
+              common_name: 'api.wardex.local',
+              days_remaining: 6,
+              status: 'expiring',
+            },
+          ],
+        });
+      }
+      if (href.includes('/api/container/stats')) {
+        callCounts.containerStats += 1;
+        return jsonResponse({
+          containers: [
+            {
+              id: 'container-1',
+              name: 'payments-api',
+              runtime: 'containerd',
+              severity: 'high',
+              status: 'running',
+            },
+          ],
+        });
+      }
+      if (href.includes('/api/malware/stats')) {
+        callCounts.malwareStats += 1;
+        return jsonResponse({
+          database: { total_hashes: 12 },
+          scanner: { total_scans: 5, malicious_count: 1 },
+          yara_rules: 4,
+        });
+      }
+      if (href.includes('/api/malware/recent')) {
+        callCounts.malwareRecent += 1;
+        return jsonResponse([
+          {
+            sha256: 'abc123',
+            name: 'LoaderX',
+            family: 'Loader',
+            severity: 'critical',
+            detected_at: '2026-04-24T08:00:00Z',
+          },
+        ]);
+      }
+      if (href.includes('/api/drift/status')) {
+        callCounts.driftStatus += 1;
+        return jsonResponse({
+          changes: [{ id: 'drift-1', path: '/etc/ssh/sshd_config', type: 'removed' }],
+        });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<Infrastructure />, '/infrastructure?tab=assets');
+
+    expect((await screen.findAllByText('Critical asset host')).length).toBeGreaterThan(0);
+
+    const refreshButton = await screen.findByRole('button', { name: 'Refresh' });
+
+    await waitFor(() => {
+      expect(callCounts.assetSummary).toBeGreaterThan(0);
+      expect(callCounts.vulnerabilitySummary).toBeGreaterThan(0);
+      expect(callCounts.certsSummary).toBeGreaterThan(0);
+      expect(callCounts.certsAlerts).toBeGreaterThan(0);
+      expect(callCounts.containerStats).toBeGreaterThan(0);
+      expect(callCounts.malwareStats).toBeGreaterThan(0);
+      expect(callCounts.malwareRecent).toBeGreaterThan(0);
+      expect(callCounts.driftStatus).toBeGreaterThan(0);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    fireEvent.click(refreshButton);
+
+    await waitFor(() => {
+      expect(callCounts.assetSummary).toBe(initialCounts.assetSummary + 1);
+      expect(callCounts.vulnerabilitySummary).toBe(initialCounts.vulnerabilitySummary + 1);
+      expect(callCounts.certsSummary).toBe(initialCounts.certsSummary + 1);
+      expect(callCounts.certsAlerts).toBe(initialCounts.certsAlerts + 1);
+      expect(callCounts.containerStats).toBe(initialCounts.containerStats + 1);
+      expect(callCounts.malwareStats).toBe(initialCounts.malwareStats + 1);
+      expect(callCounts.malwareRecent).toBe(initialCounts.malwareRecent + 1);
+      expect(callCounts.driftStatus).toBe(initialCounts.driftStatus + 1);
+    });
+  });
+
   it('renders the infrastructure explorer shell', async () => {
     renderWithProviders(<Infrastructure />, '/infrastructure');
     expect(await screen.findByText('Attention Queues')).toBeInTheDocument();

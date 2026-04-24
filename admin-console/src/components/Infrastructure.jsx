@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useApi, useToast } from '../hooks.jsx';
+import { useApi, useApiGroup, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
@@ -233,18 +233,25 @@ export default function Infrastructure() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: monSt } = useApi(api.monitorStatus);
-  const { data: drift, reload: reloadDrift } = useApi(api.driftStatus);
   const { data: threads } = useApi(api.threadsStatus);
   const { data: slo } = useApi(api.sloStatus);
   const { data: deps } = useApi(api.systemDeps);
-  const { data: vulnSummary, reload: reloadVuln } = useApi(api.vulnerabilitySummary);
   const { data: ndrData } = useApi(api.ndrReport);
-  const { data: containerSt, reload: reloadContainers } = useApi(api.containerStats);
-  const { data: certSummary, reload: reloadCerts } = useApi(api.certsSummary);
-  const { data: certAlerts } = useApi(api.certsAlerts);
-  const { data: assetSummary, reload: reloadAssets } = useApi(api.assetsSummary);
-  const { data: malwareStatsData, reload: reloadMalwareStats } = useApi(api.malwareStats);
-  const { data: malwareRecentData, reload: reloadMalware } = useApi(api.malwareRecent);
+  const { data: infrastructureAssetData, reload: reloadInfrastructureAssets } = useApiGroup({
+    drift: api.driftStatus,
+    vulnSummary: api.vulnerabilitySummary,
+    containerSt: api.containerStats,
+    certSummary: api.certsSummary,
+    certAlerts: api.certsAlerts,
+    assetSummary: api.assetsSummary,
+  });
+  const { drift, vulnSummary, containerSt, certSummary, certAlerts, assetSummary } =
+    infrastructureAssetData;
+  const { data: infrastructureMalwareData, reload: reloadInfrastructureMalware } = useApiGroup({
+    malwareStatsData: api.malwareStats,
+    malwareRecentData: api.malwareRecent,
+  });
+  const { malwareStatsData, malwareRecentData } = infrastructureMalwareData;
   const { data: compData } = useApi(api.complianceSummary);
   const { data: analyticsData } = useApi(api.apiAnalytics);
   const { data: tracesData } = useApi(api.traces);
@@ -577,14 +584,8 @@ export default function Infrastructure() {
     });
   };
 
-  const refreshInfrastructure = () => {
-    reloadAssets();
-    reloadVuln();
-    reloadCerts();
-    reloadContainers();
-    reloadMalware();
-    reloadMalwareStats();
-    reloadDrift();
+  const refreshInfrastructure = async () => {
+    await Promise.allSettled([reloadInfrastructureAssets(), reloadInfrastructureMalware()]);
   };
 
   const runDeepMalwareScan = async () => {
@@ -605,8 +606,7 @@ export default function Infrastructure() {
         },
       });
       setDeepScanResult(result);
-      reloadMalware();
-      reloadMalwareStats();
+      await reloadInfrastructureMalware();
       updateParams({ tab: 'integrity', malwarePanel: 'summary' });
       toast('Deep malware scan completed.', 'success');
     } catch {
@@ -1084,7 +1084,7 @@ export default function Infrastructure() {
                   onClick={async () => {
                     try {
                       await api.driftReset();
-                      reloadDrift();
+                      reloadInfrastructureAssets();
                       toast('Drift baseline reset.', 'success');
                     } catch {
                       toast('Unable to reset drift baseline.', 'error');
@@ -1126,7 +1126,7 @@ export default function Infrastructure() {
                     pivoting to cases or response.
                   </div>
                 </div>
-                <button className="btn btn-sm" onClick={reloadMalware}>
+                <button className="btn btn-sm" onClick={reloadInfrastructureMalware}>
                   Refresh
                 </button>
               </div>
