@@ -319,7 +319,6 @@ export default function ReportsExports() {
   const [savingScopedTemplate, setSavingScopedTemplate] = useState(false);
   const [persistingArtifactKey, setPersistingArtifactKey] = useState(null);
   const { data: execSum } = useApi(api.executiveSummary);
-  const { data: reportsData, reload: reloadReports } = useApi(api.reports);
   const artifactReportQuery =
     artifactScopeFilter === 'current' && (activeCaseId || activeIncidentId || activeInvestigationId)
       ? {
@@ -332,10 +331,14 @@ export default function ReportsExports() {
       : artifactScopeFilter === 'unscoped'
         ? { scope: 'unscoped' }
         : {};
-  const { data: artifactReportsData, reload: reloadArtifactReports } = useApi(
-    () => api.reports(artifactReportQuery),
+  const { data: reportInventoryData, reload: reloadReportInventory } = useApiGroup(
+    {
+      reportsData: api.reports,
+      artifactReportsData: () => api.reports(artifactReportQuery),
+    },
     [artifactScopeFilter, activeCaseId, activeIncidentId, activeInvestigationId, activeSource],
   );
+  const { reportsData, artifactReportsData } = reportInventoryData;
   const templateQuery =
     templateScopeFilter === 'current' && hasScopeSelection
       ? {
@@ -866,8 +869,7 @@ export default function ReportsExports() {
         ...activeExecutionContext,
       });
       reloadReportHistory();
-      reloadArtifactReports();
-      setArtifactScopeFilter('current');
+      refreshReportInventory();
       toast('Legacy report republished into the scoped artifact library.', 'success');
     } catch {
       toast('Unable to republish the selected legacy report.', 'error');
@@ -888,9 +890,7 @@ export default function ReportsExports() {
     setAttachingLegacyId(String(report.id));
     try {
       await api.annotateReportContext(report.id, activeExecutionContext);
-      reloadReports();
-      reloadArtifactReports();
-      setArtifactScopeFilter('current');
+      refreshReportInventory();
       toast('Backend report is now attached to the active investigation scope.', 'success');
     } catch {
       toast('Unable to attach the selected backend report to the current scope.', 'error');
@@ -902,6 +902,14 @@ export default function ReportsExports() {
   const refreshEvidenceContext = () => reloadEvidenceContext();
 
   const refreshDeliveryContext = () => reloadResponseDelivery();
+
+  const refreshReportInventory = () => {
+    if (hasActiveScope && artifactScopeFilter !== 'current') {
+      setArtifactScopeFilter('current');
+      return;
+    }
+    reloadReportInventory();
+  };
 
   const persistArtifactRun = async ({
     key,

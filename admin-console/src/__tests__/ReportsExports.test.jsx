@@ -966,6 +966,54 @@ describe('ReportsExports', () => {
     });
   });
 
+  it('refreshes grouped report inventory data after republishing a legacy backend report', async () => {
+    const callCounts = {
+      baseReports: 0,
+      scopedReports: 0,
+    };
+    const defaultImplementation = globalThis.fetch.getMockImplementation();
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const parsed = new URL(String(url), 'http://localhost');
+      const { pathname, searchParams } = parsed;
+
+      if (pathname === '/api/reports') {
+        if (searchParams.get('scope') === 'scoped') {
+          callCounts.scopedReports += 1;
+        } else {
+          callCounts.baseReports += 1;
+        }
+      }
+
+      return defaultImplementation(url, options);
+    });
+
+    renderWithProviders('/reports?tab=runs&case=42&incident=7&investigation=inv-7&source=case');
+
+    expect(await screen.findByText('Stored Report Artifacts')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(callCounts.baseReports).toBeGreaterThan(1);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Republish To Scope' }));
+
+    await waitFor(() => {
+      expect(
+        globalThis.fetch.mock.calls.some(
+          ([url, options]) => String(url) === '/api/report-runs' && options?.method === 'POST',
+        ),
+      ).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(callCounts.baseReports).toBe(initialCounts.baseReports + 1);
+      expect(callCounts.scopedReports).toBe(initialCounts.scopedReports + 1);
+    });
+  });
+
   it('keeps case and investigation handoff context attached to the reporting workspace', async () => {
     renderWithProviders('/reports?tab=evidence&case=42&incident=7&investigation=inv-7&source=case');
 
