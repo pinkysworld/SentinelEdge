@@ -334,14 +334,20 @@ fn error_response_status(status: &str, desc: &str) -> BTreeMap<String, Response>
 
 fn error_responses() -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
-    m.extend(error_response_status("400", "Validation or request parsing error"));
+    m.extend(error_response_status(
+        "400",
+        "Validation or request parsing error",
+    ));
     m.extend(error_response_status(
         "401",
         "Unauthorized — missing or invalid Bearer token",
     ));
     m.extend(error_response_status("403", "Forbidden"));
     m.extend(error_response_status("404", "Resource not found"));
-    m.extend(error_response_status("409", "Conflict with existing resource state"));
+    m.extend(error_response_status(
+        "409",
+        "Conflict with existing resource state",
+    ));
     m.extend(error_response_status("413", "Payload too large"));
     m.extend(error_response_status("429", "Rate limit exceeded"));
     m.extend(error_response_status("500", "Internal server error"));
@@ -351,7 +357,10 @@ fn error_responses() -> BTreeMap<String, Response> {
 
 fn public_error_responses() -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
-    m.extend(error_response_status("400", "Validation or request parsing error"));
+    m.extend(error_response_status(
+        "400",
+        "Validation or request parsing error",
+    ));
     m.extend(error_response_status("404", "Resource not found"));
     m.extend(error_response_status("429", "Rate limit exceeded"));
     m.extend(error_response_status("503", "Service unavailable"));
@@ -2443,20 +2452,24 @@ mod tests {
         assert!(sso_login.responses.contains_key("302"));
         assert!(sso_login.responses.contains_key("400"));
         assert!(sso_login.responses.contains_key("503"));
-        assert!(sso_login
-            .parameters
-            .iter()
-            .any(|parameter| parameter.location == "query" && parameter.name == "provider_id"));
+        assert!(
+            sso_login
+                .parameters
+                .iter()
+                .any(|parameter| parameter.location == "query" && parameter.name == "provider_id")
+        );
 
         let sso_callback = spec.paths.get("/api/auth/sso/callback").unwrap();
         let sso_callback_get = sso_callback.get.as_ref().unwrap();
         assert_eq!(sso_callback_get.security.len(), 1);
         assert!(sso_callback_get.security[0].is_empty());
         assert!(sso_callback_get.responses.contains_key("302"));
-        assert!(sso_callback_get
-            .parameters
-            .iter()
-            .any(|parameter| parameter.location == "query" && parameter.name == "code"));
+        assert!(
+            sso_callback_get
+                .parameters
+                .iter()
+                .any(|parameter| parameter.location == "query" && parameter.name == "code")
+        );
 
         let sso_callback_post = sso_callback.post.as_ref().unwrap();
         assert_eq!(sso_callback_post.security.len(), 1);
