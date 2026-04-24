@@ -132,7 +132,8 @@ impl UserPreferencesStore {
             current.dashboard_presets = normalize_dashboard_presets(dashboard_presets);
         }
         if let Some(active_dashboard_preset) = patch.active_dashboard_preset {
-            current.active_dashboard_preset = normalize_active_dashboard_preset(&active_dashboard_preset);
+            current.active_dashboard_preset =
+                normalize_active_dashboard_preset(&active_dashboard_preset);
         }
 
         current.updated_at = Some(chrono::Utc::now().to_rfc3339());
@@ -261,7 +262,10 @@ mod tests {
         assert_eq!(saved.pinned_sections, vec!["fleet", "monitor"]);
         assert_eq!(saved.dashboard_presets.len(), 1);
         assert_eq!(saved.dashboard_presets[0].name, "My SOC");
-        assert_eq!(saved.active_dashboard_preset.as_deref(), Some("saved:My SOC"));
+        assert_eq!(
+            saved.active_dashboard_preset.as_deref(),
+            Some("saved:My SOC")
+        );
         assert!(saved.updated_at.is_some());
 
         let reloaded = UserPreferencesStore::new(&store_path.to_string_lossy());
@@ -306,7 +310,10 @@ mod tests {
         assert_eq!(updated.theme.as_deref(), Some("light"));
         assert_eq!(updated.pinned_sections, vec!["fleet", "soc"]);
         assert_eq!(updated.dashboard_presets.len(), 1);
-        assert_eq!(updated.dashboard_presets[0].widgets, vec!["threat-overview"]);
+        assert_eq!(
+            updated.dashboard_presets[0].widgets,
+            vec!["threat-overview"]
+        );
         assert_eq!(updated.dashboard_presets[0].hidden, vec!["threat-overview"]);
         assert_eq!(updated.active_dashboard_preset, None);
     }

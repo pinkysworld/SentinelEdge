@@ -55,6 +55,15 @@ const get = (p, o) => request('GET', p, null, o);
 const post = (p, b, o) => request('POST', p, b, o);
 const put = (p, b, o) => request('PUT', p, b, o);
 const del = (p, o) => request('DELETE', p, null, o);
+const toQuery = (params = {}) => {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  });
+  return query.toString();
+};
 
 // ── Auth ─────────────────────────────────────────────────────
 export const authCheck = () => get('/api/auth/check');
@@ -120,6 +129,8 @@ export const checkpoints = () => get('/api/checkpoints');
 export const detectionProfile = () => get('/api/detection/profile');
 export const setDetectionProfile = (body) => put('/api/detection/profile', body);
 export const detectionSummary = () => get('/api/detection/summary');
+export const detectionReplayCorpus = () => get('/api/detection/replay-corpus');
+export const evaluateDetectionReplayCorpus = (body) => post('/api/detection/replay-corpus', body);
 export const detectionWeights = () => get('/api/detection/weights');
 export const setDetectionWeights = (body) => post('/api/detection/weights', body);
 export const normalizeScore = () => get('/api/detection/score/normalize');
@@ -313,6 +324,13 @@ export const validateOktaCollector = () => post('/api/collectors/okta/validate',
 export const collectorsEntra = () => get('/api/collectors/entra');
 export const saveEntraCollectorConfig = (body) => post('/api/collectors/entra/config', body);
 export const validateEntraCollector = () => post('/api/collectors/entra/validate', {});
+export const collectorsM365 = () => get('/api/collectors/m365');
+export const saveM365CollectorConfig = (body) => post('/api/collectors/m365/config', body);
+export const validateM365Collector = () => post('/api/collectors/m365/validate', {});
+export const collectorsWorkspace = () => get('/api/collectors/workspace');
+export const saveWorkspaceCollectorConfig = (body) =>
+  post('/api/collectors/workspace/config', body);
+export const validateWorkspaceCollector = () => post('/api/collectors/workspace/validate', {});
 export const secretsStatus = () => get('/api/secrets/status');
 export const saveSecretsConfig = (body) => post('/api/secrets/config', body);
 export const validateSecretReference = (body) => post('/api/secrets/validate', body);

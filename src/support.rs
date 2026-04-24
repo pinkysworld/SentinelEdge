@@ -258,7 +258,9 @@ impl SupportStore {
         self.snapshot
             .templates
             .iter()
-            .filter(|template| execution_context_matches(template.execution_context.as_ref(), filter))
+            .filter(|template| {
+                execution_context_matches(template.execution_context.as_ref(), filter)
+            })
             .cloned()
             .collect()
     }
@@ -290,7 +292,9 @@ impl SupportStore {
         self.snapshot
             .schedules
             .iter()
-            .filter(|schedule| execution_context_matches(schedule.execution_context.as_ref(), filter))
+            .filter(|schedule| {
+                execution_context_matches(schedule.execution_context.as_ref(), filter)
+            })
             .cloned()
             .collect()
     }
@@ -500,7 +504,9 @@ fn execution_context_matches(
 
     fn field_matches(actual: Option<&String>, expected: Option<&String>) -> bool {
         match expected {
-            Some(expected_value) => actual.is_some_and(|actual_value| actual_value == expected_value),
+            Some(expected_value) => {
+                actual.is_some_and(|actual_value| actual_value == expected_value)
+            }
             None => true,
         }
     }
@@ -727,7 +733,11 @@ mod tests {
             scope: ReportExecutionScopeFilter::Unscoped,
             ..ReportExecutionContextFilter::default()
         });
-        assert!(unscoped.iter().any(|template| template.id == "tpl-executive-status"));
+        assert!(
+            unscoped
+                .iter()
+                .any(|template| template.id == "tpl-executive-status")
+        );
 
         let _ = std::fs::remove_file(path);
     }

@@ -6,7 +6,7 @@ info:
     All mutating endpoints and sensitive monitoring endpoints require
     Bearer token authentication via the `Authorization` header.
     Agent-facing enrollment and heartbeat endpoints bypass admin auth.
-  version: "0.53.3"
+  version: "0.53.5"
   contact:
     name: Wardex Project
   license:
@@ -795,7 +795,7 @@ paths:
                   platform: { type: string }
               example:
                 status: ok
-                version: "0.53.3"
+                version: "0.53.5"
                 uptime: "4h 12m 3s"
                 platform: aarch64-apple-darwin
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -957,6 +957,85 @@ paths:
       responses:
         "200":
           description: Velocity, entropy, and compound detector parameters
+
+  /api/detection/replay-corpus:
+    get:
+      tags: [Detection]
+      summary: Built-in replay-corpus acceptance gate
+      responses:
+        "200":
+          description: Precision, recall, false-positive rate, category outcomes, platform deltas, signal-type deltas, and acceptance targets
+    post:
+      tags: [Detection]
+      summary: Evaluate a custom or retained-event replay-corpus validation pack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                source:
+                  type: string
+                  enum: [custom, retained_events]
+                  description: Defaults to custom. retained_events samples the most recent stored events.
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 256
+                  description: Maximum retained events to sample when source is retained_events.
+                threshold: { type: number }
+                samples:
+                  type: array
+                  description: Required when source is custom.
+                  items:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      label: { type: string }
+                      expected: { type: string, enum: [benign, malicious] }
+                      platform:
+                        type: string
+                        description: Optional custom platform label used for replay delta breakdowns. Defaults to server-side fallback grouping when omitted.
+                      signal_type:
+                        type: string
+                        description: Optional custom signal-family label used for replay delta breakdowns. Defaults to server-side inference when omitted.
+                      sample: { $ref: "#/components/schemas/TelemetrySample" }
+      responses:
+        "200":
+          description: Precision, recall, false-positive rate, category outcomes, platform deltas, signal-type deltas, and acceptance targets
+
+  /api/detection/explain:
+    get:
+      tags: [Detection]
+      summary: Detection explainability
+      parameters:
+        - name: event_id
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: alert_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Evidence, entity risk scores, feedback, and next steps
+
+  /api/detection/feedback:
+    get:
+      tags: [Detection]
+      summary: List detection feedback
+      responses:
+        "200":
+          description: Analyst feedback records and summary counts
+    post:
+      tags: [Detection]
+      summary: Record detection feedback
+      responses:
+        "200":
+          description: Saved feedback record
 
   /api/detection/weights:
     get:
@@ -1120,7 +1199,7 @@ paths:
                 - agent_id: a1b2c3d4
                   hostname: prod-web-01
                   platform: x86_64-unknown-linux-musl
-                  version: "0.53.3"
+                  version: "0.53.5"
                   status: healthy
                   last_heartbeat: "2026-04-08T12:01:30Z"
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -2278,6 +2357,14 @@ paths:
       responses:
         "200":
           description: Correlation pairs
+
+  /api/correlation/campaigns:
+    get:
+      tags: [Research]
+      summary: Stored-event campaign clustering
+      responses:
+        "200":
+          description: Campaign summaries, sequence signals, and attack-graph nodes/edges
 
   /api/drift/status:
     get:

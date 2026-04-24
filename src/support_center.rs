@@ -52,7 +52,11 @@ fn markdown_title(content: &str, path: &str) -> String {
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty())
         .unwrap_or_else(|| {
-            let stem = path.rsplit('/').next().unwrap_or(path).trim_end_matches(".md");
+            let stem = path
+                .rsplit('/')
+                .next()
+                .unwrap_or(path)
+                .trim_end_matches(".md");
             prettify_title(stem)
         })
 }
@@ -271,7 +275,12 @@ fn load_python_sdk() -> Option<SdkParityEntry> {
     })
 }
 
-pub fn docs_index(version: &str, query: Option<&str>, section: Option<&str>, limit: usize) -> serde_json::Value {
+pub fn docs_index(
+    version: &str,
+    query: Option<&str>,
+    section: Option<&str>,
+    limit: usize,
+) -> serde_json::Value {
     let mut files = Vec::new();
     collect_markdown_files(&EMBEDDED_DOCS, &mut files);
     let query = query.unwrap_or("").trim();
@@ -348,7 +357,12 @@ pub fn support_parity(version: &str) -> serde_json::Value {
         .types
         .iter()
         .find(|ty| ty.name == graphql_schema.query_type)
-        .map(|ty| ty.fields.iter().map(|field| field.name.clone()).collect::<Vec<_>>())
+        .map(|ty| {
+            ty.fields
+                .iter()
+                .map(|field| field.name.clone())
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
     let mut python_sdk = load_python_sdk().unwrap_or_else(|| SdkParityEntry {

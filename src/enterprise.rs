@@ -3853,7 +3853,10 @@ mod tests {
             Some("https://issuer.example.com")
         );
         assert_eq!(provider.client_id.as_deref(), Some("wardex-admin"));
-        assert_eq!(provider.redirect_uri.as_deref(), Some("https://wardex.example.com/api/auth/sso/callback"));
+        assert_eq!(
+            provider.redirect_uri.as_deref(),
+            Some("https://wardex.example.com/api/auth/sso/callback")
+        );
         assert_eq!(
             provider
                 .group_role_mappings

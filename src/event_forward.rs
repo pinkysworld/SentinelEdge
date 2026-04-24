@@ -619,7 +619,10 @@ pub fn analytics_for_events(events: &[StoredEvent]) -> EventAnalytics {
             *reason_counts.entry(reason.clone()).or_insert(0) += 1;
         }
 
-        per_agent.entry(event.agent_id.clone()).or_default().push(event);
+        per_agent
+            .entry(event.agent_id.clone())
+            .or_default()
+            .push(event);
     }
 
     let mut top_reasons: Vec<TopReason> = reason_counts

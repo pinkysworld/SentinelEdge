@@ -137,6 +137,97 @@ function validationStatusLabel(status) {
   }
 }
 
+function normalizeCollectorTimeline(entry) {
+  return Array.isArray(entry?.timeline) ? entry.timeline : [];
+}
+
+function CollectorTimelineList({ timeline }) {
+  if (!Array.isArray(timeline) || timeline.length === 0) return null;
+  return (
+    <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+      {timeline.slice(0, 5).map((item, index) => (
+        <div
+          key={`${item.stage || 'checkpoint'}-${index}`}
+          style={{
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: '1px solid var(--border)',
+            background: 'var(--bg-card)',
+          }}
+        >
+          <div className="chip-row" style={{ marginBottom: 6 }}>
+            <span className={`badge ${validationBadgeClass(item.status)}`}>
+              {item.stage || 'Checkpoint'}
+            </span>
+            {item.title && <span className="scope-chip">{item.title}</span>}
+          </div>
+          {item.detail && <div className="hint">{item.detail}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CollectorLaneCard({
+  title,
+  hint,
+  rows,
+  emptyText,
+  primaryHref,
+  primaryLabel,
+  secondaryHref,
+  secondaryLabel,
+}) {
+  return (
+    <div className="card">
+      <div className="card-title" style={{ marginBottom: 10 }}>
+        {title}
+      </div>
+      <div className="hint" style={{ marginBottom: 12 }}>
+        {hint}
+      </div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.length === 0 ? (
+          <div className="empty">{emptyText}</div>
+        ) : (
+          rows.map((entry, index) => (
+            <div key={`${collectorIdentifier(entry)}-${index}`} className="stat-box">
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  alignItems: 'flex-start',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600 }}>{entry.label || entry.name || entry.provider}</div>
+                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                    {entry.total_collected || 0} events observed •{' '}
+                    {validationStatusLabel(entry.validation?.status)}
+                  </div>
+                </div>
+                <span className={`badge ${validationBadgeClass(entry.validation?.status)}`}>
+                  {validationStatusLabel(entry.validation?.status)}
+                </span>
+              </div>
+              <CollectorTimelineList timeline={normalizeCollectorTimeline(entry)} />
+            </div>
+          ))
+        )}
+      </div>
+      <div className="btn-group" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+        <a className="btn btn-sm btn-primary" href={primaryHref}>
+          {primaryLabel}
+        </a>
+        <a className="btn btn-sm" href={secondaryHref}>
+          {secondaryLabel}
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function optionalTextValue(value) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -189,10 +280,7 @@ function formatApiError(error, fallback) {
 }
 
 function createIdpDraft(provider = null) {
-  const defaultRedirectUri =
-    typeof window === 'undefined'
-      ? 'http://localhost:8080/api/auth/sso/callback'
-      : `${window.location.origin}/api/auth/sso/callback`;
+  const defaultRedirectUri = getDefaultSsoCallbackUri();
   return {
     id: provider?.id || '',
     kind: String(provider?.kind || 'oidc').toLowerCase(),
@@ -206,6 +294,42 @@ function createIdpDraft(provider = null) {
     enabled: provider?.enabled ?? true,
     mappings_text: formatGroupRoleMappings(provider?.group_role_mappings),
   };
+}
+
+function getDefaultSsoCallbackUri() {
+  return typeof window === 'undefined'
+    ? 'http://localhost:8080/api/auth/sso/callback'
+    : `${window.location.origin}/api/auth/sso/callback`;
+}
+
+function buildSsoLoginPath(providerId, redirect = '/settings') {
+  const params = new URLSearchParams();
+  if (providerId) params.set('provider_id', providerId);
+  params.set('redirect', redirect || '/settings');
+  return `/api/auth/sso/login?${params.toString()}`;
+}
+
+function collectorIdentifier(entry) {
+  return String(entry?.name || entry?.provider || '').toLowerCase();
+}
+
+function collectorLane(entry) {
+  const id = collectorIdentifier(entry);
+  if (id.includes('okta') || id.includes('entra')) return 'identity';
+  if (
+    id.includes('m365') ||
+    id.includes('microsoft_365') ||
+    id.includes('workspace') ||
+    id.includes('google_workspace')
+  ) {
+    return 'saas';
+  }
+  if (id.includes('aws') || id.includes('azure') || id.includes('gcp')) return 'cloud';
+  return 'other';
+}
+
+function providerLoginKindLabel(kind) {
+  return String(kind || 'oidc').toUpperCase();
 }
 
 function createScimDraft(config = null) {
@@ -316,6 +440,31 @@ function createEntraCollectorDraft(data = null) {
     client_id: config.client_id || '',
     client_secret: '',
     poll_interval_secs: config.poll_interval_secs ?? 30,
+  };
+}
+
+function createM365CollectorDraft(data = null) {
+  const config = data?.config ?? data ?? {};
+  return {
+    enabled: Boolean(config.enabled),
+    tenant_id: config.tenant_id || '',
+    client_id: config.client_id || '',
+    client_secret: '',
+    poll_interval_secs: config.poll_interval_secs ?? 60,
+    content_types: Array.isArray(config.content_types) ? config.content_types.join('\n') : '',
+  };
+}
+
+function createWorkspaceCollectorDraft(data = null) {
+  const config = data?.config ?? data ?? {};
+  return {
+    enabled: Boolean(config.enabled),
+    customer_id: config.customer_id || 'my_customer',
+    delegated_admin_email: config.delegated_admin_email || '',
+    service_account_email: config.service_account_email || '',
+    credentials_json: '',
+    poll_interval_secs: config.poll_interval_secs ?? 60,
+    applications: Array.isArray(config.applications) ? config.applications.join('\n') : '',
   };
 }
 
@@ -603,6 +752,9 @@ export default function Settings() {
   const { data: enrichConn } = useApi(api.enrichmentConnectors);
   const { data: idp, reload: rIdp } = useApi(api.idpProviders);
   const { data: scim, reload: rScim } = useApi(api.scimConfig);
+  const { data: ssoConfigData, reload: rSsoConfig } = useApi(api.authSsoConfig, [], {
+    skip: tab !== 'integrations',
+  });
   const { data: sbomData } = useApi(api.sbom);
   const { data: dbVer } = useApi(api.adminDbVersion);
   const { data: dlqData } = useApi(api.dlqStats);
@@ -648,6 +800,16 @@ export default function Settings() {
   const { data: entraCollectorData, reload: rEntraCollector } = useApi(api.collectorsEntra, [], {
     skip: tab !== 'integrations',
   });
+  const { data: m365CollectorData, reload: rM365Collector } = useApi(api.collectorsM365, [], {
+    skip: tab !== 'integrations',
+  });
+  const { data: workspaceCollectorData, reload: rWorkspaceCollector } = useApi(
+    api.collectorsWorkspace,
+    [],
+    {
+      skip: tab !== 'integrations',
+    },
+  );
   const { data: secretsData, reload: rSecrets } = useApi(api.secretsStatus, [], {
     skip: tab !== 'integrations',
   });
@@ -709,6 +871,10 @@ export default function Settings() {
   const [gcpCollectorDraft, setGcpCollectorDraft] = useState(() => createGcpCollectorDraft());
   const [oktaCollectorDraft, setOktaCollectorDraft] = useState(() => createOktaCollectorDraft());
   const [entraCollectorDraft, setEntraCollectorDraft] = useState(() => createEntraCollectorDraft());
+  const [m365CollectorDraft, setM365CollectorDraft] = useState(() => createM365CollectorDraft());
+  const [workspaceCollectorDraft, setWorkspaceCollectorDraft] = useState(() =>
+    createWorkspaceCollectorDraft(),
+  );
   const [secretsDraft, setSecretsDraft] = useState(() => createSecretsDraft());
   const [siemSaving, setSiemSaving] = useState(false);
   const [awsCollectorSaving, setAwsCollectorSaving] = useState(false);
@@ -716,6 +882,8 @@ export default function Settings() {
   const [gcpCollectorSaving, setGcpCollectorSaving] = useState(false);
   const [oktaCollectorSaving, setOktaCollectorSaving] = useState(false);
   const [entraCollectorSaving, setEntraCollectorSaving] = useState(false);
+  const [m365CollectorSaving, setM365CollectorSaving] = useState(false);
+  const [workspaceCollectorSaving, setWorkspaceCollectorSaving] = useState(false);
   const [secretsSaving, setSecretsSaving] = useState(false);
   const [siemValidationResult, setSiemValidationResult] = useState(null);
   const [awsCollectorValidationResult, setAwsCollectorValidationResult] = useState(null);
@@ -723,6 +891,9 @@ export default function Settings() {
   const [gcpCollectorValidationResult, setGcpCollectorValidationResult] = useState(null);
   const [oktaCollectorValidationResult, setOktaCollectorValidationResult] = useState(null);
   const [entraCollectorValidationResult, setEntraCollectorValidationResult] = useState(null);
+  const [m365CollectorValidationResult, setM365CollectorValidationResult] = useState(null);
+  const [workspaceCollectorValidationResult, setWorkspaceCollectorValidationResult] =
+    useState(null);
   const [secretValidationResult, setSecretValidationResult] = useState(null);
 
   // ── Team (RBAC) ──
@@ -866,6 +1037,14 @@ export default function Settings() {
 
   const siemValidation = useMemo(() => normalizeValidation(siemCfg?.validation), [siemCfg]);
   const scimValidation = useMemo(() => normalizeValidation(scim?.validation), [scim]);
+  const ssoConfig = useMemo(
+    () => (ssoConfigData && typeof ssoConfigData === 'object' ? ssoConfigData : null),
+    [ssoConfigData],
+  );
+  const readySsoProviders = useMemo(
+    () => (Array.isArray(ssoConfig?.providers) ? ssoConfig.providers : []),
+    [ssoConfig],
+  );
   const retentionConfig = useMemo(
     () => (retentionData && typeof retentionData === 'object' ? retentionData : null),
     [retentionData],
@@ -883,6 +1062,18 @@ export default function Settings() {
           }))
         : [],
     [collectorsSummary],
+  );
+  const cloudCollectorRows = useMemo(
+    () => collectorRows.filter((entry) => collectorLane(entry) === 'cloud'),
+    [collectorRows],
+  );
+  const identityCollectorRows = useMemo(
+    () => collectorRows.filter((entry) => collectorLane(entry) === 'identity'),
+    [collectorRows],
+  );
+  const saasCollectorRows = useMemo(
+    () => collectorRows.filter((entry) => collectorLane(entry) === 'saas'),
+    [collectorRows],
   );
   const awsCollectorValidation = useMemo(
     () => normalizeValidation(awsCollectorData?.validation),
@@ -904,9 +1095,54 @@ export default function Settings() {
     () => normalizeValidation(entraCollectorData?.validation),
     [entraCollectorData],
   );
+  const m365CollectorValidation = useMemo(
+    () => normalizeValidation(m365CollectorData?.validation),
+    [m365CollectorData],
+  );
+  const workspaceCollectorValidation = useMemo(
+    () => normalizeValidation(workspaceCollectorData?.validation),
+    [workspaceCollectorData],
+  );
   const secretsManagerValidation = useMemo(
     () => normalizeValidation(secretsData?.validation),
     [secretsData],
+  );
+  const defaultSsoCallbackUri = useMemo(() => getDefaultSsoCallbackUri(), []);
+  const enabledIdpCount = useMemo(
+    () => idpRows.filter((provider) => provider.enabled).length,
+    [idpRows],
+  );
+  const readyIdpCount = useMemo(
+    () => idpRows.filter((provider) => provider.enabled && provider.validation?.status === 'ready').length,
+    [idpRows],
+  );
+  const reviewIdpCount = useMemo(
+    () => idpRows.filter((provider) => provider.enabled && provider.validation?.status !== 'ready').length,
+    [idpRows],
+  );
+  const readyCloudCollectorCount = useMemo(
+    () =>
+      cloudCollectorRows.filter(
+        (entry) => entry.enabled && entry.validation?.status === 'ready',
+      ).length,
+    [cloudCollectorRows],
+  );
+  const readyIdentityCollectorCount = useMemo(
+    () =>
+      identityCollectorRows.filter(
+        (entry) => entry.enabled && entry.validation?.status === 'ready',
+      ).length,
+    [identityCollectorRows],
+  );
+  const readySaasCollectorCount = useMemo(
+    () =>
+      saasCollectorRows.filter((entry) => entry.enabled && entry.validation?.status === 'ready')
+        .length,
+    [saasCollectorRows],
+  );
+  const reviewCollectorCount = useMemo(
+    () => collectorRows.filter((entry) => entry.validation?.status === 'warning').length,
+    [collectorRows],
   );
 
   useEffect(() => {
@@ -946,6 +1182,14 @@ export default function Settings() {
   useEffect(() => {
     setEntraCollectorDraft(createEntraCollectorDraft(entraCollectorData));
   }, [entraCollectorData]);
+
+  useEffect(() => {
+    setM365CollectorDraft(createM365CollectorDraft(m365CollectorData));
+  }, [m365CollectorData]);
+
+  useEffect(() => {
+    setWorkspaceCollectorDraft(createWorkspaceCollectorDraft(workspaceCollectorData));
+  }, [workspaceCollectorData]);
 
   useEffect(() => {
     setSecretsDraft((prev) => ({
@@ -1011,6 +1255,10 @@ export default function Settings() {
     setIdpEditorOpen(idpRows.length === 0);
   };
 
+  const launchSsoValidation = (providerId) => {
+    window.location.assign(buildSsoLoginPath(providerId, '/settings'));
+  };
+
   const saveIdpProvider = async () => {
     const { mappings, error } = parseGroupRoleMappings(idpDraft.mappings_text);
     if (error) {
@@ -1037,7 +1285,7 @@ export default function Settings() {
       });
       const validation = normalizeValidation(result?.validation);
       const provider = result?.provider ?? {};
-      await rIdp();
+      await Promise.all([rIdp(), rSsoConfig()]);
       setIdpDraft(createIdpDraft(provider));
       setIdpEditorOpen(validation.status === 'warning');
       toast(
@@ -1087,7 +1335,7 @@ export default function Settings() {
         group_role_mappings: mappings,
       });
       const validation = normalizeValidation(result?.validation);
-      await rScim();
+      await Promise.all([rScim(), rSsoConfig()]);
       setScimDraft(createScimDraft(result?.config ?? scimConfigData));
       setScimEditing(validation.status === 'warning');
       toast(
@@ -1391,6 +1639,79 @@ export default function Settings() {
       );
     } catch (error) {
       toast(formatApiError(error, 'Entra validation failed'), 'error');
+    }
+  };
+
+  const saveM365Collector = async () => {
+    setM365CollectorSaving(true);
+    try {
+      await api.saveM365CollectorConfig({
+        enabled: m365CollectorDraft.enabled,
+        tenant_id: m365CollectorDraft.tenant_id,
+        client_id: m365CollectorDraft.client_id,
+        client_secret: optionalTextValue(m365CollectorDraft.client_secret),
+        poll_interval_secs: Number(m365CollectorDraft.poll_interval_secs),
+        content_types: parseListInput(m365CollectorDraft.content_types),
+      });
+      setM365CollectorValidationResult(null);
+      await Promise.all([rM365Collector(), rCollectorsSummary()]);
+      toast('Microsoft 365 activity setup saved', 'success');
+    } catch (error) {
+      toast(formatApiError(error, 'Failed to save Microsoft 365 activity setup'), 'error');
+    } finally {
+      setM365CollectorSaving(false);
+    }
+  };
+
+  const validateM365Collector = async () => {
+    try {
+      const result = await api.validateM365Collector();
+      setM365CollectorValidationResult(result);
+      toast(
+        result.success
+          ? `Microsoft 365 validation returned ${result.event_count ?? 0} event${result.event_count === 1 ? '' : 's'}`
+          : result.error || 'Microsoft 365 validation needs attention',
+        result.success ? 'success' : 'warning',
+      );
+    } catch (error) {
+      toast(formatApiError(error, 'Microsoft 365 validation failed'), 'error');
+    }
+  };
+
+  const saveWorkspaceCollector = async () => {
+    setWorkspaceCollectorSaving(true);
+    try {
+      await api.saveWorkspaceCollectorConfig({
+        enabled: workspaceCollectorDraft.enabled,
+        customer_id: workspaceCollectorDraft.customer_id,
+        delegated_admin_email: workspaceCollectorDraft.delegated_admin_email,
+        service_account_email: workspaceCollectorDraft.service_account_email,
+        credentials_json: optionalTextValue(workspaceCollectorDraft.credentials_json),
+        poll_interval_secs: Number(workspaceCollectorDraft.poll_interval_secs),
+        applications: parseListInput(workspaceCollectorDraft.applications),
+      });
+      setWorkspaceCollectorValidationResult(null);
+      await Promise.all([rWorkspaceCollector(), rCollectorsSummary()]);
+      toast('Google Workspace activity setup saved', 'success');
+    } catch (error) {
+      toast(formatApiError(error, 'Failed to save Google Workspace activity setup'), 'error');
+    } finally {
+      setWorkspaceCollectorSaving(false);
+    }
+  };
+
+  const validateWorkspaceCollector = async () => {
+    try {
+      const result = await api.validateWorkspaceCollector();
+      setWorkspaceCollectorValidationResult(result);
+      toast(
+        result.success
+          ? `Google Workspace validation returned ${result.event_count ?? 0} event${result.event_count === 1 ? '' : 's'}`
+          : result.error || 'Google Workspace validation needs attention',
+        result.success ? 'success' : 'warning',
+      );
+    } catch (error) {
+      toast(formatApiError(error, 'Google Workspace validation failed'), 'error');
     }
   };
 
@@ -2151,6 +2472,100 @@ export default function Settings() {
               )}
             </div>
           </div>
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header">
+              <span className="card-title">Federated Sign-In Readiness</span>
+              <span
+                className={`badge ${readySsoProviders.length > 0 ? 'badge-ok' : reviewIdpCount > 0 ? 'badge-warn' : 'badge-info'}`}
+              >
+                {readySsoProviders.length > 0 ? 'Ready' : reviewIdpCount > 0 ? 'Review' : 'Pending'}
+              </span>
+            </div>
+            <div className="summary-grid">
+              <div className="summary-card">
+                <div className="summary-label">Enabled providers</div>
+                <div className="summary-value">{enabledIdpCount}</div>
+                <div className="summary-meta">{readyIdpCount} ready for live federated launch.</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Review required</div>
+                <div className="summary-value">{reviewIdpCount}</div>
+                <div className="summary-meta">Resolve mappings and callback mismatches before sign-in tests.</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">SCIM mappings</div>
+                <div className="summary-value">
+                  {ssoConfig?.scim?.mapping_count ?? scimValidation.mapping_count}
+                </div>
+                <div className="summary-meta">
+                  {ssoConfig?.scim?.enabled ? `SCIM ${ssoConfig?.scim?.status || 'configured'}` : 'SCIM disabled'}
+                </div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Callback URI</div>
+                <div className="summary-value" style={{ fontSize: 13 }}>
+                  {defaultSsoCallbackUri}
+                </div>
+                <div className="summary-meta">This must match every external IdP redirect configuration.</div>
+              </div>
+            </div>
+            <div className="detail-callout" style={{ marginTop: 16 }}>
+              Launching an SSO test from here uses the same backend login and callback routes as the real console, so operators can validate the external redirect and return path before rolling identity changes broadly.
+            </div>
+            {readySsoProviders.length > 0 ? (
+              <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                {readySsoProviders.map((provider) => (
+                  <div
+                    key={provider.id}
+                    className="stat-box"
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{provider.display_name}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                        {providerLoginKindLabel(provider.kind)} provider ready for callback validation.
+                      </div>
+                    </div>
+                    <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        type="button"
+                        onClick={() => launchSsoValidation(provider.id)}
+                      >
+                        Start SSO Test
+                      </button>
+                      <code style={{ fontSize: 11 }}>
+                        {provider.login_path || buildSsoLoginPath(provider.id)}
+                      </code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ValidationIssues
+                validation={{
+                  status: reviewIdpCount > 0 ? 'warning' : 'info',
+                  issues: [
+                    {
+                      level: 'warning',
+                      field: 'provider_readiness',
+                      message:
+                        reviewIdpCount > 0
+                          ? 'No enabled providers are fully ready for federated launch yet. Resolve the provider warnings below before starting a live SSO test.'
+                          : 'Add and enable at least one OIDC or SAML provider before testing federated sign-in.',
+                    },
+                  ],
+                }}
+                style={{ marginTop: 16 }}
+              />
+            )}
+          </div>
           <div className="card-grid" style={{ marginTop: 16 }}>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>
@@ -2236,13 +2651,24 @@ export default function Settings() {
                               </div>
                             </td>
                             <td>
-                              <button
-                                className="btn btn-sm"
-                                type="button"
-                                onClick={() => openIdpEditor(p)}
-                              >
-                                Edit Provider
-                              </button>
+                              <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+                                <button
+                                  className="btn btn-sm"
+                                  type="button"
+                                  onClick={() => openIdpEditor(p)}
+                                >
+                                  Edit Provider
+                                </button>
+                                {p.enabled && p.validation?.status === 'ready' && (
+                                  <button
+                                    className="btn btn-sm btn-primary"
+                                    type="button"
+                                    onClick={() => launchSsoValidation(p.id)}
+                                  >
+                                    Start SSO Test
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2696,6 +3122,76 @@ export default function Settings() {
               data={{ collectors: collectorRows, secrets: secretsData }}
               label="Collector and secret diagnostics"
             />
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header">
+              <span className="card-title">Collector Routing &amp; Health</span>
+              <span className={`badge ${reviewCollectorCount > 0 ? 'badge-warn' : 'badge-ok'}`}>
+                {reviewCollectorCount > 0 ? 'Review' : 'Ready'}
+              </span>
+            </div>
+            <div className="summary-grid">
+              <div className="summary-card">
+                <div className="summary-label">Cloud collectors ready</div>
+                <div className="summary-value">{readyCloudCollectorCount}</div>
+                <div className="summary-meta">AWS, Azure, and GCP lanes ready for validation or polling.</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Identity collectors ready</div>
+                <div className="summary-value">{readyIdentityCollectorCount}</div>
+                <div className="summary-meta">Okta and Entra sign-in telemetry ready for SOC and UEBA handoff.</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">SaaS collectors ready</div>
+                <div className="summary-value">{readySaasCollectorCount}</div>
+                <div className="summary-meta">Microsoft 365 and Google Workspace activity ready for analyst pivots.</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Collectors under review</div>
+                <div className="summary-value">{reviewCollectorCount}</div>
+                <div className="summary-meta">Configured lanes that still need credentials, scoping, or cleanup.</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Secrets manager</div>
+                <div className="summary-value">
+                  {validationStatusLabel(secretsManagerValidation.status)}
+                </div>
+                <div className="summary-meta">Credential resolution shared by cloud and identity integrations.</div>
+              </div>
+            </div>
+            <div className="card-grid" style={{ marginTop: 16 }}>
+              <CollectorLaneCard
+                title="Identity Telemetry Lane"
+                hint="Feed identity collector output into auth-risk, provisioning drift, and account-compromise triage workflows."
+                rows={identityCollectorRows}
+                emptyText="No identity collectors have been configured yet."
+                primaryHref="/soc#queue"
+                primaryLabel="Open SOC Queue"
+                secondaryHref="/ueba"
+                secondaryLabel="Review UEBA"
+              />
+              <CollectorLaneCard
+                title="Cloud Audit Lane"
+                hint="Route validated cloud collectors into infrastructure review and attack-path validation before broad automation rollout."
+                rows={cloudCollectorRows}
+                emptyText="No cloud collectors have been configured yet."
+                primaryHref="/infrastructure?tab=observability"
+                primaryLabel="Open Infrastructure"
+                secondaryHref="/attack-graph"
+                secondaryLabel="Review Attack Graph"
+              />
+              <CollectorLaneCard
+                title="SaaS Activity Lane"
+                hint="Carry Microsoft 365 and Google Workspace audit activity into identity triage, collaboration-risk review, and scoped reporting workflows."
+                rows={saasCollectorRows}
+                emptyText="No SaaS collectors have been configured yet."
+                primaryHref="/assistant?source=collector-saas"
+                primaryLabel="Open Assistant"
+                secondaryHref="/reports?source=collector-saas"
+                secondaryLabel="Open Reports"
+              />
+            </div>
           </div>
 
           <div className="card-grid" style={{ marginTop: 16 }}>
@@ -3184,6 +3680,211 @@ export default function Settings() {
                   <JsonDetails
                     data={entraCollectorValidationResult}
                     label="Entra validation details"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Microsoft 365 Activity</span>
+                <span className={`badge ${validationBadgeClass(m365CollectorValidation.status)}`}>
+                  {validationStatusLabel(m365CollectorValidation.status)}
+                </span>
+              </div>
+              {m365CollectorData?.config?.has_client_secret && (
+                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 12 }}>
+                  A client secret or secret reference is already stored. Leave the secret field
+                  blank to keep it.
+                </div>
+              )}
+              <ToggleSwitch
+                label="Enable Microsoft 365 collector"
+                checked={m365CollectorDraft.enabled}
+                onChange={(value) =>
+                  setM365CollectorDraft((prev) => ({ ...prev, enabled: value }))
+                }
+                description="Use this when unified audit activity should be validated or queued for downstream SaaS workflows."
+              />
+              <TextInput
+                label="Tenant ID"
+                value={m365CollectorDraft.tenant_id}
+                onChange={(value) =>
+                  setM365CollectorDraft((prev) => ({ ...prev, tenant_id: value }))
+                }
+                placeholder="m365-tenant-guid"
+              />
+              <TextInput
+                label="Client ID"
+                value={m365CollectorDraft.client_id}
+                onChange={(value) =>
+                  setM365CollectorDraft((prev) => ({ ...prev, client_id: value }))
+                }
+                placeholder="application-guid"
+              />
+              <TextInput
+                label="Client Secret"
+                type="password"
+                value={m365CollectorDraft.client_secret}
+                onChange={(value) =>
+                  setM365CollectorDraft((prev) => ({ ...prev, client_secret: value }))
+                }
+                placeholder="Leave blank to keep the current secret or reference"
+                description="Supports literal values or secret references such as ${M365_CLIENT_SECRET}."
+              />
+              <NumberInput
+                label="Poll Interval"
+                value={m365CollectorDraft.poll_interval_secs}
+                onChange={(value) =>
+                  setM365CollectorDraft((prev) => ({ ...prev, poll_interval_secs: value }))
+                }
+                min={1}
+                unit="seconds"
+              />
+              <TextAreaInput
+                label="Content Types"
+                value={m365CollectorDraft.content_types}
+                onChange={(value) =>
+                  setM365CollectorDraft((prev) => ({ ...prev, content_types: value }))
+                }
+                placeholder={'Audit.AzureActiveDirectory\nAudit.Exchange\nAudit.SharePoint'}
+                description="One Microsoft 365 content type per line."
+                rows={4}
+              />
+              <ValidationIssues validation={m365CollectorValidation} style={{ marginTop: 12 }} />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  disabled={m365CollectorSaving}
+                  onClick={saveM365Collector}
+                >
+                  {m365CollectorSaving ? 'Saving…' : 'Save Microsoft 365 Setup'}
+                </button>
+                <button className="btn" type="button" onClick={validateM365Collector}>
+                  Validate Microsoft 365
+                </button>
+              </div>
+              {m365CollectorValidationResult && (
+                <div className="stat-box" style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Last validation</div>
+                  <div style={{ fontSize: 12 }}>
+                    {m365CollectorValidationResult.success
+                      ? `Collected ${m365CollectorValidationResult.event_count || 0} event${m365CollectorValidationResult.event_count === 1 ? '' : 's'}.`
+                      : m365CollectorValidationResult.error || 'Validation needs attention.'}
+                  </div>
+                  <JsonDetails
+                    data={m365CollectorValidationResult}
+                    label="Microsoft 365 validation details"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Google Workspace Activity</span>
+                <span
+                  className={`badge ${validationBadgeClass(workspaceCollectorValidation.status)}`}
+                >
+                  {validationStatusLabel(workspaceCollectorValidation.status)}
+                </span>
+              </div>
+              {workspaceCollectorData?.config?.has_credentials_json && (
+                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 12 }}>
+                  A credentials blob or secret reference is already stored. Leave the credentials
+                  field blank to keep it.
+                </div>
+              )}
+              <ToggleSwitch
+                label="Enable Google Workspace collector"
+                checked={workspaceCollectorDraft.enabled}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, enabled: value }))
+                }
+                description="Use this when Workspace admin, login, or collaboration activity should be validated or routed downstream."
+              />
+              <TextInput
+                label="Customer ID"
+                value={workspaceCollectorDraft.customer_id}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, customer_id: value }))
+                }
+                placeholder="my_customer"
+              />
+              <TextInput
+                label="Delegated Admin Email"
+                value={workspaceCollectorDraft.delegated_admin_email}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, delegated_admin_email: value }))
+                }
+                placeholder="admin@example.com"
+              />
+              <TextInput
+                label="Service Account Email"
+                value={workspaceCollectorDraft.service_account_email}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, service_account_email: value }))
+                }
+                placeholder="collector@workspace.example.iam.gserviceaccount.com"
+              />
+              <TextAreaInput
+                label="Credentials JSON"
+                value={workspaceCollectorDraft.credentials_json}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, credentials_json: value }))
+                }
+                placeholder="Leave blank to keep the current credentials or reference"
+                description="Supports literal JSON or secret references such as vault://secret/google#service_account_json."
+                rows={4}
+              />
+              <NumberInput
+                label="Poll Interval"
+                value={workspaceCollectorDraft.poll_interval_secs}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, poll_interval_secs: value }))
+                }
+                min={1}
+                unit="seconds"
+              />
+              <TextAreaInput
+                label="Applications"
+                value={workspaceCollectorDraft.applications}
+                onChange={(value) =>
+                  setWorkspaceCollectorDraft((prev) => ({ ...prev, applications: value }))
+                }
+                placeholder={'login\nadmin\ndrive\nmeet'}
+                description="One Google Workspace application or audit stream per line."
+                rows={4}
+              />
+              <ValidationIssues
+                validation={workspaceCollectorValidation}
+                style={{ marginTop: 12 }}
+              />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  disabled={workspaceCollectorSaving}
+                  onClick={saveWorkspaceCollector}
+                >
+                  {workspaceCollectorSaving ? 'Saving…' : 'Save Workspace Setup'}
+                </button>
+                <button className="btn" type="button" onClick={validateWorkspaceCollector}>
+                  Validate Workspace
+                </button>
+              </div>
+              {workspaceCollectorValidationResult && (
+                <div className="stat-box" style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Last validation</div>
+                  <div style={{ fontSize: 12 }}>
+                    {workspaceCollectorValidationResult.success
+                      ? `Collected ${workspaceCollectorValidationResult.event_count || 0} event${workspaceCollectorValidationResult.event_count === 1 ? '' : 's'}.`
+                      : workspaceCollectorValidationResult.error || 'Validation needs attention.'}
+                  </div>
+                  <JsonDetails
+                    data={workspaceCollectorValidationResult}
+                    label="Workspace validation details"
                   />
                 </div>
               )}

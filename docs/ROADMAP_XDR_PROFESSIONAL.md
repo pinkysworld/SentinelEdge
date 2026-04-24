@@ -2,15 +2,15 @@
 
 ## Current release baseline
 
-`v0.53.3` delivers the current private-cloud XDR and SIEM control-plane baseline:
+`v0.53.5` delivers the current private-cloud XDR and SIEM control-plane baseline:
 
 - SOC Workbench for queue, cases, investigations, guided workflows, response approvals, escalation management, and incident-first case/incident drawers
 - Analyst Assistant for case-aware questions, citations, ticket-sync pivots, and investigation-scope handoffs inside analyst workflows
-- detection engineering with hunts, rule lifecycle, suppressions, content packs, efficacy tracking, and MITRE coverage
-- explainable detections, model-registry status, analyst feedback capture, and readiness-driven onboarding
+- detection engineering with hunts, rule lifecycle, suppressions, content packs, efficacy tracking, MITRE coverage, replay-corpus promotion gates, and replay drift breakdowns by platform and signal family
+- explainable detections, entity-centric scoring, campaign correlation, model-registry status, analyst feedback capture, and readiness-driven onboarding
 - UEBA, NDR, attack-graph, vulnerability, malware, certificate, and drift-analysis surfaces with threat-intel `v2` metadata, sightings, and deep malware scan profiles
 - unified asset inventory, fleet release operations, rollout history, and per-agent activity context
-- enterprise controls for RBAC, SCIM, OIDC/SAML SSO, session management, audit, retention, and diagnostics
+- enterprise controls for RBAC, SCIM, OIDC/SAML SSO, session management, audit, retention, diagnostics, and routed collector/secrets readiness workflows
 - authenticated WebSocket event streaming, ClickHouse-backed long-retention integration foundations, and execution-context-aware reporting across reports, runs, schedules, templates, stored artifacts, persisted exports, and response-approval snapshots
 
 ## Next priorities
@@ -19,7 +19,7 @@
 
 | Priority | Outcome | Status |
 |---|---|---|
-| Console parity program | every shipped capability has a reachable, structured UI and no broken JSON-only dead ends | Near complete |
+| Console parity program | every shipped capability has a reachable, structured UI and no broken JSON-only dead ends | Shipped |
 | Analyst workflow depth | stronger investigation planner, active-investigation tracking, and realtime analyst ergonomics | Shipped |
 | Dashboard customization | persisted analyst/admin layouts, presets, and shared operational views | Shipped |
 | Security policy usability | working advanced-control workflows for policy compose, twin simulate, harness, deception, and enforcement | Shipped |
@@ -29,7 +29,7 @@
 | Priority | Outcome | Status |
 |---|---|---|
 | Durable event storage | historical hunts, long-range investigations, and manager reporting at scale | Shipped |
-| Cloud, SaaS, and identity collectors | guided setup and health visibility for AWS, Azure, GCP, Entra/Okta, M365, Workspace, and analyst-driven ticketing workflows | In progress |
+| Cloud, SaaS, and identity collectors | guided setup and health visibility for AWS, Azure, GCP, Entra/Okta, M365, Workspace, and analyst-driven ticketing workflows | Shipped |
 | Secrets-manager integration | Vault and cloud-secret configuration with validation and runtime health visibility | Shipped |
 | API and SDK parity | contract diagnostics, GraphQL/API explorer, and generated-SDK verification surfaces | Shipped |
 
@@ -39,20 +39,19 @@
 |---|---|---|
 | Searchable docs site | versioned operator documentation with console-linked runbooks | Shipped |
 | Browser workflow coverage | deterministic coverage for advanced analyst and admin paths | Shipped |
-| Packaging breadth | package-manager distribution and install-path validation | Planned |
-| Release-document accuracy | backlog, status, roadmap, and support docs remain synchronized with shipped state | In progress |
+| Packaging breadth | package-manager distribution and install-path validation | Shipped |
+| Release-document accuracy | backlog, status, roadmap, and support docs remain synchronized with shipped state | Shipped |
 
 ## Current gaps
 
-- Full end-to-end federated SSO redirect and callback exchange remains incomplete; the shipped login shell now exposes configured providers, but provider discovery is ahead of full external IdP validation.
-- Remaining SaaS and identity collector breadth still extends beyond the shipped cloud, secrets-manager, and case ticket-sync surfaces.
-- UEBA, NDR, and infrastructure workflows still need deeper remediation and narrative drill-down closure.
-- Entity-centric scoring and sequence/graph detection remain behind the new explainability and case-workspace layers.
-- Malware analysis now has deeper API profiles, but the analyst-facing verdict workspace still needs the same end-to-end closure as reporting and cases.
+- Federated SSO launch and callback validation is now exposed in both the login shell and Settings, but broader IdP lifecycle coverage still needs continued regression depth as providers evolve.
+- Collector routing, readiness, and validation dashboards now include staged ingestion-health timelines across the shipped cloud, identity, and SaaS lanes. The next gap is persisted ingestion counters, last-success checkpoints, and broader lifecycle analytics per provider.
+- Detection Engineering, Fleet & Agents, SOC Workbench response, collector health, and infrastructure malware/remediation routes are now covered by the live release-gate smoke. The remaining work is keeping that live coverage aligned as those workflows continue to evolve.
+- Malware analysis and infrastructure remediation now have route-aware verdict, integrity, and guided-remediation views. The next gap is broader change-review, approval, and recovery-history depth on top of those shipped pivots.
 
 ## Success criteria
 
-| Metric | Current (`v0.53.3`) | Target |
+| Metric | Current (`v0.53.5`) | Target |
 |---|---|---|
 | Automated tests | 1272 lib + 190 integration + focused browser/admin regressions | maintained and expanded on every release |
 | OpenAPI and SDK contract | versioned OpenAPI plus generated Python and TypeScript SDKs | kept in lockstep on every release |

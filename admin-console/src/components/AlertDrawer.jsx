@@ -165,6 +165,7 @@ export default function AlertDrawer({
   const whySafeOrNoisy = explainData?.why_safe_or_noisy || [];
   const nextSteps = explainData?.next_steps?.length ? explainData.next_steps : fallbackNextSteps;
   const analystFeedback = Array.isArray(explainData?.feedback) ? explainData.feedback : [];
+  const entityScores = Array.isArray(explainData?.entity_scores) ? explainData.entity_scores : [];
 
   const submitFeedback = async (verdict) => {
     try {
@@ -348,6 +349,94 @@ export default function AlertDrawer({
                   ))}
                 </ul>
               </>
+            )}
+            {entityScores.length > 0 && (
+              <div style={{ margin: '12px 0' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                  Entity risk scoring
+                </div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {entityScores.slice(0, 4).map((entity) => {
+                    const components = Array.isArray(entity.score_components)
+                      ? entity.score_components
+                      : [];
+                    const sequenceSignals = Array.isArray(entity.sequence_signals)
+                      ? entity.sequence_signals
+                      : [];
+                    const graphContext = Array.isArray(entity.graph_context)
+                      ? entity.graph_context
+                      : [];
+                    const pivots = Array.isArray(entity.recommended_pivots)
+                      ? entity.recommended_pivots
+                      : [];
+                    return (
+                      <div
+                        key={`${entity.entity_kind}-${entity.entity_id}`}
+                        className="card"
+                        style={{ margin: 0, padding: 12, background: 'var(--surface-muted)' }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            gap: 12,
+                            alignItems: 'flex-start',
+                            marginBottom: 6,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700 }}>
+                              {entity.entity_kind?.replace(/_/g, ' ') || 'entity'} ·{' '}
+                              {entity.entity_id || 'unknown'}
+                            </div>
+                            {entity.peer_group && (
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                Peer group: {entity.peer_group}
+                              </div>
+                            )}
+                          </div>
+                          <span className="badge badge-info">
+                            {Number(entity.score ?? 0).toFixed(1)} / 10
+                          </span>
+                        </div>
+                        {components.length > 0 && (
+                          <div className="chip-row" style={{ marginBottom: 6 }}>
+                            {components.slice(0, 4).map((component) => (
+                              <span key={component.name} className="scope-chip">
+                                {String(component.name || 'component').replace(/_/g, ' ')}:{' '}
+                                {Number(component.score ?? 0).toFixed(1)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {[...sequenceSignals.slice(0, 2), ...graphContext.slice(0, 2)].length >
+                          0 && (
+                          <ul
+                            style={{
+                              margin: '6px 0',
+                              paddingLeft: 18,
+                              fontSize: 12,
+                              lineHeight: 1.6,
+                              color: 'var(--text-secondary)',
+                            }}
+                          >
+                            {[...sequenceSignals.slice(0, 2), ...graphContext.slice(0, 2)].map(
+                              (line, i) => (
+                                <li key={`${entity.entity_kind}-context-${i}`}>{line}</li>
+                              ),
+                            )}
+                          </ul>
+                        )}
+                        {pivots.length > 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            Next pivot: {pivots[0]}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
               Recommended next steps

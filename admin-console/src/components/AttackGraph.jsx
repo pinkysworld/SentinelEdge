@@ -191,6 +191,10 @@ export default function AttackGraph() {
 
   const { data: lateralData } = useApi(api.campaigns);
   const { data: coverageGaps } = useApi(api.coverageGaps);
+  const campaignSummary = lateralData?.summary || {};
+  const sequenceSummaries = Array.isArray(lateralData?.sequence_summaries)
+    ? lateralData.sequence_summaries
+    : [];
 
   const { nodes, edges } = useMemo(() => {
     if (!lateralData) return { nodes: [], edges: [] };
@@ -292,7 +296,9 @@ export default function AttackGraph() {
         to: buildHref('/detection', {
           params: {
             intent: 'run-hunt',
-            huntQuery: focalNode ? `${focalType}:${focalNode} attack graph path` : 'attack graph campaign',
+            huntQuery: focalNode
+              ? `${focalType}:${focalNode} attack graph path`
+              : 'attack graph campaign',
             huntName: focalNode ? `Hunt ${focalNode}` : 'Hunt attack graph signals',
           },
         }),
@@ -318,7 +324,8 @@ export default function AttackGraph() {
       {
         id: 'ndr',
         title: 'Validate Network Side',
-        description: 'Use NDR to confirm whether graph relationships align with current network anomalies.',
+        description:
+          'Use NDR to confirm whether graph relationships align with current network anomalies.',
         to: buildHref('/ndr', { params: { tab: 'overview' } }),
         minRole: 'analyst',
         badge: 'Network',
@@ -378,6 +385,57 @@ export default function AttackGraph() {
         description="Move from graph context into hunts, campaigns, entity analytics, network validation, and evidence workflows without losing the selected node."
         items={workflowItems}
       />
+
+      <div
+        className="card"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div className="card-title">Campaign Intelligence</div>
+          <div className="hint">
+            Stored-event clustering turns repeated sequence and graph signals into campaign-ready
+            pivots.
+          </div>
+        </div>
+        <div>
+          <div className="metric-value">{campaignSummary.campaign_count ?? 0}</div>
+          <div className="metric-label">Active campaigns</div>
+        </div>
+        <div>
+          <div className="metric-value">{campaignSummary.total_alerts ?? 0}</div>
+          <div className="metric-label">Alerts analyzed</div>
+        </div>
+        <div>
+          <div className="metric-value">
+            {Math.round((campaignSummary.fleet_coverage || 0) * 100)}%
+          </div>
+          <div className="metric-label">Fleet coverage</div>
+        </div>
+        {sequenceSummaries[0] && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>{sequenceSummaries[0].name}</div>
+            <div className="chip-row" style={{ marginBottom: 8 }}>
+              <span className="badge badge-info">{sequenceSummaries[0].severity}</span>
+              <span className="scope-chip">{sequenceSummaries[0].host_count} hosts</span>
+              <span className="scope-chip">{sequenceSummaries[0].alert_count} alerts</span>
+              {(sequenceSummaries[0].shared_techniques || []).slice(0, 2).map((technique) => (
+                <span key={technique} className="scope-chip">
+                  {technique}
+                </span>
+              ))}
+            </div>
+            {(sequenceSummaries[0].sequence_signals || []).slice(0, 3).map((signal) => (
+              <div key={signal} className="hint">
+                {signal}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div
         style={{

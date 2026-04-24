@@ -230,6 +230,7 @@ export default function App() {
 
   const [tokenInput, setTokenInput] = useState('');
   const [authError, setAuthError] = useState('');
+  const [ssoConfig, setSsoConfig] = useState(null);
   const [ssoProviders, setSsoProviders] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -260,11 +261,13 @@ export default function App() {
     api.authSsoConfig()
       .then((config) => {
         if (!cancelled) {
+          setSsoConfig(config || null);
           setSsoProviders(Array.isArray(config?.providers) ? config.providers : []);
         }
       })
       .catch(() => {
         if (!cancelled) {
+          setSsoConfig(null);
           setSsoProviders([]);
         }
       });
@@ -990,6 +993,45 @@ export default function App() {
                   ))}
                 </div>
               )}
+              {ssoProviders.length > 0 && (
+                <div className="card" style={{ marginTop: 16, textAlign: 'left' }}>
+                  <div className="card-title" style={{ marginBottom: 10 }}>
+                    Federated Sign-In Ready
+                  </div>
+                  <div className="summary-grid">
+                    <div className="summary-card">
+                      <div className="summary-label">Ready providers</div>
+                      <div className="summary-value">{ssoProviders.length}</div>
+                      <div className="summary-meta">
+                        {ssoProviders.map((provider) => provider.display_name).join(', ')}
+                      </div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-label">SCIM status</div>
+                      <div className="summary-value">
+                        {ssoConfig?.scim?.enabled ? ssoConfig?.scim?.status || 'configured' : 'disabled'}
+                      </div>
+                      <div className="summary-meta">
+                        {ssoConfig?.scim?.mapping_count ?? 0} group mapping
+                        {(ssoConfig?.scim?.mapping_count ?? 0) === 1 ? '' : 's'} ready for lifecycle sync.
+                      </div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-label">Callback handoff</div>
+                      <div className="summary-value" style={{ fontSize: 13 }}>
+                        /api/auth/sso/callback
+                      </div>
+                      <div className="summary-meta">
+                        After external sign-in, Wardex returns here through the configured callback route.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="hint" style={{ marginTop: 12 }}>
+                    Use the provider buttons above to validate the external redirect and callback flow with the same routes the live console uses.
+                  </div>
+                </div>
+              )}
+              {authError && <div className="auth-error" style={{ marginTop: 16 }}>{authError}</div>}
             </div>
           ) : (
             <Routes>

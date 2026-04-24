@@ -508,10 +508,8 @@ GROUP BY tenant_id, hour, severity"#,
         let mut buf = self.buffer.lock().map_err(|error| error.to_string())?;
         let drain = count.min(buf.len());
         buf.drain(0..drain);
-        self.total_inserted.fetch_add(
-            drain as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        self.total_inserted
+            .fetch_add(drain as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(drain)
     }
 }

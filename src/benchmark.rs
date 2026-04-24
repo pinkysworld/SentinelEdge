@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use crate::detector::AnomalyDetector;
 use crate::telemetry::TelemetrySample;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct BenchmarkResult {
     pub true_positives: usize,
     pub false_positives: usize,

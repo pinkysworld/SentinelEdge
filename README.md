@@ -6,19 +6,20 @@
 
 Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted security operations. It combines cross-platform telemetry collection, detection engineering, analyst workflows, approval-gated response, agent lifecycle management, SIEM integrations, and tamper-evident evidence handling in a single deployable product.
 
-## What ships in `v0.53.3`
+## What ships in `v0.53.5`
 
 - 139 Rust source modules covering telemetry collection, detection engineering, hunt/search, SOC workflows, fleet operations, governance, and automated incident response.
 - A versioned OpenAPI contract with regenerated Python and TypeScript SDKs for authenticated admin-console workflows, explainability, onboarding readiness, threat-intel enrichment, malware analysis, reports, hunts, investigations, NDR, and enterprise support surfaces.
 - 1500+ automated tests and smoke checks spanning Rust, SDK, admin-console, and Playwright browser coverage.
-- **Detection trust and explainability** — model-registry status, shadow-mode inference tracking, rollback visibility, analyst feedback capture, and explainable alert reasoning are now first-class operator workflows instead of backend-only plumbing.
+- **Detection trust and explainability** — model-registry status, shadow-mode inference tracking, rollback visibility, analyst feedback capture, entity-centric risk scoring, campaign intelligence, replay-corpus gates, platform/signal-type drift breakdowns, and explainable alert reasoning are now first-class operator workflows instead of backend-only plumbing.
 - **Operator-readiness onboarding** — onboarding is now driven by server readiness checks that verify token validity, first agent health, telemetry flow, alert visibility, intel-source health, malware scan readiness, and response dry-run coverage.
 - **Incident-first SOC workflows** — SOC Workbench now keeps cases, incidents, notes, evidence, narrative context, and pivots into investigations, response, assistant, and reporting in URL-addressable drawers that can be reopened and shared.
 - **Scoped reporting and artifacts** — reports, report runs, schedules, templates, and stored artifacts can now carry case / incident / investigation execution context, with backend filtering and republish flows for older unscoped reports.
 - **Artifact persistence and response closure** — compliance exports, evidence bundles, audit exports, privacy snapshots, backend-native alert exports, and response-approval snapshots can now be persisted into scoped run history and reopened with their original payloads.
-- **Threat-intel and malware depth** — richer threat-intel `v2` metadata, indicator sightings, deep malware scan `v2` static and behavior profiles, and analyst-facing provenance views are now wired through the console.
+- **Threat-intel and malware depth** — richer threat-intel `v2` metadata, indicator sightings, deep malware scan `v2` static and behavior profiles, route-aware malware verdict workspaces, and analyst-facing provenance views are now wired through the console.
+- **Enterprise integration health** — federated sign-in readiness plus cloud, identity, and SaaS collector lanes now expose staged validation and ingestion-health checkpoints instead of snapshot-only summaries.
 - **Manager and analyst efficiency** — morning-brief style dashboard summaries, saved queue filters, deep-linked alert/case selection, and target-aware assistant/reporting handoffs from SOC, NDR, UEBA, detection, attack-graph, and infrastructure flows reduce console re-navigation and make exact workflows shareable.
-- **Deterministic regression coverage** — focused Rust and admin-console tests now cover explainability, onboarding readiness, deep malware scan profiles, threat-intel sightings, and scoped report/report-template persistence.
+- **Deterministic regression coverage** — focused Rust, admin-console, and routed Playwright release checks now cover explainability, replay drift, collector timelines, deep malware scan profiles, threat-intel sightings, and scoped report/report-template persistence.
 
 See [FEATURES.md](FEATURES.md) for the concise capability summary, [CHANGELOG.md](CHANGELOG.md) for release history, and [docs/README.md](docs/README.md) for the full documentation map.
 
@@ -58,7 +59,7 @@ Important:
 - `http://localhost:8080/` is the public product website.
 - `http://localhost:8080/admin/` is the actual admin console.
 - If you set `WARDEX_ADMIN_TOKEN` yourself, Wardex uses that value and may not create `var/.wardex_token`.
-- You can confirm which binary you are running with `./target/release/wardex version`.
+- You can confirm which binary you are running with `./target/release/wardex --version`.
 
 For development, `cargo run` is equivalent to `wardex start` and also serves the console on `http://localhost:8080/admin/`.
 

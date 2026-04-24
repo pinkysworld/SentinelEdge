@@ -139,7 +139,7 @@ fn detection_feedback_roundtrip_and_explainability_include_feedback() {
             "confidence": 0.93,
             "level": "Critical",
             "action": "credential_access",
-            "reasons": ["credential_dump_attempt", "lsass_access"],
+            "reasons": ["credential_dump_attempt user=alice", "lsass_access dst=10.0.0.5 c2_beacon"],
             "sample": {
                 "timestamp_ms": 0, "cpu_load_pct": 40.0, "memory_load_pct": 50.0,
                 "temperature_c": 60.0, "network_kbps": 100.0, "auth_failures": 3,
@@ -183,7 +183,10 @@ fn detection_feedback_roundtrip_and_explainability_include_feedback() {
         .expect("list feedback");
     let listed_body: serde_json::Value = listed.into_json().unwrap();
     assert_eq!(listed_body["summary"]["total"].as_u64().unwrap(), 1);
-    assert_eq!(listed_body["items"][0]["analyst"].as_str().unwrap(), "alice");
+    assert_eq!(
+        listed_body["items"][0]["analyst"].as_str().unwrap(),
+        "alice"
+    );
 
     let explain = ureq::get(&format!("{}/api/detection/explain?event_id=1", base(port)))
         .set("Authorization", &auth)
@@ -193,6 +196,309 @@ fn detection_feedback_roundtrip_and_explainability_include_feedback() {
     let explain_body: serde_json::Value = explain.into_json().unwrap();
     assert!(explain_body["why_fired"].as_array().unwrap().len() >= 1);
     assert_eq!(explain_body["feedback"].as_array().unwrap().len(), 1);
+    let entity_scores = explain_body["entity_scores"].as_array().unwrap();
+    assert!(
+        entity_scores
+            .iter()
+            .any(|score| score["entity_kind"] == "host")
+    );
+    assert!(
+        entity_scores
+            .iter()
+            .any(|score| score["entity_kind"] == "user")
+    );
+    assert!(
+        entity_scores
+            .iter()
+            .any(|score| score["entity_kind"] == "network_destination")
+    );
+    let host_score = entity_scores
+        .iter()
+        .find(|score| score["entity_kind"] == "host")
+        .unwrap();
+    assert!(host_score["score_components"].as_array().unwrap().len() >= 2);
+    assert!(host_score["sequence_signals"].as_array().unwrap().len() >= 1);
+    assert!(host_score["graph_context"].as_array().unwrap().len() >= 1);
+    assert!(host_score["recommended_pivots"].as_array().unwrap().len() >= 1);
+}
+
+#[test]
+fn correlation_campaigns_cluster_stored_events_into_graph_view() {
+    let (port, token) = spawn_test_server();
+    let auth = auth_header(&token);
+    let agent_a = enroll_test_agent(port, &token, "campaign-a");
+    let agent_b = enroll_test_agent(port, &token, "campaign-b");
+
+    for (agent_id, hostname, timestamp) in [
+        (&agent_a, "campaign-a", "2026-04-22T10:00:00Z"),
+        (&agent_b, "campaign-b", "2026-04-22T10:02:00Z"),
+    ] {
+        let batch = serde_json::json!({
+            "agent_id": agent_id,
+            "events": [{
+                "timestamp": timestamp,
+                "hostname": hostname,
+                "platform": "linux",
+                "score": 8.2,
+                "confidence": 0.91,
+                "level": "Critical",
+                "action": "remote_execution",
+                "reasons": ["credential_access", "lateral_movement", "c2_beacon"],
+                "sample": {
+                    "timestamp_ms": 0, "cpu_load_pct": 40.0, "memory_load_pct": 50.0,
+                    "temperature_c": 60.0, "network_kbps": 100.0, "auth_failures": 3,
+                    "battery_pct": 80.0, "integrity_drift": 0.1,
+                    "process_count": 50, "disk_pressure_pct": 10.0
+                },
+                "enforced": false
+            }]
+        });
+        ureq::post(&format!("{}/api/events", base(port)))
+            .set("Content-Type", "application/json")
+            .send_string(&batch.to_string())
+            .expect("ingest campaign event");
+    }
+
+    let response = ureq::get(&format!("{}/api/correlation/campaigns", base(port)))
+        .set("Authorization", &auth)
+        .call()
+        .expect("campaign correlation view");
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["summary"]["campaign_count"].as_u64().unwrap(), 1);
+    assert!(
+        body["campaigns"].as_array().unwrap()[0]["hosts"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2
+    );
+    assert!(body["graph"]["nodes"].as_array().unwrap().len() >= 2);
+    assert!(body["graph"]["edges"].as_array().unwrap().len() >= 1);
+    assert!(
+        body["sequence_summaries"].as_array().unwrap()[0]["sequence_signals"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2
+    );
+}
+
+#[test]
+fn detection_replay_corpus_exposes_acceptance_gate() {
+    let (port, token) = spawn_test_server();
+    let auth = auth_header(&token);
+    let response = ureq::get(&format!("{}/api/detection/replay-corpus", base(port)))
+        .set("Authorization", &auth)
+        .call()
+        .expect("replay corpus gate");
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert!(body["summary"]["total_samples"].as_u64().unwrap() >= 6);
+    assert!(body["summary"]["precision"].as_f64().unwrap() >= 0.0);
+    assert!(
+        body["acceptance_targets"]["precision_min"]
+            .as_f64()
+            .unwrap()
+            > 0.0
+    );
+    let categories = body["categories"].as_array().unwrap();
+    assert!(categories.iter().any(|item| item["id"] == "benign_admin"));
+    assert!(
+        categories
+            .iter()
+            .any(|item| item["id"] == "lateral_movement")
+    );
+    assert!(body["platform_deltas"].as_array().unwrap().len() >= 2);
+    assert!(body["signal_type_deltas"].as_array().unwrap().len() >= 3);
+    assert!(categories.iter().any(|item| item["platform"] == "linux"));
+    assert!(categories.iter().any(|item| item["signal_type"] == "identity"));
+}
+
+#[test]
+fn detection_replay_corpus_accepts_custom_validation_pack() {
+    let (port, token) = spawn_test_server();
+    let auth = auth_header(&token);
+    let response = ureq::post(&format!("{}/api/detection/replay-corpus", base(port)))
+        .set("Authorization", &auth)
+        .set("Content-Type", "application/json")
+        .send_string(
+            &serde_json::json!({
+                "name": "customer-pack-alpha",
+                "threshold": 2.0,
+                "samples": [
+                    {
+                        "id": "admin-maintenance",
+                        "label": "Admin maintenance window",
+                        "expected": "benign",
+                        "platform": "linux",
+                        "signal_type": "admin_activity",
+                        "sample": {
+                            "timestamp_ms": 1,
+                            "cpu_load_pct": 25.0,
+                            "memory_load_pct": 35.0,
+                            "temperature_c": 40.0,
+                            "network_kbps": 750.0,
+                            "auth_failures": 0,
+                            "battery_pct": 90.0,
+                            "integrity_drift": 0.01,
+                            "process_count": 50,
+                            "disk_pressure_pct": 12.0
+                        }
+                    },
+                    {
+                        "id": "credential-lateral-chain",
+                        "label": "Credential theft and lateral movement",
+                        "expected": "malicious",
+                        "platform": "windows",
+                        "signal_type": "identity",
+                        "sample": {
+                            "timestamp_ms": 2,
+                            "cpu_load_pct": 86.0,
+                            "memory_load_pct": 80.0,
+                            "temperature_c": 60.0,
+                            "network_kbps": 8600.0,
+                            "auth_failures": 20,
+                            "battery_pct": 70.0,
+                            "integrity_drift": 0.32,
+                            "process_count": 180,
+                            "disk_pressure_pct": 80.0
+                        }
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("custom replay corpus gate");
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["corpus_kind"], serde_json::json!("custom"));
+    assert_eq!(body["pack_name"], serde_json::json!("customer-pack-alpha"));
+    assert_eq!(body["summary"]["total_samples"].as_u64().unwrap(), 2);
+    assert!(
+        body["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == "credential-lateral-chain")
+    );
+    assert!(
+        body["platform_deltas"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["group"] == "windows")
+    );
+    assert!(
+        body["signal_type_deltas"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["group"] == "identity")
+    );
+}
+
+#[test]
+fn detection_replay_corpus_accepts_retained_event_source() {
+    let (port, token) = spawn_test_server();
+    let auth = auth_header(&token);
+    let agent_id = enroll_test_agent(port, &token, "retained-replay-agent");
+
+    let batch = serde_json::json!({
+        "agent_id": agent_id,
+        "events": [
+            {
+                "timestamp": "2026-04-23T09:00:00Z",
+                "hostname": "retained-replay-agent",
+                "platform": "linux",
+                "score": 0.8,
+                "confidence": 0.82,
+                "level": "Info",
+                "action": "admin_maintenance",
+                "reasons": ["approved_admin_script"],
+                "sample": {
+                    "timestamp_ms": 1,
+                    "cpu_load_pct": 28.0,
+                    "memory_load_pct": 35.0,
+                    "temperature_c": 40.0,
+                    "network_kbps": 650.0,
+                    "auth_failures": 0,
+                    "battery_pct": 88.0,
+                    "integrity_drift": 0.01,
+                    "process_count": 55,
+                    "disk_pressure_pct": 10.0
+                },
+                "enforced": false
+            },
+            {
+                "timestamp": "2026-04-23T09:05:00Z",
+                "hostname": "retained-replay-agent",
+                "platform": "linux",
+                "score": 8.9,
+                "confidence": 0.95,
+                "level": "Critical",
+                "action": "credential_access",
+                "reasons": ["credential_dump_attempt", "lateral_movement"],
+                "sample": {
+                    "timestamp_ms": 2,
+                    "cpu_load_pct": 91.0,
+                    "memory_load_pct": 82.0,
+                    "temperature_c": 65.0,
+                    "network_kbps": 9600.0,
+                    "auth_failures": 25,
+                    "battery_pct": 70.0,
+                    "integrity_drift": 0.38,
+                    "process_count": 210,
+                    "disk_pressure_pct": 82.0
+                },
+                "enforced": false
+            }
+        ]
+    });
+    ureq::post(&format!("{}/api/events", base(port)))
+        .set("Content-Type", "application/json")
+        .send_string(&batch.to_string())
+        .expect("ingest retained replay events");
+
+    let response = ureq::post(&format!("{}/api/detection/replay-corpus", base(port)))
+        .set("Authorization", &auth)
+        .set("Content-Type", "application/json")
+        .send_string(
+            &serde_json::json!({
+                "source": "retained_events",
+                "name": "retained-last-alerts",
+                "threshold": 2.0,
+                "limit": 10
+            })
+            .to_string(),
+        )
+        .expect("retained-event replay corpus gate");
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["corpus_kind"], serde_json::json!("retained_events"));
+    assert_eq!(body["pack_name"], serde_json::json!("retained-last-alerts"));
+    assert_eq!(body["summary"]["total_samples"].as_u64().unwrap(), 2);
+    assert!(
+        body["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == "event-1")
+    );
+    assert!(
+        body["platform_deltas"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["group"] == "linux")
+    );
+    assert!(
+        body["signal_type_deltas"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["group"] == "identity")
+    );
 }
 
 #[test]
@@ -258,10 +564,13 @@ fn deep_scan_v2_and_threat_intel_v2_expose_profiles_and_sightings() {
     assert!(library_body.get("indicators").is_some());
     assert!(library_body.get("recent_sightings").is_some());
 
-    let sightings = ureq::get(&format!("{}/api/threat-intel/sightings?limit=10", base(port)))
-        .set("Authorization", &auth)
-        .call()
-        .expect("threat intel sightings");
+    let sightings = ureq::get(&format!(
+        "{}/api/threat-intel/sightings?limit=10",
+        base(port)
+    ))
+    .set("Authorization", &auth)
+    .call()
+    .expect("threat intel sightings");
     let sightings_body: serde_json::Value = sightings.into_json().unwrap();
     assert!(sightings_body["count"].as_u64().unwrap() >= 1);
 }
@@ -859,7 +1168,9 @@ fn threat_intel_library_returns_added_iocs() {
     let (port, token) = spawn_test_server();
     let add_resp = ureq::post(&format!("{}/api/threat-intel/ioc", base(port)))
         .set("Authorization", &auth_header(&token))
-        .send_json(serde_json::json!({"value": "evil.example", "ioc_type": "domain", "confidence": 0.91}))
+        .send_json(
+            serde_json::json!({"value": "evil.example", "ioc_type": "domain", "confidence": 0.91}),
+        )
         .expect("add threat intel ioc");
     assert_eq!(add_resp.status(), 200);
 
@@ -872,11 +1183,16 @@ fn threat_intel_library_returns_added_iocs() {
     let iocs = body["iocs"].as_array().expect("ioc array");
     assert!(body["count"].as_u64().unwrap_or_default() >= 1);
     assert!(iocs.iter().any(|ioc| ioc["value"] == "evil.example"));
-    assert!(body.get("feeds").and_then(|value| value.as_array()).is_some());
-    assert!(body
-        .get("recent_matches")
-        .and_then(|value| value.as_array())
-        .is_some());
+    assert!(
+        body.get("feeds")
+            .and_then(|value| value.as_array())
+            .is_some()
+    );
+    assert!(
+        body.get("recent_matches")
+            .and_then(|value| value.as_array())
+            .is_some()
+    );
 }
 
 // ── POST /api/threat-intel/ioc ─────────────────────────────────
@@ -3286,15 +3602,16 @@ fn timeline_endpoints_support_query_string_routing() {
 fn investigation_progress_endpoint_updates_active_snapshot() {
     let (port, token) = spawn_test_server();
 
-    let started: serde_json::Value = ureq::post(&format!("{}/api/investigations/start", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .send_json(serde_json::json!({
-            "workflow_id": "credential-storm",
-            "analyst": "analyst-1"
-        }))
-        .expect("start investigation")
-        .into_json()
-        .unwrap();
+    let started: serde_json::Value =
+        ureq::post(&format!("{}/api/investigations/start", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .send_json(serde_json::json!({
+                "workflow_id": "credential-storm",
+                "analyst": "analyst-1"
+            }))
+            .expect("start investigation")
+            .into_json()
+            .unwrap();
 
     let investigation_id = started["id"].as_str().expect("investigation id");
     assert!(investigation_id.starts_with("inv-"));
@@ -3316,19 +3633,26 @@ fn investigation_progress_endpoint_updates_active_snapshot() {
             .unwrap();
 
     assert_eq!(updated["id"].as_str(), Some(investigation_id));
-    assert_eq!(updated["notes"]["1"].as_str(), Some("VPN telemetry reviewed"));
-    assert!(updated["completed_steps"]
-        .as_array()
-        .map(|items| items.iter().any(|value| value.as_u64() == Some(1)))
-        .unwrap_or(false));
-    assert!(updated["findings"]
-        .as_array()
-        .map(|items| {
-            items.iter().any(|value| {
-                value.as_str() == Some("Lockout pattern confirmed from single ASN")
+    assert_eq!(
+        updated["notes"]["1"].as_str(),
+        Some("VPN telemetry reviewed")
+    );
+    assert!(
+        updated["completed_steps"]
+            .as_array()
+            .map(|items| items.iter().any(|value| value.as_u64() == Some(1)))
+            .unwrap_or(false)
+    );
+    assert!(
+        updated["findings"]
+            .as_array()
+            .map(|items| {
+                items.iter().any(|value| {
+                    value.as_str() == Some("Lockout pattern confirmed from single ASN")
+                })
             })
-        })
-        .unwrap_or(false));
+            .unwrap_or(false)
+    );
     assert!(updated["completion_percent"].as_u64().unwrap_or_default() > 0);
     assert_eq!(updated["next_step"]["order"].as_u64(), Some(2));
 
@@ -3344,8 +3668,14 @@ fn investigation_progress_endpoint_updates_active_snapshot() {
         .iter()
         .find(|entry| entry["id"].as_str() == Some(investigation_id))
         .expect("active snapshot present");
-    assert_eq!(snapshot["notes"]["1"].as_str(), Some("VPN telemetry reviewed"));
-    assert_eq!(snapshot["workflow_name"].as_str(), Some("Investigate Credential Storm"));
+    assert_eq!(
+        snapshot["notes"]["1"].as_str(),
+        Some("VPN telemetry reviewed")
+    );
+    assert_eq!(
+        snapshot["workflow_name"].as_str(),
+        Some("Investigate Credential Storm")
+    );
 }
 
 #[test]
@@ -3365,16 +3695,17 @@ fn investigation_handoff_updates_linked_case_assignment_and_commentary() {
         .unwrap();
     let case_id = case["id"].as_u64().expect("case id");
 
-    let started: serde_json::Value = ureq::post(&format!("{}/api/investigations/start", base(port)))
-        .set("Authorization", &auth_header(&token))
-        .send_json(serde_json::json!({
-            "workflow_id": "credential-storm",
-            "analyst": "analyst-1",
-            "case_id": case_id.to_string()
-        }))
-        .expect("start investigation")
-        .into_json()
-        .unwrap();
+    let started: serde_json::Value =
+        ureq::post(&format!("{}/api/investigations/start", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .send_json(serde_json::json!({
+                "workflow_id": "credential-storm",
+                "analyst": "analyst-1",
+                "case_id": case_id.to_string()
+            }))
+            .expect("start investigation")
+            .into_json()
+            .unwrap();
 
     let investigation_id = started["id"].as_str().expect("investigation id");
     let handed_off: serde_json::Value =
@@ -3399,15 +3730,24 @@ fn investigation_handoff_updates_linked_case_assignment_and_commentary() {
 
     assert_eq!(handed_off["status"].as_str(), Some("handoff-ready"));
     assert_eq!(handed_off["analyst"].as_str(), Some("analyst-2"));
-    assert_eq!(handed_off["handoff"]["from_analyst"].as_str(), Some("analyst-1"));
-    assert_eq!(handed_off["handoff"]["to_analyst"].as_str(), Some("analyst-2"));
-    assert!(handed_off["handoff"]["next_actions"]
-        .as_array()
-        .map(|items| {
-            items.iter()
-                .any(|value| value.as_str() == Some("Confirm all targeted accounts were reset"))
-        })
-        .unwrap_or(false));
+    assert_eq!(
+        handed_off["handoff"]["from_analyst"].as_str(),
+        Some("analyst-1")
+    );
+    assert_eq!(
+        handed_off["handoff"]["to_analyst"].as_str(),
+        Some("analyst-2")
+    );
+    assert!(
+        handed_off["handoff"]["next_actions"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .any(|value| value.as_str() == Some("Confirm all targeted accounts were reset"))
+            })
+            .unwrap_or(false)
+    );
 
     let detail: serde_json::Value = ureq::get(&format!("{}/api/cases/{}", base(port), case_id))
         .set("Authorization", &auth_header(&token))
@@ -5353,10 +5693,11 @@ fn export_alerts_json_format() {
         .call()
         .expect("export alerts json");
     assert_eq!(resp.status(), 200);
-    assert!(resp
-        .header("Content-Type")
-        .unwrap_or_default()
-        .contains("application/json"));
+    assert!(
+        resp.header("Content-Type")
+            .unwrap_or_default()
+            .contains("application/json")
+    );
     let body: serde_json::Value = resp.into_json().expect("json export payload");
     assert!(body.is_array());
 }
@@ -5369,10 +5710,11 @@ fn export_alerts_cef_format() {
         .call()
         .expect("export alerts cef");
     assert_eq!(resp.status(), 200);
-    assert!(resp
-        .header("Content-Type")
-        .unwrap_or_default()
-        .contains("text/plain"));
+    assert!(
+        resp.header("Content-Type")
+            .unwrap_or_default()
+            .contains("text/plain")
+    );
     let _body = resp.into_string().expect("cef export payload");
 }
 
@@ -5457,7 +5799,10 @@ fn gdpr_forget_returns_receipt() {
         .expect("gdpr forget");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().expect("gdpr forget payload");
-    assert_eq!(body.get("status").and_then(|value| value.as_str()), Some("completed"));
+    assert_eq!(
+        body.get("status").and_then(|value| value.as_str()),
+        Some("completed")
+    );
     assert_eq!(
         body.get("entity_id").and_then(|value| value.as_str()),
         Some("test-user-42")
@@ -5475,15 +5820,30 @@ fn pii_scan_returns_detected_categories() {
         .expect("pii scan");
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.into_json().expect("pii scan payload");
-    assert_eq!(body.get("has_pii").and_then(|value| value.as_bool()), Some(true));
+    assert_eq!(
+        body.get("has_pii").and_then(|value| value.as_bool()),
+        Some(true)
+    );
     let categories = body
         .get("categories")
         .and_then(|value| value.as_array())
         .cloned()
         .unwrap_or_default();
-    assert!(categories.iter().any(|value| value.as_str() == Some("email")));
-    assert!(categories.iter().any(|value| value.as_str() == Some("ip_address")));
-    assert!(categories.iter().any(|value| value.as_str() == Some("credit_card")));
+    assert!(
+        categories
+            .iter()
+            .any(|value| value.as_str() == Some("email"))
+    );
+    assert!(
+        categories
+            .iter()
+            .any(|value| value.as_str() == Some("ip_address"))
+    );
+    assert!(
+        categories
+            .iter()
+            .any(|value| value.as_str() == Some("credit_card"))
+    );
 }
 
 // ── Compliance reports ─────────────────────────────────────────────

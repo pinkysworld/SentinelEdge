@@ -11,19 +11,19 @@ Status legend:
 
 | Capability area | Primary UI surface | Status | Next closure target |
 |---|---|---|---|
-| Detection engineering (rules, hunts, suppressions, packs) | `Threat Detection`, `Dashboard`, `Attack Graph` | Partial | Broaden regression coverage and refine remaining long-tail lifecycle promotion flows around the new efficacy, ATT&CK gap, suppression-noise, and rollout drill-downs |
-| SOC operations (queue, cases, timelines, approvals) | `SOC Workbench`, `Live Monitor` | Implemented | Expand browser regression coverage around the new route-aware queue, case, investigation, and response pivots |
+| Detection engineering (rules, hunts, suppressions, packs) | `Threat Detection`, `Dashboard`, `Attack Graph` | Ready | Keep the URL-backed drilldowns, replay-corpus gate, and rule-panel handoffs covered as efficacy, ATT&CK gap, suppression-noise, and rollout workflows continue to evolve |
+| SOC operations (queue, cases, timelines, approvals) | `SOC Workbench`, `Live Monitor` | Implemented | Keep the route-aware queue, case, investigation, and response pivots aligned as deeper escalation, approval, and playbook detail grows |
 | Dashboard customization and shared views | `Dashboard` | Implemented | Keep the new priority-alert-aware report-center handoffs and persisted personal/shared layouts covered as the overview evolves |
-| UEBA, NDR, graph analytics | `UEBA`, `NDR`, `Attack Graph` | Partial | Deepen anomaly narratives, entity/network evidence correlation, and response-specific playbooks on top of the new cross-surface pivots |
-| Fleet, rollout, and release operations | `Fleet & Agents` | Partial | Add stronger rollout history, recovery, and deployment-health actions |
-| Vulnerability, exposure, drift, certificates, assets | `Infrastructure` | Partial | Finish guided remediation and configuration-review workflows |
+| UEBA, NDR, graph analytics | `UEBA`, `NDR`, `Attack Graph` | Ready | Broaden regression coverage around the shipped entity/network playbooks, enriched explainability scoring, and stored-event campaign clustering, then keep tightening deeper evidence correlation and analyst narrative quality |
+| Fleet, rollout, and release operations | `Fleet & Agents` | Ready | Keep the route-aware rollout history, recovery watchlists, and deployment-health actions aligned as fleet workflows deepen and live release telemetry expands |
+| Vulnerability, exposure, drift, certificates, assets | `Infrastructure` | Ready | Extend the shipped guided remediation and malware-verdict workspaces into broader change-review, approval, and recovery-history workflows |
 | Security policy and advanced controls | `Security Policy` | Implemented | Structured policy composition, digital twin simulation, adversarial harness, deception deployment, and enforcement quarantine workflows are available in the browser console |
-| Enterprise controls (RBAC, SSO, SCIM, settings) | `Settings`, login shell | Partial | Complete true end-to-end federated SSO redirect/callback exchange and broader lifecycle validation beyond the shipped provider discovery, sign-in shell, RBAC, SCIM, retention, and collector/secrets workflows |
+| Enterprise controls (RBAC, SSO, SCIM, settings) | `Settings`, login shell | Ready | Keep the new federated sign-in readiness center, launch validation, and SCIM handoff coverage aligned as broader IdP lifecycle validation evolves |
 | Supportability, documentation, and contract verification | `Help & Docs` | Implemented | Keep the shipped parity diagnostics, embedded docs index/content, and operator API/GraphQL explorer aligned with future runtime and SDK releases |
 | Reports, compliance, evidence, exports | `Reports & Exports`, `Security Policy` | Implemented | Structured compliance review, evidence bundle export, backend SIEM export formats, GDPR erase, PII scan, and privacy-budget checks are available in the browser console |
 | Threat intelligence, enrichment, deception | `Threat Detection`, `Settings`, `Security Policy` | Implemented | Threat Detection now provides browse/filter/action workflows for indicator libraries, enrichment connectors, feed context, recent matches, and deception deployment |
 | Long-retention history and search | `Settings` | Ready | Add cross-surface pivots from analyst workflows into the shipped ClickHouse-backed retained-event search and retention controls |
-| Cloud, SaaS, and identity collectors | `Settings`, `Infrastructure`, `SOC Workbench` | Partial | Extend the shipped AWS/Azure/GCP, secrets-manager, and case ticket-sync workflows to remaining SaaS and identity collectors plus deeper ingestion-health dashboards |
+| Cloud, SaaS, and identity collectors | `Settings`, `Infrastructure`, `SOC Workbench` | Ready | Keep the routed collector-health lanes covered while adding persisted ingestion counters, last-success checkpoints, and more cross-surface analyst pivots |
 | AI assistant and RAG analyst workflows | `Analyst Assistant`, `SOC Workbench` | Implemented | Deepen retrieval quality, provider coverage, and analyst handoff workflows on top of the shipped case-aware assistant with citations and ticket-sync pivots |
 
 ## Release acceptance gate
@@ -32,7 +32,5 @@ Use `make release-acceptance` before release sign-off. The command builds the sh
 
 ## Immediate execution order
 
-1. Complete end-to-end federated SSO redirect and callback validation beyond the shipped provider discovery and login shell.
-2. Extend remaining SaaS and identity collector workflows beyond the shipped cloud, secrets-manager, and case ticket-sync surfaces.
-3. Deepen the remaining UEBA, NDR, and infrastructure remediation workflows that are still marked `Partial`.
-4. Broaden release-gate regression depth as new routed workflows ship.
+1. Add persisted ingestion counters and last-success checkpoints for cloud, SaaS, and identity collector lanes once per-provider history is retained.
+2. Extend the shipped infrastructure remediation and malware-verdict explorer into broader change-review, approval, and recovery-history workflows.

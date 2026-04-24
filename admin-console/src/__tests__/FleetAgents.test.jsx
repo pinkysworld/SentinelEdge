@@ -66,9 +66,43 @@ function installFleetFetchMock(agents = AGENTS) {
     if (u.includes('/api/swarm')) return Promise.resolve(jsonOk({}));
     if (u.includes('/api/events')) return Promise.resolve(jsonOk([]));
     if (u.includes('/api/platform')) return Promise.resolve(jsonOk({ os: 'linux' }));
-    if (u.includes('/api/updates')) return Promise.resolve(jsonOk({}));
-    if (u.includes('/api/rollout')) return Promise.resolve(jsonOk({}));
-    if (u.includes('/api/policy')) return Promise.resolve(jsonOk({}));
+    if (u.includes('/api/updates'))
+      return Promise.resolve(
+        jsonOk({
+          items: [{ version: '0.53.5', channel: 'stable', notes: 'Current release train' }],
+        }),
+      );
+    if (u.includes('/api/rollout'))
+      return Promise.resolve(
+        jsonOk({
+          rollout_targets: 2,
+          rollback_events: 1,
+          last_rollout_at: '2026-04-22T10:00:00Z',
+          recent_history: [
+            {
+              id: 'rollout-1',
+              agent_id: 'a-2',
+              status: 'rolled-back',
+              rollout_group: 'canary',
+              timestamp: '2026-04-22T10:00:00Z',
+              notes: 'Rollback after agent health regression',
+            },
+          ],
+        }),
+      );
+    if (u.includes('/api/policy'))
+      return Promise.resolve(
+        jsonOk({
+          recent_history: [
+            {
+              id: 'policy-1',
+              actor: 'ops',
+              action: 'tightened canary gate',
+              timestamp: '2026-04-22T09:30:00Z',
+            },
+          ],
+        }),
+      );
     return Promise.resolve(jsonOk({}));
   });
 }
@@ -101,6 +135,22 @@ function Wrapper({ children }) {
         </RoleProvider>
       </AuthProvider>
     </MemoryRouter>
+  );
+}
+
+function renderFleet(route = '/') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <AuthProvider>
+        <RoleProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <FleetAgents />
+            </ToastProvider>
+          </ThemeProvider>
+        </RoleProvider>
+      </AuthProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -218,5 +268,31 @@ describe('FleetAgents', () => {
     expect(
       await within(detailPanel).findByText('host-26', { selector: '.detail-hero-title' }),
     ).toBeInTheDocument();
+  });
+
+  it('restores rollout-history focus from the route', async () => {
+    await act(async () => {
+      renderFleet('/?fleetTab=updates&updatesPanel=rollout');
+    });
+
+    const rolloutButton = screen.getByRole('button', { name: 'Rollout History' });
+    expect(rolloutButton.className).toContain('active');
+    expect(screen.getByText('Recent Rollout History')).toBeInTheDocument();
+    expect(screen.getByText('Rollback after agent health regression')).toBeInTheDocument();
+  });
+
+  it('opens the offline-agent recovery scope from the updates workspace', async () => {
+    await act(async () => {
+      renderFleet('/?fleetTab=updates&updatesPanel=recovery');
+    });
+
+    expect(screen.getByText('Recovery Watchlist')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open Offline Agents' }));
+    });
+
+    expect(screen.getByText(/Registered Agents/)).toBeInTheDocument();
+    expect(screen.getByText('Status: offline')).toBeInTheDocument();
   });
 });

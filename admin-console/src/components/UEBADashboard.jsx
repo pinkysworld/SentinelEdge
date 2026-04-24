@@ -183,6 +183,41 @@ export default function UEBADashboard() {
 
   const topRiskCount = entities.filter((e) => (e.risk_score || 0) >= RISK_THRESHOLDS.high).length;
   const focusEntity = selectedEntity || entities[0]?.entity_id || '';
+  const entityAnomalies = entityDetail?.anomalies || [];
+  const topEntityAnomaly = entityAnomalies[0] || null;
+  const entityPlaybook = useMemo(() => {
+    if (!selectedEntity) return null;
+    const riskScore = Number(entityDetail?.risk_score) || 0;
+    const peerAvg =
+      entityDetail?.peer_avg_risk === undefined ? riskScore : Number(entityDetail?.peer_avg_risk) || 0;
+    const peerDelta = riskScore - peerAvg;
+    const anomalyCount = entityAnomalies.length;
+    const primaryAnomaly = topEntityAnomaly?.anomaly_type || 'Entity pressure';
+    const suggestedOwner =
+      entityDetail?.entity_kind === 'user'
+        ? 'Identity or IAM owner'
+        : entityDetail?.entity_kind === 'service'
+          ? 'Service owner'
+          : 'Endpoint or platform owner';
+    const escalationLane =
+      riskScore >= RISK_THRESHOLDS.high || anomalyCount >= 3 ? 'Immediate case escalation' : 'Analyst validation';
+    const narrative =
+      peerDelta >= 25
+        ? `${selectedEntity} is operating well outside peer baseline and should be validated for account takeover, privilege misuse, or unusual access chaining.`
+        : `${selectedEntity} is elevated but still close enough to peer behavior that rapid validation and noise review should happen before broad containment.`;
+    const nextStep =
+      topEntityAnomaly?.mitre_technique
+        ? `Validate the ${topEntityAnomaly.mitre_technique} signal against recent authentication, privilege, and host telemetry.`
+        : `Validate recent authentication and endpoint telemetry for ${selectedEntity}.`;
+    return {
+      narrative,
+      primaryAnomaly,
+      peerDelta,
+      suggestedOwner,
+      escalationLane,
+      nextStep,
+    };
+  }, [entityAnomalies.length, entityDetail, selectedEntity, topEntityAnomaly]);
   const workflowItems = useMemo(() => {
     const focalEntity = focusEntity || 'the highest-risk entity';
     const focalKind =
@@ -466,6 +501,74 @@ export default function UEBADashboard() {
                     entityRisk={entityDetail.risk_score || 0}
                     peerAvg={entityDetail.peer_avg_risk || 0}
                   />
+                )}
+                {entityPlaybook && (
+                  <div
+                    className="card"
+                    style={{
+                      padding: 14,
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div className="card-title" style={{ marginBottom: 10 }}>
+                      Response Playbook
+                    </div>
+                    <div className="hint" style={{ marginBottom: 14 }}>
+                      {entityPlaybook.narrative}
+                    </div>
+                    <div className="summary-grid" style={{ marginBottom: 14 }}>
+                      <div className="summary-card">
+                        <div className="summary-label">Primary pressure</div>
+                        <div className="summary-value">{entityPlaybook.primaryAnomaly}</div>
+                        <div className="summary-meta">Lead signal driving this entity selection.</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="summary-label">Peer drift</div>
+                        <div className="summary-value">
+                          {entityPlaybook.peerDelta >= 0 ? '+' : ''}
+                          {entityPlaybook.peerDelta.toFixed(1)}
+                        </div>
+                        <div className="summary-meta">Difference versus the current peer baseline.</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="summary-label">Suggested owner</div>
+                        <div className="summary-value">{entityPlaybook.suggestedOwner}</div>
+                        <div className="summary-meta">{entityPlaybook.escalationLane}</div>
+                      </div>
+                    </div>
+                    <div className="detail-callout" style={{ marginBottom: 14 }}>
+                      {entityPlaybook.nextStep}
+                    </div>
+                    <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+                      <a className="btn btn-sm btn-primary" href="/soc#investigations">
+                        Escalate investigation
+                      </a>
+                      <a
+                        className="btn btn-sm"
+                        href={buildHref('/assistant', {
+                          params: {
+                            source: 'ueba',
+                            investigation: selectedEntity,
+                          },
+                        })}
+                      >
+                        Ask assistant
+                      </a>
+                      <a
+                        className="btn btn-sm"
+                        href={buildHref('/reports', {
+                          params: {
+                            tab: 'delivery',
+                            source: 'ueba',
+                            target: selectedEntity,
+                          },
+                        })}
+                      >
+                        Package evidence
+                      </a>
+                    </div>
+                  </div>
                 )}
                 {entityDetail.anomalies && entityDetail.anomalies.length > 0 && (
                   <div>

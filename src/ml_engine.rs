@@ -882,7 +882,9 @@ impl ModelRegistry {
         };
         ModelRegistryStatus {
             slot: "alert_triage".to_string(),
-            active_backend: if self.prefer_onnx_primary && self.onnx.status("alert_triage_v1") == ModelStatus::Ready {
+            active_backend: if self.prefer_onnx_primary
+                && self.onnx.status("alert_triage_v1") == ModelStatus::Ready
+            {
                 "onnx".to_string()
             } else {
                 "random_forest_fallback".to_string()
@@ -904,7 +906,13 @@ impl ModelRegistry {
             discovered_models,
             loaded_models,
             available_models: StubEngine::planned_models(),
-            recent_shadow_reports: self.recent_shadow_reports.iter().rev().take(20).cloned().collect(),
+            recent_shadow_reports: self
+                .recent_shadow_reports
+                .iter()
+                .rev()
+                .take(20)
+                .cloned()
+                .collect(),
         }
     }
 
@@ -928,7 +936,11 @@ impl ModelRegistry {
         };
         if let Some(ref shadow_result) = shadow {
             self.record_shadow_report(
-                if use_onnx_primary { "onnx" } else { "random_forest_fallback" },
+                if use_onnx_primary {
+                    "onnx"
+                } else {
+                    "random_forest_fallback"
+                },
                 shadow_result,
                 &primary,
                 if use_onnx_primary {
@@ -949,12 +961,17 @@ impl ModelRegistry {
         let mut rationale = Vec::new();
         rationale.push(format!(
             "primary backend: {}",
-            if use_onnx_primary { "onnx" } else { "random_forest_fallback" }
+            if use_onnx_primary {
+                "onnx"
+            } else {
+                "random_forest_fallback"
+            }
         ));
         if shadow.is_some() {
             rationale.push("shadow inference captured for calibration comparison".to_string());
         } else {
-            rationale.push("fallback-only decision because no ONNX triage model is loaded".to_string());
+            rationale
+                .push("fallback-only decision because no ONNX triage model is loaded".to_string());
         }
         ManagedTriageOutcome {
             result: primary.clone(),

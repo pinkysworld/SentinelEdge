@@ -73,6 +73,81 @@ export default function NDRDashboard() {
     ? searchParams.get('tab')
     : 'overview';
   const leadAddress = unusualDests[0]?.dst_addr || topTalkers[0]?.addr || '';
+  const networkPlaybook = useMemo(() => {
+    const config = {
+      overview: {
+        label: 'Overview pressure',
+        findings: unusualDests.length + protoAnomalies.length,
+        focus: unusualDests[0]?.dst_addr || topTalkers[0]?.addr || 'network perimeter',
+        narrative:
+          'Start with the broadest external pressure, then decide whether the signal belongs in asset review, active hunting, or direct case escalation.',
+        nextStep: 'Validate the top external destinations against asset ownership and recent alert history.',
+      },
+      tls: {
+        label: 'TLS fingerprinting',
+        findings: tlsList.length,
+        focus: tlsList[0]?.dst_addr || tlsList[0]?.tls_sni || leadAddress || 'suspicious TLS edge',
+        narrative:
+          'Rare or known-bad JA3/JA4 fingerprints should be treated as possible malware tooling until the client, SNI, and certificate chain are explained.',
+        nextStep: 'Confirm the fingerprint owner, SNI legitimacy, and whether the destination belongs to a sanctioned service.',
+      },
+      dpi: {
+        label: 'Protocol mismatch',
+        findings: dpiList.length,
+        focus: dpiList[0]?.dst_addr || leadAddress || 'tunneled destination',
+        narrative:
+          'Mismatched protocols often point to tunneling, staging, or policy evasion, so the fastest closure path is to verify the owning workload and intended service.',
+        nextStep: 'Review the source workload, expected port usage, and whether the detected protocol is allowed on that path.',
+      },
+      entropy: {
+        label: 'Encrypted exfiltration risk',
+        findings: entropyList.length,
+        focus: entropyList[0]?.dst_addr || leadAddress || 'high-entropy session',
+        narrative:
+          'High-entropy sessions can be harmless backup traffic, but they need ownership and volume validation before they are dismissed as noise.',
+        nextStep: 'Compare traffic volume and destination reputation before deciding between suppression and containment.',
+      },
+      beaconing: {
+        label: 'Beaconing cadence',
+        findings: beaconingList.length,
+        focus: beaconingList[0]?.dst_addr || leadAddress || 'beacon destination',
+        narrative:
+          'Stable low-jitter callbacks are strong candidates for C2 behavior, so containment planning and evidence capture should happen in parallel.',
+        nextStep: 'Correlate the callback host with process lineage, DNS history, and any pending response approvals.',
+      },
+      certs: {
+        label: 'Certificate trust gap',
+        findings: selfSignedList.length,
+        focus: selfSignedList[0]?.dst_addr || selfSignedList[0]?.tls_sni || leadAddress || 'certificate endpoint',
+        narrative:
+          'Self-signed or untrusted certificates may be legitimate internal services, but they still require ownership, trust-chain, and exposure confirmation.',
+        nextStep: 'Confirm issuer expectations, trust-store policy, and whether the endpoint is intentionally private.',
+      },
+    };
+    const active = config[activeTab] || config.overview;
+    const responseLane =
+      activeTab === 'beaconing' || activeTab === 'tls'
+        ? 'Containment and evidence capture'
+        : activeTab === 'dpi' || activeTab === 'entropy'
+          ? 'Owner validation and hunt expansion'
+          : 'Triage and service validation';
+    return {
+      ...active,
+      responseLane,
+      findingCount: active.findings,
+    };
+  }, [
+    activeTab,
+    beaconingList,
+    dpiList,
+    entropyList,
+    leadAddress,
+    protoAnomalies.length,
+    selfSignedList,
+    tlsList,
+    topTalkers,
+    unusualDests,
+  ]);
   const workflowItems = useMemo(
     () => [
       {
@@ -205,6 +280,62 @@ export default function NDRDashboard() {
         description="Push active network findings into hunts, asset review, investigations, and delivery workflows without rebuilding the context by hand."
         items={workflowItems}
       />
+
+      <div className="card">
+        <div className="card-header" style={{ alignItems: 'flex-start' }}>
+          <div>
+            <div className="card-title">Network Response Playbook</div>
+            <div className="hint" style={{ marginTop: 6 }}>
+              {networkPlaybook.narrative}
+            </div>
+          </div>
+        </div>
+        <div className="summary-grid" style={{ marginBottom: 16 }}>
+          <div className="summary-card">
+            <div className="summary-label">Priority signal</div>
+            <div className="summary-value">{networkPlaybook.label}</div>
+            <div className="summary-meta">{networkPlaybook.findingCount} findings in this lane.</div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-label">Primary focus</div>
+            <div className="summary-value">{networkPlaybook.focus}</div>
+            <div className="summary-meta">Lead address or endpoint to validate first.</div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-label">Response lane</div>
+            <div className="summary-value">{networkPlaybook.responseLane}</div>
+            <div className="summary-meta">Recommended closure path for the active tab.</div>
+          </div>
+        </div>
+        <div className="detail-callout" style={{ marginBottom: 16 }}>
+          {networkPlaybook.nextStep}
+        </div>
+        <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+          <a className="btn btn-sm btn-primary" href="/soc#queue">
+            Open SOC triage
+          </a>
+          <a
+            className="btn btn-sm"
+            href={buildHref('/infrastructure', {
+              params: { tab: 'observability', q: networkPlaybook.focus },
+            })}
+          >
+            Review asset telemetry
+          </a>
+          <a
+            className="btn btn-sm"
+            href={buildHref('/reports', {
+              params: {
+                tab: 'delivery',
+                source: 'ndr',
+                target: networkPlaybook.focus || undefined,
+              },
+            })}
+          >
+            Export delivery evidence
+          </a>
+        </div>
+      </div>
 
       {/* Tab Bar */}
       <div

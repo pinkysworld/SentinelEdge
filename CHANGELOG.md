@@ -4,11 +4,69 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.53.5] — Replay Drift, Collector Timelines & Release-Gate Expansion
+
+### Detection validation depth
+- **Replay drift breakdowns** — The replay-corpus acceptance gate now exposes platform and signal-type deltas for built-in fixtures, retained-event samples, and custom validation packs so promotion decisions can see where drift is concentrated instead of only reading aggregate precision and recall.
+- **Detection workspace runner depth** — Threat Detection now renders those replay deltas directly in the operator workspace and preserves the routed rule/workspace drilldown model introduced in the previous release.
+
+### Integration health visibility
+- **Collector ingestion timelines** — Shared collector status now carries lane labels, route targets, and staged timeline checkpoints for cloud, identity, and SaaS collectors so Settings can show credential coverage, scope, validation, and downstream routing in one routed workspace.
+
+### Release confidence
+- **Broader live routed smoke coverage** — The release-acceptance browser suite now covers routed response, collector-health, fleet-rollout, and infrastructure remediation workflows in addition to the earlier detection and admin paths.
+- **Documentation and release sync** — Status, roadmap, reproducibility, installation, and README surfaces now align on the `v0.53.5` baseline and the release bundle instructions use the real `--version` entry point.
+
+### Verification
+- **Focused backend regression coverage** — API and server tests cover replay delta breakdowns, retained-event/custom replay packs, campaign clustering, and enriched collector status metadata.
+- **Focused admin-console regression coverage** — Admin-console tests cover replay drift rendering, collector timeline cards, routed rollout/recovery flows, and verdict/remediation workspaces.
+- **Release-gate listing validation** — The expanded routed Playwright smoke spec still resolves cleanly through the checked-in Playwright CLI and release-acceptance wrapper.
+
+## [0.53.4] — Detection Quality, Campaign Intelligence & Operator Closure
+
+### Enterprise controls and integration readiness
+- **Federated sign-in readiness center** — Settings now includes a dedicated SSO readiness surface with callback URI guidance, ready-vs-review provider state, SCIM mapping visibility, and one-click live SSO launch validation against the real backend login/callback routes.
+- **Login-shell SSO closure** — The unauthenticated admin-console shell now explains when federated sign-in is ready, shows SCIM lifecycle state, and makes the callback handoff visible alongside the existing provider sign-in buttons.
+- **Collector routing dashboard** — Settings now summarizes cloud and identity collector readiness in operator language, separating identity telemetry and cloud audit lanes and linking them back into SOC, UEBA, infrastructure, and graph workflows.
+- **SaaS collector closure** — Settings now adds first-class Microsoft 365 and Google Workspace collector setup, validation, and readiness workflows, plus a dedicated SaaS activity lane alongside the existing cloud and identity routing views.
+
+### Detection workflow closure
+- **Route-backed detection drilldowns** — Threat Detection now preserves workspace focus for efficacy, ATT&CK gap, suppression-noise, and content-pack rollout drilldowns directly in the route so analysts can reopen or share exact detection engineering context.
+- **Rule detail panel handoffs** — Selected rules now expose URL-backed summary, efficacy, promotion, and hunts/investigations panels, making long detection workspaces feel case-driven instead of forcing analysts to scroll back through the entire page.
+- **Entity-centric explainability depth** — Detection explainability now enriches host, agent, action, identity, and network-destination scores with peer-group context, score components, sequence signals, graph pivots, and analyst-readable next pivots in the alert drawer.
+- **Campaign correlation bridge** — The Attack Graph now consumes a real `/api/correlation/campaigns` backend that clusters stored events into campaigns, graph edges, sequence summaries, and campaign-ready pivots.
+- **Replay corpus acceptance gate** — Detection Engineering now exposes `/api/detection/replay-corpus` and a console gate for benign admin, developer tooling, identity abuse, ransomware, beaconing, and lateral-movement fixtures with precision, recall, and false-positive targets.
+- **Custom replay validation packs** — Operators can now `POST /api/detection/replay-corpus` with labeled telemetry samples to run retained-event or customer-supplied validation packs through the same promotion gate.
+- **Retained-event replay sampling** — The replay-corpus API can now sample recent stored events through `source: "retained_events"` with limit and threshold controls, giving teams a no-upload path to validate detector drift against live retained telemetry.
+- **Replay validation runner** — Threat Detection now includes an operator runner for retained-event replay checks and pasted custom JSON packs, so detector promotion validation no longer requires leaving the console.
+
+### Fleet rollout closure
+- **Route-backed rollout workspace** — Fleet & Agents `Updates` now preserves rollout-history, recovery, and deployment-health focus in the route, turning the release tab into a shareable operator workspace instead of a raw config dump.
+- **Recovery watchlists and actions** — Operators can now move from rollout issues into offline-agent recovery scopes directly from the updates workspace, with recent rollout and policy activity kept visible beside those actions.
+
+### Remediation workflow closure
+- **UEBA response playbooks** — Selected entities now include a route-aware response playbook with peer drift context, suggested ownership, assistant/report pivots, and a concrete next-step narrative for the current anomaly pressure.
+- **NDR response playbooks** — Each NDR tab now carries a network response playbook that explains the active signal lane, the primary focus address, and the recommended closure path into SOC, infrastructure, and evidence export.
+- **Infrastructure remediation briefs** — Asset explorer, exposure, and integrity views now surface guided remediation and recovery narratives so operators can move from posture review into action without translating raw subsystem data by hand.
+- **Malware verdict workspace** — Infrastructure integrity now provides URL-backed malware verdict panels for summary, provenance, recommended actions, and static/behavior profiles, with direct pivots into cases, hunts, reports, and assistant workflows.
+
 ### Reporting handoff consistency
 - **Dashboard report pivots** — The global dashboard now carries `source=dashboard`, the lead priority-alert target, and a delivery-first tab choice into `/reports`, so the last generic report-center entry point no longer drops operator context.
 
 ### Verification
+- **Detection workspace regression coverage** — Added focused admin-console coverage for route-aware detection drilldown restoration and rule-panel handoff behavior.
+- **Entity scoring regression coverage** — Added backend and admin-console coverage for enriched entity scores, sequence/graph context, and drawer rendering in detection explainability.
+- **Campaign graph regression coverage** — Added backend and admin-console coverage for stored-event campaign clustering and Attack Graph campaign intelligence rendering.
+- **Replay corpus regression coverage** — Added backend and admin-console coverage for the replay-corpus acceptance gate and Detection workspace rendering.
+- **Custom replay-pack regression coverage** — Added API coverage for custom labeled replay-corpus packs.
+- **Retained-event replay regression coverage** — Added API coverage for retained-event replay sampling through the replay-corpus promotion gate.
+- **Replay runner regression coverage** — Extended Detection workspace coverage to verify the console can launch retained-event replay validation from the Replay Corpus Gate.
+- **Fleet rollout regression coverage** — Added focused admin-console coverage for route-aware rollout-history restoration and recovery-to-agents handoff behavior.
 - **Dashboard workflow-pivot coverage** — Added focused admin-console coverage for the dashboard-to-report handoff to keep reporting context aligned across overview, SOC, NDR, UEBA, detection, attack-graph, and infrastructure pivots.
+- **UEBA/NDR/Infrastructure workflow coverage** — Added focused admin-console regression coverage for the new entity, network, and infrastructure remediation playbooks.
+- **SSO and collector workflow coverage** — Added focused admin-console coverage for the new federated sign-in readiness surfaces and the collector routing/health summaries in the integrations workspace.
+- **SaaS collector regression coverage** — Added backend and admin-console coverage for Microsoft 365 and Google Workspace collector save/validate flows and for their presence in the shared collector status summary.
+- **Malware verdict regression coverage** — Extended infrastructure malware-scan coverage to verify the verdict workspace, action handoffs, and static/behavior profile panels.
 
 ## [0.53.3] — Scoped Artifact Persistence & Response-Aware Reporting
 

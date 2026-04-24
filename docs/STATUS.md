@@ -2,7 +2,7 @@
 
 ## Current release
 
-- **Version:** `0.53.3`
+- **Version:** `0.53.5`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
@@ -99,17 +99,12 @@ The current release has been verified with:
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
 
-## Recently shipped (v0.53.3)
+## Recently shipped (v0.53.5)
 
-- **Explainable detections and analyst feedback** — detection explainability, persisted analyst feedback, model-registry status, shadow-mode visibility, and rollback-aware control paths now back the alert workflow.
-- **Operator-readiness onboarding** — onboarding is now driven by server readiness checks for token validity, first-agent presence, telemetry flow, alert visibility, threat-intel health, malware scan readiness, and response dry-run coverage.
-- **Morning-brief and triage context** — dashboard digests, URL-backed alert selection, queue filters, and case/incident drawers make investigation slices easier to reopen and share.
-- **Incident-first case workspace** — SOC Workbench now treats cases as durable investigation workspaces with evidence, notes, storyline context, linked incidents, and direct pivots into assistant, reports, investigations, and response.
-- **Threat-intel and malware `v2` depth** — the console now consumes richer threat-intel metadata and sightings plus deep malware static/behavior profiles with provenance-oriented analyst views.
-- **Execution-context-aware reporting** — reports, report runs, schedules, templates, stored artifacts, and report handoff flows now preserve `case` / `incident` / `investigation` context and support scoped backend filtering.
-- **Persisted artifact closure** — compliance markdown/JSON, evidence bundles, privacy snapshots, backend-native alert exports, and response approval snapshots can now be saved into scoped run history and reopened with the original payload format.
-- **Cross-workspace reporting pivots** — SOC, NDR, UEBA, detection, attack-graph, and infrastructure report pivots now preserve `source` and `target` context for tighter evidence and response handoffs.
-- **Regression expansion** — focused Rust and admin-console tests now cover readiness, explainability, scoped reporting persistence/filtering, persisted artifact downloads, response snapshots, and threat-intel/malware depth APIs.
+- **Replay-corpus drift analysis** — replay validation now breaks down platform and signal-type deltas for built-in, retained-event, and custom packs so detector promotion can see which slices are regressing.
+- **Collector ingestion-health timelines** — the shared collector status contract and Settings workspace now surface staged checkpoint timelines across cloud, identity, and SaaS lanes instead of only flat readiness counts.
+- **Broader routed release gate** — live Playwright smoke coverage now walks routed response, collector-health, fleet-rollout, and infrastructure remediation workflows alongside the earlier detection and admin paths.
+- **Release-document accuracy** — README, status, roadmap, reproducibility, installation, and OpenAPI surfaces are aligned on the `v0.53.5` baseline, including the real `--version` verification path for built binaries.
 
 ## Recently shipped (v0.39.5)
 
@@ -125,11 +120,10 @@ Wardex is now positioned as a professional XDR/SIEM control plane with incident-
 
 ## Next release priorities
 
-- full entity-centric scoring and sequence/graph detection depth beyond the current explainability and workflow surfaces
-- malware analyst workflow closure beyond the shipped deep-scan profiles and provenance views
-- package-manager distribution (APT/YUM, Chocolatey)
-- remaining SaaS and identity collector coverage beyond the shipped cloud, secrets-manager, and case ticket-sync flows
-- UEBA, NDR, and infrastructure remediation depth on top of the shipped workflow pivots
+- persisted ingestion counters, last-success checkpoints, and richer lifecycle analytics for cloud, SaaS, and identity collectors
+- broader change-review, approval, and recovery-history workflows on top of the shipped infrastructure remediation and malware verdict workspaces
+- continued federated IdP lifecycle validation and regression depth as SSO providers evolve
+- deeper UEBA, NDR, and infrastructure workflow depth on top of the shipped route-aware pivots
 
 ## Recently shipped (v0.43.1)
 

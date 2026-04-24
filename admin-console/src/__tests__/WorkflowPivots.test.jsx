@@ -5,6 +5,7 @@ import Dashboard from '../components/Dashboard.jsx';
 import UEBADashboard from '../components/UEBADashboard.jsx';
 import NDRDashboard from '../components/NDRDashboard.jsx';
 import AttackGraph from '../components/AttackGraph.jsx';
+import Infrastructure from '../components/Infrastructure.jsx';
 import { AuthProvider, RoleProvider, ThemeProvider, ToastProvider } from '../hooks.jsx';
 
 function jsonOk(data) {
@@ -94,7 +95,7 @@ describe('Workflow pivots', () => {
 
   it('routes the dashboard reporting pivot with priority-alert context', async () => {
     mockSharedRoutes({
-      '/api/status': jsonOk({ version: '0.53.3', uptime_secs: 3600 }),
+      '/api/status': jsonOk({ version: '0.53.5', uptime_secs: 3600 }),
       '/api/fleet/dashboard': jsonOk({
         fleet: { total_agents: 2, status_counts: { online: 2 } },
       }),
@@ -116,7 +117,7 @@ describe('Workflow pivots', () => {
         auth_failures: 4,
         processes: 188,
       }),
-      '/api/health': jsonOk({ status: 'ok', version: '0.53.3' }),
+      '/api/health': jsonOk({ status: 'ok', version: '0.53.5' }),
       '/api/detection/summary': jsonOk({}),
       '/api/threat-intel/status': jsonOk({ ioc_count: 4 }),
       '/api/queue/stats': jsonOk({}),
@@ -189,7 +190,9 @@ describe('Workflow pivots', () => {
         observation_count: 12,
         peer_group: 'engineering',
         peer_avg_risk: 22,
-        anomalies: [{ anomaly_type: 'ImpossibleTravel', score: 81, description: 'Unusual travel detected' }],
+        anomalies: [
+          { anomaly_type: 'ImpossibleTravel', score: 81, description: 'Unusual travel detected' },
+        ],
       }),
     });
 
@@ -199,6 +202,7 @@ describe('Workflow pivots', () => {
 
     expect(await screen.findByText('Entity Pivots')).toBeInTheDocument();
     expect(await screen.findByText('Entity: user-b')).toBeInTheDocument();
+    expect(screen.getByText('Response Playbook')).toBeInTheDocument();
     expect(screen.getByText('Capture Privacy And Evidence')).toBeInTheDocument();
   });
 
@@ -210,10 +214,28 @@ describe('Workflow pivots', () => {
         unique_external_destinations: 3,
         connections_per_second: 1.5,
         encrypted_traffic: { encrypted_ratio: 0.94 },
-        top_talkers: [{ addr: '10.0.0.5', total_bytes: 1024, flow_count: 4, unique_destinations: 2, protocols: ['HTTPS'] }],
-        unusual_destinations: [{ dst_addr: '203.0.113.9', dst_port: 443, total_bytes: 512, risk_score: 8, reason: 'Rare destination' }],
+        top_talkers: [
+          {
+            addr: '10.0.0.5',
+            total_bytes: 1024,
+            flow_count: 4,
+            unique_destinations: 2,
+            protocols: ['HTTPS'],
+          },
+        ],
+        unusual_destinations: [
+          {
+            dst_addr: '203.0.113.9',
+            dst_port: 443,
+            total_bytes: 512,
+            risk_score: 8,
+            reason: 'Rare destination',
+          },
+        ],
         protocol_anomalies: [],
-        beaconing_anomalies: [{ host: '10.0.0.5', dst: '203.0.113.9', interval_seconds: 60, confidence: 0.9 }],
+        beaconing_anomalies: [
+          { host: '10.0.0.5', dst: '203.0.113.9', interval_seconds: 60, confidence: 0.9 },
+        ],
         entropy_anomalies: [],
         self_signed_certs: [],
       }),
@@ -224,6 +246,8 @@ describe('Workflow pivots', () => {
     renderWithProviders(<NDRDashboard />, { route: '/ndr?tab=beaconing' });
 
     expect(await screen.findByText('Network Pivots')).toBeInTheDocument();
+    expect(screen.getByText('Network Response Playbook')).toBeInTheDocument();
+    expect(screen.getByText('Beaconing cadence')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Beaconing \(1\)/ })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -231,9 +255,76 @@ describe('Workflow pivots', () => {
     expect(screen.getByText('Package Delivery Evidence')).toBeInTheDocument();
   });
 
+  it('restores infrastructure asset scope and renders remediation guidance', async () => {
+    mockSharedRoutes({
+      '/api/assets/summary': jsonOk({
+        assets: [
+          {
+            id: 'host-1',
+            name: 'host-1',
+            kind: 'asset',
+            status: 'tracked',
+            severity: 'medium',
+            priority: 'critical',
+          },
+        ],
+      }),
+      '/api/vulnerability/summary': jsonOk({
+        findings: [
+          {
+            id: 'vuln-1',
+            asset_name: 'host-1',
+            cve: 'CVE-2026-0001',
+            severity: 'critical',
+            status: 'open',
+          },
+        ],
+      }),
+      '/api/certs/summary': jsonOk({ certificates: [] }),
+      '/api/certs/alerts': jsonOk({ alerts: [] }),
+      '/api/malware/recent': jsonOk({ items: [] }),
+      '/api/malware/stats': jsonOk({}),
+      '/api/drift/status': jsonOk({ changes: [] }),
+      '/api/container/stats': jsonOk({ containers: [] }),
+      '/api/monitor/status': jsonOk({ health_gate: 'healthy' }),
+      '/api/threads/status': jsonOk({}),
+      '/api/slo/status': jsonOk({ health_gate: 'healthy' }),
+      '/api/system/deps': jsonOk({ dependencies: [] }),
+      '/api/ndr/report': jsonOk({ findings: [] }),
+      '/api/compliance/summary': jsonOk({}),
+      '/api/analytics/api': jsonOk({}),
+      '/api/traces': jsonOk([]),
+    });
+
+    renderWithProviders(<Infrastructure />, {
+      route: '/infrastructure?tab=assets&view=critical&asset=host-1',
+    });
+
+    expect(await screen.findByText('Infrastructure Pivots')).toBeInTheDocument();
+    expect(await screen.findByText('Guided Remediation Brief')).toBeInTheDocument();
+    expect(screen.getByText('Open compliance evidence')).toBeInTheDocument();
+  });
+
   it('restores selected attack-graph node from the route and renders graph pivots', async () => {
     mockSharedRoutes({
       '/api/correlation/campaigns': jsonOk({
+        summary: {
+          campaign_count: 1,
+          total_alerts: 2,
+          unclustered_alerts: 0,
+          fleet_coverage: 0.5,
+        },
+        sequence_summaries: [
+          {
+            campaign_id: 'campaign-1',
+            name: 'Credential campaign across 2 hosts',
+            severity: 'Critical',
+            host_count: 2,
+            alert_count: 2,
+            shared_techniques: ['T1078'],
+            sequence_signals: ['Credential-access precursor observed in the detection reasons.'],
+          },
+        ],
         graph: {
           nodes: [
             { id: 'user-1', label: 'user-1', type: 'user', risk_score: 72 },
@@ -242,12 +333,16 @@ describe('Workflow pivots', () => {
           edges: [{ source: 'user-1', target: 'host-1', type: 'lateral_movement' }],
         },
       }),
-      '/api/coverage/gaps': jsonOk({ gaps: [{ technique_id: 'T1078', technique_name: 'Valid Accounts' }] }),
+      '/api/coverage/gaps': jsonOk({
+        gaps: [{ technique_id: 'T1078', technique_name: 'Valid Accounts' }],
+      }),
     });
 
     renderWithProviders(<AttackGraph />, { route: '/attack-graph?node=user-1' });
 
     expect(await screen.findByText('Attack Graph Pivots')).toBeInTheDocument();
+    expect(screen.getByText('Campaign Intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Credential campaign across 2 hosts')).toBeInTheDocument();
     expect(screen.getByText('Node Detail')).toBeInTheDocument();
     expect(screen.getAllByText('user-1').length).toBeGreaterThan(0);
     expect(screen.getByText('Export Evidence Bundle')).toBeInTheDocument();

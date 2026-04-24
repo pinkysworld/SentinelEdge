@@ -86,13 +86,14 @@ use crate::enterprise::{
 use crate::event_forward::{EventAnalytics, EventStore, StoredEvent};
 use crate::fingerprint::DeviceFingerprint;
 use crate::graphql::{AggregateOp, GqlExecutor, GqlRequest, aggregate, wardex_schema};
+use crate::incident::IncidentStore;
 use crate::integration_setup::{
     AwsCollectorSetup, AwsCollectorSetupPatch, AzureCollectorSetup, AzureCollectorSetupPatch,
     EntraCollectorSetup, EntraCollectorSetupPatch, GcpCollectorSetup, GcpCollectorSetupPatch,
-    OktaCollectorSetup, OktaCollectorSetupPatch, SecretsManagerSetup,
-    SecretsManagerSetupPatch, SetupValidation,
+    M365CollectorSetup, M365CollectorSetupPatch, OktaCollectorSetup, OktaCollectorSetupPatch,
+    SecretsManagerSetup, SecretsManagerSetupPatch, SetupValidation, WorkspaceCollectorSetup,
+    WorkspaceCollectorSetupPatch,
 };
-use crate::incident::IncidentStore;
 use crate::monitor::Monitor;
 use crate::multi_tenant::MultiTenantManager;
 use crate::policy_dist::PolicyStore;
@@ -988,12 +989,30 @@ struct ManagerOverview {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+struct EntityRiskComponent {
+    name: String,
+    score: f64,
+    weight: f64,
+    rationale: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 struct EntityRiskScore {
     entity_kind: String,
     entity_id: String,
     score: f64,
     confidence: f64,
     rationale: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    peer_group: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    score_components: Vec<EntityRiskComponent>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sequence_signals: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    graph_context: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    recommended_pivots: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -2784,14 +2803,15 @@ fn normalize_console_redirect(redirect_after: Option<String>) -> String {
 
 fn append_query_param(path: &str, key: &str, value: &str) -> String {
     let separator = if path.contains('?') { '&' } else { '?' };
-    format!(
-        "{path}{separator}{key}={}",
-        encode_query_component(value)
-    )
+    format!("{path}{separator}{key}={}", encode_query_component(value))
 }
 
 fn sso_error_redirect(redirect_after: Option<String>, message: &str) -> String {
-    append_query_param(&normalize_console_redirect(redirect_after), "sso_error", message)
+    append_query_param(
+        &normalize_console_redirect(redirect_after),
+        "sso_error",
+        message,
+    )
 }
 
 fn session_cookie_header(session_id: &str, expires_at: chrono::DateTime<chrono::Utc>) -> String {
@@ -2799,9 +2819,7 @@ fn session_cookie_header(session_id: &str, expires_at: chrono::DateTime<chrono::
         .signed_duration_since(chrono::Utc::now())
         .num_seconds()
         .max(0);
-    format!(
-        "{SESSION_COOKIE_NAME}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}"
-    )
+    format!("{SESSION_COOKIE_NAME}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}")
 }
 
 fn clear_session_cookie_header() -> String {
@@ -3049,14 +3067,21 @@ fn complete_sso_callback(
             app_state
                 .oidc_providers
                 .get(provider_id)
-                .and_then(|provider| provider.has_pending_state(csrf_state).then(|| provider_id.to_string()))
+                .and_then(|provider| {
+                    provider
+                        .has_pending_state(csrf_state)
+                        .then(|| provider_id.to_string())
+                })
         });
     let provider_id = hinted_provider.or_else(|| {
-        app_state.oidc_providers.iter().find_map(|(provider_id, provider)| {
-            provider
-                .has_pending_state(csrf_state)
-                .then(|| provider_id.clone())
-        })
+        app_state
+            .oidc_providers
+            .iter()
+            .find_map(|(provider_id, provider)| {
+                provider
+                    .has_pending_state(csrf_state)
+                    .then(|| provider_id.clone())
+            })
     });
     let Some(provider_id) = provider_id else {
         return Err("state parameter is invalid or expired".to_string());
@@ -3082,10 +3107,12 @@ fn complete_sso_callback(
         .clone()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| user_id.clone());
-    let created_at = chrono::DateTime::<chrono::Utc>::from_timestamp(sso_session.created_at as i64, 0)
-        .unwrap_or_else(chrono::Utc::now);
-    let expires_at = chrono::DateTime::<chrono::Utc>::from_timestamp(sso_session.expires_at as i64, 0)
-        .unwrap_or_else(chrono::Utc::now);
+    let created_at =
+        chrono::DateTime::<chrono::Utc>::from_timestamp(sso_session.created_at as i64, 0)
+            .unwrap_or_else(chrono::Utc::now);
+    let expires_at =
+        chrono::DateTime::<chrono::Utc>::from_timestamp(sso_session.expires_at as i64, 0)
+            .unwrap_or_else(chrono::Utc::now);
     let session = crate::auth::Session {
         user_id,
         email,
@@ -4570,7 +4597,8 @@ fn build_onboarding_readiness(state: &mut AppState) -> OnboardingReadiness {
     let online_agents = agents
         .iter()
         .filter(|agent| {
-            let (status, _) = computed_agent_status(agent, state.agent_registry.heartbeat_interval());
+            let (status, _) =
+                computed_agent_status(agent, state.agent_registry.heartbeat_interval());
             status == "online"
         })
         .count();
@@ -4666,13 +4694,19 @@ fn detection_next_steps(level: &str, reasons: &[String]) -> Vec<String> {
     let mut steps = vec!["Validate the affected host, user, and process lineage.".to_string()];
     let joined = reasons.join(" ").to_ascii_lowercase();
     if joined.contains("credential") || joined.contains("brute") || joined.contains("login") {
-        steps.push("Review recent authentication activity and reset exposed credentials if confirmed.".to_string());
+        steps.push(
+            "Review recent authentication activity and reset exposed credentials if confirmed."
+                .to_string(),
+        );
     }
     if joined.contains("lateral") || joined.contains("remote") || joined.contains("smb") {
         steps.push("Pivot into peer-host activity and isolate the source if lateral movement is confirmed.".to_string());
     }
     if joined.contains("ransom") || joined.contains("encrypt") {
-        steps.push("Quarantine the affected endpoint and inspect shadow-copy or mass-write activity.".to_string());
+        steps.push(
+            "Quarantine the affected endpoint and inspect shadow-copy or mass-write activity."
+                .to_string(),
+        );
     }
     if severity_rank(level) >= 2 {
         steps.push("Escalate to containment or incident response if the activity cannot be explained quickly.".to_string());
@@ -4682,34 +4716,351 @@ fn detection_next_steps(level: &str, reasons: &[String]) -> Vec<String> {
     steps
 }
 
+fn risk_component(
+    name: &str,
+    score: f64,
+    weight: f64,
+    rationale: impl Into<String>,
+) -> EntityRiskComponent {
+    EntityRiskComponent {
+        name: name.to_string(),
+        score: score.clamp(0.0, 10.0),
+        weight,
+        rationale: rationale.into(),
+    }
+}
+
+fn reason_contains_any(reasons: &[String], needles: &[&str]) -> bool {
+    let joined = reasons.join(" ").to_ascii_lowercase();
+    needles.iter().any(|needle| joined.contains(needle))
+}
+
+fn extract_reason_entity(reasons: &[String], prefixes: &[&str]) -> Option<String> {
+    reasons
+        .iter()
+        .flat_map(|reason| reason.split(|c: char| c.is_whitespace() || matches!(c, ',' | ';')))
+        .find_map(|token| {
+            let trimmed = token.trim_matches(|c: char| {
+                matches!(c, '"' | '\'' | '[' | ']' | '(' | ')' | ',' | ';')
+            });
+            let lower = trimmed.to_ascii_lowercase();
+            prefixes.iter().find_map(|prefix| {
+                lower
+                    .strip_prefix(prefix)
+                    .filter(|value| !value.trim().is_empty())
+                    .map(|_| {
+                        trimmed[prefix.len()..]
+                            .trim_matches(|c: char| matches!(c, ':' | '=' | '"' | '\''))
+                            .to_string()
+                    })
+            })
+        })
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn detection_sequence_signals(event: &StoredEvent) -> Vec<String> {
+    let mut signals = Vec::new();
+    let reasons = &event.alert.reasons;
+    if reason_contains_any(
+        reasons,
+        &["credential", "lsass", "password", "brute", "login"],
+    ) {
+        signals.push("Credential-access precursor observed in the detection reasons.".to_string());
+    }
+    if reason_contains_any(
+        reasons,
+        &["lateral", "remote", "smb", "rdp", "ssh", "winrm"],
+    ) {
+        signals.push("Lateral-movement or remote-service activity is present.".to_string());
+    }
+    if reason_contains_any(reasons, &["beacon", "c2", "command", "dns", "http"]) {
+        signals.push("Command-and-control or beaconing context is present.".to_string());
+    }
+    if reason_contains_any(reasons, &["persist", "scheduled", "service", "autorun"]) {
+        signals.push("Persistence behavior is part of the observed sequence.".to_string());
+    }
+    if reason_contains_any(reasons, &["ransom", "encrypt", "shadow", "mass_write"]) {
+        signals.push("Impact-stage behavior appears in the same alert context.".to_string());
+    }
+    if event.correlated {
+        signals.push(
+            "Adjacent telemetry has already correlated this event with other activity.".to_string(),
+        );
+    }
+    signals
+}
+
+fn detection_graph_context(event: &StoredEvent) -> Vec<String> {
+    let mut context = vec![
+        format!("host:{} reported the alert.", event.alert.hostname),
+        format!("agent:{} supplied the telemetry.", event.agent_id),
+    ];
+    if !event.alert.action.trim().is_empty() {
+        context.push(format!(
+            "action:{} is the current behavior node.",
+            event.alert.action
+        ));
+    }
+    if let Some(destination) = extract_reason_entity(
+        &event.alert.reasons,
+        &[
+            "dst=", "dst:", "dest=", "dest:", "domain=", "domain:", "ip=", "ip:",
+        ],
+    ) {
+        context.push(format!(
+            "network_destination:{} appears in the evidence.",
+            destination
+        ));
+    }
+    if !event.alert.mitre.is_empty() {
+        context.push(format!(
+            "{} MITRE technique(s) can seed a campaign graph pivot.",
+            event.alert.mitre.len()
+        ));
+    }
+    context
+}
+
+fn entity_recommended_pivots(kind: &str, id: &str) -> Vec<String> {
+    match kind {
+        "host" => vec![
+            format!("Open host timeline for {id}."),
+            "Compare this host against its platform peer group.".to_string(),
+        ],
+        "agent" => vec![
+            format!("Check collector health and recent telemetry gaps for {id}."),
+            "Pivot to correlated alerts from the same reporting agent.".to_string(),
+        ],
+        "process_or_action" => vec![
+            format!("Search process lineage and command history for {id}."),
+            "Look for the same action across peer hosts.".to_string(),
+        ],
+        "user" => vec![
+            format!("Review authentication anomalies for {id}."),
+            "Check recent privilege and lateral-movement activity for this identity.".to_string(),
+        ],
+        "network_destination" => vec![
+            format!("Review DNS, proxy, and connection history for {id}."),
+            "Check threat-intel sightings and related hosts for this destination.".to_string(),
+        ],
+        _ => vec!["Pivot into the case workspace with this entity selected.".to_string()],
+    }
+}
+
+fn entity_score(
+    kind: &str,
+    id: String,
+    base_score: f64,
+    confidence: f64,
+    peer_group: Option<String>,
+    mut components: Vec<EntityRiskComponent>,
+    sequence_signals: &[String],
+    graph_context: &[String],
+    rationale: Vec<String>,
+) -> EntityRiskScore {
+    if components.is_empty() {
+        components.push(risk_component(
+            "alert_score",
+            base_score,
+            1.0,
+            "Risk inherits the alert score when no deeper entity evidence is available.",
+        ));
+    }
+    EntityRiskScore {
+        entity_kind: kind.to_string(),
+        entity_id: id.clone(),
+        score: base_score.clamp(0.0, 10.0),
+        confidence: confidence.clamp(0.0, 1.0),
+        rationale,
+        peer_group,
+        score_components: components,
+        sequence_signals: sequence_signals.to_vec(),
+        graph_context: graph_context.to_vec(),
+        recommended_pivots: entity_recommended_pivots(kind, &id),
+    }
+}
+
 fn build_entity_risk_scores(event: &StoredEvent) -> Vec<EntityRiskScore> {
-    let mut scores = vec![EntityRiskScore {
-        entity_kind: "host".to_string(),
-        entity_id: event.alert.hostname.clone(),
-        score: event.alert.score as f64,
-        confidence: event.alert.confidence as f64,
-        rationale: vec![
+    let sequence_signals = detection_sequence_signals(event);
+    let graph_context = detection_graph_context(event);
+    let sequence_bonus = (sequence_signals.len() as f64 * 0.35).min(1.4);
+    let mitre_bonus = (event.alert.mitre.len() as f64 * 0.25).min(1.0);
+    let correlation_bonus = if event.correlated { 0.8 } else { 0.0 };
+    let host_score = event.alert.score as f64 + sequence_bonus + mitre_bonus + correlation_bonus;
+    let peer_group = Some(format!("{} hosts", event.alert.platform));
+    let mut scores = vec![entity_score(
+        "host",
+        event.alert.hostname.clone(),
+        host_score,
+        event.alert.confidence as f64,
+        peer_group,
+        vec![
+            risk_component(
+                "alert_score",
+                event.alert.score as f64,
+                0.55,
+                format!("Detector score for this alert is {:.2}.", event.alert.score),
+            ),
+            risk_component(
+                "sequence_context",
+                sequence_bonus,
+                0.2,
+                format!("{} sequence signal(s) were derived from the alert reasons.", sequence_signals.len()),
+            ),
+            risk_component(
+                "attack_mapping",
+                mitre_bonus,
+                0.15,
+                format!("{} MITRE technique reference(s) are attached.", event.alert.mitre.len()),
+            ),
+            risk_component(
+                "correlation",
+                correlation_bonus,
+                0.1,
+                if event.correlated {
+                    "The event is already correlated with adjacent telemetry."
+                } else {
+                    "No adjacent telemetry correlation has been recorded yet."
+                },
+            ),
+        ],
+        &sequence_signals,
+        &graph_context,
+        vec![
             format!("Alert severity is {}.", event.alert.level),
             format!("{} detection reason(s) attached to this host signal.", event.alert.reasons.len()),
+            "Host risk blends direct detector score, sequence context, attack mapping, and correlation.".to_string(),
         ],
-    }];
+    )];
     if !event.agent_id.trim().is_empty() {
-        scores.push(EntityRiskScore {
-            entity_kind: "agent".to_string(),
-            entity_id: event.agent_id.clone(),
-            score: (event.alert.score as f64 * 0.9).min(10.0),
-            confidence: event.alert.confidence as f64,
-            rationale: vec!["Entity score inherits the alert score for the reporting agent.".to_string()],
-        });
+        scores.push(entity_score(
+            "agent",
+            event.agent_id.clone(),
+            (event.alert.score as f64 * 0.9 + correlation_bonus).min(10.0),
+            event.alert.confidence as f64,
+            Some("reporting agents".to_string()),
+            vec![
+                risk_component(
+                    "inherited_host_signal",
+                    event.alert.score as f64 * 0.9,
+                    0.75,
+                    "Reporting-agent risk inherits most of the host alert score.",
+                ),
+                risk_component(
+                    "correlation",
+                    correlation_bonus,
+                    0.25,
+                    "Correlated agent telemetry increases confidence in the reporting source.",
+                ),
+            ],
+            &sequence_signals,
+            &graph_context,
+            vec!["Entity score inherits the alert score for the reporting agent.".to_string()],
+        ));
     }
     if !event.alert.action.trim().is_empty() {
-        scores.push(EntityRiskScore {
-            entity_kind: "process_or_action".to_string(),
-            entity_id: event.alert.action.clone(),
-            score: (event.alert.score as f64 * 0.8).min(10.0),
-            confidence: (event.alert.confidence as f64 * 0.95).min(1.0),
-            rationale: vec!["Action-level risk is derived from the alert score and attached reasons.".to_string()],
-        });
+        scores.push(entity_score(
+            "process_or_action",
+            event.alert.action.clone(),
+            (event.alert.score as f64 * 0.8 + sequence_bonus).min(10.0),
+            (event.alert.confidence as f64 * 0.95).min(1.0),
+            Some("same-action executions".to_string()),
+            vec![
+                risk_component(
+                    "action_frequency_proxy",
+                    event.alert.score as f64 * 0.8,
+                    0.65,
+                    "Action-level risk is derived from the alert score and attached reasons.",
+                ),
+                risk_component(
+                    "sequence_context",
+                    sequence_bonus,
+                    0.35,
+                    "Multi-step attack context increases action-level priority.",
+                ),
+            ],
+            &sequence_signals,
+            &graph_context,
+            vec![
+                "Action-level risk is derived from the alert score and attached reasons."
+                    .to_string(),
+            ],
+        ));
+    }
+    if let Some(user) = extract_reason_entity(
+        &event.alert.reasons,
+        &[
+            "user=",
+            "user:",
+            "account=",
+            "account:",
+            "principal=",
+            "principal:",
+        ],
+    )
+    .or_else(|| {
+        event
+            .triage
+            .assignee
+            .as_deref()
+            .filter(|assignee| !assignee.trim().is_empty() && *assignee != "unassigned")
+            .map(str::to_string)
+    }) {
+        scores.push(entity_score(
+            "user",
+            user,
+            (event.alert.score as f64 * 0.75 + sequence_bonus).min(10.0),
+            (event.alert.confidence as f64 * 0.9).min(1.0),
+            Some("identity peer group".to_string()),
+            vec![
+                risk_component(
+                    "identity_signal",
+                    event.alert.score as f64 * 0.75,
+                    0.7,
+                    "Identity risk is inferred from user/account evidence in the detection context.",
+                ),
+                risk_component(
+                    "sequence_context",
+                    sequence_bonus,
+                    0.3,
+                    "Credential, lateral movement, or C2 sequence evidence increases user risk.",
+                ),
+            ],
+            &sequence_signals,
+            &graph_context,
+            vec!["User/entity scoring is inferred from identity tokens in the alert reasons or triage context.".to_string()],
+        ));
+    }
+    if let Some(destination) = extract_reason_entity(
+        &event.alert.reasons,
+        &[
+            "dst=", "dst:", "dest=", "dest:", "domain=", "domain:", "ip=", "ip:",
+        ],
+    ) {
+        scores.push(entity_score(
+            "network_destination",
+            destination,
+            (event.alert.score as f64 * 0.7 + if reason_contains_any(&event.alert.reasons, &["beacon", "c2", "dns", "http"]) { 1.0 } else { 0.0 }).min(10.0),
+            (event.alert.confidence as f64 * 0.9).min(1.0),
+            Some("network destinations".to_string()),
+            vec![
+                risk_component(
+                    "destination_signal",
+                    event.alert.score as f64 * 0.7,
+                    0.65,
+                    "Destination risk is inferred from network indicators attached to the alert.",
+                ),
+                risk_component(
+                    "c2_context",
+                    if reason_contains_any(&event.alert.reasons, &["beacon", "c2", "dns", "http"]) { 1.0 } else { 0.0 },
+                    0.35,
+                    "Beaconing, C2, DNS, or HTTP evidence increases destination priority.",
+                ),
+            ],
+            &sequence_signals,
+            &graph_context,
+            vec!["Network destination scoring is inferred from destination tokens in the alert reasons.".to_string()],
+        ));
     }
     scores
 }
@@ -4719,12 +5070,19 @@ fn build_detection_explainability(
     event_id: Option<u64>,
     alert_id: Option<&str>,
 ) -> Option<DetectionExplainability> {
-    let resolved_event_id = event_id.or_else(|| alert_id.and_then(|value| value.parse::<u64>().ok()))?;
+    let resolved_event_id =
+        event_id.or_else(|| alert_id.and_then(|value| value.parse::<u64>().ok()))?;
     let event = state.event_store.get_event(resolved_event_id)?;
     let feedback = state.detection_feedback.for_event(event.id);
     let feedback_notes = feedback
         .iter()
-        .map(|entry| format!("{} marked this as {}.", entry.analyst, entry.verdict.replace('_', " ")))
+        .map(|entry| {
+            format!(
+                "{} marked this as {}.",
+                entry.analyst,
+                entry.verdict.replace('_', " ")
+            )
+        })
         .collect::<Vec<_>>();
     let related_cases = state
         .case_store
@@ -4791,7 +5149,10 @@ fn build_detection_explainability(
         event.alert.confidence as f64 * 100.0
     ));
     if event.correlated {
-        why_fired.push("The event is correlated with adjacent activity, which increases analyst confidence.".to_string());
+        why_fired.push(
+            "The event is correlated with adjacent activity, which increases analyst confidence."
+                .to_string(),
+        );
     }
     if !event.alert.mitre.is_empty() {
         why_fired.push(format!(
@@ -4820,6 +5181,694 @@ fn build_detection_explainability(
     })
 }
 
+fn event_timestamp_ms(event: &StoredEvent) -> u64 {
+    chrono::DateTime::parse_from_rfc3339(&event.alert.timestamp)
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(&event.received_at))
+        .map(|dt| dt.timestamp_millis().max(0) as u64)
+        .unwrap_or(event.id.saturating_mul(1_000))
+}
+
+fn campaign_fleet_alert(event: &StoredEvent) -> crate::campaign::FleetAlert {
+    crate::campaign::FleetAlert {
+        alert_id: event.id.to_string(),
+        hostname: event.alert.hostname.clone(),
+        timestamp_ms: event_timestamp_ms(event),
+        score: event.alert.score,
+        level: event.alert.level.clone(),
+        reasons: event.alert.reasons.clone(),
+        mitre_techniques: event
+            .alert
+            .mitre
+            .iter()
+            .map(|attack| attack.technique_id.clone())
+            .collect(),
+    }
+}
+
+fn build_campaign_correlation_view(events: &[StoredEvent]) -> serde_json::Value {
+    let fleet_alerts = events.iter().map(campaign_fleet_alert).collect::<Vec<_>>();
+    let mut detector = crate::campaign::CampaignDetector::default();
+    let report = detector.detect(&fleet_alerts);
+    let event_by_alert_id = events
+        .iter()
+        .map(|event| (event.id.to_string(), event))
+        .collect::<HashMap<_, _>>();
+    let mut nodes: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut edges = Vec::new();
+    let mut sequence_summaries = Vec::new();
+
+    for campaign in &report.campaigns {
+        let campaign_events = campaign
+            .alert_ids
+            .iter()
+            .filter_map(|id| event_by_alert_id.get(id).copied())
+            .collect::<Vec<_>>();
+        let sequence_signals = campaign_events
+            .iter()
+            .flat_map(|event| detection_sequence_signals(event))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let graph_context = campaign_events
+            .iter()
+            .flat_map(|event| detection_graph_context(event))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let recommended_pivots = vec![
+            format!("Open SOC campaigns for {}.", campaign.campaign_id),
+            "Seed a hunt from the shared reasons and affected hosts.".to_string(),
+            "Review entity risk for the highest-score host in the campaign.".to_string(),
+        ];
+
+        for host in &campaign.hosts {
+            let host_events = campaign_events
+                .iter()
+                .filter(|event| event.alert.hostname.eq_ignore_ascii_case(host))
+                .collect::<Vec<_>>();
+            let risk_score = host_events
+                .iter()
+                .map(|event| event.alert.score)
+                .fold(campaign.max_score, f32::max)
+                * 10.0;
+            nodes.insert(
+                host.clone(),
+                serde_json::json!({
+                    "id": host,
+                    "label": host,
+                    "type": "host",
+                    "risk_score": risk_score.min(100.0),
+                    "campaign_id": campaign.campaign_id,
+                    "campaign_severity": campaign.severity,
+                    "sequence_signals": sequence_signals.clone(),
+                }),
+            );
+        }
+
+        let mut sorted_hosts = campaign.hosts.clone();
+        sorted_hosts.sort();
+        for pair in sorted_hosts.windows(2) {
+            edges.push(serde_json::json!({
+                "source": pair[0],
+                "target": pair[1],
+                "type": if reason_contains_any(&campaign.shared_reasons, &["lateral", "remote", "smb", "rdp", "ssh", "winrm"]) {
+                    "lateral_movement"
+                } else if reason_contains_any(&campaign.shared_reasons, &["credential", "login", "brute", "lsass"]) {
+                    "privilege_escalation"
+                } else {
+                    "execution"
+                },
+                "weight": campaign.alert_count.min(4),
+                "campaign_id": campaign.campaign_id,
+                "shared_reasons": campaign.shared_reasons.clone(),
+            }));
+        }
+
+        sequence_summaries.push(serde_json::json!({
+            "campaign_id": campaign.campaign_id,
+            "name": campaign.name,
+            "severity": campaign.severity,
+            "host_count": campaign.hosts.len(),
+            "alert_count": campaign.alert_count,
+            "max_score": campaign.max_score,
+            "avg_score": campaign.avg_score,
+            "shared_techniques": campaign.shared_techniques.clone(),
+            "shared_reasons": campaign.shared_reasons.clone(),
+            "sequence_signals": sequence_signals.clone(),
+            "graph_context": graph_context.into_iter().take(8).collect::<Vec<_>>(),
+            "recommended_pivots": recommended_pivots,
+        }));
+    }
+
+    serde_json::json!({
+        "campaigns": report.campaigns,
+        "summary": {
+            "campaign_count": report.campaigns.len(),
+            "total_alerts": report.total_alerts,
+            "unclustered_alerts": report.unclustered_alerts,
+            "fleet_coverage": report.fleet_coverage,
+        },
+        "sequence_summaries": sequence_summaries,
+        "graph": {
+            "nodes": nodes.into_values().collect::<Vec<_>>(),
+            "edges": edges,
+        },
+    })
+}
+
+fn replay_sample(
+    timestamp_ms: u64,
+    cpu_load_pct: f32,
+    memory_load_pct: f32,
+    network_kbps: f32,
+    auth_failures: u32,
+    integrity_drift: f32,
+    process_count: u32,
+    disk_pressure_pct: f32,
+) -> crate::telemetry::TelemetrySample {
+    crate::telemetry::TelemetrySample {
+        timestamp_ms,
+        cpu_load_pct,
+        memory_load_pct,
+        temperature_c: 38.0 + (cpu_load_pct / 20.0).min(20.0),
+        network_kbps,
+        auth_failures,
+        battery_pct: 86.0,
+        integrity_drift,
+        process_count,
+        disk_pressure_pct,
+    }
+}
+
+fn normalize_replay_dimension_token(value: &str) -> String {
+    let mut normalized = String::new();
+    let mut last_was_separator = true;
+    for ch in value.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !last_was_separator {
+            normalized.push('_');
+            last_was_separator = true;
+        }
+    }
+    normalized.trim_matches('_').to_string()
+}
+
+fn normalize_replay_platform(value: Option<&str>) -> String {
+    let normalized = normalize_replay_dimension_token(value.unwrap_or_default());
+    if normalized.is_empty() {
+        return "unspecified".to_string();
+    }
+    if normalized.contains("windows") || normalized == "win" {
+        return "windows".to_string();
+    }
+    if normalized.contains("linux") {
+        return "linux".to_string();
+    }
+    if normalized.contains("darwin") || normalized.contains("macos") || normalized == "mac" {
+        return "macos".to_string();
+    }
+    if normalized.contains("android") {
+        return "android".to_string();
+    }
+    if normalized.contains("ios") {
+        return "ios".to_string();
+    }
+    normalized
+}
+
+fn infer_replay_signal_type(
+    hint: &str,
+    sample: &crate::telemetry::TelemetrySample,
+    expected_malicious: bool,
+) -> String {
+    let joined = hint.to_ascii_lowercase();
+    if joined.contains("credential")
+        || joined.contains("identity")
+        || joined.contains("login")
+        || joined.contains("auth")
+        || sample.auth_failures >= 8
+    {
+        return "identity".to_string();
+    }
+    if joined.contains("lateral")
+        || joined.contains("remote")
+        || joined.contains("smb")
+        || joined.contains("rdp")
+        || joined.contains("ssh")
+    {
+        return "lateral_movement".to_string();
+    }
+    if joined.contains("beacon")
+        || joined.contains("c2")
+        || joined.contains("dns")
+        || joined.contains("http")
+        || joined.contains("network")
+        || sample.network_kbps >= 5_000.0
+    {
+        return "network".to_string();
+    }
+    if joined.contains("ransom")
+        || joined.contains("encrypt")
+        || joined.contains("shadow")
+        || joined.contains("impact")
+        || sample.disk_pressure_pct >= 75.0
+    {
+        return "impact".to_string();
+    }
+    if joined.contains("admin") || joined.contains("maintenance") {
+        return "admin_activity".to_string();
+    }
+    if joined.contains("developer")
+        || joined.contains("tooling")
+        || joined.contains("build")
+        || joined.contains("compile")
+    {
+        return "developer_tooling".to_string();
+    }
+    if sample.integrity_drift >= 0.2 {
+        return "integrity".to_string();
+    }
+    if expected_malicious {
+        "behavioral_attack".to_string()
+    } else {
+        "baseline_activity".to_string()
+    }
+}
+
+fn normalize_replay_signal_type(
+    value: Option<&str>,
+    hint: &str,
+    sample: &crate::telemetry::TelemetrySample,
+    expected_malicious: bool,
+) -> String {
+    let normalized = normalize_replay_dimension_token(value.unwrap_or_default());
+    if normalized.is_empty() {
+        infer_replay_signal_type(hint, sample, expected_malicious)
+    } else {
+        normalized
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ReplayCorpusEntry {
+    id: String,
+    label: String,
+    sample: crate::telemetry::TelemetrySample,
+    expected_malicious: bool,
+    platform: String,
+    signal_type: String,
+}
+
+#[derive(Debug, Clone)]
+struct ReplayCorpusEvaluation {
+    id: String,
+    label: String,
+    platform: String,
+    signal_type: String,
+    expected_malicious: bool,
+    predicted_malicious: bool,
+    score: f32,
+    confidence: f32,
+    top_contributions: Vec<(String, f32)>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ReplayCorpusPackRequest {
+    name: Option<String>,
+    source: Option<String>,
+    limit: Option<usize>,
+    threshold: Option<f32>,
+    samples: Option<Vec<ReplayCorpusPackSample>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ReplayCorpusPackSample {
+    id: Option<String>,
+    label: Option<String>,
+    expected: String,
+    platform: Option<String>,
+    signal_type: Option<String>,
+    sample: crate::telemetry::TelemetrySample,
+}
+
+fn replay_corpus_samples() -> Vec<ReplayCorpusEntry> {
+    vec![
+        ReplayCorpusEntry {
+            id: "benign_admin".to_string(),
+            label: "Benign admin activity".to_string(),
+            sample: replay_sample(1, 28.0, 42.0, 900.0, 1, 0.02, 58, 22.0),
+            expected_malicious: false,
+            platform: "linux".to_string(),
+            signal_type: "admin_activity".to_string(),
+        },
+        ReplayCorpusEntry {
+            id: "developer_tooling".to_string(),
+            label: "Developer tooling".to_string(),
+            sample: replay_sample(2, 46.0, 58.0, 1400.0, 0, 0.03, 96, 34.0),
+            expected_malicious: false,
+            platform: "macos".to_string(),
+            signal_type: "developer_tooling".to_string(),
+        },
+        ReplayCorpusEntry {
+            id: "identity_abuse".to_string(),
+            label: "Identity abuse".to_string(),
+            sample: replay_sample(3, 72.0, 70.0, 4200.0, 18, 0.16, 132, 44.0),
+            expected_malicious: true,
+            platform: "windows".to_string(),
+            signal_type: "identity".to_string(),
+        },
+        ReplayCorpusEntry {
+            id: "ransomware".to_string(),
+            label: "Ransomware".to_string(),
+            sample: replay_sample(4, 88.0, 82.0, 5200.0, 3, 0.38, 190, 92.0),
+            expected_malicious: true,
+            platform: "windows".to_string(),
+            signal_type: "impact".to_string(),
+        },
+        ReplayCorpusEntry {
+            id: "beaconing".to_string(),
+            label: "Beaconing and C2".to_string(),
+            sample: replay_sample(5, 64.0, 66.0, 8800.0, 4, 0.13, 118, 45.0),
+            expected_malicious: true,
+            platform: "linux".to_string(),
+            signal_type: "network".to_string(),
+        },
+        ReplayCorpusEntry {
+            id: "lateral_movement".to_string(),
+            label: "Lateral movement".to_string(),
+            sample: replay_sample(6, 78.0, 72.0, 6500.0, 10, 0.19, 160, 52.0),
+            expected_malicious: true,
+            platform: "linux".to_string(),
+            signal_type: "lateral_movement".to_string(),
+        },
+    ]
+}
+
+fn replay_metric_status(precision: f32, recall: f32, false_positive_rate: f32) -> &'static str {
+    if precision >= 0.7 && recall >= 0.7 && false_positive_rate <= 0.35 {
+        "ready"
+    } else if precision >= 0.5 && recall >= 0.5 {
+        "watch"
+    } else {
+        "needs_tuning"
+    }
+}
+
+fn replay_false_positive_rate(false_positives: usize, true_negatives: usize) -> f32 {
+    if false_positives + true_negatives > 0 {
+        false_positives as f32 / (false_positives + true_negatives) as f32
+    } else {
+        0.0
+    }
+}
+
+fn evaluate_replay_corpus(
+    corpus: &[ReplayCorpusEntry],
+    threshold: f32,
+) -> (crate::benchmark::BenchmarkResult, Vec<ReplayCorpusEvaluation>) {
+    let mut detector = AnomalyDetector::default();
+    let mut harness = crate::benchmark::BenchmarkHarness::new();
+    let mut evaluations = Vec::new();
+
+    for entry in corpus {
+        let signal = detector.evaluate(&entry.sample);
+        let predicted_malicious = signal.score >= threshold;
+        harness.record(predicted_malicious, entry.expected_malicious);
+        harness.record_contributions(&signal.contributions);
+        evaluations.push(ReplayCorpusEvaluation {
+            id: entry.id.clone(),
+            label: entry.label.clone(),
+            platform: entry.platform.clone(),
+            signal_type: entry.signal_type.clone(),
+            expected_malicious: entry.expected_malicious,
+            predicted_malicious,
+            score: signal.score,
+            confidence: signal.confidence,
+            top_contributions: signal
+                .contributions
+                .iter()
+                .map(|(name, value)| ((*name).to_string(), *value))
+                .collect(),
+        });
+    }
+
+    (harness.result(), evaluations)
+}
+
+fn build_replay_dimension_deltas<F>(
+    evaluations: &[ReplayCorpusEvaluation],
+    overall: &crate::benchmark::BenchmarkResult,
+    overall_false_positive_rate: f32,
+    key_fn: F,
+) -> Vec<serde_json::Value>
+where
+    F: Fn(&ReplayCorpusEvaluation) -> &str,
+{
+    let mut grouped = std::collections::BTreeMap::<String, Vec<&ReplayCorpusEvaluation>>::new();
+    for evaluation in evaluations {
+        grouped
+            .entry(key_fn(evaluation).to_string())
+            .or_default()
+            .push(evaluation);
+    }
+
+    grouped
+        .into_iter()
+        .map(|(group, items)| {
+            let mut harness = crate::benchmark::BenchmarkHarness::new();
+            let benign_samples = items.iter().filter(|item| !item.expected_malicious).count();
+            let malicious_samples = items.len() - benign_samples;
+            let passed_samples = items
+                .iter()
+                .filter(|item| item.predicted_malicious == item.expected_malicious)
+                .count();
+            for item in &items {
+                harness.record(item.predicted_malicious, item.expected_malicious);
+            }
+            let result = harness.result();
+            let false_positive_rate =
+                replay_false_positive_rate(result.false_positives, result.true_negatives);
+            let precision_delta = result.precision - overall.precision;
+            let recall_delta = result.recall - overall.recall;
+            let accuracy_delta = result.accuracy - overall.accuracy;
+            let false_positive_delta = false_positive_rate - overall_false_positive_rate;
+            serde_json::json!({
+                "group": group,
+                "sample_count": items.len(),
+                "malicious_samples": malicious_samples,
+                "benign_samples": benign_samples,
+                "passed_samples": passed_samples,
+                "precision": result.precision,
+                "recall": result.recall,
+                "accuracy": result.accuracy,
+                "false_positive_rate": false_positive_rate,
+                "delta": {
+                    "precision": precision_delta,
+                    "recall": recall_delta,
+                    "accuracy": accuracy_delta,
+                    "false_positive_rate": false_positive_delta,
+                },
+                "needs_attention": items.len() > 1
+                    && (precision_delta < -0.05
+                        || recall_delta < -0.05
+                        || false_positive_delta > 0.05),
+                "examples": items
+                    .iter()
+                    .take(3)
+                    .map(|item| {
+                        serde_json::json!({
+                            "id": item.id,
+                            "label": item.label,
+                            "expected": if item.expected_malicious { "malicious" } else { "benign" },
+                            "predicted": if item.predicted_malicious { "malicious" } else { "benign" },
+                            "score": item.score,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
+fn build_replay_corpus_evaluation_for(
+    corpus_kind: &str,
+    pack_name: &str,
+    corpus: &[ReplayCorpusEntry],
+    threshold: f32,
+) -> serde_json::Value {
+    let (result, evaluations) = evaluate_replay_corpus(corpus, threshold);
+    let false_positive_rate =
+        replay_false_positive_rate(result.false_positives, result.true_negatives);
+    let category_results = evaluations
+        .iter()
+        .map(|evaluation| {
+            serde_json::json!({
+                "id": evaluation.id,
+                "label": evaluation.label,
+                "platform": evaluation.platform,
+                "signal_type": evaluation.signal_type,
+                "expected": if evaluation.expected_malicious { "malicious" } else { "benign" },
+                "predicted": if evaluation.predicted_malicious { "malicious" } else { "benign" },
+                "score": evaluation.score,
+                "confidence": evaluation.confidence,
+                "passed": evaluation.predicted_malicious == evaluation.expected_malicious,
+                "top_contributions": evaluation
+                    .top_contributions
+                    .iter()
+                    .take(4)
+                    .map(|(name, value)| serde_json::json!({ "name": name, "value": value }))
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "corpus_kind": corpus_kind,
+        "pack_name": pack_name,
+        "threshold": threshold,
+        "status": replay_metric_status(result.precision, result.recall, false_positive_rate),
+        "summary": {
+            "total_samples": result.true_positives + result.false_positives + result.true_negatives + result.false_negatives,
+            "precision": result.precision,
+            "recall": result.recall,
+            "f1": result.f1,
+            "accuracy": result.accuracy,
+            "false_positive_rate": false_positive_rate,
+            "true_positives": result.true_positives,
+            "false_positives": result.false_positives,
+            "true_negatives": result.true_negatives,
+            "false_negatives": result.false_negatives,
+        },
+        "acceptance_targets": {
+            "precision_min": 0.7,
+            "recall_min": 0.7,
+            "false_positive_rate_max": 0.35,
+            "operator_goal": "Use replay-corpus drift before promoting detector/rule changes into broad rollout.",
+        },
+        "categories": category_results,
+        "platform_deltas": build_replay_dimension_deltas(
+            &evaluations,
+            &result,
+            false_positive_rate,
+            |evaluation| &evaluation.platform,
+        ),
+        "signal_type_deltas": build_replay_dimension_deltas(
+            &evaluations,
+            &result,
+            false_positive_rate,
+            |evaluation| &evaluation.signal_type,
+        ),
+        "signal_contributions": result.signal_contributions,
+    })
+}
+
+fn build_replay_corpus_evaluation() -> serde_json::Value {
+    let corpus = replay_corpus_samples();
+    build_replay_corpus_evaluation_for("builtin", "Wardex built-in replay corpus", &corpus, 2.0)
+}
+
+fn retained_event_replay_entries(
+    events: &[StoredEvent],
+    limit: usize,
+    threshold: f32,
+) -> Vec<ReplayCorpusEntry> {
+    events
+        .iter()
+        .rev()
+        .take(limit.min(256))
+        .map(|event| ReplayCorpusEntry {
+            id: format!("event-{}", event.id),
+            label: format!(
+                "{} on {}",
+                if event.alert.action.trim().is_empty() {
+                    event.alert.level.as_str()
+                } else {
+                    event.alert.action.as_str()
+                },
+                event.alert.hostname
+            ),
+            sample: event.alert.sample,
+            expected_malicious: event.alert.score >= threshold,
+            platform: normalize_replay_platform(Some(&event.alert.platform)),
+            signal_type: normalize_replay_signal_type(
+                None,
+                &format!("{} {}", event.alert.action, event.alert.reasons.join(" ")),
+                &event.alert.sample,
+                event.alert.score >= threshold,
+            ),
+        })
+        .collect()
+}
+
+fn replay_pack_threshold(value: Option<f32>) -> Result<f32, String> {
+    let threshold = value.unwrap_or(2.0);
+    if !threshold.is_finite() || threshold <= 0.0 {
+        return Err("threshold must be a positive finite number".to_string());
+    }
+    Ok(threshold)
+}
+
+fn parse_custom_replay_samples(
+    samples: Vec<ReplayCorpusPackSample>,
+) -> Result<Vec<ReplayCorpusEntry>, String> {
+    if samples.is_empty() {
+        return Err("samples must not be empty".to_string());
+    }
+    if samples.len() > 256 {
+        return Err("samples must contain at most 256 entries".to_string());
+    }
+    samples
+        .into_iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let expected = item.expected.trim().to_ascii_lowercase();
+            let expected_malicious = match expected.as_str() {
+                "malicious" | "attack" | "true_positive" | "tp" => true,
+                "benign" | "clean" | "false_positive" | "fp" => false,
+                _ => {
+                    return Err(format!(
+                        "samples[{idx}].expected must be benign or malicious"
+                    ));
+                }
+            };
+            let id = item.id.unwrap_or_else(|| format!("sample-{}", idx + 1));
+            let label = item.label.unwrap_or_else(|| format!("Sample {}", idx + 1));
+            let hint = format!("{id} {label}");
+            Ok(ReplayCorpusEntry {
+                id,
+                label,
+                sample: item.sample,
+                expected_malicious,
+                platform: normalize_replay_platform(item.platform.as_deref()),
+                signal_type: normalize_replay_signal_type(
+                    item.signal_type.as_deref(),
+                    &hint,
+                    &item.sample,
+                    expected_malicious,
+                ),
+            })
+        })
+        .collect()
+}
+
+fn parse_replay_corpus_pack(
+    raw: &str,
+) -> Result<(String, String, f32, Option<usize>, Vec<ReplayCorpusEntry>), String> {
+    let request: ReplayCorpusPackRequest =
+        serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))?;
+    let threshold = replay_pack_threshold(request.threshold)?;
+    let source = request
+        .source
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "custom".to_string());
+    if source != "custom" && source != "retained_events" {
+        return Err("source must be custom or retained_events".to_string());
+    }
+    if matches!(request.limit, Some(0)) {
+        return Err("limit must be greater than zero".to_string());
+    }
+    let pack_name = request
+        .name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            if source == "retained_events" {
+                "Retained-event replay corpus".to_string()
+            } else {
+                "Custom replay corpus".to_string()
+            }
+        });
+    let entries = if source == "retained_events" {
+        Vec::new()
+    } else {
+        parse_custom_replay_samples(request.samples.unwrap_or_default())?
+    };
+    Ok((source, pack_name, threshold, request.limit, entries))
+}
+
 fn build_manager_queue_digest(state: &mut AppState) -> ManagerQueueDigest {
     state.agent_registry.refresh_staleness();
     let top_queue_items = state
@@ -4830,15 +5879,28 @@ fn build_manager_queue_digest(state: &mut AppState) -> ManagerQueueDigest {
         .take(6)
         .collect::<Vec<_>>();
     let queue = ManagerQueueOverview {
-        pending: state.alert_queue.all().iter().filter(|item| !item.acknowledged).count(),
-        acknowledged: state.alert_queue.all().iter().filter(|item| item.acknowledged).count(),
+        pending: state
+            .alert_queue
+            .all()
+            .iter()
+            .filter(|item| !item.acknowledged)
+            .count(),
+        acknowledged: state
+            .alert_queue
+            .all()
+            .iter()
+            .filter(|item| item.acknowledged)
+            .count(),
         assigned: state
             .alert_queue
             .all()
             .iter()
             .filter(|item| item.assignee.is_some())
             .count(),
-        sla_breached: top_queue_items.iter().filter(|item| item.sla_breached).count(),
+        sla_breached: top_queue_items
+            .iter()
+            .filter(|item| item.sla_breached)
+            .count(),
         critical_pending: state
             .alert_queue
             .all()
@@ -4860,7 +5922,8 @@ fn build_manager_queue_digest(state: &mut AppState) -> ManagerQueueDigest {
         .list()
         .iter()
         .filter(|agent| {
-            let (status, _) = computed_agent_status(agent, state.agent_registry.heartbeat_interval());
+            let (status, _) =
+                computed_agent_status(agent, state.agent_registry.heartbeat_interval());
             matches!(status.as_str(), "stale" | "offline")
         })
         .count();
@@ -4897,13 +5960,20 @@ fn build_manager_queue_digest(state: &mut AppState) -> ManagerQueueDigest {
         .collect::<Vec<_>>();
     let mut changes_since_last_shift = Vec::new();
     if queue.sla_breached > 0 {
-        changes_since_last_shift.push(format!("{} queue item(s) are now past SLA.", queue.sla_breached));
+        changes_since_last_shift.push(format!(
+            "{} queue item(s) are now past SLA.",
+            queue.sla_breached
+        ));
     }
     if degraded_collectors > 0 {
-        changes_since_last_shift.push(format!("{degraded_collectors} collector(s) are stale or offline."));
+        changes_since_last_shift.push(format!(
+            "{degraded_collectors} collector(s) are stale or offline."
+        ));
     }
     if stale_cases > 0 {
-        changes_since_last_shift.push(format!("{stale_cases} case(s) have been open without recent analyst updates."));
+        changes_since_last_shift.push(format!(
+            "{stale_cases} case(s) have been open without recent analyst updates."
+        ));
     }
     if pending_dry_run_approvals > 0 {
         changes_since_last_shift.push(format!(
@@ -5662,27 +6732,8 @@ struct AssistantQueryResponse {
 }
 
 const ASSISTANT_STOP_WORDS: &[&str] = &[
-    "a",
-    "an",
-    "and",
-    "are",
-    "case",
-    "does",
-    "for",
-    "from",
-    "have",
-    "how",
-    "into",
-    "need",
-    "show",
-    "that",
-    "the",
-    "this",
-    "what",
-    "when",
-    "where",
-    "with",
-    "why",
+    "a", "an", "and", "are", "case", "does", "for", "from", "have", "how", "into", "need", "show",
+    "that", "the", "this", "what", "when", "where", "with", "why",
 ];
 
 const AWS_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.aws";
@@ -5690,6 +6741,8 @@ const AZURE_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.azure";
 const GCP_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.gcp";
 const OKTA_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.okta";
 const ENTRA_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.entra";
+const M365_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.m365";
+const WORKSPACE_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.workspace";
 const SECRETS_MANAGER_SETUP_KEY: &str = "integrations.secrets.manager";
 
 fn assistant_provider_from_env(value: &str) -> crate::llm_analyst::LlmProvider {
@@ -5917,7 +6970,11 @@ fn assistant_context_events(
         .map(|case| case.event_ids.iter().copied().collect())
         .unwrap_or_default();
     let terms = assistant_terms(&request.question, case);
-    let mut context = linked_events.iter().take(limit).cloned().collect::<Vec<_>>();
+    let mut context = linked_events
+        .iter()
+        .take(limit)
+        .cloned()
+        .collect::<Vec<_>>();
     if context.len() >= limit {
         return context;
     }
@@ -6028,7 +7085,8 @@ fn assistant_fallback_answer(
             primary.device.as_deref().unwrap_or("unknown host")
         ));
     }
-    answer.push_str("- Use the citations below when escalating or syncing to an external ticket.\n");
+    answer
+        .push_str("- Use the citations below when escalating or syncing to an external ticket.\n");
     answer
 }
 
@@ -6122,6 +7180,14 @@ fn load_okta_collector_setup(storage: &SharedStorage) -> OktaCollectorSetup {
 
 fn load_entra_collector_setup(storage: &SharedStorage) -> EntraCollectorSetup {
     load_stored_json(storage, ENTRA_COLLECTOR_SETUP_KEY)
+}
+
+fn load_m365_collector_setup(storage: &SharedStorage) -> M365CollectorSetup {
+    load_stored_json(storage, M365_COLLECTOR_SETUP_KEY)
+}
+
+fn load_workspace_collector_setup(storage: &SharedStorage) -> WorkspaceCollectorSetup {
+    load_stored_json(storage, WORKSPACE_COLLECTOR_SETUP_KEY)
 }
 
 fn load_secrets_manager_setup(storage: &SharedStorage) -> SecretsManagerSetup {
@@ -6352,6 +7418,408 @@ fn validate_entra_collector(
     }
 }
 
+fn validate_m365_collector(
+    setup: &M365CollectorSetup,
+    resolver: &crate::secrets::SecretsResolver,
+) -> serde_json::Value {
+    let validation = setup.validate();
+    if validation.status != "ready" {
+        return serde_json::json!({
+            "provider": "m365_saas",
+            "success": false,
+            "event_count": 0,
+            "sample_events": [],
+            "summary": {},
+            "validation": validation,
+            "error": "Collector configuration is incomplete.",
+        });
+    }
+
+    let tenant_id = match resolver.resolve(&setup.tenant_id) {
+        Ok(value) => value,
+        Err(error) => {
+            return serde_json::json!({
+                "provider": "m365_saas",
+                "success": false,
+                "event_count": 0,
+                "sample_events": [],
+                "summary": {},
+                "validation": validation,
+                "error": error,
+            });
+        }
+    };
+    let client_id = match resolver.resolve(&setup.client_id) {
+        Ok(value) => value,
+        Err(error) => {
+            return serde_json::json!({
+                "provider": "m365_saas",
+                "success": false,
+                "event_count": 0,
+                "sample_events": [],
+                "summary": {},
+                "validation": validation,
+                "error": error,
+            });
+        }
+    };
+    if let Err(error) = resolver.resolve(&setup.client_secret) {
+        return serde_json::json!({
+            "provider": "m365_saas",
+            "success": false,
+            "event_count": 0,
+            "sample_events": [],
+            "summary": {},
+            "validation": validation,
+            "error": error,
+        });
+    }
+
+    let sample_events = setup
+        .content_types
+        .iter()
+        .take(3)
+        .enumerate()
+        .map(|(index, content_type)| {
+            serde_json::json!({
+                "content_type": content_type,
+                "tenant_id": tenant_id,
+                "workload": content_type.split('.').nth(1).unwrap_or(content_type),
+                "sample_operation": match index {
+                    0 => "UserLoggedIn",
+                    1 => "MailboxLogin",
+                    _ => "FileAccessed",
+                },
+                "ingest_status": "shadow-ready",
+            })
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "provider": "m365_saas",
+        "success": true,
+        "event_count": sample_events.len(),
+        "sample_events": sample_events,
+        "summary": {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "content_types": setup.content_types,
+            "recommended_pivots": ["soc", "ueba", "assistant"],
+        },
+        "validation": validation,
+        "error": serde_json::Value::Null,
+    })
+}
+
+fn validate_workspace_collector(
+    setup: &WorkspaceCollectorSetup,
+    resolver: &crate::secrets::SecretsResolver,
+) -> serde_json::Value {
+    let validation = setup.validate();
+    if validation.status != "ready" {
+        return serde_json::json!({
+            "provider": "workspace_saas",
+            "success": false,
+            "event_count": 0,
+            "sample_events": [],
+            "summary": {},
+            "validation": validation,
+            "error": "Collector configuration is incomplete.",
+        });
+    }
+
+    let customer_id = match resolver.resolve(&setup.customer_id) {
+        Ok(value) => value,
+        Err(error) => {
+            return serde_json::json!({
+                "provider": "workspace_saas",
+                "success": false,
+                "event_count": 0,
+                "sample_events": [],
+                "summary": {},
+                "validation": validation,
+                "error": error,
+            });
+        }
+    };
+    let delegated_admin_email = match resolver.resolve(&setup.delegated_admin_email) {
+        Ok(value) => value,
+        Err(error) => {
+            return serde_json::json!({
+                "provider": "workspace_saas",
+                "success": false,
+                "event_count": 0,
+                "sample_events": [],
+                "summary": {},
+                "validation": validation,
+                "error": error,
+            });
+        }
+    };
+    let service_account_email = match resolver.resolve(&setup.service_account_email) {
+        Ok(value) => value,
+        Err(error) => {
+            return serde_json::json!({
+                "provider": "workspace_saas",
+                "success": false,
+                "event_count": 0,
+                "sample_events": [],
+                "summary": {},
+                "validation": validation,
+                "error": error,
+            });
+        }
+    };
+    if let Err(error) = resolver.resolve(&setup.credentials_json) {
+        return serde_json::json!({
+            "provider": "workspace_saas",
+            "success": false,
+            "event_count": 0,
+            "sample_events": [],
+            "summary": {},
+            "validation": validation,
+            "error": error,
+        });
+    }
+
+    let sample_events = setup
+        .applications
+        .iter()
+        .take(3)
+        .enumerate()
+        .map(|(index, application)| {
+            serde_json::json!({
+                "application": application,
+                "customer_id": customer_id,
+                "actor_email": delegated_admin_email,
+                "service_account_email": service_account_email,
+                "sample_event": match index {
+                    0 => "login_success",
+                    1 => "admin_role_assignment",
+                    _ => "drive_file_visibility_change",
+                },
+                "ingest_status": "shadow-ready",
+            })
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "provider": "workspace_saas",
+        "success": true,
+        "event_count": sample_events.len(),
+        "sample_events": sample_events,
+        "summary": {
+            "customer_id": customer_id,
+            "delegated_admin_email": delegated_admin_email,
+            "applications": setup.applications,
+            "recommended_pivots": ["soc", "ueba", "infrastructure"],
+        },
+        "validation": validation,
+        "error": serde_json::Value::Null,
+    })
+}
+
+fn collector_lane(name: &str) -> &'static str {
+    let normalized = name.to_ascii_lowercase();
+    if normalized.contains("okta") || normalized.contains("entra") {
+        "identity"
+    } else if normalized.contains("m365") || normalized.contains("workspace") {
+        "saas"
+    } else {
+        "cloud"
+    }
+}
+
+fn collector_display_label(name: &str) -> &'static str {
+    match name {
+        "aws_cloudtrail" => "AWS CloudTrail",
+        "azure_activity" => "Azure Activity",
+        "gcp_audit" => "GCP Audit",
+        "okta_identity" => "Okta Identity",
+        "entra_identity" => "Microsoft Entra Identity",
+        "m365_saas" => "Microsoft 365 Activity",
+        "workspace_saas" => "Google Workspace Activity",
+        _ => "Collector",
+    }
+}
+
+fn collector_route_targets(name: &str) -> &'static [&'static str] {
+    match collector_lane(name) {
+        "identity" => &["SOC Queue", "UEBA"],
+        "saas" => &["Assistant", "Reports"],
+        _ => &["Infrastructure", "Attack Graph"],
+    }
+}
+
+fn collector_scope_markers(summary: &serde_json::Value) -> Vec<String> {
+    let Some(summary) = summary.as_object() else {
+        return Vec::new();
+    };
+
+    let mut markers = Vec::new();
+    for (key, value) in summary {
+        if key.starts_with("has_") {
+            continue;
+        }
+
+        let label = key.replace('_', " ");
+        match value {
+            serde_json::Value::String(text) if !text.trim().is_empty() => {
+                markers.push(format!("{label}: {text}"));
+            }
+            serde_json::Value::Number(number) => {
+                if let Some(value) = number.as_u64() && value > 0 {
+                    markers.push(format!("{value} {label}"));
+                }
+            }
+            serde_json::Value::Array(items) if !items.is_empty() => {
+                markers.push(format!("{} {label}", items.len()));
+            }
+            _ => {}
+        }
+    }
+    markers.truncate(3);
+    markers
+}
+
+fn collector_credential_timeline(
+    summary: &serde_json::Value,
+    validation: &SetupValidation,
+) -> (String, String, String) {
+    let Some(summary) = summary.as_object() else {
+        return (
+            validation.status.clone(),
+            "Credential coverage".to_string(),
+            "No credential state is currently published for this collector.".to_string(),
+        );
+    };
+
+    let secret_flags = summary
+        .iter()
+        .filter_map(|(key, value)| {
+            key.starts_with("has_")
+                .then(|| value.as_bool().map(|present| (key, present)))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+
+    if secret_flags.is_empty() {
+        return (
+            validation.status.clone(),
+            "Credential coverage".to_string(),
+            "Identifiers are present; no separate stored-secret marker is published for this collector."
+                .to_string(),
+        );
+    }
+
+    let missing = secret_flags
+        .iter()
+        .filter(|(_, present)| !*present)
+        .map(|(key, _)| key.trim_start_matches("has_").replace('_', " "))
+        .collect::<Vec<_>>();
+
+    if missing.is_empty() {
+        (
+            "ready".to_string(),
+            "Credential coverage".to_string(),
+            "Stored credential material is present for the configured collector path.".to_string(),
+        )
+    } else {
+        (
+            "warning".to_string(),
+            "Credential coverage".to_string(),
+            format!("Review missing credential markers: {}.", missing.join(", ")),
+        )
+    }
+}
+
+fn build_collector_timeline(
+    name: &str,
+    enabled: bool,
+    poll_interval_secs: u64,
+    summary: &serde_json::Value,
+    validation: &SetupValidation,
+) -> Vec<serde_json::Value> {
+    let route_targets = collector_route_targets(name).join(" • ");
+    let scope_markers = collector_scope_markers(summary);
+    let (credential_status, credential_title, credential_detail) =
+        collector_credential_timeline(summary, validation);
+    let validation_detail = if validation.issues.is_empty() {
+        "Collector configuration currently passes setup validation.".to_string()
+    } else {
+        validation
+            .issues
+            .iter()
+            .take(2)
+            .map(|issue| issue.message.clone())
+            .collect::<Vec<_>>()
+            .join(" • ")
+    };
+
+    vec![
+        serde_json::json!({
+            "stage": "Configuration",
+            "status": if enabled { "ready" } else { "disabled" },
+            "title": if enabled { "Collector enabled" } else { "Collector disabled" },
+            "detail": if enabled {
+                format!("{} is configured with a {} second polling cadence.", collector_display_label(name), poll_interval_secs)
+            } else {
+                "Enable this collector before expecting validation or downstream routing signals.".to_string()
+            },
+        }),
+        serde_json::json!({
+            "stage": "Credentials",
+            "status": credential_status,
+            "title": credential_title,
+            "detail": credential_detail,
+        }),
+        serde_json::json!({
+            "stage": "Scope",
+            "status": if enabled && !scope_markers.is_empty() { "ready" } else if enabled { validation.status.as_str() } else { "disabled" },
+            "title": "Collection scope",
+            "detail": if scope_markers.is_empty() {
+                "No explicit scope markers are configured yet for this collector.".to_string()
+            } else {
+                scope_markers.join(" • ")
+            },
+        }),
+        serde_json::json!({
+            "stage": "Validation",
+            "status": validation.status,
+            "title": if validation.status == "ready" { "Validation clear" } else { "Validation review" },
+            "detail": validation_detail,
+        }),
+        serde_json::json!({
+            "stage": "Routing",
+            "status": if enabled { "ready" } else { "disabled" },
+            "title": "Downstream pivots",
+            "detail": format!("This collector currently routes into: {route_targets}."),
+        }),
+    ]
+}
+
+fn collector_status_entry(
+    name: &str,
+    enabled: bool,
+    poll_interval_secs: u64,
+    summary: serde_json::Value,
+    validation: SetupValidation,
+) -> serde_json::Value {
+    serde_json::json!({
+        "name": name,
+        "provider": name,
+        "label": collector_display_label(name),
+        "lane": collector_lane(name),
+        "enabled": enabled,
+        "poll_interval_secs": poll_interval_secs,
+        "total_collected": 0,
+        "route_targets": collector_route_targets(name),
+        "summary": summary,
+        "validation": validation,
+        "timeline": build_collector_timeline(name, enabled, poll_interval_secs, &summary, &validation),
+    })
+}
+
 fn secret_reference_kind(reference: &str) -> &'static str {
     let trimmed = reference.trim();
     if trimmed.starts_with("${") && trimmed.ends_with('}') {
@@ -6382,7 +7850,10 @@ fn parse_query_datetime(
     value: Option<&String>,
     field: &str,
 ) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
-    let Some(raw) = value.map(|value| value.trim()).filter(|value| !value.is_empty()) else {
+    let Some(raw) = value
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
 
@@ -6397,7 +7868,9 @@ fn parse_query_datetime(
                 Some(
                     value
                         .and_hms_opt(0, 0, 0)
-                        .unwrap_or_else(|| chrono::NaiveDateTime::new(value, chrono::NaiveTime::MIN))
+                        .unwrap_or_else(|| {
+                            chrono::NaiveDateTime::new(value, chrono::NaiveTime::MIN)
+                        })
                         .and_utc(),
                 )
             })
@@ -6835,6 +8308,8 @@ fn handle_api(
                 | (Method::Get, "/api/mitre/coverage")
                 | (Method::Get, "/api/mitre/heatmap")
                 | (Method::Get, "/api/detection/profile")
+                | (Method::Get, "/api/detection/replay-corpus")
+                | (Method::Post, "/api/detection/replay-corpus")
                 | (Method::Put, "/api/detection/profile")
                 | (Method::Post, "/api/fp-feedback")
                 | (Method::Get, "/api/fp-feedback/stats")
@@ -6924,6 +8399,7 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/config/current")
         || (method == Method::Get && route_path == "/api/checkpoints")
         || (method == Method::Get && route_path == "/api/correlation")
+        || (method == Method::Get && route_path == "/api/correlation/campaigns")
         || (method == Method::Get && route_path == "/api/alerts")
         || (method == Method::Get && route_path == "/api/alerts/count")
         || (method == Method::Get && route_path == "/api/alerts/analysis")
@@ -6934,6 +8410,8 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/report")
         || (method == Method::Get && route_path == "/api/threads/status")
         || (method == Method::Get && route_path == "/api/detection/summary")
+        || (method == Method::Get && route_path == "/api/detection/replay-corpus")
+        || (method == Method::Post && route_path == "/api/detection/replay-corpus")
         || (method == Method::Get && route_path == "/api/monitoring/options")
         || (method == Method::Get && route_path == "/api/monitoring/paths")
         || (method == Method::Get && route_path == "/api/endpoints")
@@ -7130,6 +8608,12 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/collectors/entra")
         || (method == Method::Post && route_path == "/api/collectors/entra/config")
         || (method == Method::Post && route_path == "/api/collectors/entra/validate")
+        || (method == Method::Get && route_path == "/api/collectors/m365")
+        || (method == Method::Post && route_path == "/api/collectors/m365/config")
+        || (method == Method::Post && route_path == "/api/collectors/m365/validate")
+        || (method == Method::Get && route_path == "/api/collectors/workspace")
+        || (method == Method::Post && route_path == "/api/collectors/workspace/config")
+        || (method == Method::Post && route_path == "/api/collectors/workspace/validate")
         || (method == Method::Get && route_path == "/api/secrets/status")
         || (method == Method::Post && route_path == "/api/secrets/config")
         || (method == Method::Post && route_path == "/api/secrets/validate")
@@ -7549,6 +9033,16 @@ fn handle_api(
                 Err(e) => error_json(&format!("serialization error: {e}"), 500),
             }
         }
+        (Method::Get, "/api/correlation/campaigns") => {
+            let s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let events = s.event_store.all_events().to_vec();
+            drop(s);
+            let view = build_campaign_correlation_view(&events);
+            match serde_json::to_string_pretty(&view) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
         (Method::Get, "/api/export/tla") => {
             let sm = PolicyStateMachine::new();
             text_response(&sm.export_tla(), 200)
@@ -7698,9 +9192,7 @@ fn handle_api(
             json_response(&info.to_string(), 200)
         }
         (Method::Get, "/api/threat-intel/library/v2") => handle_threat_intel_library_v2(state),
-        (Method::Get, "/api/threat-intel/sightings") => {
-            handle_threat_intel_sightings(&url, state)
-        }
+        (Method::Get, "/api/threat-intel/sightings") => handle_threat_intel_sightings(&url, state),
         (Method::Post, "/api/threat-intel/ioc") => handle_threat_intel_ioc(body, state),
 
         // ── Threat Intel Stats ────────────────────────────────────
@@ -8861,6 +10353,7 @@ fn handle_api(
                 {"method": "GET", "path": "/api/attestation/status", "auth": true, "description": "Attestation verification status and missing checks"},
                 {"method": "GET", "path": "/api/fleet/status", "auth": true, "description": "Fleet health summary for the swarm control plane"},
                 {"method": "GET", "path": "/api/correlation", "auth": true, "description": "Replay-buffer correlation analysis"},
+                {"method": "GET", "path": "/api/correlation/campaigns", "auth": true, "description": "Campaign clustering, sequence summaries, and attack-graph edges from stored events"},
                 {"method": "GET", "path": "/api/alerts", "auth": true, "description": "Last 100 alerts"},
                 {"method": "GET", "path": "/api/alerts/{id}", "auth": true, "description": "Detailed alert view for a specific alert ID"},
                 {"method": "GET", "path": "/api/alerts/count", "auth": true, "description": "Alert count by severity"},
@@ -8879,6 +10372,8 @@ fn handle_api(
                 {"method": "GET", "path": "/api/mitre/heatmap", "auth": true, "description": "MITRE ATT&CK heatmap (per-tactic, per-technique coverage)"},
                 {"method": "GET", "path": "/api/detection/profile", "auth": true, "description": "Current detection tuning profile"},
                 {"method": "PUT", "path": "/api/detection/profile", "auth": true, "description": "Set detection tuning profile (aggressive/balanced/quiet)"},
+                {"method": "GET", "path": "/api/detection/replay-corpus", "auth": true, "description": "Built-in replay-corpus precision, recall, false-positive, and category gate"},
+                {"method": "POST", "path": "/api/detection/replay-corpus", "auth": true, "description": "Evaluate a custom labeled or retained-event replay-corpus validation pack"},
                 {"method": "POST", "path": "/api/fp-feedback", "auth": true, "description": "Submit false-positive feedback for an alert pattern"},
                 {"method": "GET", "path": "/api/fp-feedback/stats", "auth": true, "description": "False-positive feedback statistics and suppression weights"},
                 {"method": "GET", "path": "/api/ndr/report", "auth": true, "description": "Aggregate NDR analysis report with anomaly summaries"},
@@ -8987,7 +10482,7 @@ fn handle_api(
                 {"method": "GET", "path": "/api/retention/status", "auth": true, "description": "Current retention policy settings and record counts"},
                 {"method": "POST", "path": "/api/retention/apply", "auth": true, "description": "Apply retention policies to trim old records"},
                 {"method": "GET", "path": "/api/storage/events/historical", "auth": true, "description": "Query ClickHouse-backed long-retention events with time and entity filters"},
-                {"method": "GET", "path": "/api/collectors/status", "auth": true, "description": "Summarize structured cloud collector setup and validation status"},
+                {"method": "GET", "path": "/api/collectors/status", "auth": true, "description": "Summarize structured collector setup, validation, and ingestion-health timeline checkpoints"},
                 {"method": "GET", "path": "/api/collectors/aws", "auth": true, "description": "Retrieve AWS CloudTrail setup details and validation status"},
                 {"method": "POST", "path": "/api/collectors/aws/config", "auth": true, "description": "Save AWS CloudTrail setup fields while preserving existing secrets when omitted"},
                 {"method": "POST", "path": "/api/collectors/aws/validate", "auth": true, "description": "Run an on-demand AWS CloudTrail validation poll and return sample events"},
@@ -9003,6 +10498,12 @@ fn handle_api(
                 {"method": "GET", "path": "/api/collectors/entra", "auth": true, "description": "Retrieve Microsoft Entra identity collector setup details and validation status"},
                 {"method": "POST", "path": "/api/collectors/entra/config", "auth": true, "description": "Save Microsoft Entra identity collector setup fields while preserving the current client secret when omitted"},
                 {"method": "POST", "path": "/api/collectors/entra/validate", "auth": true, "description": "Run an on-demand Microsoft Entra identity validation poll and return sample events"},
+                {"method": "GET", "path": "/api/collectors/m365", "auth": true, "description": "Retrieve Microsoft 365 SaaS collector setup details and validation status"},
+                {"method": "POST", "path": "/api/collectors/m365/config", "auth": true, "description": "Save Microsoft 365 collector setup fields while preserving the current client secret when omitted"},
+                {"method": "POST", "path": "/api/collectors/m365/validate", "auth": true, "description": "Run an on-demand Microsoft 365 validation and return sample audit events"},
+                {"method": "GET", "path": "/api/collectors/workspace", "auth": true, "description": "Retrieve Google Workspace collector setup details and validation status"},
+                {"method": "POST", "path": "/api/collectors/workspace/config", "auth": true, "description": "Save Google Workspace collector setup fields while preserving the current credentials blob when omitted"},
+                {"method": "POST", "path": "/api/collectors/workspace/validate", "auth": true, "description": "Run an on-demand Google Workspace validation and return sample audit events"},
                 {"method": "GET", "path": "/api/secrets/status", "auth": true, "description": "Retrieve secrets-manager configuration, validation, and resolver status"},
                 {"method": "POST", "path": "/api/secrets/config", "auth": true, "description": "Save secrets-manager setup fields while preserving the current Vault token when omitted"},
                 {"method": "POST", "path": "/api/secrets/validate", "auth": true, "description": "Resolve and validate a secret reference without disclosing the full plaintext"},
@@ -9248,6 +10749,42 @@ fn handle_api(
         (Method::Post, "/api/events/bulk-triage") => handle_bulk_triage(body, state),
 
         // ── Detection Analysis ─────────────────────────────────
+        (Method::Get, "/api/detection/replay-corpus") => {
+            let body = build_replay_corpus_evaluation();
+            match serde_json::to_string_pretty(&body) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
+        (Method::Post, "/api/detection/replay-corpus") => {
+            let raw = match read_body_limited(body, 256 * 1024) {
+                Ok(body) => body,
+                Err(e) => return error_json(&e, 400),
+            };
+            let (source, pack_name, threshold, limit, entries) =
+                match parse_replay_corpus_pack(&raw) {
+                    Ok(parsed) => parsed,
+                    Err(e) => return error_json(&e, 400),
+                };
+            let entries = if source == "retained_events" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let events = s.event_store.all_events().to_vec();
+                drop(s);
+                let retained_entries =
+                    retained_event_replay_entries(&events, limit.unwrap_or(100), threshold);
+                if retained_entries.is_empty() {
+                    return error_json("no retained events available for replay corpus", 400);
+                }
+                retained_entries
+            } else {
+                entries
+            };
+            let body = build_replay_corpus_evaluation_for(&source, &pack_name, &entries, threshold);
+            match serde_json::to_string_pretty(&body) {
+                Ok(json) => json_response(&json, 200),
+                Err(e) => error_json(&format!("serialization error: {e}"), 500),
+            }
+        }
         (Method::Get, "/api/detection/summary") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let vel_state = &s.velocity;
@@ -9579,9 +11116,9 @@ fn handle_api(
                     "investigation_id": execution_context.investigation_id.clone(),
                     "source": execution_context.source.clone(),
                 });
-                let has_execution_context = execution_context_json.as_object().is_some_and(|object| {
-                    object.values().any(|value| !value.is_null())
-                });
+                let has_execution_context = execution_context_json
+                    .as_object()
+                    .is_some_and(|object| object.values().any(|value| !value.is_null()));
                 s.agent_registry.refresh_staleness();
                 let open_incidents = s
                     .incident_store
@@ -10656,7 +12193,7 @@ fn handle_api(
                                 "provider": idp_provider_public_json(&provider),
                                 "validation": validation,
                             })
-                                .to_string(),
+                            .to_string(),
                             200,
                         )
                     }
@@ -14022,7 +15559,10 @@ fn handle_api(
                     }
                 };
                 let filter = crate::storage_clickhouse::EventFilter {
-                    tenant_id: query.get("tenant_id").cloned().filter(|value| !value.trim().is_empty()),
+                    tenant_id: query
+                        .get("tenant_id")
+                        .cloned()
+                        .filter(|value| !value.trim().is_empty()),
                     from,
                     to,
                     severity_min: query
@@ -14031,9 +15571,18 @@ fn handle_api(
                     event_class: query
                         .get("event_class")
                         .and_then(|value| value.parse::<u16>().ok()),
-                    device_id: query.get("device_id").cloned().filter(|value| !value.trim().is_empty()),
-                    user_name: query.get("user_name").cloned().filter(|value| !value.trim().is_empty()),
-                    src_ip: query.get("src_ip").cloned().filter(|value| !value.trim().is_empty()),
+                    device_id: query
+                        .get("device_id")
+                        .cloned()
+                        .filter(|value| !value.trim().is_empty()),
+                    user_name: query
+                        .get("user_name")
+                        .cloned()
+                        .filter(|value| !value.trim().is_empty()),
+                    src_ip: query
+                        .get("src_ip")
+                        .cloned()
+                        .filter(|value| !value.trim().is_empty()),
                     limit: Some(limit),
                     offset: Some(offset),
                 };
@@ -14074,7 +15623,8 @@ fn handle_api(
                     }
                 };
 
-                let events = match crate::storage_clickhouse::EventStore::query_events(ch, &filter) {
+                let events = match crate::storage_clickhouse::EventStore::query_events(ch, &filter)
+                {
                     Ok(events) => events,
                     Err(error) => {
                         let body = serde_json::json!({
@@ -14672,12 +16222,7 @@ fn handle_api(
                                 None,
                             )
                         }
-                        Err(error) => (
-                            String::new(),
-                            String::new(),
-                            None,
-                            Some(error),
-                        ),
+                        Err(error) => (String::new(), String::new(), None, Some(error)),
                     }
                 };
                 if let Some(error) = parse_error {
@@ -14688,7 +16233,10 @@ fn handle_api(
                     }
                 } else if code.trim().is_empty() {
                     if method == Method::Get {
-                        auth_redirect_response(&sso_error_redirect(None, "authorization code required"))
+                        auth_redirect_response(&sso_error_redirect(
+                            None,
+                            "authorization code required",
+                        ))
                     } else {
                         error_json("authorization code required", 400)
                     }
@@ -14788,7 +16336,10 @@ fn handle_api(
                     "logged_out": true,
                     "session_revoked": session_revoked,
                 });
-                apply_set_cookie(json_response(&body.to_string(), 200), &clear_session_cookie_header())
+                apply_set_cookie(
+                    json_response(&body.to_string(), 200),
+                    &clear_session_cookie_header(),
+                )
 
             // ── Cloud Collectors ──────────────────────────────────
             } else if method == Method::Get && url_path == "/api/collectors/status" {
@@ -14798,66 +16349,100 @@ fn handle_api(
                 let gcp = load_gcp_collector_setup(&s.storage);
                 let okta = load_okta_collector_setup(&s.storage);
                 let entra = load_entra_collector_setup(&s.storage);
+                let m365 = load_m365_collector_setup(&s.storage);
+                let workspace = load_workspace_collector_setup(&s.storage);
+                let aws_validation = aws.validate();
+                let azure_validation = azure.validate();
+                let gcp_validation = gcp.validate();
+                let okta_validation = okta.validate();
+                let entra_validation = entra.validate();
+                let m365_validation = m365.validate();
+                let workspace_validation = workspace.validate();
                 let body = serde_json::json!({
                     "collectors": [
-                        {
-                            "name": "aws_cloudtrail",
-                            "enabled": aws.enabled,
-                            "poll_interval_secs": aws.poll_interval_secs,
-                            "summary": {
+                        collector_status_entry(
+                            "aws_cloudtrail",
+                            aws.enabled,
+                            aws.poll_interval_secs,
+                            serde_json::json!({
                                 "region": aws.region,
                                 "access_key_id": aws.access_key_id,
                                 "has_secret_access_key": !aws.secret_access_key.trim().is_empty(),
                                 "has_session_token": aws.session_token.as_ref().is_some_and(|value| !value.trim().is_empty()),
-                            },
-                            "validation": aws.validate(),
-                        },
-                        {
-                            "name": "azure_activity",
-                            "enabled": azure.enabled,
-                            "poll_interval_secs": azure.poll_interval_secs,
-                            "summary": {
+                            }),
+                            aws_validation,
+                        ),
+                        collector_status_entry(
+                            "azure_activity",
+                            azure.enabled,
+                            azure.poll_interval_secs,
+                            serde_json::json!({
                                 "tenant_id": azure.tenant_id,
                                 "client_id": azure.client_id,
                                 "subscription_id": azure.subscription_id,
                                 "has_client_secret": !azure.client_secret.trim().is_empty(),
-                            },
-                            "validation": azure.validate(),
-                        },
-                        {
-                            "name": "gcp_audit",
-                            "enabled": gcp.enabled,
-                            "poll_interval_secs": gcp.poll_interval_secs,
-                            "summary": {
+                            }),
+                            azure_validation,
+                        ),
+                        collector_status_entry(
+                            "gcp_audit",
+                            gcp.enabled,
+                            gcp.poll_interval_secs,
+                            serde_json::json!({
                                 "project_id": gcp.project_id,
                                 "service_account_email": gcp.service_account_email,
                                 "key_file_path": gcp.key_file_path,
                                 "has_private_key_pem": gcp.private_key_pem.as_ref().is_some_and(|value| !value.trim().is_empty()),
-                            },
-                            "validation": gcp.validate(),
-                        },
-                        {
-                            "name": "okta_identity",
-                            "enabled": okta.enabled,
-                            "poll_interval_secs": okta.poll_interval_secs,
-                            "summary": {
+                            }),
+                            gcp_validation,
+                        ),
+                        collector_status_entry(
+                            "okta_identity",
+                            okta.enabled,
+                            okta.poll_interval_secs,
+                            serde_json::json!({
                                 "domain": okta.domain,
                                 "event_type_count": okta.event_type_filter.len(),
                                 "has_api_token": !okta.api_token.trim().is_empty(),
-                            },
-                            "validation": okta.validate(),
-                        },
-                        {
-                            "name": "entra_identity",
-                            "enabled": entra.enabled,
-                            "poll_interval_secs": entra.poll_interval_secs,
-                            "summary": {
+                            }),
+                            okta_validation,
+                        ),
+                        collector_status_entry(
+                            "entra_identity",
+                            entra.enabled,
+                            entra.poll_interval_secs,
+                            serde_json::json!({
                                 "tenant_id": entra.tenant_id,
                                 "client_id": entra.client_id,
                                 "has_client_secret": !entra.client_secret.trim().is_empty(),
-                            },
-                            "validation": entra.validate(),
-                        },
+                            }),
+                            entra_validation,
+                        ),
+                        collector_status_entry(
+                            "m365_saas",
+                            m365.enabled,
+                            m365.poll_interval_secs,
+                            serde_json::json!({
+                                "tenant_id": m365.tenant_id,
+                                "client_id": m365.client_id,
+                                "content_type_count": m365.content_types.len(),
+                                "has_client_secret": !m365.client_secret.trim().is_empty(),
+                            }),
+                            m365_validation,
+                        ),
+                        collector_status_entry(
+                            "workspace_saas",
+                            workspace.enabled,
+                            workspace.poll_interval_secs,
+                            serde_json::json!({
+                                "customer_id": workspace.customer_id,
+                                "delegated_admin_email": workspace.delegated_admin_email,
+                                "service_account_email": workspace.service_account_email,
+                                "application_count": workspace.applications.len(),
+                                "has_credentials_json": !workspace.credentials_json.trim().is_empty(),
+                            }),
+                            workspace_validation,
+                        ),
                     ],
                 });
                 json_response(&body.to_string(), 200)
@@ -14905,9 +16490,11 @@ fn handle_api(
                     let resolver = build_secrets_resolver(&s.storage);
                     match setup.to_runtime(&resolver) {
                         Ok(runtime) => {
-                            let mut collector = crate::collector_aws::AwsCloudTrailCollector::new(runtime);
+                            let mut collector =
+                                crate::collector_aws::AwsCloudTrailCollector::new(runtime);
                             let result = collector.poll();
-                            let sample_events: Vec<_> = result.events.iter().take(5).cloned().collect();
+                            let sample_events: Vec<_> =
+                                result.events.iter().take(5).cloned().collect();
                             let body = serde_json::json!({
                                 "provider": "aws_cloudtrail",
                                 "success": result.success,
@@ -14977,9 +16564,11 @@ fn handle_api(
                     let resolver = build_secrets_resolver(&s.storage);
                     match setup.to_runtime(&resolver) {
                         Ok(runtime) => {
-                            let mut collector = crate::collector_azure::AzureActivityCollector::new(runtime);
+                            let mut collector =
+                                crate::collector_azure::AzureActivityCollector::new(runtime);
                             let result = collector.poll();
-                            let sample_events: Vec<_> = result.events.iter().take(5).cloned().collect();
+                            let sample_events: Vec<_> =
+                                result.events.iter().take(5).cloned().collect();
                             let body = serde_json::json!({
                                 "provider": "azure_activity",
                                 "success": result.success,
@@ -15048,9 +16637,11 @@ fn handle_api(
                     let resolver = build_secrets_resolver(&s.storage);
                     match setup.to_runtime(&resolver) {
                         Ok(runtime) => {
-                            let mut collector = crate::collector_gcp::GcpAuditCollector::new(runtime);
+                            let mut collector =
+                                crate::collector_gcp::GcpAuditCollector::new(runtime);
                             let result = collector.poll();
-                            let sample_events: Vec<_> = result.events.iter().take(5).cloned().collect();
+                            let sample_events: Vec<_> =
+                                result.events.iter().take(5).cloned().collect();
                             let body = serde_json::json!({
                                 "provider": "gcp_audit",
                                 "success": result.success,
@@ -15140,6 +16731,70 @@ fn handle_api(
                 let resolver = build_secrets_resolver(&s.storage);
                 let body = validate_entra_collector(&setup, &resolver);
                 json_response(&body.to_string(), 200)
+            } else if method == Method::Get && url_path == "/api/collectors/m365" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let setup = load_m365_collector_setup(&s.storage);
+                let body = config_validation_payload(setup.view(), setup.validate());
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Post && url_path == "/api/collectors/m365/config" {
+                match read_json_body::<M365CollectorSetupPatch>(body, 16 * 1024) {
+                    Ok(patch) => {
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut setup = load_m365_collector_setup(&s.storage);
+                        setup.apply_patch(patch);
+                        match save_stored_json(&s.storage, M365_COLLECTOR_SETUP_KEY, &setup) {
+                            Ok(()) => {
+                                let body = serde_json::json!({
+                                    "status": "saved",
+                                    "provider": "m365_saas",
+                                    "config": setup.view(),
+                                    "validation": setup.validate(),
+                                });
+                                json_response(&body.to_string(), 200)
+                            }
+                            Err(error) => error_json(&error, 500),
+                        }
+                    }
+                    Err(error) => error_json(&error, 400),
+                }
+            } else if method == Method::Post && url_path == "/api/collectors/m365/validate" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let setup = load_m365_collector_setup(&s.storage);
+                let resolver = build_secrets_resolver(&s.storage);
+                let body = validate_m365_collector(&setup, &resolver);
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Get && url_path == "/api/collectors/workspace" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let setup = load_workspace_collector_setup(&s.storage);
+                let body = config_validation_payload(setup.view(), setup.validate());
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Post && url_path == "/api/collectors/workspace/config" {
+                match read_json_body::<WorkspaceCollectorSetupPatch>(body, 32 * 1024) {
+                    Ok(patch) => {
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut setup = load_workspace_collector_setup(&s.storage);
+                        setup.apply_patch(patch);
+                        match save_stored_json(&s.storage, WORKSPACE_COLLECTOR_SETUP_KEY, &setup) {
+                            Ok(()) => {
+                                let body = serde_json::json!({
+                                    "status": "saved",
+                                    "provider": "workspace_saas",
+                                    "config": setup.view(),
+                                    "validation": setup.validate(),
+                                });
+                                json_response(&body.to_string(), 200)
+                            }
+                            Err(error) => error_json(&error, 500),
+                        }
+                    }
+                    Err(error) => error_json(&error, 400),
+                }
+            } else if method == Method::Post && url_path == "/api/collectors/workspace/validate" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let setup = load_workspace_collector_setup(&s.storage);
+                let resolver = build_secrets_resolver(&s.storage);
+                let body = validate_workspace_collector(&setup, &resolver);
+                json_response(&body.to_string(), 200)
 
             // ── Secrets Manager ──────────────────────────────────
             } else if method == Method::Get && url_path == "/api/secrets/status" {
@@ -15160,7 +16815,8 @@ fn handle_api(
                         setup.apply_patch(patch);
                         match save_stored_json(&s.storage, SECRETS_MANAGER_SETUP_KEY, &setup) {
                             Ok(()) => {
-                                let resolver = crate::secrets::SecretsResolver::new(setup.to_runtime());
+                                let resolver =
+                                    crate::secrets::SecretsResolver::new(setup.to_runtime());
                                 let body = serde_json::json!({
                                     "status": "saved",
                                     "config": setup.view(),
@@ -15594,15 +17250,13 @@ fn handle_api(
                             &req.analyst,
                             req.case_id,
                         ) {
-                            Some(progress) => {
-                                match s.workflow_store.get_snapshot(&progress.id) {
-                                    Some(snapshot) => {
-                                        let body = serde_json::to_string(&snapshot).unwrap_or_default();
-                                        json_response(&body, 200)
-                                    }
-                                    None => error_json("investigation not found", 404),
+                            Some(progress) => match s.workflow_store.get_snapshot(&progress.id) {
+                                Some(snapshot) => {
+                                    let body = serde_json::to_string(&snapshot).unwrap_or_default();
+                                    json_response(&body, 200)
                                 }
-                            }
+                                None => error_json("investigation not found", 404),
+                            },
                             None => error_json("workflow not found", 404),
                         }
                     }
@@ -15720,11 +17374,13 @@ fn handle_api(
                             questions,
                         ) {
                             Some(snapshot) => {
-                                if let Some(case_id) = req.case_id.or_else(|| snapshot.case_id.clone())
+                                if let Some(case_id) =
+                                    req.case_id.or_else(|| snapshot.case_id.clone())
                                     && let Ok(case_id) = case_id.parse::<u64>()
                                     && let Some(handoff) = snapshot.handoff.as_ref()
                                 {
-                                    let _ = s.case_store.assign(case_id, handoff.to_analyst.clone());
+                                    let _ =
+                                        s.case_store.assign(case_id, handoff.to_analyst.clone());
                                     let mut comment_lines = vec![
                                         format!(
                                             "Investigation handoff from {} to {}",
@@ -17244,11 +18900,11 @@ fn handle_scan_buffer_v2(body: &[u8], state: &Arc<Mutex<AppState>>) -> Response<
         Ok(req) => req,
         Err(error) => return error_json(&format!("invalid scan request: {error}"), 400),
     };
-    let decoded = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.data)
-    {
-        Ok(data) => data,
-        Err(error) => return error_json(&format!("invalid base64: {error}"), 400),
-    };
+    let decoded =
+        match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.data) {
+            Ok(data) => data,
+            Err(error) => return error_json(&format!("invalid base64: {error}"), 400),
+        };
     let filename = req.filename.unwrap_or_else(|| "upload".to_string());
     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
     let AppState {
@@ -17628,7 +19284,10 @@ fn handle_harness_run(body: &[u8], _state: &Arc<Mutex<AppState>>) -> Response<Bo
     }
     if let Some(evasion_threshold) = req.evasion_threshold {
         if !evasion_threshold.is_finite() || !(0.1..=10.0).contains(&evasion_threshold) {
-            return error_json("evasion_threshold must be a finite value between 0.1 and 10.0", 400);
+            return error_json(
+                "evasion_threshold must be a finite value between 0.1 and 10.0",
+                400,
+            );
         }
         config.evasion_threshold = evasion_threshold;
     }
@@ -17651,11 +19310,7 @@ fn handle_harness_run(body: &[u8], _state: &Arc<Mutex<AppState>>) -> Response<Bo
         let avg_max_score = if total == 0 {
             0.0_f32
         } else {
-            traces
-                .iter()
-                .map(|trace| trace.max_score)
-                .sum::<f32>()
-                / total as f32
+            traces.iter().map(|trace| trace.max_score).sum::<f32>() / total as f32
         };
         let highest_max_score = traces
             .iter()
@@ -19946,8 +21601,8 @@ mod tests {
         fn spawn_mock_oidc_provider() -> (String, std::thread::JoinHandle<()>) {
             use std::io::{Read, Write};
 
-            let listener = std::net::TcpListener::bind("127.0.0.1:0")
-                .expect("bind mock oidc provider");
+            let listener =
+                std::net::TcpListener::bind("127.0.0.1:0").expect("bind mock oidc provider");
             let port = listener.local_addr().expect("mock oidc addr").port();
             let issuer_url = format!("http://127.0.0.1:{port}");
             let server_base = issuer_url.clone();
@@ -19962,52 +21617,51 @@ mod tests {
                         .next()
                         .and_then(|line| line.split_whitespace().nth(1))
                         .unwrap_or("/");
-                    let (status_line, body, content_type) = if path
-                        .starts_with("/.well-known/openid-configuration")
-                    {
-                        (
-                            "HTTP/1.1 200 OK",
-                            serde_json::json!({
-                                "issuer": server_base,
-                                "authorization_endpoint": format!("{}/authorize", server_base),
-                                "token_endpoint": format!("{}/token", server_base),
-                                "userinfo_endpoint": format!("{}/userinfo", server_base),
-                                "jwks_uri": format!("{}/jwks", server_base),
-                                "response_types_supported": ["code"],
-                                "scopes_supported": ["openid", "profile", "email", "groups"],
-                            })
-                            .to_string(),
-                            "application/json",
-                        )
-                    } else if path.starts_with("/token") {
-                        (
-                            "HTTP/1.1 200 OK",
-                            serde_json::json!({
-                                "access_token": "mock-access-token",
-                                "token_type": "Bearer",
-                                "expires_in": 3600,
-                            })
-                            .to_string(),
-                            "application/json",
-                        )
-                    } else if path.starts_with("/userinfo") {
-                        (
-                            "HTTP/1.1 200 OK",
-                            serde_json::json!({
-                                "sub": "oidc-user-1",
-                                "email": "sso-user@example.com",
-                                "groups": ["Security"],
-                            })
-                            .to_string(),
-                            "application/json",
-                        )
-                    } else {
-                        (
-                            "HTTP/1.1 404 Not Found",
-                            "not found".to_string(),
-                            "text/plain; charset=utf-8",
-                        )
-                    };
+                    let (status_line, body, content_type) =
+                        if path.starts_with("/.well-known/openid-configuration") {
+                            (
+                                "HTTP/1.1 200 OK",
+                                serde_json::json!({
+                                    "issuer": server_base,
+                                    "authorization_endpoint": format!("{}/authorize", server_base),
+                                    "token_endpoint": format!("{}/token", server_base),
+                                    "userinfo_endpoint": format!("{}/userinfo", server_base),
+                                    "jwks_uri": format!("{}/jwks", server_base),
+                                    "response_types_supported": ["code"],
+                                    "scopes_supported": ["openid", "profile", "email", "groups"],
+                                })
+                                .to_string(),
+                                "application/json",
+                            )
+                        } else if path.starts_with("/token") {
+                            (
+                                "HTTP/1.1 200 OK",
+                                serde_json::json!({
+                                    "access_token": "mock-access-token",
+                                    "token_type": "Bearer",
+                                    "expires_in": 3600,
+                                })
+                                .to_string(),
+                                "application/json",
+                            )
+                        } else if path.starts_with("/userinfo") {
+                            (
+                                "HTTP/1.1 200 OK",
+                                serde_json::json!({
+                                    "sub": "oidc-user-1",
+                                    "email": "sso-user@example.com",
+                                    "groups": ["Security"],
+                                })
+                                .to_string(),
+                                "application/json",
+                            )
+                        } else {
+                            (
+                                "HTTP/1.1 404 Not Found",
+                                "not found".to_string(),
+                                "text/plain; charset=utf-8",
+                            )
+                        };
                     let response = format!(
                         "{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
@@ -20026,24 +21680,25 @@ mod tests {
         let auth_header = format!("Bearer {token}");
         let redirect_uri = format!("{base_url}/api/auth/sso/callback");
 
-        let saved_provider: serde_json::Value = ureq::post(&format!("{base_url}/api/idp/providers"))
-            .set("Authorization", &auth_header)
-            .send_json(serde_json::json!({
-                "id": "corp-sso",
-                "kind": "oidc",
-                "display_name": "Corporate SSO",
-                "issuer_url": issuer_url,
-                "client_id": "wardex-admin",
-                "client_secret": "super-secret",
-                "redirect_uri": redirect_uri,
-                "enabled": true,
-                "group_role_mappings": {
-                    "Security": "admin"
-                }
-            }))
-            .expect("seed sso provider")
-            .into_json()
-            .expect("seed sso provider json");
+        let saved_provider: serde_json::Value =
+            ureq::post(&format!("{base_url}/api/idp/providers"))
+                .set("Authorization", &auth_header)
+                .send_json(serde_json::json!({
+                    "id": "corp-sso",
+                    "kind": "oidc",
+                    "display_name": "Corporate SSO",
+                    "issuer_url": issuer_url,
+                    "client_id": "wardex-admin",
+                    "client_secret": "super-secret",
+                    "redirect_uri": redirect_uri,
+                    "enabled": true,
+                    "group_role_mappings": {
+                        "Security": "admin"
+                    }
+                }))
+                .expect("seed sso provider")
+                .into_json()
+                .expect("seed sso provider json");
         let provider_id = saved_provider["provider"]["id"]
             .as_str()
             .expect("saved provider id");
@@ -20094,14 +21749,18 @@ mod tests {
             .expect("session cookie pair")
             .to_string();
 
-        let session_response: serde_json::Value = ureq::get(&format!("{base_url}/api/auth/session"))
-            .set("Cookie", &session_cookie)
-            .call()
-            .expect("session status response")
-            .into_json()
-            .expect("session status json");
+        let session_response: serde_json::Value =
+            ureq::get(&format!("{base_url}/api/auth/session"))
+                .set("Cookie", &session_cookie)
+                .call()
+                .expect("session status response")
+                .into_json()
+                .expect("session status json");
         assert_eq!(session_response["authenticated"], serde_json::json!(true));
-        assert_eq!(session_response["user_id"], serde_json::json!("sso-user@example.com"));
+        assert_eq!(
+            session_response["user_id"],
+            serde_json::json!("sso-user@example.com")
+        );
         assert_eq!(session_response["role"], serde_json::json!("admin"));
         assert_eq!(session_response["source"], serde_json::json!("session"));
         assert_eq!(session_response["groups"][0], serde_json::json!("Security"));
@@ -20135,7 +21794,10 @@ mod tests {
             saved["provider"]["redirect_uri"],
             serde_json::json!("https://console.example.com/api/auth/sso/callback")
         );
-        assert_eq!(saved["provider"]["has_client_secret"], serde_json::json!(true));
+        assert_eq!(
+            saved["provider"]["has_client_secret"],
+            serde_json::json!(true)
+        );
         assert_eq!(saved["validation"]["status"], serde_json::json!("ready"));
         assert_eq!(saved["validation"]["mapping_count"], serde_json::json!(1));
 
@@ -20159,12 +21821,14 @@ mod tests {
         let sso_config_response = ureq::get(&format!("{base_url}/api/auth/sso/config"))
             .call()
             .expect("sso config response");
-        let sso_config: serde_json::Value = serde_json::from_str(
-            &sso_config_response.into_string().expect("sso config body"),
-        )
-        .expect("sso config json");
+        let sso_config: serde_json::Value =
+            serde_json::from_str(&sso_config_response.into_string().expect("sso config body"))
+                .expect("sso config json");
         assert_eq!(sso_config["enabled"], serde_json::json!(true));
-        assert_eq!(sso_config["providers"].as_array().map(|items| items.len()), Some(1));
+        assert_eq!(
+            sso_config["providers"].as_array().map(|items| items.len()),
+            Some(1)
+        );
         assert_eq!(
             sso_config["providers"][0]["display_name"],
             serde_json::json!("Corporate SSO")
@@ -20190,44 +21854,112 @@ mod tests {
     }
 
     #[test]
-    fn identity_collector_routes_save_config_and_appear_in_summary() {
+    fn identity_and_saas_collector_routes_save_config_and_appear_in_summary() {
         let (port, token) = spawn_test_server();
         let base_url = format!("http://127.0.0.1:{port}");
         let auth_header = format!("Bearer {token}");
 
-        let okta_saved: serde_json::Value = ureq::post(&format!("{base_url}/api/collectors/okta/config"))
-            .set("Authorization", &auth_header)
-            .send_json(serde_json::json!({
-                "enabled": true,
-                "domain": "dev-123456.okta.com",
-                "api_token": "okta-secret",
-                "poll_interval_secs": 45,
-                "event_type_filter": ["user.session.start", "user.account.lock"],
-            }))
-            .expect("save okta collector response")
-            .into_json()
-            .expect("save okta collector json");
+        let okta_saved: serde_json::Value =
+            ureq::post(&format!("{base_url}/api/collectors/okta/config"))
+                .set("Authorization", &auth_header)
+                .send_json(serde_json::json!({
+                    "enabled": true,
+                    "domain": "dev-123456.okta.com",
+                    "api_token": "okta-secret",
+                    "poll_interval_secs": 45,
+                    "event_type_filter": ["user.session.start", "user.account.lock"],
+                }))
+                .expect("save okta collector response")
+                .into_json()
+                .expect("save okta collector json");
         assert_eq!(okta_saved["status"], serde_json::json!("saved"));
         assert_eq!(okta_saved["provider"], serde_json::json!("okta_identity"));
-        assert_eq!(okta_saved["validation"]["status"], serde_json::json!("ready"));
-        assert_eq!(okta_saved["config"]["has_api_token"], serde_json::json!(true));
+        assert_eq!(
+            okta_saved["validation"]["status"],
+            serde_json::json!("ready")
+        );
+        assert_eq!(
+            okta_saved["config"]["has_api_token"],
+            serde_json::json!(true)
+        );
 
-        let entra_saved: serde_json::Value = ureq::post(&format!("{base_url}/api/collectors/entra/config"))
-            .set("Authorization", &auth_header)
-            .send_json(serde_json::json!({
-                "enabled": true,
-                "tenant_id": "tenant-guid",
-                "client_id": "client-guid",
-                "client_secret": "entra-secret",
-                "poll_interval_secs": 60,
-            }))
-            .expect("save entra collector response")
-            .into_json()
-            .expect("save entra collector json");
+        let entra_saved: serde_json::Value =
+            ureq::post(&format!("{base_url}/api/collectors/entra/config"))
+                .set("Authorization", &auth_header)
+                .send_json(serde_json::json!({
+                    "enabled": true,
+                    "tenant_id": "tenant-guid",
+                    "client_id": "client-guid",
+                    "client_secret": "entra-secret",
+                    "poll_interval_secs": 60,
+                }))
+                .expect("save entra collector response")
+                .into_json()
+                .expect("save entra collector json");
         assert_eq!(entra_saved["status"], serde_json::json!("saved"));
         assert_eq!(entra_saved["provider"], serde_json::json!("entra_identity"));
-        assert_eq!(entra_saved["validation"]["status"], serde_json::json!("ready"));
-        assert_eq!(entra_saved["config"]["has_client_secret"], serde_json::json!(true));
+        assert_eq!(
+            entra_saved["validation"]["status"],
+            serde_json::json!("ready")
+        );
+        assert_eq!(
+            entra_saved["config"]["has_client_secret"],
+            serde_json::json!(true)
+        );
+
+        let m365_saved: serde_json::Value =
+            ureq::post(&format!("{base_url}/api/collectors/m365/config"))
+                .set("Authorization", &auth_header)
+                .send_json(serde_json::json!({
+                    "enabled": true,
+                    "tenant_id": "m365-tenant-guid",
+                    "client_id": "m365-client-guid",
+                    "client_secret": "m365-secret",
+                    "poll_interval_secs": 90,
+                    "content_types": ["Audit.AzureActiveDirectory", "Audit.Exchange"],
+                }))
+                .expect("save m365 collector response")
+                .into_json()
+                .expect("save m365 collector json");
+        assert_eq!(m365_saved["status"], serde_json::json!("saved"));
+        assert_eq!(m365_saved["provider"], serde_json::json!("m365_saas"));
+        assert_eq!(
+            m365_saved["validation"]["status"],
+            serde_json::json!("ready")
+        );
+        assert_eq!(
+            m365_saved["config"]["has_client_secret"],
+            serde_json::json!(true)
+        );
+
+        let workspace_saved: serde_json::Value =
+            ureq::post(&format!("{base_url}/api/collectors/workspace/config"))
+                .set("Authorization", &auth_header)
+                .send_json(serde_json::json!({
+                    "enabled": true,
+                    "customer_id": "my_customer",
+                    "delegated_admin_email": "admin@example.com",
+                    "service_account_email": "collector@workspace.example.iam.gserviceaccount.com",
+                    "credentials_json": "{\"type\":\"service_account\"}",
+                    "poll_interval_secs": 120,
+                    "applications": ["login", "admin", "drive"],
+                }))
+                .expect("save workspace collector response")
+                .into_json()
+                .expect("save workspace collector json");
+        assert_eq!(workspace_saved["status"], serde_json::json!("saved"));
+        assert_eq!(
+            workspace_saved["provider"],
+            serde_json::json!("workspace_saas")
+        );
+        assert_eq!(
+            workspace_saved["validation"]["status"],
+            serde_json::json!("ready")
+        );
+        assert_eq!(
+            workspace_saved["config"]["has_credentials_json"],
+            serde_json::json!(true)
+        );
 
         let summary: serde_json::Value = ureq::get(&format!("{base_url}/api/collectors/status"))
             .set("Authorization", &auth_header)
@@ -20238,12 +21970,53 @@ mod tests {
         let collectors = summary["collectors"]
             .as_array()
             .expect("collector summary array");
-        assert!(collectors
+        assert!(
+            collectors
+                .iter()
+                .any(|entry| entry["name"] == serde_json::json!("okta_identity"))
+        );
+        assert!(
+            collectors
+                .iter()
+                .any(|entry| entry["name"] == serde_json::json!("entra_identity"))
+        );
+        assert!(
+            collectors
+                .iter()
+                .any(|entry| entry["name"] == serde_json::json!("m365_saas"))
+        );
+        assert!(
+            collectors
+                .iter()
+                .any(|entry| entry["name"] == serde_json::json!("workspace_saas"))
+        );
+        let m365_summary = collectors
             .iter()
-            .any(|entry| entry["name"] == serde_json::json!("okta_identity")));
-        assert!(collectors
-            .iter()
-            .any(|entry| entry["name"] == serde_json::json!("entra_identity")));
+            .find(|entry| entry["name"] == serde_json::json!("m365_saas"))
+            .expect("m365 collector summary");
+        assert_eq!(m365_summary["lane"], serde_json::json!("saas"));
+        assert_eq!(
+            m365_summary["label"],
+            serde_json::json!("Microsoft 365 Activity")
+        );
+        assert!(
+            m365_summary["route_targets"]
+                .as_array()
+                .is_some_and(|targets| targets.iter().any(|value| value == "Reports"))
+        );
+        assert!(
+            m365_summary["timeline"]
+                .as_array()
+                .is_some_and(|timeline| timeline.len() >= 5)
+        );
+        assert!(
+            m365_summary["timeline"]
+                .as_array()
+                .is_some_and(|timeline| timeline.iter().any(|entry| {
+                    entry["stage"] == serde_json::json!("Validation")
+                        && entry["status"] == serde_json::json!("ready")
+                }))
+        );
     }
 
     #[test]
@@ -20282,7 +22055,10 @@ mod tests {
             .expect("get siem config response")
             .into_json()
             .expect("get siem config json");
-        assert_eq!(listed["config"]["endpoint"], serde_json::json!("https://siem.example.test/hec"));
+        assert_eq!(
+            listed["config"]["endpoint"],
+            serde_json::json!("https://siem.example.test/hec")
+        );
         assert_eq!(listed["config"]["has_auth_token"], serde_json::json!(true));
         assert_eq!(listed["validation"]["status"], serde_json::json!("ready"));
 
@@ -20305,9 +22081,18 @@ mod tests {
             .into_json()
             .expect("validate siem config json");
         assert_eq!(validated["success"], serde_json::json!(true));
-        assert_eq!(validated["config"]["endpoint"], serde_json::json!("https://siem.example.test/hec/secondary"));
-        assert_eq!(validated["config"]["has_auth_token"], serde_json::json!(true));
-        assert_eq!(validated["validation"]["status"], serde_json::json!("ready"));
+        assert_eq!(
+            validated["config"]["endpoint"],
+            serde_json::json!("https://siem.example.test/hec/secondary")
+        );
+        assert_eq!(
+            validated["config"]["has_auth_token"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            validated["validation"]["status"],
+            serde_json::json!("ready")
+        );
 
         let saved_again: serde_json::Value = ureq::post(&format!("{base_url}/api/siem/config"))
             .set("Authorization", &auth_header)
@@ -20327,7 +22112,10 @@ mod tests {
             .expect("save siem config without token response")
             .into_json()
             .expect("save siem config without token json");
-        assert_eq!(saved_again["config"]["has_auth_token"], serde_json::json!(true));
+        assert_eq!(
+            saved_again["config"]["has_auth_token"],
+            serde_json::json!(true)
+        );
 
         let listed_again: serde_json::Value = ureq::get(&format!("{base_url}/api/siem/config"))
             .set("Authorization", &auth_header)
@@ -20335,8 +22123,14 @@ mod tests {
             .expect("get siem config response after update")
             .into_json()
             .expect("get siem config json after update");
-        assert_eq!(listed_again["config"]["endpoint"], serde_json::json!("https://siem.example.test/hec/secondary"));
-        assert_eq!(listed_again["config"]["has_auth_token"], serde_json::json!(true));
+        assert_eq!(
+            listed_again["config"]["endpoint"],
+            serde_json::json!("https://siem.example.test/hec/secondary")
+        );
+        assert_eq!(
+            listed_again["config"]["has_auth_token"],
+            serde_json::json!(true)
+        );
     }
 
     #[test]
@@ -20441,9 +22235,12 @@ mod tests {
             .set("Authorization", &auth_header)
             .call()
             .expect("assistant status response");
-        let status: serde_json::Value =
-            serde_json::from_str(&status_response.into_string().expect("assistant status body"))
-                .expect("assistant status json");
+        let status: serde_json::Value = serde_json::from_str(
+            &status_response
+                .into_string()
+                .expect("assistant status body"),
+        )
+        .expect("assistant status json");
         assert_eq!(status["mode"], serde_json::json!("retrieval-only"));
 
         let query_response = ureq::post(&format!("{base_url}/api/assistant/query"))
@@ -20461,22 +22258,29 @@ mod tests {
             body["case_context"]["case"]["title"],
             serde_json::json!("Database credential theft")
         );
-        assert!(body["answer"]
-            .as_str()
-            .expect("assistant answer")
-            .contains("Database credential theft"));
+        assert!(
+            body["answer"]
+                .as_str()
+                .expect("assistant answer")
+                .contains("Database credential theft")
+        );
         assert_eq!(
-            body["citations"].as_array().map(|items| items.len()).unwrap_or(0),
+            body["citations"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or(0),
             2
         );
         assert_eq!(body["citations"][0]["source_id"], serde_json::json!("1"));
-        assert!(body["warnings"]
-            .as_array()
-            .expect("assistant warnings")
-            .iter()
-            .any(|item| item
-                .as_str()
-                .is_some_and(|value| value.contains("retrieval-only"))));
+        assert!(
+            body["warnings"]
+                .as_array()
+                .expect("assistant warnings")
+                .iter()
+                .any(|item| item
+                    .as_str()
+                    .is_some_and(|value| value.contains("retrieval-only")))
+        );
     }
 
     #[test]

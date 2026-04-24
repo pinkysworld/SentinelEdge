@@ -65,7 +65,7 @@ helm repo update
 helm install wardex wardex/wardex \
   --namespace wardex \
   --create-namespace \
-  --set image.tag=0.46.0
+  --set image.tag=0.53.5
 ```
 
 Custom values:
@@ -84,6 +84,7 @@ See `deploy/helm/wardex/values.yaml` for all configurable options.
 ```bash
 git clone https://github.com/pinkysworld/Wardex.git
 cd Wardex
+npm ci --prefix admin-console
 cargo build --release
 ./target/release/wardex serve 9077
 ```

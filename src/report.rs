@@ -516,7 +516,9 @@ fn report_matches_filter(report: &StoredReport, filter: &ReportListFilter) -> bo
 
     fn field_matches(actual: Option<&String>, expected: Option<&String>) -> bool {
         match expected {
-            Some(expected_value) => actual.is_some_and(|actual_value| actual_value == expected_value),
+            Some(expected_value) => {
+                actual.is_some_and(|actual_value| actual_value == expected_value)
+            }
             None => true,
         }
     }
@@ -638,7 +640,10 @@ mod tests {
             samples: Vec::new(),
         };
 
-        store.store(sample_report("2026-04-23T08:00:00Z"), "legacy_runtime_report");
+        store.store(
+            sample_report("2026-04-23T08:00:00Z"),
+            "legacy_runtime_report",
+        );
         store.store_with_context(
             sample_report("2026-04-23T09:00:00Z"),
             "incident_package",
@@ -668,14 +673,20 @@ mod tests {
             scope: ReportScopeFilter::Scoped,
         });
         assert_eq!(scoped.len(), 1);
-        assert_eq!(scoped[0]["execution_context"]["case_id"], serde_json::json!("42"));
+        assert_eq!(
+            scoped[0]["execution_context"]["case_id"],
+            serde_json::json!("42")
+        );
 
         let unscoped = store.list_filtered(&ReportListFilter {
             scope: ReportScopeFilter::Unscoped,
             ..ReportListFilter::default()
         });
         assert_eq!(unscoped.len(), 1);
-        assert_eq!(unscoped[0]["report_type"], serde_json::json!("legacy_runtime_report"));
+        assert_eq!(
+            unscoped[0]["report_type"],
+            serde_json::json!("legacy_runtime_report")
+        );
 
         let any_scoped = store.list_filtered(&ReportListFilter {
             scope: ReportScopeFilter::Scoped,

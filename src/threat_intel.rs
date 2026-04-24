@@ -157,7 +157,11 @@ impl ThreatIntelStore {
     pub fn check(&mut self, ioc_type: &IoCType, value: &str) -> MatchResult {
         let key = format!("{ioc_type:?}:{}", normalize_ioc_value(ioc_type, value));
         let result = if let Some(ioc) = self.iocs.get_mut(&key) {
-            record_ioc_sighting(ioc, "match", &format!("matched {ioc_type:?} indicator: {value}"));
+            record_ioc_sighting(
+                ioc,
+                "match",
+                &format!("matched {ioc_type:?} indicator: {value}"),
+            );
             MatchResult {
                 matched: true,
                 ioc: Some(ioc.clone()),
@@ -185,7 +189,11 @@ impl ThreatIntelStore {
                 None
             };
             if let Some(ioc) = partial {
-                record_ioc_sighting(ioc, "partial_match", &format!("partial match on {ioc_type:?}: {value}"));
+                record_ioc_sighting(
+                    ioc,
+                    "partial_match",
+                    &format!("partial match on {ioc_type:?}: {value}"),
+                );
                 MatchResult {
                     matched: true,
                     ioc: Some(ioc.clone()),

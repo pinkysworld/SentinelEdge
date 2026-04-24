@@ -8,6 +8,28 @@ import WorkflowGuidance from './WorkflowGuidance.jsx';
 import { buildHref } from './workflowPivots.js';
 
 const TABS = ['overview', 'assets', 'exposure', 'integrity', 'observability'];
+const MALWARE_PANELS = [
+  {
+    id: 'summary',
+    label: 'Verdict Summary',
+    description: 'Analyst-facing verdict, confidence, family, and current triage lane.',
+  },
+  {
+    id: 'provenance',
+    label: 'Why This Fired',
+    description: 'Static traits, runtime behavior, YARA/hash hits, and allowlist context.',
+  },
+  {
+    id: 'actions',
+    label: 'What To Do Next',
+    description: 'Containment, hunt, response, report, and assistant handoff actions.',
+  },
+  {
+    id: 'profiles',
+    label: 'Static & Behavior Profiles',
+    description: 'Deeper profile details for packed files, scripts, signing, and tactics.',
+  },
+];
 const SAVED_VIEWS = [
   {
     id: 'critical',
@@ -70,6 +92,10 @@ function scoreBandBadgeClass(value) {
     default:
       return 'badge-info';
   }
+}
+
+function normalizePanel(value, panels, fallback) {
+  return panels.some((panel) => panel.id === value) ? value : fallback;
 }
 
 function normalizeRecentMalwareEntries(malwareRecent) {
@@ -228,6 +254,8 @@ export default function Infrastructure() {
   const savedView = searchParams.get('view') || 'critical';
   const query = searchParams.get('q') || '';
   const typeFilter = searchParams.get('type') || 'all';
+  const malwarePanel = normalizePanel(searchParams.get('malwarePanel'), MALWARE_PANELS, 'summary');
+  const routeMalwareId = searchParams.get('malware') || '';
   const recentMalware = useMemo(
     () => normalizeRecentMalwareEntries(malwareRecentData),
     [malwareRecentData],
@@ -261,6 +289,7 @@ export default function Infrastructure() {
     assets[0] ||
     null;
   const focusedMalware =
+    recentMalware.find((item) => item.id === routeMalwareId) ||
     recentMalware.find((item) => item.id === focusedMalwareId) ||
     (selectedAsset?.type === 'malware' ? selectedAsset : null) ||
     recentMalware[0] ||
@@ -303,8 +332,8 @@ export default function Infrastructure() {
 
   useEffect(() => {
     if (focusedMalwareId && recentMalware.some((item) => item.id === focusedMalwareId)) return;
-    setFocusedMalwareId(recentMalware[0]?.id || '');
-  }, [focusedMalwareId, recentMalware]);
+    setFocusedMalwareId(routeMalwareId || recentMalware[0]?.id || '');
+  }, [focusedMalwareId, recentMalware, routeMalwareId]);
 
   const counts = {
     critical: assets.filter((item) => item.priority === 'critical').length,
@@ -316,6 +345,133 @@ export default function Infrastructure() {
   };
   const focalAsset = selectedAsset?.title || selectedAsset?.id || 'critical assets';
   const focalQuery = selectedAsset?.id || selectedAsset?.title || query;
+  const assetRemediation = useMemo(() => {
+    if (!selectedAsset) return null;
+    const assetType = selectedAsset.type || 'asset';
+    const base = {
+      summary: 'Confirm ownership, preserve evidence, and choose between remediation or escalation without leaving the current scope.',
+      immediate: 'Validate the owning team and capture the supporting payload before changing state.',
+      followup: 'Use case or reporting pivots when this finding needs tracked approval or evidence packaging.',
+      owner: 'Platform owner',
+    };
+    const typeSpecific = {
+      vulnerability: {
+        summary: 'Patch or mitigate the exposed component, then verify exploitability and exposure reach.',
+        immediate: 'Confirm the vulnerable package or host is internet-facing and assign a patch or mitigation owner.',
+        followup: 'Package exposure evidence if the finding needs audit, change-review, or exception tracking.',
+        owner: 'Patch owner',
+      },
+      certificate: {
+        summary: 'Renew or replace the affected certificate and verify the service reload path before expiry becomes an outage.',
+        immediate: 'Confirm service ownership, issuer expectations, and days remaining before scheduling the renewal window.',
+        followup: 'Capture the certificate chain and renewal plan if the issue crosses an audit or compliance boundary.',
+        owner: 'Service owner',
+      },
+      drift: {
+        summary: 'Compare the drifted state against the approved baseline before deciding whether to revert or bless the change.',
+        immediate: 'Review the changed path or setting, identify the operator or deploy, and decide whether the drift is authorized.',
+        followup: 'Reset the drift baseline only after the change is understood and formally accepted.',
+        owner: 'Configuration owner',
+      },
+      malware: {
+        summary: 'Preserve evidence, scope the blast radius, and decide quickly whether the host needs containment.',
+        immediate: 'Review the detection source, family, and recent telemetry before taking response actions.',
+        followup: 'Run or review the deep malware scan to explain why the verdict fired and what needs containment.',
+        owner: 'Incident responder',
+      },
+      container: {
+        summary: 'Rebuild or replace the risky image, then confirm runtime controls and registry hygiene.',
+        immediate: 'Identify the image owner, namespace, and deployment path before suppressing or accepting container findings.',
+        followup: 'Carry the container context into detection or reporting if the issue affects multiple workloads.',
+        owner: 'Workload owner',
+      },
+    };
+    return { ...base, ...(typeSpecific[assetType] || {}) };
+  }, [selectedAsset]);
+  const exposurePlaybook = useMemo(
+    () => ({
+      queueSize: counts.vulnerabilities + counts.certificates + counts.containers,
+      nextStep:
+        counts.vulnerabilities > 0
+          ? 'Patch or mitigate the highest-severity vulnerable asset first, then clear certificate and container hygiene debt.'
+          : 'Use certificate and container ownership to drive the next exposure review cycle.',
+    }),
+    [counts.certificates, counts.containers, counts.vulnerabilities],
+  );
+  const integrityPlaybook = useMemo(
+    () => ({
+      queueSize: counts.drifted + counts.malware,
+      nextStep: focusedMalware
+        ? `Use ${focusedMalware.title} as the lead recovery thread, then validate drift and telemetry around the same asset set.`
+        : 'Start with the newest malware or drift signal, then validate whether the change is malicious, noisy, or approved.',
+    }),
+    [counts.drifted, counts.malware, focusedMalware],
+  );
+  const malwareVerdictWorkspace = useMemo(() => {
+    const scan = deepScanResult?.scan || null;
+    const staticProfile = deepScanResult?.static_profile || null;
+    const behaviorProfile = deepScanResult?.behavior_profile || null;
+    const activeTitle =
+      scan?.filename ||
+      focusedMalware?.title ||
+      focusedMalware?.evidence?.name ||
+      focusedMalware?.evidence?.sha256 ||
+      'malware verdict';
+    const verdict = scan?.verdict || focusedMalware?.evidence?.verdict || focusedMalware?.status || 'detected';
+    const confidence =
+      typeof scan?.confidence === 'number'
+        ? `${Math.round(scan.confidence * 100)}%`
+        : focusedMalware?.evidence?.confidence
+          ? `${Math.round(Number(focusedMalware.evidence.confidence) * 100)}%`
+          : 'unknown';
+    const family =
+      scan?.malware_family ||
+      focusedMalware?.evidence?.family ||
+      focusedMalware?.evidence?.malware_family ||
+      'Unclassified';
+    const evidence = [
+      ...(deepScanResult?.analyst_summary || []),
+      ...(staticProfile?.analyst_summary || []),
+      ...(scan?.static_score?.rationale || []),
+      ...(scan?.matches || []).map((match) => `${match.rule_name}: ${match.detail}`),
+    ].filter(Boolean);
+    const safeOrNoisy = [
+      staticProfile?.trusted_publisher_match
+        ? `Trusted publisher allowlist matched "${staticProfile.trusted_publisher_match}".`
+        : null,
+      staticProfile?.internal_tool_match
+        ? `Internal tool allowlist matched "${staticProfile.internal_tool_match}".`
+        : null,
+      staticProfile?.probable_signed ? 'Probable signing artefacts were detected.' : null,
+      ...(behaviorProfile?.allowlist_match ? [`Behavior allowlist matched "${behaviorProfile.allowlist_match}".`] : []),
+    ].filter(Boolean);
+    const actions =
+      behaviorProfile?.recommended_actions?.length > 0
+        ? behaviorProfile.recommended_actions
+        : [
+            'Preserve the sample, hash, verdict, and supporting telemetry before containment.',
+            'Run a host or user hunt for related command lines, hashes, destinations, and persistence.',
+            'Package the verdict and profile context into a scoped evidence report if escalation is needed.',
+          ];
+    return {
+      title: activeTitle,
+      verdict,
+      confidence,
+      family,
+      severity: behaviorProfile?.severity || focusedMalware?.severity || 'unknown',
+      score: scan?.static_score?.score ?? focusedMalware?.evidence?.score ?? 'unknown',
+      scoreBand: scan?.static_score?.band || 'unknown',
+      fileType: staticProfile?.file_type || focusedMalware?.evidence?.file_type || 'unknown',
+      platform: staticProfile?.platform_hint || focusedMalware?.evidence?.platform || 'unknown',
+      tactics: behaviorProfile?.observed_tactics || [],
+      evidence,
+      safeOrNoisy,
+      actions,
+      scan,
+      staticProfile,
+      behaviorProfile,
+    };
+  }, [deepScanResult, focusedMalware]);
   const workflowItems = [
     {
       id: 'ndr',
@@ -381,6 +537,15 @@ export default function Infrastructure() {
     setSearchParams(next, { replace: true });
   };
 
+  const focusMalwareVerdict = (id, panel = malwarePanel) => {
+    setFocusedMalwareId(id);
+    updateParams({
+      tab: 'integrity',
+      malware: id,
+      malwarePanel: panel,
+    });
+  };
+
   const refreshInfrastructure = () => {
     reloadAssets();
     reloadVuln();
@@ -411,6 +576,7 @@ export default function Infrastructure() {
       setDeepScanResult(result);
       reloadMalware();
       reloadMalwareStats();
+      updateParams({ tab: 'integrity', malwarePanel: 'summary' });
       toast('Deep malware scan completed.', 'success');
     } catch {
       setDeepScanResult(null);
@@ -733,6 +899,70 @@ export default function Infrastructure() {
                     stays focused on scan speed. Raw subsystem payloads remain below for expert
                     users.
                   </div>
+                  {assetRemediation && (
+                    <div
+                      className="card"
+                      style={{
+                        marginTop: 16,
+                        padding: 14,
+                        background: 'var(--bg)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <div className="card-title" style={{ marginBottom: 10 }}>
+                        Guided Remediation Brief
+                      </div>
+                      <div className="hint" style={{ marginBottom: 14 }}>
+                        {assetRemediation.summary}
+                      </div>
+                      <div className="summary-grid" style={{ marginBottom: 14 }}>
+                        <div className="summary-card">
+                          <div className="summary-label">Immediate action</div>
+                          <div className="summary-value">{selectedAsset.type}</div>
+                          <div className="summary-meta">{assetRemediation.immediate}</div>
+                        </div>
+                        <div className="summary-card">
+                          <div className="summary-label">Suggested owner</div>
+                          <div className="summary-value">{assetRemediation.owner}</div>
+                          <div className="summary-meta">{assetRemediation.followup}</div>
+                        </div>
+                        <div className="summary-card">
+                          <div className="summary-label">Evidence route</div>
+                          <div className="summary-value">{savedView}</div>
+                          <div className="summary-meta">Keep the current saved view attached while escalating.</div>
+                        </div>
+                      </div>
+                      <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+                        <a className="btn btn-sm btn-primary" href="/soc#cases">
+                          Escalate into cases
+                        </a>
+                        <a
+                          className="btn btn-sm"
+                          href={buildHref('/detection', {
+                            params: {
+                              intent: 'run-hunt',
+                              huntQuery: `${selectedAsset.type} ${selectedAsset.id || selectedAsset.title} remediation`,
+                              huntName: `Validate ${selectedAsset.title}`,
+                            },
+                          })}
+                        >
+                          Launch validation hunt
+                        </a>
+                        <a
+                          className="btn btn-sm"
+                          href={buildHref('/reports', {
+                            params: {
+                              tab: 'delivery',
+                              source: 'infrastructure',
+                              target: selectedAsset.id || selectedAsset.title,
+                            },
+                          })}
+                        >
+                          Open compliance evidence
+                        </a>
+                      </div>
+                    </div>
+                  )}
                   <JsonDetails
                     data={selectedAsset.evidence}
                     label="Asset evidence and subsystem payload"
@@ -773,6 +1003,9 @@ export default function Infrastructure() {
             <div className="card-title" style={{ marginBottom: 12 }}>
               Exposure Narrative
             </div>
+            <div className="detail-callout" style={{ marginBottom: 16 }}>
+              Exposure Remediation Checklist: {exposurePlaybook.nextStep}
+            </div>
             <div className="summary-grid">
               <div className="summary-card">
                 <div className="summary-label">Vulnerabilities</div>
@@ -795,6 +1028,13 @@ export default function Infrastructure() {
                 </div>
                 <div className="summary-meta">
                   Network detections can be reviewed without opening a separate subsystem tab.
+                </div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Closure lane</div>
+                <div className="summary-value">{exposurePlaybook.queueSize}</div>
+                <div className="summary-meta">
+                  Total exposure items in the current remediation queue.
                 </div>
               </div>
             </div>
@@ -876,7 +1116,7 @@ export default function Infrastructure() {
                         background:
                           focusedMalware?.id === entry.id ? 'var(--bg)' : 'var(--bg-card)',
                       }}
-                      onClick={() => setFocusedMalwareId(entry.id)}
+                      onClick={() => focusMalwareVerdict(entry.id, 'summary')}
                     >
                       <div
                         style={{
@@ -909,33 +1149,149 @@ export default function Infrastructure() {
               {focusedMalware ? (
                 <>
                   <div className="card-title" style={{ marginTop: 18, marginBottom: 10 }}>
-                    Focused Detection
+                    Malware Verdict Workspace
+                  </div>
+                  <div className="detail-callout" style={{ marginBottom: 12 }}>
+                    Reopen this view with <code>?tab=integrity&amp;malware={focusedMalware.id}&amp;malwarePanel={malwarePanel}</code> to keep verdict, provenance, and response context together.
+                  </div>
+                  <div className="chip-row" style={{ marginBottom: 12 }}>
+                    {MALWARE_PANELS.map((panel) => (
+                      <button
+                        key={panel.id}
+                        type="button"
+                        className={`filter-chip-button ${malwarePanel === panel.id ? 'active' : ''}`}
+                        onClick={() => focusMalwareVerdict(focusedMalware.id, panel.id)}
+                        title={panel.description}
+                      >
+                        {panel.label}
+                      </button>
+                    ))}
                   </div>
                   <SummaryGrid
                     data={{
-                      name: focusedMalware.title,
-                      family: focusedMalware.evidence?.family || 'unknown',
-                      severity: focusedMalware.severity,
-                      source: focusedMalware.evidence?.source || 'unknown',
-                      detected_at: focusedMalware.evidence?.detected_at || null,
-                      sha256: focusedMalware.evidence?.sha256 || null,
+                      verdict: malwareVerdictWorkspace.verdict,
+                      confidence: malwareVerdictWorkspace.confidence,
+                      family: malwareVerdictWorkspace.family,
+                      severity: malwareVerdictWorkspace.severity,
+                      score: malwareVerdictWorkspace.score,
+                      score_band: malwareVerdictWorkspace.scoreBand,
                     }}
                     limit={6}
                   />
-                  <div className="btn-group" style={{ marginTop: 12, flexWrap: 'wrap' }}>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => updateParams({ tab: 'assets', asset: focusedMalware.id })}
-                    >
-                      Open In Asset Explorer
-                    </button>
-                    <button className="btn btn-sm" onClick={() => updateParams({ tab: 'observability' })}>
-                      Check Telemetry Context
-                    </button>
-                    <button className="btn btn-sm btn-primary" onClick={() => updateParams({ tab: 'integrity' })}>
-                      Stay In Integrity
-                    </button>
-                  </div>
+                  {malwarePanel === 'summary' && (
+                    <div className="detail-callout" style={{ marginTop: 14 }}>
+                      Integrity And Recovery Playbook: {integrityPlaybook.nextStep}
+                    </div>
+                  )}
+                  {malwarePanel === 'provenance' && (
+                    <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                      <div className="card-title">Why this fired</div>
+                      {malwareVerdictWorkspace.evidence.length === 0 ? (
+                        <div className="empty">No deep-scan provenance has been captured for this verdict yet.</div>
+                      ) : (
+                        malwareVerdictWorkspace.evidence.map((line, index) => (
+                          <div key={`malware-evidence-${index}`} className="stat-box">
+                            {line}
+                          </div>
+                        ))
+                      )}
+                      <div className="card-title" style={{ marginTop: 8 }}>
+                        Why this might be safe or noisy
+                      </div>
+                      {malwareVerdictWorkspace.safeOrNoisy.length === 0 ? (
+                        <div className="empty">No allowlist, signing, or internal-tool context reduced the verdict.</div>
+                      ) : (
+                        malwareVerdictWorkspace.safeOrNoisy.map((line) => (
+                          <div key={line} className="stat-box">
+                            {line}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  {malwarePanel === 'actions' && (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="card-title" style={{ marginBottom: 10 }}>
+                        What to do next
+                      </div>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {malwareVerdictWorkspace.actions.map((line, index) => (
+                          <div key={`malware-action-${index}`} className="stat-box">
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="btn-group" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+                        <a className="btn btn-sm btn-primary" href="/soc#cases">
+                          Escalate To Case
+                        </a>
+                        <a
+                          className="btn btn-sm"
+                          href={buildHref('/detection', {
+                            params: {
+                              intent: 'run-hunt',
+                              huntQuery: `malware ${focusedMalware.evidence?.sha256 || focusedMalware.title}`,
+                              huntName: `Validate ${focusedMalware.title}`,
+                            },
+                          })}
+                        >
+                          Launch Hunt
+                        </a>
+                        <a
+                          className="btn btn-sm"
+                          href={buildHref('/reports', {
+                            params: {
+                              tab: 'delivery',
+                              source: 'malware-verdict',
+                              target: focusedMalware.evidence?.sha256 || focusedMalware.id,
+                            },
+                          })}
+                        >
+                          Package Evidence
+                        </a>
+                        <a
+                          className="btn btn-sm"
+                          href={buildHref('/assistant', {
+                            params: {
+                              source: 'malware-verdict',
+                              target: focusedMalware.evidence?.sha256 || focusedMalware.id,
+                            },
+                          })}
+                        >
+                          Ask Assistant
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  {malwarePanel === 'profiles' && (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="summary-grid">
+                        <div className="summary-card">
+                          <div className="summary-label">File type</div>
+                          <div className="summary-value">{malwareVerdictWorkspace.fileType}</div>
+                          <div className="summary-meta">Static profile classification.</div>
+                        </div>
+                        <div className="summary-card">
+                          <div className="summary-label">Execution surface</div>
+                          <div className="summary-value">{malwareVerdictWorkspace.platform}</div>
+                          <div className="summary-meta">Platform or script hint from static analysis.</div>
+                        </div>
+                        <div className="summary-card">
+                          <div className="summary-label">Runtime tactics</div>
+                          <div className="summary-value">{malwareVerdictWorkspace.tactics.length}</div>
+                          <div className="summary-meta">Observed behavior signals attached to the scan.</div>
+                        </div>
+                      </div>
+                      <JsonDetails
+                        data={{
+                          static_profile: malwareVerdictWorkspace.staticProfile,
+                          behavior_profile: malwareVerdictWorkspace.behaviorProfile,
+                          scan: malwareVerdictWorkspace.scan,
+                        }}
+                        label="Malware static and behavior profiles"
+                      />
+                    </div>
+                  )}
                   <JsonDetails
                     data={focusedMalware.evidence}
                     label="Focused malware detection payload"

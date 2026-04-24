@@ -261,7 +261,7 @@ This backlog lists the next concrete tasks in build order.
 
 ## Phase 29 — Console parity & operator usability
 
-- [ ] T230: Create and maintain a feature-to-UI coverage matrix so every capability in `FEATURES.md` maps to a reachable admin-console surface or an explicit backlog gap.
+- [x] T230: Create and maintain a feature-to-UI coverage matrix so every capability in `FEATURES.md` maps to a reachable admin-console surface or an explicit backlog gap.
 - [x] T231: Replace broken or raw-json Security Policy workflows with working forms and structured result views for policy composition, digital twin simulation, adversarial harness runs, deception deployment, and enforcement quarantine.
 - [x] T232: Complete operator-first threat-intel, enrichment, and deception management surfaces with browse/filter/action workflows instead of status-only summaries.
 - [x] T233: Finish structured compliance, GDPR, PII, and evidence-export workflows in the browser console so governance features are usable without manual API calls.
@@ -290,15 +290,37 @@ This backlog lists the next concrete tasks in build order.
 - [x] T247: Audit and fix remaining admin-console request/response mismatches against the server API contract.
 - [x] T218: Add a production-hardening review checklist derived from `xdr_ai_handoff_pack` guidance.
 
+## Phase 33 — Detection trust and workflow-depth release
+
+- [x] T248: Replace stub-like explainability edges with richer entity-centric detection scores for host, agent, action, identity, and network destinations.
+- [x] T249: Wire stored-event campaign clustering into `/api/correlation/campaigns` and the Attack Graph campaign-intelligence workspace.
+- [x] T250: Add a deterministic replay-corpus acceptance gate for benign admin, developer tooling, identity abuse, ransomware, beaconing, and lateral movement scenarios.
+- [x] T253: Add custom labeled replay-corpus pack evaluation through `POST /api/detection/replay-corpus`.
+- [x] T254: Add retained-event sampling mode for `POST /api/detection/replay-corpus` with limit and threshold controls.
+- [x] T255: Add a Threat Detection replay validation runner for retained-event checks and pasted custom JSON packs.
+- [x] T251: Close route-aware operator workflows for detection drilldowns, fleet rollout history, UEBA/NDR response playbooks, infrastructure remediation, malware verdicts, SSO readiness, SaaS collectors, and dashboard reporting pivots.
+- [x] T252: Refresh release docs, OpenAPI metadata, status, roadmap, SDK notes, reproducibility references, and version metadata for `v0.53.4`.
+
+## Phase 34 — Replay-corpus drift analysis
+
+- [x] T256: Add platform and signal-type delta breakdowns on top of the built-in, custom, and retained-event replay-corpus APIs and surface them in the Threat Detection workspace.
+
+## Phase 35 — Collector ingestion timelines
+
+- [x] T257: Add deeper ingestion-health timelines for cloud, SaaS, and identity collectors in the shared collector status contract and routed Settings workspace.
+
+## Phase 36 — Release-gate workflow coverage
+
+- [x] T258: Broaden the routed release-gate browser smoke coverage across detection, response, collector health, fleet rollout, and infrastructure malware/remediation workflows.
+
 ## Recommended next build order
 
-Phases 0–32 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, and the admin-console API contract audit are all in place.
+Phases 0–36 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector ingestion timelines, and expanded live workflow smoke coverage are all in place.
 
 Recommended next sequence:
 
-1. Complete true end-to-end federated SSO redirect/callback validation beyond the shipped provider discovery and login shell.
-2. Extend remaining SaaS and identity collector workflows beyond the shipped cloud, secrets-manager, and case ticket-sync paths.
-3. Deepen UEBA, NDR, and infrastructure remediation workflows that still rely on thinner operator narratives.
+1. Expand collector timeline depth with persisted ingestion counters and last-success checkpoints once live collection history is retained per provider.
+2. Extend the shipped infrastructure remediation and malware-verdict explorer into broader change-review, approval, and recovery-history workflows.
 
 See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the broader professional roadmap beyond the current implementation order.
 

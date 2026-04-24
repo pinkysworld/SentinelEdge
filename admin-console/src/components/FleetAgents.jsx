@@ -16,6 +16,27 @@ const SAVED_VIEWS = [
   { id: 'linux', label: 'Linux Fleet', filters: { status: 'all', q: '', os: 'linux' } },
 ];
 
+const UPDATE_PANELS = [
+  {
+    id: 'rollout',
+    label: 'Rollout History',
+    description: 'Reopen recent deployment history, rollout notes, and policy-change context.',
+  },
+  {
+    id: 'recovery',
+    label: 'Recovery',
+    description: 'Start with endpoints that need heartbeat or deployment recovery attention.',
+  },
+  {
+    id: 'health',
+    label: 'Deployment Health',
+    description: 'Review release drift, rollout targets, and deployment readiness before broad rollout.',
+  },
+];
+
+const normalizePanelId = (value, panels, fallback) =>
+  panels.some((panel) => panel.id === value) ? value : fallback;
+
 function MobileAgentCard({ agent, active, onOpen, onCopy }) {
   return (
     <article
@@ -89,6 +110,11 @@ export default function FleetAgents() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(() => searchParams.get('fleetTab') || 'fleet');
+  const updatesPanel = normalizePanelId(
+    searchParams.get('updatesPanel'),
+    UPDATE_PANELS,
+    'rollout',
+  );
   const [query, setQuery] = useState(() => searchParams.get('q') || '');
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || 'all');
   const [osFilter, setOsFilter] = useState(() => searchParams.get('os') || 'all');
@@ -206,6 +232,56 @@ export default function FleetAgents() {
     }),
     [agentArr, nowMs],
   );
+  const offlineAgents = useMemo(
+    () => agentArr.filter((agent) => agent.status === 'offline'),
+    [agentArr],
+  );
+  const staleAgents = useMemo(
+    () =>
+      agentArr.filter(
+        (agent) => agent.lastSeen && nowMs - new Date(agent.lastSeen).getTime() > 30 * 60 * 1000,
+      ),
+    [agentArr, nowMs],
+  );
+  const rolloutHistory = useMemo(
+    () =>
+      Array.isArray(rollout?.recent_history)
+        ? rollout.recent_history
+        : Array.isArray(rollout?.history)
+          ? rollout.history
+          : [],
+    [rollout],
+  );
+  const policyHistoryEntries = useMemo(
+    () =>
+      Array.isArray(policyHist?.recent_history)
+        ? policyHist.recent_history
+        : Array.isArray(policyHist)
+          ? policyHist
+          : [],
+    [policyHist],
+  );
+  const releaseItems = useMemo(
+    () =>
+      Array.isArray(releases?.items)
+        ? releases.items
+        : Array.isArray(releases?.releases)
+          ? releases.releases
+          : Array.isArray(releases)
+            ? releases
+            : [],
+    [releases],
+  );
+  const latestRelease =
+    releaseItems[0] ||
+    (releases?.latest_version
+      ? { version: releases.latest_version, notes: releases?.notes, channel: releases?.channel }
+      : null);
+  const driftAgents = useMemo(() => {
+    if (!latestRelease?.version) return [];
+    return agentArr.filter((agent) => agent.version && agent.version !== latestRelease.version);
+  }, [agentArr, latestRelease]);
+  const activeUpdatesPanel = UPDATE_PANELS.find((panel) => panel.id === updatesPanel);
 
   const clearFleetFilters = useCallback(() => {
     setQuery('');
@@ -325,6 +401,23 @@ export default function FleetAgents() {
       view.filters.os === osFilter &&
       view.filters.q === query,
   )?.id;
+
+  const openRecoveryScope = useCallback(
+    ({ nextStatus = 'all', nextOs = 'all', nextQuery = '' } = {}) => {
+      setTab('agents');
+      setQuery(nextQuery);
+      setStatusFilter(nextStatus);
+      setOsFilter(nextOs);
+      setPage(0);
+      setFleetQueryState({
+        fleetTab: 'agents',
+        status: nextStatus,
+        os: nextOs,
+        q: nextQuery,
+      });
+    },
+    [setFleetQueryState],
+  );
 
   return (
     <div>
@@ -960,30 +1053,237 @@ export default function FleetAgents() {
 
       {tab === 'updates' && (
         <>
-          {releases && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-title" style={{ marginBottom: 12 }}>
-                Available Releases
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>
+              Rollout & Recovery Workspace
+            </div>
+            <div className="summary-grid">
+              <div className="summary-card">
+                <div className="summary-label">Recent Rollouts</div>
+                <div className="summary-value">{rolloutHistory.length}</div>
+                <div className="summary-meta">
+                  {rollout?.last_rollout_at
+                    ? `Last rollout ${formatRelativeTime(rollout.last_rollout_at)}`
+                    : 'No recent rollout timestamp recorded.'}
+                </div>
               </div>
-              <SummaryGrid data={releases} limit={12} />
-              <JsonDetails data={releases} />
+              <div className="summary-card">
+                <div className="summary-label">Rollback Events</div>
+                <div className="summary-value">{rollout?.rollback_events ?? 0}</div>
+                <div className="summary-meta">
+                  Recovery history that still needs operator follow-up.
+                </div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Offline Or Stale</div>
+                <div className="summary-value">{offlineAgents.length + staleAgents.length}</div>
+                <div className="summary-meta">
+                  {offlineAgents.length} offline • {staleAgents.length} stale heartbeat
+                  {staleAgents.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-label">Version Drift</div>
+                <div className="summary-value">{driftAgents.length}</div>
+                <div className="summary-meta">
+                  {latestRelease?.version
+                    ? `${latestRelease.version} is the current release reference.`
+                    : 'No latest release reference is currently available.'}
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <div className="row-primary" style={{ marginBottom: 8 }}>
+                Updates focus
+              </div>
+              <div className="chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {UPDATE_PANELS.map((panel) => (
+                  <button
+                    key={panel.id}
+                    className={`filter-chip-button ${updatesPanel === panel.id ? 'active' : ''}`}
+                    onClick={() => setFleetQueryState({ fleetTab: 'updates', updatesPanel: panel.id })}
+                  >
+                    {panel.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="detail-callout" style={{ marginTop: 16 }}>
+              <strong>URL-backed updates focus</strong>
+              <div style={{ marginTop: 6 }}>{activeUpdatesPanel?.description}</div>
+            </div>
+          </div>
+
+          {updatesPanel === 'rollout' && (
+            <div className="card-grid">
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Recent Rollout History
+                </div>
+                {rolloutHistory.length === 0 ? (
+                  <div className="hint">
+                    No rollout history is recorded yet. As deployment history lands, this view will
+                    keep the most recent changes visible for recovery review.
+                  </div>
+                ) : (
+                  rolloutHistory.slice(0, 6).map((event, index) => (
+                    <div
+                      key={event.id || `${event.agent_id || event.target || 'rollout'}-${index}`}
+                      style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}
+                    >
+                      <div className="row-primary">
+                        {event.agent_id || event.target || event.platform || 'Shared rollout'}
+                      </div>
+                      <div className="row-secondary">
+                        {event.status || 'unknown'} • {event.rollout_group || event.group || 'default'}
+                      </div>
+                      <div className="hint" style={{ marginTop: 4 }}>
+                        {event.notes || event.summary || 'No rollout notes captured.'}
+                        {event.started_at || event.timestamp
+                          ? ` • ${formatDateTime(event.started_at || event.timestamp)}`
+                          : ''}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Config & Policy Context
+                </div>
+                <SummaryGrid
+                  data={{
+                    rollout_targets: rollout?.rollout_targets ?? rollout?.targets ?? 0,
+                    canary_percentage: rollout?.canary_percentage ?? rollout?.canary ?? '—',
+                    rollback_events: rollout?.rollback_events ?? 0,
+                    policy_history: policyHistoryEntries.length,
+                    latest_release: latestRelease?.version || '—',
+                  }}
+                  limit={10}
+                />
+                <JsonDetails data={rollout} label="Rollout config details" />
+              </div>
             </div>
           )}
-          <div className="card-grid">
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>
-                Rollout Config
+
+          {updatesPanel === 'recovery' && (
+            <div className="card-grid">
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Recovery Watchlist
+                </div>
+                {offlineAgents.length === 0 && staleAgents.length === 0 ? (
+                  <div className="hint">
+                    No endpoints currently need rollout recovery attention.
+                  </div>
+                ) : (
+                  [...offlineAgents.slice(0, 3), ...staleAgents.slice(0, 3)].map((agent) => (
+                    <div
+                      key={`${agent.id}-${agent.status}`}
+                      style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}
+                    >
+                      <div className="row-primary">{agent.hostname}</div>
+                      <div className="row-secondary">
+                        {agent.status} • {agent.version} • {agent.os}
+                      </div>
+                      <div className="hint" style={{ marginTop: 4 }}>
+                        Last seen {formatRelativeTime(agent.lastSeen)} • {formatDateTime(agent.lastSeen)}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div className="btn-group" style={{ marginTop: 16 }}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => openRecoveryScope({ nextStatus: 'offline' })}
+                  >
+                    Open Offline Agents
+                  </button>
+                  <button className="btn btn-sm" onClick={() => openRecoveryScope()}>
+                    Open Agent Inventory
+                  </button>
+                </div>
               </div>
-              <SummaryGrid data={rollout} limit={10} />
-              <JsonDetails data={rollout} />
-            </div>
-            <div className="card">
-              <div className="card-title" style={{ marginBottom: 12 }}>
-                Policy History
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Recovery Guidance
+                </div>
+                <div className="detail-callout">
+                  Prioritize offline endpoints first, then validate whether stale heartbeat agents
+                  are waiting on rollout completion, transport recovery, or local host drift.
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  {(policyHistoryEntries.length > 0 ? policyHistoryEntries : [{ summary: 'No policy-change history captured yet.' }])
+                    .slice(0, 4)
+                    .map((entry, index) => (
+                      <div
+                        key={entry.id || `${entry.timestamp || 'policy'}-${index}`}
+                        style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}
+                      >
+                        <div className="row-primary">
+                          {entry.actor || entry.user || entry.summary || 'Policy activity'}
+                        </div>
+                        <div className="row-secondary">
+                          {entry.action || entry.status || 'Change recorded'}
+                        </div>
+                        <div className="hint" style={{ marginTop: 4 }}>
+                          {entry.timestamp ? formatDateTime(entry.timestamp) : 'Timestamp unavailable'}
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
-              <SummaryGrid data={policyHist} limit={10} />
-              <JsonDetails data={policyHist} />
             </div>
+          )}
+
+          {updatesPanel === 'health' && (
+            <div className="card-grid">
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Deployment Health
+                </div>
+                <SummaryGrid
+                  data={{
+                    latest_release: latestRelease?.version || '—',
+                    agents_on_latest: latestRelease?.version
+                      ? agentArr.length - driftAgents.length
+                      : '—',
+                    version_drift: driftAgents.length,
+                    rollout_targets: rollout?.rollout_targets ?? rollout?.targets ?? 0,
+                    rollback_events: rollout?.rollback_events ?? 0,
+                  }}
+                  limit={10}
+                />
+                <div className="detail-callout" style={{ marginTop: 16 }}>
+                  {driftAgents.length > 0
+                    ? `${driftAgents.length} agent${driftAgents.length === 1 ? '' : 's'} are still behind the latest release reference. Review rollout history before widening deployment scope.`
+                    : 'No version drift is currently visible against the latest release reference.'}
+                </div>
+              </div>
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>
+                  Release Reference
+                </div>
+                {latestRelease ? (
+                  <>
+                    <SummaryGrid data={latestRelease} limit={10} />
+                    <JsonDetails data={releases} label="Release metadata" />
+                  </>
+                ) : (
+                  <div className="hint">
+                    Release metadata is not available yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>
+              Policy History
+            </div>
+            <SummaryGrid data={policyHist} limit={10} />
+            <JsonDetails data={policyHist} />
           </div>
         </>
       )}

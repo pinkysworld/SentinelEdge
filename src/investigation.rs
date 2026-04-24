@@ -232,7 +232,9 @@ impl WorkflowStore {
                         }
                         progress.completed_steps.sort_unstable();
                     } else {
-                        progress.completed_steps.retain(|entry| *entry != step_order);
+                        progress
+                            .completed_steps
+                            .retain(|entry| *entry != step_order);
                     }
                 }
 
@@ -646,7 +648,10 @@ mod tests {
         let mut store = WorkflowStore::new();
         let progress = store.start_investigation("credential-storm", "analyst-1", None);
         assert!(progress.is_some());
-        assert_eq!(progress.as_ref().map(|entry| entry.id.as_str()), Some("inv-1"));
+        assert_eq!(
+            progress.as_ref().map(|entry| entry.id.as_str()),
+            Some("inv-1")
+        );
         store.complete_step(
             "credential-storm",
             "analyst-1",
@@ -683,11 +688,16 @@ mod tests {
         assert_eq!(snapshot.case_id.as_deref(), Some("42"));
         assert_eq!(snapshot.completion_percent, 25);
         assert!(snapshot.completed_steps.contains(&1));
-        assert_eq!(snapshot.notes.get(&1).map(String::as_str), Some("Scoped three targeted accounts"));
-        assert!(snapshot
-            .findings
-            .iter()
-            .any(|finding| finding.contains("finance admins")));
+        assert_eq!(
+            snapshot.notes.get(&1).map(String::as_str),
+            Some("Scoped three targeted accounts")
+        );
+        assert!(
+            snapshot
+                .findings
+                .iter()
+                .any(|finding| finding.contains("finance admins"))
+        );
         assert_eq!(snapshot.total_steps, 4);
         assert!(snapshot.next_step.is_some());
     }
@@ -704,7 +714,10 @@ mod tests {
                 &progress.id,
                 "analyst-2".into(),
                 "Awaiting identity team validation on two suspicious sign-ins".into(),
-                vec!["Confirm MFA coverage".into(), "Review VPN geolocation anomalies".into()],
+                vec![
+                    "Confirm MFA coverage".into(),
+                    "Review VPN geolocation anomalies".into(),
+                ],
                 vec!["Did any of the targets reuse a service credential?".into()],
             )
             .expect("handoff snapshot");

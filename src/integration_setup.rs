@@ -152,7 +152,10 @@ impl AwsCollectorSetup {
         let mut issues = Vec::new();
         if self.enabled {
             if !has_text(&self.region) {
-                issues.push(error("region", "Region is required when the collector is enabled."));
+                issues.push(error(
+                    "region",
+                    "Region is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.access_key_id) {
                 issues.push(error(
@@ -217,7 +220,10 @@ impl AwsCollectorSetup {
             event_name_filter: self.event_name_filter.clone(),
             enabled: self.enabled,
             has_secret_access_key: has_text(&self.secret_access_key),
-            has_session_token: self.session_token.as_ref().is_some_and(|value| has_text(value)),
+            has_session_token: self
+                .session_token
+                .as_ref()
+                .is_some_and(|value| has_text(value)),
         }
     }
 }
@@ -308,10 +314,16 @@ impl AzureCollectorSetup {
         let mut issues = Vec::new();
         if self.enabled {
             if !has_text(&self.tenant_id) {
-                issues.push(error("tenant_id", "Tenant ID is required when the collector is enabled."));
+                issues.push(error(
+                    "tenant_id",
+                    "Tenant ID is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.client_id) {
-                issues.push(error("client_id", "Client ID is required when the collector is enabled."));
+                issues.push(error(
+                    "client_id",
+                    "Client ID is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.client_secret) {
                 issues.push(error(
@@ -439,7 +451,10 @@ impl OktaCollectorSetup {
         let mut issues = Vec::new();
         if self.enabled {
             if !has_text(&self.domain) {
-                issues.push(error("domain", "Okta domain is required when the collector is enabled."));
+                issues.push(error(
+                    "domain",
+                    "Okta domain is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.api_token) {
                 issues.push(error(
@@ -557,10 +572,16 @@ impl EntraCollectorSetup {
         let mut issues = Vec::new();
         if self.enabled {
             if !has_text(&self.tenant_id) {
-                issues.push(error("tenant_id", "Tenant ID is required when the collector is enabled."));
+                issues.push(error(
+                    "tenant_id",
+                    "Tenant ID is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.client_id) {
-                issues.push(error("client_id", "Client ID is required when the collector is enabled."));
+                issues.push(error(
+                    "client_id",
+                    "Client ID is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.client_secret) {
                 issues.push(error(
@@ -598,6 +619,274 @@ impl EntraCollectorSetup {
             poll_interval_secs: self.poll_interval_secs,
             enabled: self.enabled,
             has_client_secret: has_text(&self.client_secret),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct M365CollectorSetup {
+    pub tenant_id: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub poll_interval_secs: u64,
+    pub content_types: Vec<String>,
+    pub enabled: bool,
+}
+
+impl Default for M365CollectorSetup {
+    fn default() -> Self {
+        Self {
+            tenant_id: String::new(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            poll_interval_secs: 60,
+            content_types: vec![
+                "Audit.AzureActiveDirectory".to_string(),
+                "Audit.Exchange".to_string(),
+                "Audit.SharePoint".to_string(),
+            ],
+            enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct M365CollectorSetupPatch {
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    #[serde(default)]
+    pub poll_interval_secs: Option<u64>,
+    #[serde(default)]
+    pub content_types: Option<Vec<String>>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct M365CollectorSetupView {
+    pub tenant_id: String,
+    pub client_id: String,
+    pub poll_interval_secs: u64,
+    pub content_types: Vec<String>,
+    pub enabled: bool,
+    pub has_client_secret: bool,
+}
+
+impl M365CollectorSetup {
+    pub fn apply_patch(&mut self, patch: M365CollectorSetupPatch) {
+        if let Some(tenant_id) = patch.tenant_id {
+            self.tenant_id = tenant_id;
+        }
+        if let Some(client_id) = patch.client_id {
+            self.client_id = client_id;
+        }
+        if let Some(client_secret) = patch.client_secret
+            && has_text(&client_secret)
+        {
+            self.client_secret = client_secret;
+        }
+        if let Some(poll_interval_secs) = patch.poll_interval_secs {
+            self.poll_interval_secs = poll_interval_secs;
+        }
+        if let Some(content_types) = patch.content_types {
+            self.content_types = content_types;
+        }
+        if let Some(enabled) = patch.enabled {
+            self.enabled = enabled;
+        }
+    }
+
+    pub fn validate(&self) -> SetupValidation {
+        let mut issues = Vec::new();
+        if self.enabled {
+            if !has_text(&self.tenant_id) {
+                issues.push(error(
+                    "tenant_id",
+                    "Tenant ID is required when the collector is enabled.",
+                ));
+            }
+            if !has_text(&self.client_id) {
+                issues.push(error(
+                    "client_id",
+                    "Client ID is required when the collector is enabled.",
+                ));
+            }
+            if !has_text(&self.client_secret) {
+                issues.push(error(
+                    "client_secret",
+                    "Client secret or secret reference is required when the collector is enabled.",
+                ));
+            }
+        }
+        if self.poll_interval_secs == 0 {
+            issues.push(error(
+                "poll_interval_secs",
+                "Poll interval must be at least 1 second.",
+            ));
+        }
+        if self.content_types.is_empty() {
+            issues.push(warning(
+                "content_types",
+                "No Microsoft 365 content types are configured, so audit collection scope is undefined.",
+            ));
+        }
+        SetupValidation::new(!self.enabled, issues)
+    }
+
+    pub fn view(&self) -> M365CollectorSetupView {
+        M365CollectorSetupView {
+            tenant_id: self.tenant_id.clone(),
+            client_id: self.client_id.clone(),
+            poll_interval_secs: self.poll_interval_secs,
+            content_types: self.content_types.clone(),
+            enabled: self.enabled,
+            has_client_secret: has_text(&self.client_secret),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceCollectorSetup {
+    pub customer_id: String,
+    pub delegated_admin_email: String,
+    pub service_account_email: String,
+    pub credentials_json: String,
+    pub poll_interval_secs: u64,
+    pub applications: Vec<String>,
+    pub enabled: bool,
+}
+
+impl Default for WorkspaceCollectorSetup {
+    fn default() -> Self {
+        Self {
+            customer_id: "my_customer".to_string(),
+            delegated_admin_email: String::new(),
+            service_account_email: String::new(),
+            credentials_json: String::new(),
+            poll_interval_secs: 60,
+            applications: vec![
+                "login".to_string(),
+                "admin".to_string(),
+                "drive".to_string(),
+                "meet".to_string(),
+            ],
+            enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceCollectorSetupPatch {
+    #[serde(default)]
+    pub customer_id: Option<String>,
+    #[serde(default)]
+    pub delegated_admin_email: Option<String>,
+    #[serde(default)]
+    pub service_account_email: Option<String>,
+    #[serde(default)]
+    pub credentials_json: Option<String>,
+    #[serde(default)]
+    pub poll_interval_secs: Option<u64>,
+    #[serde(default)]
+    pub applications: Option<Vec<String>>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceCollectorSetupView {
+    pub customer_id: String,
+    pub delegated_admin_email: String,
+    pub service_account_email: String,
+    pub poll_interval_secs: u64,
+    pub applications: Vec<String>,
+    pub enabled: bool,
+    pub has_credentials_json: bool,
+}
+
+impl WorkspaceCollectorSetup {
+    pub fn apply_patch(&mut self, patch: WorkspaceCollectorSetupPatch) {
+        if let Some(customer_id) = patch.customer_id {
+            self.customer_id = customer_id;
+        }
+        if let Some(delegated_admin_email) = patch.delegated_admin_email {
+            self.delegated_admin_email = delegated_admin_email;
+        }
+        if let Some(service_account_email) = patch.service_account_email {
+            self.service_account_email = service_account_email;
+        }
+        if let Some(credentials_json) = patch.credentials_json
+            && has_text(&credentials_json)
+        {
+            self.credentials_json = credentials_json;
+        }
+        if let Some(poll_interval_secs) = patch.poll_interval_secs {
+            self.poll_interval_secs = poll_interval_secs;
+        }
+        if let Some(applications) = patch.applications {
+            self.applications = applications;
+        }
+        if let Some(enabled) = patch.enabled {
+            self.enabled = enabled;
+        }
+    }
+
+    pub fn validate(&self) -> SetupValidation {
+        let mut issues = Vec::new();
+        if self.enabled {
+            if !has_text(&self.customer_id) {
+                issues.push(error(
+                    "customer_id",
+                    "Customer ID is required when the collector is enabled.",
+                ));
+            }
+            if !has_text(&self.delegated_admin_email) {
+                issues.push(error(
+                    "delegated_admin_email",
+                    "Delegated admin email is required when the collector is enabled.",
+                ));
+            }
+            if !has_text(&self.service_account_email) {
+                issues.push(error(
+                    "service_account_email",
+                    "Service-account email is required when the collector is enabled.",
+                ));
+            }
+            if !has_text(&self.credentials_json) {
+                issues.push(error(
+                    "credentials_json",
+                    "Credentials JSON or secret reference is required when the collector is enabled.",
+                ));
+            }
+        }
+        if self.poll_interval_secs == 0 {
+            issues.push(error(
+                "poll_interval_secs",
+                "Poll interval must be at least 1 second.",
+            ));
+        }
+        if self.applications.is_empty() {
+            issues.push(warning(
+                "applications",
+                "No Google Workspace applications are configured, so audit collection scope is undefined.",
+            ));
+        }
+        SetupValidation::new(!self.enabled, issues)
+    }
+
+    pub fn view(&self) -> WorkspaceCollectorSetupView {
+        WorkspaceCollectorSetupView {
+            customer_id: self.customer_id.clone(),
+            delegated_admin_email: self.delegated_admin_email.clone(),
+            service_account_email: self.service_account_email.clone(),
+            poll_interval_secs: self.poll_interval_secs,
+            applications: self.applications.clone(),
+            enabled: self.enabled,
+            has_credentials_json: has_text(&self.credentials_json),
         }
     }
 }
@@ -696,7 +985,10 @@ impl GcpCollectorSetup {
         let mut issues = Vec::new();
         if self.enabled {
             if !has_text(&self.project_id) {
-                issues.push(error("project_id", "Project ID is required when the collector is enabled."));
+                issues.push(error(
+                    "project_id",
+                    "Project ID is required when the collector is enabled.",
+                ));
             }
             if !has_text(&self.service_account_email) {
                 issues.push(error(
@@ -704,8 +996,14 @@ impl GcpCollectorSetup {
                     "Service-account email is required when the collector is enabled.",
                 ));
             }
-            if self.key_file_path.as_ref().is_none_or(|value| !has_text(value))
-                && self.private_key_pem.as_ref().is_none_or(|value| !has_text(value))
+            if self
+                .key_file_path
+                .as_ref()
+                .is_none_or(|value| !has_text(value))
+                && self
+                    .private_key_pem
+                    .as_ref()
+                    .is_none_or(|value| !has_text(value))
             {
                 issues.push(error(
                     "credentials",
@@ -760,7 +1058,10 @@ impl GcpCollectorSetup {
             log_filter: self.log_filter.clone(),
             page_size: self.page_size,
             enabled: self.enabled,
-            has_private_key_pem: self.private_key_pem.as_ref().is_some_and(|value| has_text(value)),
+            has_private_key_pem: self
+                .private_key_pem
+                .as_ref()
+                .is_some_and(|value| has_text(value)),
         }
     }
 }
@@ -893,7 +1194,10 @@ impl SecretsManagerSetup {
         let mut issues = Vec::new();
         if self.vault.enabled {
             if !has_text(&self.vault.address) {
-                issues.push(error("vault.address", "Vault address is required when Vault is enabled."));
+                issues.push(error(
+                    "vault.address",
+                    "Vault address is required when Vault is enabled.",
+                ));
             }
             if !has_text(&self.vault.token) {
                 issues.push(error(
@@ -902,7 +1206,10 @@ impl SecretsManagerSetup {
                 ));
             }
             if !has_text(&self.vault.mount) {
-                issues.push(error("vault.mount", "Vault mount is required when Vault is enabled."));
+                issues.push(error(
+                    "vault.mount",
+                    "Vault mount is required when Vault is enabled.",
+                ));
             }
         }
         if self.vault.cache_ttl_secs == 0 {
@@ -912,8 +1219,14 @@ impl SecretsManagerSetup {
             ));
         }
         let disabled = !self.vault.enabled
-            && self.env_prefix.as_ref().is_none_or(|value| !has_text(value))
-            && self.secrets_dir.as_ref().is_none_or(|value| !has_text(value));
+            && self
+                .env_prefix
+                .as_ref()
+                .is_none_or(|value| !has_text(value))
+            && self
+                .secrets_dir
+                .as_ref()
+                .is_none_or(|value| !has_text(value));
         SetupValidation::new(disabled, issues)
     }
 

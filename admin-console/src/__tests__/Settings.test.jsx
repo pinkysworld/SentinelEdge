@@ -165,6 +165,75 @@ describe('Settings', () => {
         ],
       },
     };
+    let oktaCollectorState = {
+      provider: 'okta_identity',
+      enabled: true,
+      config: {
+        enabled: true,
+        domain: 'dev-123456.okta.com',
+        has_api_token: true,
+        poll_interval_secs: 30,
+        event_type_filter: ['user.session.start'],
+      },
+      validation: {
+        status: 'ready',
+        issues: [],
+      },
+    };
+    let entraCollectorState = {
+      provider: 'entra_identity',
+      enabled: true,
+      config: {
+        enabled: true,
+        tenant_id: 'entra-tenant',
+        client_id: 'entra-client',
+        has_client_secret: true,
+        poll_interval_secs: 30,
+      },
+      validation: {
+        status: 'ready',
+        issues: [],
+      },
+    };
+    let m365CollectorState = {
+      provider: 'm365_saas',
+      enabled: true,
+      config: {
+        enabled: true,
+        tenant_id: 'm365-tenant',
+        client_id: 'm365-client',
+        has_client_secret: true,
+        poll_interval_secs: 90,
+        content_types: ['Audit.AzureActiveDirectory', 'Audit.Exchange'],
+      },
+      validation: {
+        status: 'ready',
+        issues: [],
+      },
+    };
+    let workspaceCollectorState = {
+      provider: 'workspace_saas',
+      enabled: false,
+      config: {
+        enabled: false,
+        customer_id: 'my_customer',
+        delegated_admin_email: 'admin@example.com',
+        service_account_email: 'collector@workspace.example.iam.gserviceaccount.com',
+        has_credentials_json: false,
+        poll_interval_secs: 120,
+        applications: ['login', 'admin', 'drive'],
+      },
+      validation: {
+        status: 'warning',
+        issues: [
+          {
+            level: 'warning',
+            field: 'enabled',
+            message: 'Collector is disabled.',
+          },
+        ],
+      },
+    };
     let secretsState = {
       config: {
         vault: {
@@ -195,21 +264,133 @@ describe('Settings', () => {
       collectors: [
         {
           provider: 'aws',
+          label: 'AWS CloudTrail',
+          lane: 'cloud',
           enabled: awsCollectorState.enabled,
           validation: awsCollectorState.validation,
           total_collected: 2,
+          timeline: [
+            {
+              stage: 'Configuration',
+              status: 'ready',
+              title: 'Collector enabled',
+              detail: 'AWS collection polls every 60 seconds from us-east-1.',
+            },
+            {
+              stage: 'Scope',
+              status: 'ready',
+              title: 'Collection scope',
+              detail: 'CloudTrail management events are routed into infrastructure review.',
+            },
+          ],
         },
         {
           provider: 'azure',
+          label: 'Azure Activity',
+          lane: 'cloud',
           enabled: azureCollectorState.enabled,
           validation: azureCollectorState.validation,
           total_collected: 1,
+          timeline: [
+            {
+              stage: 'Validation',
+              status: 'ready',
+              title: 'Validation clear',
+              detail: 'Administrative activity is ready for attack-path review.',
+            },
+          ],
         },
         {
           provider: 'gcp',
+          label: 'GCP Audit',
+          lane: 'cloud',
           enabled: gcpCollectorState.enabled,
           validation: gcpCollectorState.validation,
           total_collected: 0,
+          timeline: [
+            {
+              stage: 'Validation',
+              status: 'warning',
+              title: 'Validation review',
+              detail: 'GCP project scope still needs key material before ingestion can start.',
+            },
+          ],
+        },
+        {
+          provider: 'okta_identity',
+          label: 'Okta Identity',
+          lane: 'identity',
+          enabled: oktaCollectorState.enabled,
+          validation: oktaCollectorState.validation,
+          total_collected: 3,
+          timeline: [
+            {
+              stage: 'Credentials',
+              status: 'ready',
+              title: 'Credential coverage',
+              detail: 'Okta API token coverage is complete for the identity lane.',
+            },
+            {
+              stage: 'Routing',
+              status: 'ready',
+              title: 'Downstream pivots',
+              detail: 'User session start telemetry is routed into UEBA and SOC triage workflows.',
+            },
+          ],
+        },
+        {
+          provider: 'entra_identity',
+          label: 'Microsoft Entra Identity',
+          lane: 'identity',
+          enabled: entraCollectorState.enabled,
+          validation: entraCollectorState.validation,
+          total_collected: 2,
+          timeline: [
+            {
+              stage: 'Scope',
+              status: 'ready',
+              title: 'Collection scope',
+              detail: 'SignInLogs coverage is mapped into identity drift review.',
+            },
+          ],
+        },
+        {
+          provider: 'm365_saas',
+          label: 'Microsoft 365 Activity',
+          lane: 'saas',
+          enabled: m365CollectorState.enabled,
+          validation: m365CollectorState.validation,
+          total_collected: 4,
+          timeline: [
+            {
+              stage: 'Scope',
+              status: 'ready',
+              title: 'Collection scope',
+              detail: 'Exchange and Entra audit streams are wired for SaaS reporting.',
+            },
+            {
+              stage: 'Routing',
+              status: 'ready',
+              title: 'Downstream pivots',
+              detail: 'Microsoft 365 activity is ready for assistant and report pivots.',
+            },
+          ],
+        },
+        {
+          provider: 'workspace_saas',
+          label: 'Google Workspace Activity',
+          lane: 'saas',
+          enabled: workspaceCollectorState.enabled,
+          validation: workspaceCollectorState.validation,
+          total_collected: 0,
+          timeline: [
+            {
+              stage: 'Validation',
+              status: 'warning',
+              title: 'Validation review',
+              detail: 'Workspace delegated admin coverage still needs activation before ingestion can start.',
+            },
+          ],
         },
       ],
     });
@@ -340,6 +521,30 @@ describe('Settings', () => {
 
       if (path === '/api/idp/providers' && method === 'GET') {
         return Promise.resolve(jsonOk(idpState));
+      }
+      if (path === '/api/auth/sso/config' && method === 'GET') {
+        return Promise.resolve(
+          jsonOk({
+            enabled: idpState.providers.some(
+              (provider) => provider.enabled && provider.validation?.status === 'ready',
+            ),
+            providers: idpState.providers
+              .filter((provider) => provider.enabled && provider.validation?.status === 'ready')
+              .map((provider) => ({
+                id: provider.id,
+                display_name: provider.display_name,
+                kind: provider.kind,
+                status: 'ready',
+                validation_status: 'ready',
+                login_path: `/api/auth/sso/login?provider=${provider.id}`,
+              })),
+            scim: {
+              enabled: Boolean(scimState.config?.enabled),
+              status: scimState.validation?.status || 'unknown',
+              mapping_count: scimState.validation?.mapping_count || 0,
+            },
+          }),
+        );
       }
       if (path === '/api/idp/providers' && method === 'POST') {
         const body = JSON.parse(options.body || '{}');
@@ -627,6 +832,161 @@ describe('Settings', () => {
           }),
         );
       }
+      if (path === '/api/collectors/okta' && method === 'GET') {
+        return Promise.resolve(jsonOk(oktaCollectorState));
+      }
+      if (path === '/api/collectors/okta/config' && method === 'POST') {
+        const body = JSON.parse(options.body || '{}');
+        const hasApiToken =
+          body.api_token !== undefined
+            ? Boolean(body.api_token)
+            : oktaCollectorState.config.has_api_token;
+        const validation = buildCollectorValidation([
+          !body.enabled || body.domain,
+          !body.enabled || hasApiToken,
+        ]);
+        oktaCollectorState = {
+          provider: 'okta_identity',
+          enabled: body.enabled ?? false,
+          config: {
+            enabled: body.enabled ?? false,
+            domain: body.domain || '',
+            has_api_token: hasApiToken,
+            poll_interval_secs: body.poll_interval_secs ?? 30,
+            event_type_filter: body.event_type_filter || [],
+          },
+          validation,
+        };
+        return Promise.resolve(jsonOk(oktaCollectorState));
+      }
+      if (path === '/api/collectors/okta/validate' && method === 'POST') {
+        return Promise.resolve(
+          jsonOk({
+            success: true,
+            event_count: 3,
+            sample_events: [{ event_type: 'user.session.start' }],
+            validation: oktaCollectorState.validation,
+          }),
+        );
+      }
+      if (path === '/api/collectors/entra' && method === 'GET') {
+        return Promise.resolve(jsonOk(entraCollectorState));
+      }
+      if (path === '/api/collectors/entra/config' && method === 'POST') {
+        const body = JSON.parse(options.body || '{}');
+        const hasClientSecret =
+          body.client_secret !== undefined
+            ? Boolean(body.client_secret)
+            : entraCollectorState.config.has_client_secret;
+        const validation = buildCollectorValidation([
+          !body.enabled || body.tenant_id,
+          !body.enabled || body.client_id,
+          !body.enabled || hasClientSecret,
+        ]);
+        entraCollectorState = {
+          provider: 'entra_identity',
+          enabled: body.enabled ?? false,
+          config: {
+            enabled: body.enabled ?? false,
+            tenant_id: body.tenant_id || '',
+            client_id: body.client_id || '',
+            has_client_secret: hasClientSecret,
+            poll_interval_secs: body.poll_interval_secs ?? 30,
+          },
+          validation,
+        };
+        return Promise.resolve(jsonOk(entraCollectorState));
+      }
+      if (path === '/api/collectors/entra/validate' && method === 'POST') {
+        return Promise.resolve(
+          jsonOk({
+            success: true,
+            event_count: 2,
+            sample_events: [{ category: 'SignInLogs' }],
+            validation: entraCollectorState.validation,
+          }),
+        );
+      }
+      if (path === '/api/collectors/m365' && method === 'GET') {
+        return Promise.resolve(jsonOk(m365CollectorState));
+      }
+      if (path === '/api/collectors/m365/config' && method === 'POST') {
+        const body = JSON.parse(options.body || '{}');
+        const hasClientSecret =
+          body.client_secret !== undefined
+            ? Boolean(body.client_secret)
+            : m365CollectorState.config.has_client_secret;
+        const validation = buildCollectorValidation([
+          !body.enabled || body.tenant_id,
+          !body.enabled || body.client_id,
+          !body.enabled || hasClientSecret,
+        ]);
+        m365CollectorState = {
+          provider: 'm365_saas',
+          enabled: body.enabled ?? false,
+          config: {
+            enabled: body.enabled ?? false,
+            tenant_id: body.tenant_id || '',
+            client_id: body.client_id || '',
+            has_client_secret: hasClientSecret,
+            poll_interval_secs: body.poll_interval_secs ?? 60,
+            content_types: body.content_types || [],
+          },
+          validation,
+        };
+        return Promise.resolve(jsonOk(m365CollectorState));
+      }
+      if (path === '/api/collectors/m365/validate' && method === 'POST') {
+        return Promise.resolve(
+          jsonOk({
+            success: true,
+            event_count: 2,
+            sample_events: [{ content_type: 'Audit.AzureActiveDirectory' }],
+            validation: m365CollectorState.validation,
+          }),
+        );
+      }
+      if (path === '/api/collectors/workspace' && method === 'GET') {
+        return Promise.resolve(jsonOk(workspaceCollectorState));
+      }
+      if (path === '/api/collectors/workspace/config' && method === 'POST') {
+        const body = JSON.parse(options.body || '{}');
+        const hasCredentialsJson =
+          body.credentials_json !== undefined
+            ? Boolean(body.credentials_json)
+            : workspaceCollectorState.config.has_credentials_json;
+        const validation = buildCollectorValidation([
+          !body.enabled || body.customer_id,
+          !body.enabled || body.delegated_admin_email,
+          !body.enabled || body.service_account_email,
+          !body.enabled || hasCredentialsJson,
+        ]);
+        workspaceCollectorState = {
+          provider: 'workspace_saas',
+          enabled: body.enabled ?? false,
+          config: {
+            enabled: body.enabled ?? false,
+            customer_id: body.customer_id || '',
+            delegated_admin_email: body.delegated_admin_email || '',
+            service_account_email: body.service_account_email || '',
+            has_credentials_json: hasCredentialsJson,
+            poll_interval_secs: body.poll_interval_secs ?? 60,
+            applications: body.applications || [],
+          },
+          validation,
+        };
+        return Promise.resolve(jsonOk(workspaceCollectorState));
+      }
+      if (path === '/api/collectors/workspace/validate' && method === 'POST') {
+        return Promise.resolve(
+          jsonOk({
+            success: true,
+            event_count: 2,
+            sample_events: [{ application: 'login' }],
+            validation: workspaceCollectorState.validation,
+          }),
+        );
+      }
       if (path === '/api/secrets/status' && method === 'GET') {
         return Promise.resolve(jsonOk(secretsState));
       }
@@ -869,6 +1229,21 @@ describe('Settings', () => {
 
     const idpCard = (await screen.findByText('IdP Providers')).closest('.card');
     expect(idpCard).not.toBeNull();
+    expect(screen.getByText('Federated Sign-In Readiness')).toBeInTheDocument();
+    expect(screen.getByText('Collector Routing & Health')).toBeInTheDocument();
+    expect(screen.getByText('Identity Telemetry Lane')).toBeInTheDocument();
+    expect(screen.getByText('Cloud Audit Lane')).toBeInTheDocument();
+    expect(screen.getByText('SaaS Activity Lane')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('User session start telemetry is routed into UEBA and SOC triage workflows.')
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('CloudTrail management events are routed into infrastructure review.').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('Microsoft 365 activity is ready for assistant and report pivots.').length,
+    ).toBeGreaterThan(0);
 
     const providerCell = within(idpCard).getByRole('cell', { name: 'Corporate SSO' });
     const providerRow = providerCell.closest('tr');
@@ -879,6 +1254,11 @@ describe('Settings', () => {
     expect(
       screen.getByText(
         'No group-to-role mappings configured; users may fall back to viewer access.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No enabled providers are fully ready for federated launch yet. Resolve the provider warnings below before starting a live SSO test.',
       ),
     ).toBeInTheDocument();
 
@@ -945,6 +1325,7 @@ describe('Settings', () => {
     expect(updatedProviderRow).not.toBeNull();
     expect(within(updatedProviderRow).getByText('Ready')).toBeInTheDocument();
     expect(within(updatedProviderRow).getByText('0 issues • 1 mapping')).toBeInTheDocument();
+    expect(within(updatedProviderRow).getByRole('button', { name: 'Start SSO Test' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit SCIM' }));
     const defaultRoleInput = await screen.findByLabelText('Default Role');
@@ -970,6 +1351,7 @@ describe('Settings', () => {
     expect(scimCard).not.toBeNull();
     expect(within(scimCard).getByText('Ready')).toBeInTheDocument();
     expect(within(scimCard).getByText('1 group mapping configured')).toBeInTheDocument();
+    expect(screen.getByText('1 ready for live federated launch.')).toBeInTheDocument();
   });
 
   it('saves retention settings and searches retained events from the admin tab', async () => {
@@ -1080,6 +1462,55 @@ describe('Settings', () => {
     await user.click(screen.getByRole('button', { name: 'Validate AWS' }));
     expect(await screen.findByText('Collected 2 events.')).toBeInTheDocument();
 
+    const m365Card = screen.getByText('Microsoft 365 Activity').closest('.card');
+    expect(m365Card).not.toBeNull();
+    const m365TenantInput = within(m365Card).getByLabelText('Tenant ID');
+    await user.clear(m365TenantInput);
+    await user.type(m365TenantInput, 'm365-eu-tenant');
+    await user.click(within(m365Card).getByRole('button', { name: 'Save Microsoft 365 Setup' }));
+
+    await waitFor(() => {
+      const m365SaveCall = globalThis.fetch.mock.calls.find(
+        ([url, options]) =>
+          String(url) === '/api/collectors/m365/config' && (options?.method || 'GET') === 'POST',
+      );
+      expect(m365SaveCall).toBeDefined();
+      expect(JSON.parse(m365SaveCall[1].body)).toMatchObject({
+        tenant_id: 'm365-eu-tenant',
+        client_id: 'm365-client',
+      });
+    });
+
+    await user.click(within(m365Card).getByRole('button', { name: 'Validate Microsoft 365' }));
+    expect(await screen.findByText('Microsoft 365 validation details')).toBeInTheDocument();
+
+    const workspaceCard = screen.getByText('Google Workspace Activity').closest('.card');
+    expect(workspaceCard).not.toBeNull();
+    const delegatedAdminInput = within(workspaceCard).getByLabelText('Delegated Admin Email');
+    await user.clear(delegatedAdminInput);
+    await user.type(delegatedAdminInput, 'secops@example.com');
+    const credentialsInput = within(workspaceCard).getByLabelText('Credentials JSON');
+    await user.click(credentialsInput);
+    await user.paste('{"type":"service_account"}');
+    await user.click(within(workspaceCard).getByRole('button', { name: 'Save Workspace Setup' }));
+
+    await waitFor(() => {
+      const workspaceSaveCall = globalThis.fetch.mock.calls.find(
+        ([url, options]) =>
+          String(url) === '/api/collectors/workspace/config' &&
+          (options?.method || 'GET') === 'POST',
+      );
+      expect(workspaceSaveCall).toBeDefined();
+      expect(JSON.parse(workspaceSaveCall[1].body)).toMatchObject({
+        delegated_admin_email: 'secops@example.com',
+        customer_id: 'my_customer',
+        service_account_email: 'collector@workspace.example.iam.gserviceaccount.com',
+      });
+    });
+
+    await user.click(within(workspaceCard).getByRole('button', { name: 'Validate Workspace' }));
+    expect(await screen.findByText('Workspace validation details')).toBeInTheDocument();
+
     const envPrefixInput = screen.getByLabelText('Environment Prefix');
     await user.clear(envPrefixInput);
     await user.type(envPrefixInput, 'WARDEX_PROD_');
@@ -1118,5 +1549,5 @@ describe('Settings', () => {
         reference: 'vault://secret/wardex/api#token',
       });
     });
-  });
+  }, 10000);
 });

@@ -61,7 +61,10 @@ describe('App', () => {
       json: async () => {
         if (url === '/api/auth/session') return { authenticated: false };
         if (url === '/api/auth/sso/config') {
-          return { providers: [{ id: 'idp-1', display_name: 'Corporate SSO' }] };
+          return {
+            providers: [{ id: 'idp-1', display_name: 'Corporate SSO' }],
+            scim: { enabled: true, status: 'ready', mapping_count: 2 },
+          };
         }
         return {};
       },
@@ -70,6 +73,8 @@ describe('App', () => {
     await renderApp();
 
     expect((await screen.findAllByText('Sign in with Corporate SSO')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Federated Sign-In Ready')).toBeInTheDocument();
+    expect(screen.getByText('2 group mappings ready for lifecycle sync.')).toBeInTheDocument();
   });
 
   it('renders sidebar navigation items', async () => {
@@ -108,7 +113,7 @@ describe('App', () => {
     await userEvent.click(screen.getByText('Connect'));
     await waitFor(
       () => {
-        expect(screen.getByText(/Authentication failed/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Authentication failed/).length).toBeGreaterThan(0);
       },
       { timeout: 3000 },
     );

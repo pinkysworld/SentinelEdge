@@ -117,6 +117,86 @@ async function defaultFetchImplementation(url) {
         },
       },
     });
+  if (String(url).includes('/api/detection/replay-corpus'))
+    return jsonResponse({
+      status: 'ready',
+      summary: {
+        total_samples: 6,
+        precision: 0.83,
+        recall: 0.75,
+        false_positive_rate: 0.2,
+      },
+      acceptance_targets: {
+        precision_min: 0.7,
+        recall_min: 0.7,
+        false_positive_rate_max: 0.35,
+      },
+      categories: [
+        {
+          id: 'benign_admin',
+          label: 'Benign admin activity',
+          expected: 'benign',
+          predicted: 'benign',
+          score: 1.2,
+          confidence: 0.8,
+          passed: true,
+          platform: 'linux',
+          platform_label: 'Linux',
+          signal_type: 'admin_activity',
+          signal_type_label: 'Admin Activity',
+        },
+        {
+          id: 'lateral_movement',
+          label: 'Lateral movement',
+          expected: 'malicious',
+          predicted: 'malicious',
+          score: 7.8,
+          confidence: 0.91,
+          passed: true,
+          platform: 'windows',
+          platform_label: 'Windows',
+          signal_type: 'lateral_movement',
+          signal_type_label: 'Lateral Movement',
+        },
+      ],
+      platform_deltas: [
+        {
+          id: 'linux',
+          label: 'Linux',
+          sample_count: 3,
+          passed_samples: 3,
+          failed_samples: 0,
+          delta: { precision: 0.05, recall: 0.08, false_positive_rate: -0.04 },
+        },
+        {
+          id: 'windows',
+          label: 'Windows',
+          sample_count: 3,
+          passed_samples: 2,
+          failed_samples: 1,
+          delta: { precision: -0.08, recall: -0.05, false_positive_rate: 0.06 },
+          failed_examples: ['Credential theft and lateral movement'],
+        },
+      ],
+      signal_type_deltas: [
+        {
+          id: 'admin_activity',
+          label: 'Admin Activity',
+          sample_count: 1,
+          passed_samples: 1,
+          failed_samples: 0,
+          delta: { precision: 0.02, recall: 0.0, false_positive_rate: -0.02 },
+        },
+        {
+          id: 'lateral_movement',
+          label: 'Lateral Movement',
+          sample_count: 1,
+          passed_samples: 1,
+          failed_samples: 0,
+          delta: { precision: 0.03, recall: 0.04, false_positive_rate: -0.01 },
+        },
+      ],
+    });
   if (String(url).includes('/api/efficacy/rule/rule-1'))
     return jsonResponse({
       rule_id: 'rule-1',
@@ -163,7 +243,14 @@ async function defaultFetchImplementation(url) {
         },
       ],
       by_tactic: [
-        { tactic: 'credential-access', total: 4, covered: 1, uncovered: 3, pct: 25, gap_ids: ['T1003'] },
+        {
+          tactic: 'credential-access',
+          total: 4,
+          covered: 1,
+          uncovered: 3,
+          pct: 25,
+          gap_ids: ['T1003'],
+        },
         { tactic: 'execution', total: 5, covered: 2, uncovered: 3, pct: 40, gap_ids: ['T1059'] },
       ],
       top_recommendations: [
@@ -297,8 +384,7 @@ async function defaultFetchImplementation(url) {
           priority: 'high',
           title: 'Complete identity routing',
           summary: 'Provider or SCIM validation still blocks clean group-based routing.',
-          action_hint:
-            'Review IdP and SCIM mappings before widening automated response coverage.',
+          action_hint: 'Review IdP and SCIM mappings before widening automated response coverage.',
         },
       ],
     });
@@ -342,24 +428,60 @@ describe('workspace shells', () => {
   it('renders the detection workspace shell', async () => {
     renderWithProviders(<ThreatDetection />, '/detection');
     expect(await screen.findByText('Detection Engineering Workspace')).toBeInTheDocument();
+    expect(await screen.findByText('Replay Corpus Gate')).toBeInTheDocument();
+    expect(await screen.findByText('Replay validation runner')).toBeInTheDocument();
+    expect((await screen.findAllByText('Platform deltas')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Signal-type deltas')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Linux')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Admin Activity')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Benign admin activity')).length).toBeGreaterThan(0);
     expect(await screen.findByText('Automation Target')).toBeInTheDocument();
+    expect(await screen.findByText('Route-backed rule panel')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Replay Validation' }));
+    await waitFor(() => {
+      expect(
+        globalThis.fetch.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes('/api/detection/replay-corpus') && init?.method === 'POST',
+        ),
+      ).toBe(true);
+    });
+    expect(await screen.findByText('Latest validation platform deltas')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Hunts & Investigations' }));
     fireEvent.click(await screen.findByText('Edit Primary Bundle'));
     expect(await screen.findByText('Save Bundle')).toBeInTheDocument();
   });
 
   it('renders efficacy, ATT&CK gap, suppression, and rollout drill-downs', async () => {
-    renderWithProviders(<ThreatDetection />, '/detection');
+    renderWithProviders(<ThreatDetection />, '/detection?panel=efficacy&rulePanel=efficacy');
 
     expect(await screen.findByText('Detection Efficacy Drilldown')).toBeInTheDocument();
     expect(await screen.findByText('Suppression Noise Signals')).toBeInTheDocument();
     expect(await screen.findByText('Content Pack Rollout Signals')).toBeInTheDocument();
-    expect(await screen.findByText('Rule Efficacy')).toBeInTheDocument();
+    expect((await screen.findAllByText('Rule Efficacy')).length).toBeGreaterThan(0);
     expect((await screen.findAllByText('T1003 • OS Credential Dumping')).length).toBeGreaterThan(0);
     expect((await screen.findAllByText('Degrading')).length).toBeGreaterThan(0);
   });
 
+  it('restores detection focus and rule detail panels from the route', async () => {
+    renderWithProviders(
+      <ThreatDetection />,
+      '/detection?panel=rollout&rulePanel=hunts&rule=rule-1&queue=noisy',
+    );
+
+    const rolloutFocus = await screen.findByRole('button', { name: 'Pack Rollout' });
+    expect(rolloutFocus.className).toContain('active');
+
+    const huntsPanel = await screen.findByRole('button', { name: 'Hunts & Investigations' });
+    expect(huntsPanel.className).toContain('active');
+
+    expect(await screen.findByText('Hunts and Investigations')).toBeInTheDocument();
+    expect(await screen.findByText('Edit Primary Bundle')).toBeInTheDocument();
+    expect(screen.getByText('URL-backed drilldown focus')).toBeInTheDocument();
+  });
+
   it('preserves the saved hunt id when reopening an existing hunt', async () => {
-    renderWithProviders(<ThreatDetection />, '/detection');
+    renderWithProviders(<ThreatDetection />, '/detection?rulePanel=hunts');
     const huntName = (await screen.findAllByText('Credential Storm Hunt')).find(
       (element) => element.className === 'row-primary',
     );
@@ -400,7 +522,7 @@ describe('workspace shells', () => {
       return defaultFetchImplementation(url, options);
     });
 
-    renderWithProviders(<ThreatDetection />, '/detection');
+    renderWithProviders(<ThreatDetection />, '/detection?rulePanel=hunts');
 
     const huntName = (await screen.findAllByText('Credential Storm Hunt')).find(
       (element) => element.className === 'row-primary',
@@ -475,7 +597,11 @@ describe('workspace shells', () => {
       const method = options?.method || 'GET';
 
       if (href.includes('/api/cases/stats')) {
-        return jsonResponse({ total: 1, by_status: { investigating: 1 }, by_priority: { high: 1 } });
+        return jsonResponse({
+          total: 1,
+          by_status: { investigating: 1 },
+          by_priority: { high: 1 },
+        });
       }
       if (href.includes('/api/cases') && method === 'GET') {
         return jsonResponse({ cases });
@@ -605,7 +731,11 @@ describe('workspace shells', () => {
       const method = options?.method || 'GET';
 
       if (href.includes('/api/cases/stats')) {
-        return jsonResponse({ total: 1, by_status: { investigating: 1 }, by_priority: { high: 1 } });
+        return jsonResponse({
+          total: 1,
+          by_status: { investigating: 1 },
+          by_priority: { high: 1 },
+        });
       }
       if (href.includes('/api/cases') && method === 'GET') {
         return jsonResponse({ cases });
@@ -655,7 +785,9 @@ describe('workspace shells', () => {
 
     fireEvent.click(within(drawer).getByRole('button', { name: 'Actions' }));
 
-    expect(await within(drawer).findByRole('button', { name: 'Open Linked Case' })).toBeInTheDocument();
+    expect(
+      await within(drawer).findByRole('button', { name: 'Open Linked Case' }),
+    ).toBeInTheDocument();
     expect(
       await within(drawer).findByRole('button', { name: 'Open Response Workspace' }),
     ).toBeInTheDocument();
@@ -700,7 +832,11 @@ describe('workspace shells', () => {
       const method = options?.method || 'GET';
 
       if (href.includes('/api/cases/stats')) {
-        return jsonResponse({ total: 1, by_status: { investigating: 1 }, by_priority: { high: 1 } });
+        return jsonResponse({
+          total: 1,
+          by_status: { investigating: 1 },
+          by_priority: { high: 1 },
+        });
       }
       if (href.includes('/api/cases') && method === 'GET') {
         return jsonResponse({ cases });
@@ -866,7 +1002,9 @@ describe('workspace shells', () => {
             snapshot.completed_steps = [...snapshot.completed_steps, body.step];
           }
           if (body.completed === false) {
-            snapshot.completed_steps = snapshot.completed_steps.filter((step) => step !== body.step);
+            snapshot.completed_steps = snapshot.completed_steps.filter(
+              (step) => step !== body.step,
+            );
           }
           if (typeof body.note === 'string') {
             snapshot.notes = { ...snapshot.notes, [body.step]: body.note };
@@ -924,7 +1062,9 @@ describe('workspace shells', () => {
 
     expect(await screen.findByText('Active Investigations')).toBeInTheDocument();
     expect((await screen.findAllByText('Investigate Credential Storm')).length).toBeGreaterThan(0);
-    expect((await screen.findAllByRole('button', { name: 'Open Primary Pivot' })).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByRole('button', { name: 'Open Primary Pivot' })).length,
+    ).toBeGreaterThan(0);
 
     const noteFields = await screen.findAllByLabelText('Analyst note');
     fireEvent.change(noteFields[0], { target: { value: 'VPN telemetry reviewed' } });
@@ -974,7 +1114,9 @@ describe('workspace shells', () => {
 
     expect((await screen.findAllByText('Handoff Ready')).length).toBeGreaterThan(0);
     expect(await screen.findByText(/currently assigned to analyst-2/i)).toBeInTheDocument();
-    expect(await screen.findByText(/analyst-1 handed this workflow to analyst-2/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/analyst-1 handed this workflow to analyst-2/i),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Response' }));
 
@@ -1110,8 +1252,19 @@ describe('workspace shells', () => {
 
     expect((await screen.findAllByText(/malicious/i)).length).toBeGreaterThan(0);
     expect((await screen.findAllByText(/powershell/i)).length).toBeGreaterThan(0);
-    expect(await screen.findByText(/Trusted publisher allowlist matched "microsoft"/i)).toBeInTheDocument();
-    expect((await screen.findAllByText(/Pivot to NDR beaconing results/i)).length).toBeGreaterThan(0);
+    expect(await screen.findByText('Malware Verdict Workspace')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Verdict Summary' })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Trusted publisher allowlist matched "microsoft"/i),
+    ).toBeInTheDocument();
+    expect((await screen.findAllByText(/Pivot to NDR beaconing results/i)).length).toBeGreaterThan(
+      0,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'What To Do Next' }));
+    expect(await screen.findByText('Package Evidence')).toBeInTheDocument();
+    expect(await screen.findByText('Ask Assistant')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Static & Behavior Profiles' }));
+    expect(await screen.findByText('Malware static and behavior profiles')).toBeInTheDocument();
   });
 
   it('renders the infrastructure explorer shell', async () => {
@@ -1127,48 +1280,48 @@ describe('workspace shells', () => {
   it('renders contextual support shell', async () => {
     renderWithProviders(<HelpDocs />, '/help');
     expect(await screen.findByText('Operator Support')).toBeInTheDocument();
-    });
+  });
+});
+
+it('hydrates the SOC queue filter from URL state and clears back to the full queue', async () => {
+  globalThis.fetch.mockImplementation(async (url, options = {}) => {
+    const href = String(url);
+
+    if (href.includes('/api/queue/alerts')) {
+      return jsonResponse({
+        alerts: [
+          {
+            id: 'alert-1',
+            severity: 'high',
+            summary: 'Password spray against Okta tenant',
+            assigned_to: 'analyst-1',
+          },
+          {
+            id: 'alert-2',
+            severity: 'medium',
+            summary: 'Container drift detected on node-7',
+            assigned_to: 'analyst-2',
+          },
+        ],
+      });
+    }
+    if (href.includes('/api/queue/stats')) {
+      return jsonResponse({ pending: 2, high: 1, medium: 1 });
+    }
+
+    return defaultFetchImplementation(url, options);
   });
 
-  it('hydrates the SOC queue filter from URL state and clears back to the full queue', async () => {
-    globalThis.fetch.mockImplementation(async (url, options = {}) => {
-      const href = String(url);
+  renderWithProviders(<SOCWorkbench />, '/soc?queueFilter=password#queue');
 
-      if (href.includes('/api/queue/alerts')) {
-        return jsonResponse({
-          alerts: [
-            {
-              id: 'alert-1',
-              severity: 'high',
-              summary: 'Password spray against Okta tenant',
-              assigned_to: 'analyst-1',
-            },
-            {
-              id: 'alert-2',
-              severity: 'medium',
-              summary: 'Container drift detected on node-7',
-              assigned_to: 'analyst-2',
-            },
-          ],
-        });
-      }
-      if (href.includes('/api/queue/stats')) {
-        return jsonResponse({ pending: 2, high: 1, medium: 1 });
-      }
+  expect(await screen.findByDisplayValue('password')).toBeInTheDocument();
+  expect(await screen.findByText('Password spray against Okta tenant')).toBeInTheDocument();
+  expect(screen.queryByText('Container drift detected on node-7')).not.toBeInTheDocument();
+  expect(
+    await screen.findByText(/This queue filter is mirrored into the URL/i),
+  ).toBeInTheDocument();
 
-      return defaultFetchImplementation(url, options);
-    });
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
 
-    renderWithProviders(<SOCWorkbench />, '/soc?queueFilter=password#queue');
-
-    expect(await screen.findByDisplayValue('password')).toBeInTheDocument();
-    expect(await screen.findByText('Password spray against Okta tenant')).toBeInTheDocument();
-    expect(screen.queryByText('Container drift detected on node-7')).not.toBeInTheDocument();
-    expect(
-      await screen.findByText(/This queue filter is mirrored into the URL/i),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Clear Filter' }));
-
-    expect(await screen.findByText('Container drift detected on node-7')).toBeInTheDocument();
-  });
+  expect(await screen.findByText('Container drift detected on node-7')).toBeInTheDocument();
+});

@@ -823,7 +823,12 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             with_parameters(
                 op("listReports", "List stored reports", &["reports"]),
                 vec![
-                    string_parameter("case_id", "query", "Filter reports by case handoff id", false),
+                    string_parameter(
+                        "case_id",
+                        "query",
+                        "Filter reports by case handoff id",
+                        false,
+                    ),
                     string_parameter(
                         "incident_id",
                         "query",
@@ -894,9 +899,18 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             "/api/report-templates",
             "get",
             with_parameters(
-                op("listReportTemplates", "List reusable report templates and presets", &["reports"]),
+                op(
+                    "listReportTemplates",
+                    "List reusable report templates and presets",
+                    &["reports"],
+                ),
                 vec![
-                    string_parameter("case_id", "query", "Filter templates by case handoff id", false),
+                    string_parameter(
+                        "case_id",
+                        "query",
+                        "Filter templates by case handoff id",
+                        false,
+                    ),
                     string_parameter(
                         "incident_id",
                         "query",
@@ -962,7 +976,11 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             "/api/report-schedules",
             "get",
             with_parameters(
-                op("listReportSchedules", "List saved report schedules", &["reports"]),
+                op(
+                    "listReportSchedules",
+                    "List saved report schedules",
+                    &["reports"],
+                ),
                 vec![
                     string_parameter(
                         "case_id",
@@ -1263,6 +1281,53 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             ),
         )
         .path(
+            "/api/detection/replay-corpus",
+            "get",
+            op(
+                "getDetectionReplayCorpus",
+                "Evaluate the built-in replay corpus against precision, recall, and false-positive gates",
+                &["detection"],
+            ),
+        )
+        .path(
+            "/api/detection/replay-corpus",
+            "post",
+            op_post(
+                "evaluateDetectionReplayCorpus",
+                "Evaluate a custom labeled or retained-event replay-corpus validation pack",
+                &["detection"],
+                "Replay corpus validation pack",
+            ),
+        )
+        .path(
+            "/api/detection/explain",
+            "get",
+            op(
+                "getDetectionExplainability",
+                "Explain a detection with evidence, entity scores, feedback, and next steps",
+                &["detection"],
+            ),
+        )
+        .path(
+            "/api/detection/feedback",
+            "get",
+            op(
+                "listDetectionFeedback",
+                "List analyst feedback for detection calibration",
+                &["detection"],
+            ),
+        )
+        .path(
+            "/api/detection/feedback",
+            "post",
+            op_post(
+                "recordDetectionFeedback",
+                "Record analyst detection feedback",
+                &["detection"],
+                "Detection feedback payload",
+            ),
+        )
+        .path(
             "/api/detection/weights",
             "get",
             op(
@@ -1279,6 +1344,15 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
                 "Set per-dimension detection weights",
                 &["detection"],
                 "Detection weight payload",
+            ),
+        )
+        .path(
+            "/api/correlation/campaigns",
+            "get",
+            op(
+                "getCorrelationCampaigns",
+                "Cluster stored events into campaign summaries, sequence signals, and graph edges",
+                &["detection"],
             ),
         )
         // Incidents & cases

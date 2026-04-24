@@ -48,6 +48,10 @@ test('advanced admin console workflows smoke', async ({ page }) => {
   await sidebar.getByRole('link', { name: 'SOC Workbench', exact: true }).click();
   await expect(page.getByText('Workbench Overview')).toBeVisible();
   await expect(page.getByText('Investigations In Flight')).toBeVisible();
+  await page.getByRole('button', { name: 'Respond', exact: true }).click();
+  await expect(page.getByText('Pending Responses')).toBeVisible();
+  await expect(page.getByText('Response Stats')).toBeVisible();
+  await expect(page.getByText('Response Requests')).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Security Policy', exact: true }).click();
   await page.getByRole('button', { name: 'Policy', exact: true }).click();
@@ -60,8 +64,27 @@ test('advanced admin console workflows smoke', async ({ page }) => {
   await page.getByRole('button', { name: 'Integrations' }).click();
   await expect(page.getByText('IdP Providers')).toBeVisible();
   await expect(page.getByText('Cloud Collectors & Secrets')).toBeVisible();
+  await expect(page.getByText('Collector Routing & Health')).toBeVisible();
+  await expect(page.getByText('Identity Telemetry Lane')).toBeVisible();
+  await expect(page.getByText('SaaS Activity Lane')).toBeVisible();
   await page.getByRole('button', { name: 'Admin' }).click();
   await expect(page.getByText('Long-Retention History')).toBeVisible();
+
+  await sidebar.getByRole('link', { name: 'Fleet & Agents', exact: true }).click();
+  await page.getByRole('button', { name: 'Updates', exact: true }).click();
+  await expect(page.getByText('Updates focus')).toBeVisible();
+  await expect(page.getByText('Recent Rollout History')).toBeVisible();
+  await page.getByRole('button', { name: 'Recovery Watchlist', exact: true }).click();
+  await expect(page.getByText('Recovery Watchlist')).toBeVisible();
+  await page.getByRole('button', { name: 'Deployment Health', exact: true }).click();
+  await expect(page.getByText('Deployment Health')).toBeVisible();
+
+  await sidebar.getByRole('link', { name: 'Infrastructure', exact: true }).click();
+  await page.getByRole('button', { name: 'Assets', exact: true }).click();
+  await expect(page.getByText('Saved Views')).toBeVisible();
+  await expect(page.getByText('Guided Remediation Brief')).toBeVisible();
+  await page.getByRole('button', { name: 'Integrity', exact: true }).click();
+  await expect(page.getByText(/Integrity And Recovery Playbook:/)).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Help & Docs', exact: true }).click();
   await expect(page.getByText('Documentation Center', { exact: true })).toBeVisible();
