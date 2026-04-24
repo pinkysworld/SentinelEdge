@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const VERSION = '0.52.5';
+import { TEST_APP_VERSION } from '../test-support/appVersion.js';
 
 function json(data, status = 200) {
   return {
@@ -58,25 +57,31 @@ async function installApiMocks(page, overrides = {}) {
   const routes = {
     'GET /api/auth/check': { ok: true },
     'GET /api/auth/session': { role: 'admin', username: 'playwright' },
-    'GET /api/health': { status: 'ok', version: VERSION },
+    'GET /api/health': { status: 'ok', version: TEST_APP_VERSION },
     'GET /api/inbox': { items: [] },
-    'GET /api/detection/profile': { profile: 'balanced', threshold_multiplier: 1.0, learn_threshold: 5 },
+    'GET /api/detection/profile': {
+      profile: 'balanced',
+      threshold_multiplier: 1.0,
+      learn_threshold: 5,
+    },
     'GET /api/detection/summary': { total_rules: 1, noisy_rules: 1 },
     'GET /api/detection/weights': { weights: { 'rule-credential-storm': 0.5 } },
     'GET /api/fp-feedback/stats': { items: [] },
     'GET /api/content/rules': { rules: [rule] },
     'GET /api/content/packs': { packs: [{ id: 'pack-core', name: 'Core Content Pack' }] },
     'GET /api/hunts': {
-      hunts: [{
-        id: 'hunt-1',
-        name: 'Credential Storm Hunt',
-        severity: 'high',
-        threshold: 1,
-        suppression_window_secs: 0,
-        schedule_interval_secs: null,
-        query: { text: 'severity:critical credential storm', level: 'high', limit: 250 },
-        latest_run: { started_at: '2026-04-15T09:30:00Z', match_count: 2 },
-      }],
+      hunts: [
+        {
+          id: 'hunt-1',
+          name: 'Credential Storm Hunt',
+          severity: 'high',
+          threshold: 1,
+          suppression_window_secs: 0,
+          schedule_interval_secs: null,
+          query: { text: 'severity:critical credential storm', level: 'high', limit: 250 },
+          latest_run: { started_at: '2026-04-15T09:30:00Z', match_count: 2 },
+        },
+      ],
       count: 1,
     },
     'GET /api/suppressions': { suppressions: [] },
@@ -114,7 +119,11 @@ async function installApiMocks(page, overrides = {}) {
     'GET /api/investigations/active': [],
     'GET /api/efficacy/summary': { tp_rate: 0.8 },
     'GET /api/incidents/inc-1': incident,
-    'GET /api/incidents/inc-1/storyline': { events: [{ timestamp: '2026-04-15T08:31:00Z', description: 'Initial brute-force cluster detected' }] },
+    'GET /api/incidents/inc-1/storyline': {
+      events: [
+        { timestamp: '2026-04-15T08:31:00Z', description: 'Initial brute-force cluster detected' },
+      ],
+    },
   };
 
   await page.route('**/api/**', async (route) => {
@@ -163,7 +172,9 @@ test('run-hunt route opens the hunt drawer and saves/runs a hunt', async ({ page
   });
 
   await login(page);
-  await page.goto('./detection?intent=run-hunt&huntQuery=severity%3Acritical%20credential%20storm&huntName=Credential%20Storm%20Pivot');
+  await page.goto(
+    './detection?intent=run-hunt&huntQuery=severity%3Acritical%20credential%20storm&huntName=Credential%20Storm%20Pivot',
+  );
 
   await expect(page.locator('#hunt-name')).toHaveValue('Credential Storm Pivot');
   await expect(page.locator('#hunt-query')).toHaveValue('severity:critical credential storm');
@@ -192,7 +203,9 @@ test('incident planner suggests and starts an investigation workflow', async ({ 
   await page.goto('/admin/soc#incidents');
   await expect(page.locator('h1.topbar-title')).toContainText('SOC Workbench');
 
-  const incidentRow = page.locator('table tbody tr').filter({ hasText: 'Credential storm against finance users' });
+  const incidentRow = page
+    .locator('table tbody tr')
+    .filter({ hasText: 'Credential storm against finance users' });
   await incidentRow.getByRole('button', { name: 'View' }).click();
   await expect(page.getByRole('button', { name: 'Plan Investigation' })).toBeVisible();
   await page.getByRole('button', { name: 'Plan Investigation' }).click();
@@ -213,7 +226,9 @@ test('queue hunt pivot opens detection with prefilled hunt context', async ({ pa
 
   await page.getByRole('button', { name: 'Hunt' }).click();
   await expect(page).toHaveURL(/\/detection\?intent=run-hunt/);
-  await expect(page.locator('#hunt-name')).toHaveValue(/Hunt Credential storm alert on finance identities/i);
+  await expect(page.locator('#hunt-name')).toHaveValue(
+    /Hunt Credential storm alert on finance identities/i,
+  );
   await expect(page.locator('#hunt-query')).toHaveValue(/severity:critical/i);
   await expect(page.locator('#hunt-query')).toHaveValue(/rule-credential-storm/i);
 });

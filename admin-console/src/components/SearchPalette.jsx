@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as api from '../api.js';
+import { SEARCH_COMMANDS } from './workflowPivots.js';
 
 const SAVED_KEY = 'wardex_saved_searches';
 function loadSaved() {
@@ -56,52 +57,7 @@ const CATEGORIES = [
   },
 ];
 
-const COMMANDS = [
-  {
-    title: 'Create Incident',
-    subtitle: 'Open the SOC workbench with a create flow',
-    icon: 'CMD',
-    action: 'create-incident',
-    path: '/soc?intent=create-incident',
-    category: 'Command',
-    kind: 'action',
-  },
-  {
-    title: 'Open Quarantine',
-    subtitle: 'Jump to active response and quarantine work',
-    icon: 'CMD',
-    action: 'open-quarantine',
-    path: '/soc?focus=quarantine',
-    category: 'Command',
-    kind: 'action',
-  },
-  {
-    title: 'Run Hunt',
-    subtitle: 'Open threat detection and start a hunt',
-    icon: 'CMD',
-    action: 'run-hunt',
-    path: '/detection?intent=run-hunt',
-    category: 'Command',
-    kind: 'action',
-  },
-  {
-    title: 'Ask Assistant',
-    subtitle: 'Open the analyst assistant with case-aware context',
-    icon: 'CMD',
-    action: 'open-assistant',
-    path: '/assistant',
-    category: 'Command',
-    kind: 'action',
-  },
-  {
-    title: 'Review Offline Agents',
-    subtitle: 'Open fleet with the offline status view',
-    icon: 'CMD',
-    path: '/fleet?status=offline',
-    category: 'Command',
-    kind: 'action',
-  },
-];
+const COMMANDS = SEARCH_COMMANDS;
 
 function SearchPaletteDialog({ onClose, onNavigate, saved, setSaved }) {
   const [query, setQuery] = useState('');

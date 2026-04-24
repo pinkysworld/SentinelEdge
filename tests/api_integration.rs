@@ -1064,6 +1064,7 @@ fn sso_login_returns_400_when_no_provider_is_ready() {
                 body["error"],
                 "no configured SSO providers are ready for login"
             );
+            assert_eq!(body["code"], "VALIDATION_ERROR");
         }
         other => panic!("expected 400 for unconfigured SSO login, got {other:?}"),
     }
@@ -1078,6 +1079,7 @@ fn sso_callback_returns_invalid_state_before_provider_config_check() {
         Err(ureq::Error::Status(503, response)) => {
             let body: serde_json::Value = response.into_json().unwrap();
             assert_eq!(body["error"], "state parameter is invalid or expired");
+            assert_eq!(body["code"], "SERVICE_UNAVAILABLE");
         }
         other => panic!("expected 503 for SSO callback without pending state, got {other:?}"),
     }

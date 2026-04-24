@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useApi, useToast } from '../hooks.jsx';
+import { useApi, useApiGroup, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid, SideDrawer } from './operator.jsx';
 import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
@@ -520,12 +520,14 @@ export default function ThreatDetection() {
   const { data: summary } = useApi(api.detectionSummary);
   const { data: replayCorpus } = useApi(api.detectionReplayCorpus);
   const { data: efficacySummary } = useApi(api.efficacySummary);
-  const { data: weights, reload: reloadWeights } = useApi(api.detectionWeights);
   const { data: fpStats } = useApi(api.fpFeedbackStats);
-  const { data: contentRulesData, reload: reloadRules } = useApi(api.contentRules);
-  const { data: packsData, reload: reloadPacks } = useApi(api.contentPacks);
-  const { data: huntsData, reload: reloadHunts } = useApi(api.hunts);
-  const { data: suppressionsData, reload: reloadSuppressions } = useApi(api.suppressions);
+  const { data: detectionContentData, reload: reloadDetectionContent } = useApiGroup({
+    weights: api.detectionWeights,
+    contentRulesData: api.contentRules,
+    packsData: api.contentPacks,
+    huntsData: api.hunts,
+    suppressionsData: api.suppressions,
+  });
   const { data: mitreCoverage } = useApi(api.mitreCoverageAlt);
   const { data: coverageGaps } = useApi(api.coverageGaps);
   const { data: malwareStats } = useApi(api.malwareStats);
@@ -536,6 +538,13 @@ export default function ThreatDetection() {
   const { data: quarantineItems } = useApi(api.quarantineList);
   const { data: hostInventory } = useApi(api.hostInventory);
   const { data: fleetInventory } = useApi(api.fleetInventory);
+  const { weights, contentRulesData, packsData, huntsData, suppressionsData } =
+    detectionContentData;
+  const reloadWeights = reloadDetectionContent;
+  const reloadRules = reloadDetectionContent;
+  const reloadPacks = reloadDetectionContent;
+  const reloadHunts = reloadDetectionContent;
+  const reloadSuppressions = reloadDetectionContent;
   const [testResult, setTestResult] = useState(null);
   const [drawerMode, setDrawerMode] = useState(null);
   const [weightInput, setWeightInput] = useState('0.50');

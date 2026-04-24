@@ -340,11 +340,10 @@ impl WorkflowStore {
         let workflow = self.get_workflow(&progress.workflow_id)?;
         let total_steps = workflow.steps.len();
         let completed_count = progress.completed_steps.len().min(total_steps);
-        let completion_percent = if total_steps == 0 {
-            0
-        } else {
-            ((completed_count * 100) / total_steps) as u8
-        };
+        let completion_percent = completed_count
+            .checked_mul(100)
+            .and_then(|value| value.checked_div(total_steps))
+            .unwrap_or(0) as u8;
         let next_step = workflow
             .steps
             .iter()

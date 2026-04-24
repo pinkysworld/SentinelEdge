@@ -6,6 +6,11 @@ import ErrorBoundary from './components/ErrorBoundary.jsx';
 import SearchPalette from './components/SearchPalette.jsx';
 import NotificationToast from './components/NotificationToast.jsx';
 import OnboardingWizard from './components/OnboardingWizard.jsx';
+import {
+  buildCommandHref,
+  buildContextualHelpHref,
+  describeSearchScope,
+} from './components/workflowPivots.js';
 
 // ── Recent Items (persisted in localStorage) ─────────────────
 const MAX_RECENT = 10;
@@ -395,6 +400,7 @@ export default function App() {
 
   const currentSection = SECTIONS.find((s) => s.path === location.pathname) || SECTIONS[0];
   const currentGroup = WORKFLOW_GROUPS.find((group) => group.sections.includes(currentSection.id));
+  const routeScopeTokens = describeSearchScope(location.search);
   const primaryDestination =
     role === 'admin'
       ? {
@@ -420,7 +426,8 @@ export default function App() {
       : role === 'analyst'
         ? 'Analyst Workspace'
         : 'Viewer Workspace',
-    location.search ? `Scoped by ${location.search.replace(/^\?/, '').replace(/&/g, ' · ')}` : null,
+    ...routeScopeTokens.slice(0, 3),
+    routeScopeTokens.length > 3 ? `+${routeScopeTokens.length - 3} more` : null,
   ].filter(Boolean);
   const inboxItems = Array.isArray(inboxData) ? inboxData : inboxData?.items || [];
   const inboxPending = inboxItems.filter((item) => !item.acknowledged).length;
@@ -803,12 +810,11 @@ export default function App() {
                 {currentSection.path !== '/help' && (
                   <button
                     className="btn btn-sm"
-                    onClick={() => {
-                      const params = new URLSearchParams(location.search);
-                      params.set('context', currentSection.id);
-                      navigate(`/help?${params.toString()}`);
-                    }}
+                    onClick={() =>
+                      navigate(buildContextualHelpHref(currentSection.id, location.search))
+                    }
                     title="Open contextual help for this workspace"
+                    type="button"
                   >
                     Help For View
                   </button>
@@ -872,9 +878,7 @@ export default function App() {
                         type="button"
                         role="menuitem"
                         onClick={() => {
-                          const params = new URLSearchParams(location.search);
-                          params.set('context', currentSection.id);
-                          navigate(`/help?${params.toString()}`);
+                          navigate(buildContextualHelpHref(currentSection.id, location.search));
                           setShowTopbarActionsLocationKey(null);
                         }}
                       >
@@ -1228,13 +1232,8 @@ export default function App() {
         open={searchOpen}
         onClose={(v) => setSearchOpen(typeof v === 'boolean' ? v : false)}
         onNavigate={(item) => {
-          if (item.path) {
-            navigate(item.path);
-            return;
-          }
-          if (item.action === 'create-incident') navigate('/soc?intent=create-incident');
-          else if (item.action === 'open-quarantine') navigate('/soc?focus=quarantine');
-          else if (item.action === 'run-hunt') navigate('/detection?intent=run-hunt');
+          const targetPath = item.path || (item.action ? buildCommandHref(item.action) : '');
+          if (targetPath) navigate(targetPath);
         }}
       />
       <NotificationToast />

@@ -5,6 +5,7 @@
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider, RoleProvider, ThemeProvider, ToastProvider } from '../hooks.jsx';
+import { TEST_APP_VERSION } from '../../test-support/appVersion.js';
 import { vi } from 'vitest';
 
 // ── Mock fetch helpers ───────────────────────────────────────
@@ -71,7 +72,7 @@ export function createAgent(overrides = {}) {
     id: `agent-${idCounter}`,
     hostname: `agent-host-${idCounter}`,
     os: 'linux',
-    version: '0.52.5',
+    version: TEST_APP_VERSION,
     status: 'online',
     last_heartbeat: new Date().toISOString(),
     ...overrides,

@@ -6,6 +6,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 // ── Storage trait ───────────────────────────────────────────────
@@ -116,7 +117,7 @@ fn matches_filter(event: &StoredEvent, filter: &EventFilter) -> bool {
 }
 
 fn apply_offset_limit(mut events: Vec<StoredEvent>, filter: &EventFilter) -> Vec<StoredEvent> {
-    events.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    events.sort_by_key(|event| Reverse(event.timestamp));
     let offset = filter.offset.unwrap_or(0) as usize;
     let limit = filter.limit.unwrap_or(100) as usize;
     events.into_iter().skip(offset).take(limit).collect()

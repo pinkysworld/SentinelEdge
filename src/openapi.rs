@@ -286,6 +286,12 @@ fn object_schema() -> SchemaRef {
     })
 }
 
+fn schema_ref(name: &str) -> SchemaRef {
+    SchemaRef::Ref {
+        reference: format!("#/components/schemas/{name}"),
+    }
+}
+
 fn string_schema() -> SchemaRef {
     SchemaRef::Inline(Schema {
         schema_type: Some("string".into()),
@@ -322,48 +328,33 @@ fn json_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> 
     content_response_status(status, desc, "application/json", object_schema())
 }
 
+fn error_response_status(status: &str, desc: &str) -> BTreeMap<String, Response> {
+    content_response_status(status, desc, "application/json", schema_ref("Error"))
+}
+
 fn error_responses() -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
-    m.insert(
-        "401".into(),
-        Response {
-            description: "Unauthorized — missing or invalid Bearer token".into(),
-            content: None,
-        },
-    );
-    m.insert(
-        "404".into(),
-        Response {
-            description: "Resource not found".into(),
-            content: None,
-        },
-    );
-    m.insert(
-        "429".into(),
-        Response {
-            description: "Rate limit exceeded".into(),
-            content: None,
-        },
-    );
+    m.extend(error_response_status("400", "Validation or request parsing error"));
+    m.extend(error_response_status(
+        "401",
+        "Unauthorized — missing or invalid Bearer token",
+    ));
+    m.extend(error_response_status("403", "Forbidden"));
+    m.extend(error_response_status("404", "Resource not found"));
+    m.extend(error_response_status("409", "Conflict with existing resource state"));
+    m.extend(error_response_status("413", "Payload too large"));
+    m.extend(error_response_status("429", "Rate limit exceeded"));
+    m.extend(error_response_status("500", "Internal server error"));
+    m.extend(error_response_status("503", "Service unavailable"));
     m
 }
 
 fn public_error_responses() -> BTreeMap<String, Response> {
     let mut m = BTreeMap::new();
-    m.insert(
-        "404".into(),
-        Response {
-            description: "Resource not found".into(),
-            content: None,
-        },
-    );
-    m.insert(
-        "429".into(),
-        Response {
-            description: "Rate limit exceeded".into(),
-            content: None,
-        },
-    );
+    m.extend(error_response_status("400", "Validation or request parsing error"));
+    m.extend(error_response_status("404", "Resource not found"));
+    m.extend(error_response_status("429", "Rate limit exceeded"));
+    m.extend(error_response_status("503", "Service unavailable"));
     m
 }
 
@@ -498,6 +489,25 @@ fn op_public_with_responses(
     operation(id, summary, tags, None, resp, vec![BTreeMap::new()])
 }
 
+fn op_public_post_with_responses(
+    id: &str,
+    summary: &str,
+    tags: &[&str],
+    body_desc: &str,
+    responses: BTreeMap<String, Response>,
+) -> Operation {
+    let mut resp = responses;
+    resp.extend(public_error_responses());
+    operation(
+        id,
+        summary,
+        tags,
+        json_body(body_desc),
+        resp,
+        vec![BTreeMap::new()],
+    )
+}
+
 fn with_parameters(mut op: Operation, parameters: Vec<Parameter>) -> Operation {
     op.parameters.extend(parameters);
     op
@@ -575,8 +585,17 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
                             ..Default::default()
                         }),
                     );
+                    p.insert(
+                        "code".into(),
+                        SchemaRef::Inline(Schema {
+                            schema_type: Some("string".into()),
+                            description: Some("Machine-readable error code".into()),
+                            ..Default::default()
+                        }),
+                    );
                     p
                 },
+                required: vec!["error".into(), "code".into()],
                 ..Default::default()
             },
         )
@@ -738,6 +757,107 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             "/api/auth/check",
             "get",
             op("authCheck", "Check authentication status", &["auth"]),
+        )
+        .path(
+            "/api/auth/sso/login",
+            "get",
+            with_parameters(
+                op_public_with_responses(
+                    "startSsoLogin",
+                    "Start SSO login and redirect to the configured identity provider",
+                    &["auth"],
+                    {
+                        let mut resp = BTreeMap::new();
+                        resp.insert(
+                            "302".into(),
+                            Response {
+                                description: "Redirect to the configured identity provider".into(),
+                                content: None,
+                            },
+                        );
+                        resp
+                    },
+                ),
+                vec![
+                    string_parameter(
+                        "provider_id",
+                        "query",
+                        "Optional identity provider ID when more than one SSO provider is configured",
+                        false,
+                    ),
+                    string_parameter(
+                        "provider",
+                        "query",
+                        "Legacy alias for provider_id",
+                        false,
+                    ),
+                    string_parameter(
+                        "redirect",
+                        "query",
+                        "Optional console path to resume after authentication",
+                        false,
+                    ),
+                ],
+            ),
+        )
+        .path(
+            "/api/auth/sso/callback",
+            "get",
+            with_parameters(
+                op_public_with_responses(
+                    "completeSsoCallbackRedirect",
+                    "Complete browser-based SSO callback and redirect back to the console",
+                    &["auth"],
+                    {
+                        let mut resp = BTreeMap::new();
+                        resp.insert(
+                            "302".into(),
+                            Response {
+                                description: "Redirect to the post-login or error destination".into(),
+                                content: None,
+                            },
+                        );
+                        resp
+                    },
+                ),
+                vec![
+                    string_parameter(
+                        "code",
+                        "query",
+                        "Authorization code from the identity provider",
+                        true,
+                    ),
+                    string_parameter(
+                        "state",
+                        "query",
+                        "CSRF state value returned by the identity provider",
+                        true,
+                    ),
+                    string_parameter(
+                        "provider_id",
+                        "query",
+                        "Optional identity provider ID hint for multi-provider deployments",
+                        false,
+                    ),
+                    string_parameter(
+                        "provider",
+                        "query",
+                        "Legacy alias for provider_id",
+                        false,
+                    ),
+                ],
+            ),
+        )
+        .path(
+            "/api/auth/sso/callback",
+            "post",
+            op_public_post_with_responses(
+                "completeSsoCallback",
+                "Complete programmatic SSO callback and create a Wardex session",
+                &["auth"],
+                "SSO authorization code, state token, and optional provider hint",
+                json_response("Programmatic SSO callback completed"),
+            ),
         )
         .path(
             "/api/auth/rotate",
@@ -2163,6 +2283,10 @@ mod tests {
         assert!(spec.components.schemas.contains_key("Incident"));
         assert!(spec.components.schemas.contains_key("Agent"));
         assert!(spec.components.schemas.contains_key("Error"));
+        let error_schema = spec.components.schemas.get("Error").unwrap();
+        assert!(error_schema.required.contains(&"error".to_string()));
+        assert!(error_schema.required.contains(&"code".to_string()));
+        assert!(error_schema.properties.contains_key("code"));
     }
 
     #[test]
@@ -2292,6 +2416,54 @@ mod tests {
             .as_ref()
             .unwrap();
         assert!(!execute_response.request_body.as_ref().unwrap().required);
+
+        let sso_callback = spec
+            .paths
+            .get("/api/auth/sso/callback")
+            .unwrap()
+            .post
+            .as_ref()
+            .unwrap();
+        assert!(sso_callback.request_body.as_ref().unwrap().required);
+    }
+
+    #[test]
+    fn public_sso_auth_endpoints_are_documented() {
+        let spec = wardex_openapi_spec("0.35.0");
+
+        let sso_login = spec
+            .paths
+            .get("/api/auth/sso/login")
+            .unwrap()
+            .get
+            .as_ref()
+            .unwrap();
+        assert_eq!(sso_login.security.len(), 1);
+        assert!(sso_login.security[0].is_empty());
+        assert!(sso_login.responses.contains_key("302"));
+        assert!(sso_login.responses.contains_key("400"));
+        assert!(sso_login.responses.contains_key("503"));
+        assert!(sso_login
+            .parameters
+            .iter()
+            .any(|parameter| parameter.location == "query" && parameter.name == "provider_id"));
+
+        let sso_callback = spec.paths.get("/api/auth/sso/callback").unwrap();
+        let sso_callback_get = sso_callback.get.as_ref().unwrap();
+        assert_eq!(sso_callback_get.security.len(), 1);
+        assert!(sso_callback_get.security[0].is_empty());
+        assert!(sso_callback_get.responses.contains_key("302"));
+        assert!(sso_callback_get
+            .parameters
+            .iter()
+            .any(|parameter| parameter.location == "query" && parameter.name == "code"));
+
+        let sso_callback_post = sso_callback.post.as_ref().unwrap();
+        assert_eq!(sso_callback_post.security.len(), 1);
+        assert!(sso_callback_post.security[0].is_empty());
+        assert!(sso_callback_post.responses.contains_key("200"));
+        assert!(sso_callback_post.responses.contains_key("400"));
+        assert!(sso_callback_post.responses.contains_key("503"));
     }
 
     #[test]

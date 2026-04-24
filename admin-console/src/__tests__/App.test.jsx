@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider, RoleProvider, ThemeProvider, ToastProvider } from '../hooks.jsx';
 import App from '../App.jsx';
 
@@ -21,11 +21,19 @@ beforeEach(() => {
   });
 });
 
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location-probe">{`${location.pathname}${location.search}${location.hash}`}</div>
+  );
+}
+
 async function renderApp(initialRoute = '/') {
   let view;
   await act(async () => {
     view = render(
       <MemoryRouter initialEntries={[initialRoute]}>
+        <LocationProbe />
         <AuthProvider>
           <ThemeProvider>
             <RoleProvider>
@@ -207,5 +215,52 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Analyst Assistant' })).toBeInTheDocument();
     expect(screen.getAllByText('Analyst Assistant').length).toBeGreaterThan(0);
+  });
+
+  it('preserves route scope through mobile help and share actions', async () => {
+    localStorage.setItem('wardex_token', 'persisted-token');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    fetchMock.mockImplementation(async (url) => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => {
+        if (url === '/api/auth/session') {
+          return { authenticated: true, role: 'admin', username: 'tester' };
+        }
+        if (url === '/api/health') {
+          return { status: 'ok', version: '0.53.5' };
+        }
+        return {};
+      },
+    }));
+
+    await renderApp('/detection?intent=run-hunt&huntName=Credential%20Storm%20Pivot');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'More' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Share Link' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const sharedUrl = new URL(writeText.mock.calls[0][0]);
+    expect(sharedUrl.pathname).toBe('/detection');
+    expect(sharedUrl.searchParams.get('intent')).toBe('run-hunt');
+    expect(sharedUrl.searchParams.get('huntName')).toBe('Credential Storm Pivot');
+
+    await userEvent.click(screen.getByRole('button', { name: 'More' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Help For View' }));
+
+    await waitFor(() => {
+      const currentUrl = new URL(
+        `http://localhost${screen.getByTestId('location-probe').textContent || '/'}`,
+      );
+      expect(currentUrl.pathname).toBe('/help');
+      expect(currentUrl.searchParams.get('intent')).toBe('run-hunt');
+      expect(currentUrl.searchParams.get('huntName')).toBe('Credential Storm Pivot');
+      expect(currentUrl.searchParams.get('context')).toBe('threat-detection');
+    });
   });
 });

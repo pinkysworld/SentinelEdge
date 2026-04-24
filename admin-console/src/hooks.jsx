@@ -298,6 +298,83 @@ export function useApi(fn, deps = [], opts = {}) {
   return { data, loading, error, reload: load };
 }
 
+export function useApiGroup(requests, deps = [], opts = {}) {
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(!opts.skip);
+  const [errors, setErrors] = useState({});
+  const { skip = false } = opts;
+  const requestsRef = useRef(requests);
+  useEffect(() => {
+    requestsRef.current = requests;
+  });
+  const controllerRef = useRef(null);
+
+  const load = useCallback(async () => {
+    if (controllerRef.current) controllerRef.current.abort();
+    if (skip) {
+      setLoading(false);
+      return;
+    }
+
+    const entries = Object.entries(requestsRef.current || {});
+    if (entries.length === 0) {
+      setData({});
+      setErrors({});
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setLoading(true);
+    setErrors({});
+
+    try {
+      const results = await Promise.all(
+        entries.map(async ([key, request]) => {
+          try {
+            const value = await withSignal(controller.signal, () => request());
+            return { key, value, error: null };
+          } catch (error) {
+            return { key, value: undefined, error };
+          }
+        }),
+      );
+
+      if (!controller.signal.aborted) {
+        const nextData = {};
+        const nextErrors = {};
+
+        results.forEach(({ key, value, error }) => {
+          if (error) {
+            nextErrors[key] = error;
+            return;
+          }
+          nextData[key] = value;
+        });
+
+        setData((current) => ({ ...current, ...nextData }));
+        setErrors(nextErrors);
+      }
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, skip]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    return () => {
+      if (controllerRef.current) controllerRef.current.abort();
+    };
+  }, []);
+
+  return { data, loading, errors, reload: load };
+}
+
 // ── useInterval hook ─────────────────────────────────────────
 
 export function useInterval(callback, delayMs) {

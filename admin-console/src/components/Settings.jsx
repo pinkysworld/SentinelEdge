@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useId } from 'react';
-import { useApi, useToast } from '../hooks.jsx';
+import { useApi, useApiGroup, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { useConfirm } from './useConfirm.jsx';
@@ -747,16 +747,50 @@ export default function Settings() {
   const { data: monOpts } = useApi(api.monitoringOptions);
   const { data: monPaths } = useApi(api.monitoringPaths);
   const { data: flags } = useApi(api.featureFlags);
-  const { data: siemSt, reload: rSiemStatus } = useApi(api.siemStatus);
-  const { data: siemCfg, reload: rSiemConfig } = useApi(api.siemConfig);
-  const { data: taxiiSt } = useApi(api.taxiiStatus);
-  const { data: taxiiCfg } = useApi(api.taxiiConfig);
-  const { data: enrichConn } = useApi(api.enrichmentConnectors);
-  const { data: idp, reload: rIdp } = useApi(api.idpProviders);
-  const { data: scim, reload: rScim } = useApi(api.scimConfig);
-  const { data: ssoConfigData, reload: rSsoConfig } = useApi(api.authSsoConfig, [], {
-    skip: tab !== 'integrations',
-  });
+  const { data: integrationsData, reload: rIntegrations } = useApiGroup(
+    {
+      siemSt: api.siemStatus,
+      siemCfg: api.siemConfig,
+      taxiiSt: api.taxiiStatus,
+      taxiiCfg: api.taxiiConfig,
+      enrichConn: api.enrichmentConnectors,
+      idp: api.idpProviders,
+      scim: api.scimConfig,
+      ssoConfigData: api.authSsoConfig,
+      collectorsSummary: api.collectorsStatus,
+      awsCollectorData: api.collectorsAws,
+      azureCollectorData: api.collectorsAzure,
+      gcpCollectorData: api.collectorsGcp,
+      oktaCollectorData: api.collectorsOkta,
+      entraCollectorData: api.collectorsEntra,
+      m365CollectorData: api.collectorsM365,
+      workspaceCollectorData: api.collectorsWorkspace,
+      secretsData: api.secretsStatus,
+    },
+    [tab],
+    {
+      skip: tab !== 'integrations',
+    },
+  );
+  const {
+    siemSt,
+    siemCfg,
+    taxiiSt,
+    taxiiCfg,
+    enrichConn,
+    idp,
+    scim,
+    ssoConfigData,
+    collectorsSummary,
+    awsCollectorData,
+    azureCollectorData,
+    gcpCollectorData,
+    oktaCollectorData,
+    entraCollectorData,
+    m365CollectorData,
+    workspaceCollectorData,
+    secretsData,
+  } = integrationsData;
   const { data: sbomData } = useApi(api.sbom);
   const { data: dbVer } = useApi(api.adminDbVersion);
   const { data: dlqData } = useApi(api.dlqStats);
@@ -788,37 +822,6 @@ export default function Settings() {
       skip: tab !== 'admin',
     },
   );
-  const { data: collectorsSummary, reload: rCollectorsSummary } = useApi(api.collectorsStatus, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: awsCollectorData, reload: rAwsCollector } = useApi(api.collectorsAws, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: azureCollectorData, reload: rAzureCollector } = useApi(api.collectorsAzure, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: gcpCollectorData, reload: rGcpCollector } = useApi(api.collectorsGcp, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: oktaCollectorData, reload: rOktaCollector } = useApi(api.collectorsOkta, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: entraCollectorData, reload: rEntraCollector } = useApi(api.collectorsEntra, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: m365CollectorData, reload: rM365Collector } = useApi(api.collectorsM365, [], {
-    skip: tab !== 'integrations',
-  });
-  const { data: workspaceCollectorData, reload: rWorkspaceCollector } = useApi(
-    api.collectorsWorkspace,
-    [],
-    {
-      skip: tab !== 'integrations',
-    },
-  );
-  const { data: secretsData, reload: rSecrets } = useApi(api.secretsStatus, [], {
-    skip: tab !== 'integrations',
-  });
   const auditQueryValue = auditQuery.trim();
   const auditMethodValue = auditMethod !== 'all' ? auditMethod : undefined;
   const auditStatusValue = auditStatus !== 'all' ? auditStatus : undefined;
@@ -1293,7 +1296,7 @@ export default function Settings() {
       });
       const validation = normalizeValidation(result?.validation);
       const provider = result?.provider ?? {};
-      await Promise.all([rIdp(), rSsoConfig()]);
+      await rIntegrations();
       setIdpDraft(createIdpDraft(provider));
       setIdpEditorOpen(validation.status === 'warning');
       toast(
@@ -1343,7 +1346,7 @@ export default function Settings() {
         group_role_mappings: mappings,
       });
       const validation = normalizeValidation(result?.validation);
-      await Promise.all([rScim(), rSsoConfig()]);
+      await rIntegrations();
       setScimDraft(createScimDraft(result?.config ?? scimConfigData));
       setScimEditing(validation.status === 'warning');
       toast(
@@ -1445,7 +1448,7 @@ export default function Settings() {
     try {
       await api.setSiemConfig(buildSiemPayload());
       setSiemValidationResult(null);
-      await Promise.all([rSiemConfig(), rSiemStatus()]);
+      await rIntegrations();
       toast('SIEM setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save SIEM setup'), 'error');
@@ -1483,7 +1486,7 @@ export default function Settings() {
         event_name_filter: parseListInput(awsCollectorDraft.event_name_filter),
       });
       setAwsCollectorValidationResult(null);
-      await Promise.all([rAwsCollector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('AWS CloudTrail setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save AWS CloudTrail setup'), 'error');
@@ -1520,7 +1523,7 @@ export default function Settings() {
         categories: parseListInput(azureCollectorDraft.categories),
       });
       setAzureCollectorValidationResult(null);
-      await Promise.all([rAzureCollector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('Azure Activity setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save Azure Activity setup'), 'error');
@@ -1558,7 +1561,7 @@ export default function Settings() {
         page_size: Number(gcpCollectorDraft.page_size),
       });
       setGcpCollectorValidationResult(null);
-      await Promise.all([rGcpCollector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('GCP Audit setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save GCP Audit setup'), 'error');
@@ -1593,7 +1596,7 @@ export default function Settings() {
         event_type_filter: parseListInput(oktaCollectorDraft.event_type_filter),
       });
       setOktaCollectorValidationResult(null);
-      await Promise.all([rOktaCollector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('Okta identity setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save Okta identity setup'), 'error');
@@ -1628,7 +1631,7 @@ export default function Settings() {
         poll_interval_secs: Number(entraCollectorDraft.poll_interval_secs),
       });
       setEntraCollectorValidationResult(null);
-      await Promise.all([rEntraCollector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('Microsoft Entra identity setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save Microsoft Entra identity setup'), 'error');
@@ -1664,7 +1667,7 @@ export default function Settings() {
         content_types: parseListInput(m365CollectorDraft.content_types),
       });
       setM365CollectorValidationResult(null);
-      await Promise.all([rM365Collector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('Microsoft 365 activity setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save Microsoft 365 activity setup'), 'error');
@@ -1701,7 +1704,7 @@ export default function Settings() {
         applications: parseListInput(workspaceCollectorDraft.applications),
       });
       setWorkspaceCollectorValidationResult(null);
-      await Promise.all([rWorkspaceCollector(), rCollectorsSummary()]);
+      await rIntegrations();
       toast('Google Workspace activity setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save Google Workspace activity setup'), 'error');
@@ -1740,7 +1743,7 @@ export default function Settings() {
         env_prefix: secretsDraft.env_prefix,
         secrets_dir: secretsDraft.secrets_dir,
       });
-      await rSecrets();
+      await rIntegrations();
       toast('Secrets manager setup saved', 'success');
     } catch (error) {
       toast(formatApiError(error, 'Failed to save secrets manager setup'), 'error');
@@ -3094,17 +3097,7 @@ export default function Settings() {
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-header">
               <span className="card-title">Cloud Collectors &amp; Secrets</span>
-              <button
-                className="btn btn-sm"
-                type="button"
-                onClick={() => {
-                  rCollectorsSummary();
-                  rAwsCollector();
-                  rAzureCollector();
-                  rGcpCollector();
-                  rSecrets();
-                }}
-              >
+              <button className="btn btn-sm" type="button" onClick={() => rIntegrations()}>
                 ↻ Refresh
               </button>
             </div>

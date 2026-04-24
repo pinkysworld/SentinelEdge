@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SearchPalette from '../components/SearchPalette';
+import { buildCommandHref } from '../components/workflowPivots.js';
 
 // Mock the API module
 vi.mock('../api', () => ({
@@ -46,6 +47,20 @@ describe('SearchPalette', () => {
     );
     const overlay = container.querySelector('.search-palette-overlay');
     if (overlay) fireEvent.click(overlay);
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it('uses shared command routes for quick actions', () => {
+    render(<SearchPalette open={true} onClose={onClose} onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create Incident/i }));
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'create-incident',
+        path: buildCommandHref('create-incident'),
+      }),
+    );
     expect(onClose).toHaveBeenCalledWith(false);
   });
 });

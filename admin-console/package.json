@@ -8,10 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src/",
+    "lint:file": "eslint",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
+    "format:file": "prettier --write",
     "format:check": "prettier --check src/",
-    "test": "vitest"
+    "format:check:file": "prettier --check",
+    "test": "vitest",
+    "test:file": "vitest run"
   },
   "dependencies": {
     "react": "^19.1.0",
