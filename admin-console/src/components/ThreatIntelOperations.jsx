@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useApi, useToast } from '../hooks.jsx';
+import { useApiGroup, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
@@ -160,29 +160,25 @@ export default function ThreatIntelOperations() {
   const [deceptionSubmitting, setDeceptionSubmitting] = useState(false);
 
   const {
-    data: libraryData,
-    loading: libraryLoading,
-    error: libraryError,
-    reload: reloadLibrary,
-  } = useApi(api.threatIntelLibraryV2);
-  const {
-    data: sightingsData,
-    loading: sightingsLoading,
-    error: sightingsError,
-    reload: reloadSightings,
-  } = useApi(() => api.threatIntelSightings(50));
-  const {
-    data: connectorsData,
-    loading: connectorsLoading,
-    error: connectorsError,
-    reload: reloadConnectors,
-  } = useApi(api.enrichmentConnectors);
-  const {
-    data: deceptionData,
-    loading: deceptionLoading,
-    error: deceptionError,
-    reload: reloadDeception,
-  } = useApi(api.deceptionStatus);
+    data: threatOpsWorkspaceData,
+    loading: threatOpsWorkspaceLoading,
+    errors: threatOpsWorkspaceErrors,
+    reload: reloadThreatOpsWorkspace,
+  } = useApiGroup({
+    libraryData: api.threatIntelLibraryV2,
+    sightingsData: () => api.threatIntelSightings(50),
+    connectorsData: api.enrichmentConnectors,
+    deceptionData: api.deceptionStatus,
+  });
+  const { libraryData, sightingsData, connectorsData, deceptionData } = threatOpsWorkspaceData;
+  const libraryLoading = threatOpsWorkspaceLoading;
+  const sightingsLoading = threatOpsWorkspaceLoading;
+  const connectorsLoading = threatOpsWorkspaceLoading;
+  const deceptionLoading = threatOpsWorkspaceLoading;
+  const libraryError = threatOpsWorkspaceErrors.libraryData;
+  const sightingsError = threatOpsWorkspaceErrors.sightingsData;
+  const connectorsError = threatOpsWorkspaceErrors.connectorsData;
+  const deceptionError = threatOpsWorkspaceErrors.deceptionData;
 
   const iocs = useMemo(() => {
     if (Array.isArray(libraryData?.indicators)) return libraryData.indicators;
@@ -304,12 +300,9 @@ export default function ThreatIntelOperations() {
     high_threat_interactions: deceptionData?.high_threat_interactions ?? 0,
   };
 
-  const refreshAll = () => {
-    reloadLibrary();
-    reloadSightings();
-    reloadConnectors();
-    reloadDeception();
-  };
+  const refreshThreatOpsWorkspace = () => reloadThreatOpsWorkspace();
+
+  const refreshAll = () => refreshThreatOpsWorkspace();
 
   const addIndicator = async () => {
     const value = String(indicatorDraft.value || '').trim();
@@ -331,7 +324,7 @@ export default function ThreatIntelOperations() {
         confidence,
       });
       setIndicatorDraft((current) => ({ ...current, value: '' }));
-      reloadLibrary();
+      refreshThreatOpsWorkspace();
       toast('Indicator added to the threat library.', 'success');
     } catch {
       toast('Failed to add the indicator.', 'error');
@@ -350,8 +343,7 @@ export default function ThreatIntelOperations() {
     setPurgingIndicators(true);
     try {
       const result = await api.threatIntelPurge({ ttl_days: ttlDays });
-      reloadLibrary();
-      reloadSightings();
+      refreshThreatOpsWorkspace();
       toast(`${result?.purged ?? 0} expired indicators removed.`, 'success');
     } catch {
       toast('Failed to purge expired indicators.', 'error');
@@ -396,7 +388,7 @@ export default function ThreatIntelOperations() {
       });
       const saved = result?.connector || null;
       if (saved) openConnectorEditor(saved);
-      reloadConnectors();
+      refreshThreatOpsWorkspace();
       toast(connectorDraft.id ? 'Connector updated.' : 'Connector created.', 'success');
     } catch {
       toast('Failed to save enrichment connector.', 'error');
@@ -420,7 +412,7 @@ export default function ThreatIntelOperations() {
         description: String(deceptionDraft.description || '').trim() || undefined,
       });
       setDeceptionDraft((current) => ({ ...current, name: '' }));
-      reloadDeception();
+      refreshThreatOpsWorkspace();
       toast('Decoy deployed to the deception engine.', 'success');
     } catch {
       toast('Failed to deploy the decoy.', 'error');
@@ -626,7 +618,7 @@ export default function ThreatIntelOperations() {
                 </select>
               </div>
               <div className="triage-toolbar-group">
-                <button className="btn btn-sm" onClick={reloadLibrary}>
+                <button className="btn btn-sm" onClick={refreshThreatOpsWorkspace}>
                   Refresh
                 </button>
               </div>
@@ -865,7 +857,7 @@ export default function ThreatIntelOperations() {
                 </select>
               </div>
               <div className="triage-toolbar-group">
-                <button className="btn btn-sm" onClick={reloadConnectors}>
+                <button className="btn btn-sm" onClick={refreshThreatOpsWorkspace}>
                   Refresh
                 </button>
               </div>
@@ -1108,7 +1100,7 @@ export default function ThreatIntelOperations() {
                     </select>
                   </div>
                   <div className="triage-toolbar-group">
-                    <button className="btn btn-sm" onClick={reloadDeception}>
+                    <button className="btn btn-sm" onClick={refreshThreatOpsWorkspace}>
                       Refresh
                     </button>
                   </div>

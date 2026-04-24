@@ -387,6 +387,60 @@ describe('ThreatIntelOperations', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('refreshes grouped threat intel workspace data from the header control', async () => {
+    const callCounts = {
+      library: 0,
+      sightings: 0,
+      connectors: 0,
+      deception: 0,
+    };
+    const defaultImplementation = globalThis.fetch.getMockImplementation();
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const parsed = new URL(String(url), 'http://localhost');
+      const { pathname } = parsed;
+      const method = options.method || 'GET';
+
+      if (method === 'GET' && pathname === '/api/threat-intel/library/v2') {
+        callCounts.library += 1;
+      }
+      if (method === 'GET' && pathname === '/api/threat-intel/sightings') {
+        callCounts.sightings += 1;
+      }
+      if (method === 'GET' && pathname === '/api/enrichments/connectors') {
+        callCounts.connectors += 1;
+      }
+      if (method === 'GET' && pathname === '/api/deception/status') {
+        callCounts.deception += 1;
+      }
+
+      return defaultImplementation(url, options);
+    });
+
+    const user = userEvent.setup();
+    renderThreatOps();
+
+    expect(await screen.findByText('Threat Ops Workspace')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(callCounts.library).toBeGreaterThan(0);
+      expect(callCounts.sightings).toBeGreaterThan(0);
+      expect(callCounts.connectors).toBeGreaterThan(0);
+      expect(callCounts.deception).toBeGreaterThan(0);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    await user.click(screen.getByRole('button', { name: 'Refresh All' }));
+
+    await waitFor(() => {
+      expect(callCounts.library).toBe(initialCounts.library + 1);
+      expect(callCounts.sightings).toBe(initialCounts.sightings + 1);
+      expect(callCounts.connectors).toBe(initialCounts.connectors + 1);
+      expect(callCounts.deception).toBe(initialCounts.deception + 1);
+    });
+  });
+
   it('purges expired indicators using the selected ttl', async () => {
     const user = userEvent.setup();
     renderThreatOps();
