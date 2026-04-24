@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useApi, useInterval, useToast } from '../hooks.jsx';
+import { useApi, useApiGroup, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import ProcessDrawer from './ProcessDrawer.jsx';
 import WorkflowGuidance from './WorkflowGuidance.jsx';
@@ -497,28 +497,47 @@ export default function SOCWorkbench() {
     [],
   );
 
-  const { data: overview, reload: rOverview } = useApi(api.workbenchOverview);
-  const { data: incList, reload: rInc } = useApi(api.incidents);
-  const { data: caseList, reload: rCases } = useApi(api.cases);
-  const { data: caseStats } = useApi(api.casesStats);
-  const { data: queue, reload: rQueue } = useApi(api.queueAlerts);
-  const { data: qStats } = useApi(api.queueStats);
-  const { data: pending } = useApi(api.responsePending);
-  const { data: respReq } = useApi(api.responseRequests);
-  const { data: respAudit } = useApi(api.responseAudit);
-  const { data: respStats } = useApi(api.responseStats);
-  const { data: procs } = useApi(api.processTree);
-  const { data: deepCh } = useApi(api.deepChains);
-  const { data: liveProcs, reload: rLive } = useApi(api.processesLive);
-  const { data: procFindings, reload: rProcFindings } = useApi(api.processesAnalysis);
+  const { data: socTriageData, reload: reloadSocTriage } = useApiGroup({
+    overview: api.workbenchOverview,
+    incList: api.incidents,
+    caseList: api.cases,
+    caseStats: api.casesStats,
+    queue: api.queueAlerts,
+    qStats: api.queueStats,
+    wsStats: api.wsStats,
+  });
+  const { overview, incList, caseList, caseStats, queue, qStats, wsStats } = socTriageData;
+  const rInc = reloadSocTriage;
+  const rCases = reloadSocTriage;
+  const rQueue = reloadSocTriage;
+  const { data: responseData, reload: reloadResponseData } = useApiGroup({
+    pending: api.responsePending,
+    respReq: api.responseRequests,
+    respAudit: api.responseAudit,
+    respStats: api.responseStats,
+  });
+  const { pending, respReq, respAudit, respStats } = responseData;
+  const { data: processTreeData, reload: reloadProcessTreeData } = useApiGroup({
+    procs: api.processTree,
+    deepCh: api.deepChains,
+    liveProcs: api.processesLive,
+    procFindings: api.processesAnalysis,
+  });
+  const { procs, deepCh, liveProcs, procFindings } = processTreeData;
   const { data: rbacData, reload: rRbac } = useApi(api.rbacUsers);
-  const { data: tlHost } = useApi(api.timelineHost);
-  const { data: escPolicies, reload: rEsc } = useApi(api.escalationPolicies);
-  const { data: escActive, reload: rEscActive } = useApi(api.escalationActive);
-  const { data: workflows } = useApi(api.investigationWorkflows);
-  const { data: activeInvestigations, reload: rInv } = useApi(api.investigationActive);
-  const { data: efficacyData, reload: rEfficacy } = useApi(api.efficacySummary);
-  const { data: wsStats } = useApi(api.wsStats);
+  const { data: escalationData, reload: reloadEscalationData } = useApiGroup({
+    escPolicies: api.escalationPolicies,
+    escActive: api.escalationActive,
+  });
+  const { escPolicies, escActive } = escalationData;
+  const rEsc = reloadEscalationData;
+  const rEscActive = reloadEscalationData;
+  const { data: investigationData, reload: reloadInvestigations } = useApiGroup({
+    workflows: api.investigationWorkflows,
+    activeInvestigations: api.investigationActive,
+  });
+  const { workflows, activeInvestigations } = investigationData;
+  const rInv = reloadInvestigations;
   const [selectedInc, setSelectedInc] = useState(null);
   const [incDetail, setIncDetail] = useState(null);
   const [incStoryline, setIncStoryline] = useState(null);
@@ -619,15 +638,21 @@ export default function SOCWorkbench() {
   }, [checklist, checklistType]);
 
   useInterval(() => {
-    rOverview();
-    rQueue();
+    reloadSocTriage();
     rEscActive();
   }, 15000);
   useInterval(
     () => {
+      if (tab === 'response') {
+        reloadResponseData();
+      }
+    },
+    tab === 'response' ? 15000 : null,
+  );
+  useInterval(
+    () => {
       if (tab === 'process-tree') {
-        rLive();
-        rProcFindings();
+        reloadProcessTreeData();
       }
     },
     tab === 'process-tree' ? 15000 : null,
@@ -732,6 +757,22 @@ export default function SOCWorkbench() {
     investigationDetailContext?.entity_id ||
     queueSeedHost ||
     queueSeedEntity;
+  const timelineHostTarget =
+    investigationDetailContext?.host ||
+    investigationDetailContext?.agent_id ||
+    investigationDetailContext?.endpoint_id ||
+    queueSeedHost ||
+    '';
+  const { data: socInsightData, reload: reloadSocInsights } = useApiGroup(
+    {
+      tlHost: () => api.timelineHost(timelineHostTarget),
+      efficacyData: api.efficacySummary,
+    },
+    [timelineHostTarget],
+  );
+  const { tlHost, efficacyData } = socInsightData;
+  const rEfficacy = reloadSocInsights;
+  const rTimeline = reloadSocInsights;
   const hasResponseContext = Boolean(
     focusedCaseId || focusedInvestigationParam || responseTarget || responseSource,
   );
@@ -2911,19 +2952,31 @@ export default function SOCWorkbench() {
 
       {tab === 'response' && (
         <>
-          {hasResponseContext && (
-            <div className="detail-callout" style={{ marginBottom: 16 }}>
-              <strong>Workflow handoff context</strong>
-              <div style={{ marginTop: 6 }}>
-                {responseSource
-                  ? `${responseSource.charAt(0).toUpperCase()}${responseSource.slice(1)} workflow`
-                  : 'Selected workflow'}
-                {focusedCase ? ` is linked to case ${focusedCase.id} (${focusedCase.title}).` : ''}
-                {focusedInvestigation
-                  ? ` Investigation ${focusedInvestigation.workflow_name || focusedInvestigation.id} is still active.`
-                  : ''}
-                {responseTarget ? ` Suggested response target: ${responseTarget}.` : ''}
+          <div className="detail-callout" style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <strong>
+                  {hasResponseContext ? 'Workflow handoff context' : 'Response Operations'}
+                </strong>
+                <div style={{ marginTop: 6 }}>
+                  {hasResponseContext
+                    ? `${responseSource ? `${responseSource.charAt(0).toUpperCase()}${responseSource.slice(1)} workflow` : 'Selected workflow'}${focusedCase ? ` is linked to case ${focusedCase.id} (${focusedCase.title}).` : ''}${focusedInvestigation ? ` Investigation ${focusedInvestigation.workflow_name || focusedInvestigation.id} is still active.` : ''}${responseTarget ? ` Suggested response target: ${responseTarget}.` : ''}`
+                    : 'Monitor queued approvals, in-flight playbooks, and audit history from one shared response queue.'}
+                </div>
               </div>
+              <button className="btn btn-sm" onClick={reloadResponseData}>
+                ↻ Refresh
+              </button>
+            </div>
+            {hasResponseContext && (
               <div className="btn-group" style={{ marginTop: 10, flexWrap: 'wrap' }}>
                 {focusedCase && (
                   <button className="btn btn-sm" onClick={() => openCaseFocus(focusedCase.id)}>
@@ -2941,8 +2994,8 @@ export default function SOCWorkbench() {
                   </button>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
           <div className="card-grid">
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>
@@ -3472,13 +3525,7 @@ export default function SOCWorkbench() {
                   >
                     Export
                   </button>
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => {
-                      rLive();
-                      rProcFindings();
-                    }}
-                  >
+                  <button className="btn btn-sm" onClick={() => reloadProcessTreeData()}>
                     ↻ Refresh
                   </button>
                 </div>
@@ -3548,7 +3595,7 @@ export default function SOCWorkbench() {
               <div className="card-header">
                 <span className="card-title">Live Processes ({liveProcs?.count ?? '—'})</span>
                 <div className="btn-group">
-                  <button className="btn btn-sm" onClick={rLive}>
+                  <button className="btn btn-sm" onClick={reloadProcessTreeData}>
                     ↻ Refresh
                   </button>
                   <button
@@ -4524,8 +4571,11 @@ export default function SOCWorkbench() {
 
       {tab === 'timeline' && (
         <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            Host Timeline
+          <div className="card-header">
+            <span className="card-title">Host Timeline</span>
+            <button className="btn btn-sm" onClick={rTimeline}>
+              ↻ Refresh
+            </button>
           </div>
           {(() => {
             const events =
@@ -5211,8 +5261,7 @@ export default function SOCWorkbench() {
         snapshot={selectedProcess}
         onClose={() => setSelectedProcess(null)}
         onUpdated={() => {
-          rLive();
-          rProcFindings();
+          reloadProcessTreeData();
         }}
       />
     </div>

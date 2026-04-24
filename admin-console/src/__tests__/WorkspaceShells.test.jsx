@@ -117,6 +117,17 @@ async function defaultFetchImplementation(url) {
         },
       },
     });
+  if (String(url).includes('/api/timeline/host'))
+    return jsonResponse({
+      events: [
+        {
+          timestamp: '2024-01-01T00:00:00Z',
+          host: 'host-1',
+          severity: 'high',
+          event: 'Suspicious PowerShell launched',
+        },
+      ],
+    });
   if (String(url).includes('/api/detection/replay-corpus'))
     return jsonResponse({
       status: 'ready',
@@ -403,6 +414,8 @@ async function defaultFetchImplementation(url) {
         },
       ],
     });
+  if (String(url).includes('/api/ws/stats'))
+    return jsonResponse({ connected_subscribers: 2, events_emitted: 14 });
   if (String(url).includes('/api/inbox')) return jsonResponse({ items: [] });
   return jsonResponse({});
 }
@@ -555,6 +568,468 @@ describe('workspace shells', () => {
     expect(await screen.findByText('Recommendation Queue')).toBeInTheDocument();
     expect((await screen.findAllByText('Complete identity routing')).length).toBeGreaterThan(0);
     expect(await screen.findByText('Historical Runs')).toBeInTheDocument();
+  });
+
+  it('refreshes all grouped process-tree data from either refresh action', async () => {
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+
+      if (href.includes('/api/process-tree/deep-chains')) {
+        return jsonResponse({
+          chains: [{ chain: ['powershell.exe', 'rundll32.exe'], depth: 2 }],
+        });
+      }
+
+      if (href.includes('/api/process-tree')) {
+        return jsonResponse({
+          nodes: [
+            {
+              pid: 4242,
+              name: 'powershell.exe',
+              parent_pid: 321,
+            },
+          ],
+        });
+      }
+
+      if (href.includes('/api/processes/live')) {
+        return jsonResponse({
+          count: 1,
+          processes: [
+            {
+              pid: 4242,
+              name: 'powershell.exe',
+              user: 'analyst',
+              cpu_percent: 14.2,
+              mem_percent: 4.1,
+            },
+          ],
+        });
+      }
+
+      if (href.includes('/api/processes/analysis')) {
+        return jsonResponse({
+          total: 1,
+          risk_summary: { high: 1 },
+          findings: [
+            {
+              risk_level: 'high',
+              pid: 4242,
+              name: 'powershell.exe',
+              user: 'analyst',
+              cpu_percent: 14.2,
+              mem_percent: 4.1,
+              reason: 'Suspicious parent chain',
+            },
+          ],
+        });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<SOCWorkbench />, '/soc#process-tree');
+
+    const countProcessCalls = (path) =>
+      globalThis.fetch.mock.calls.filter(([url]) => String(url).split('?')[0] === path).length;
+
+    const findingsHeading = await screen.findByText('Process Security Findings (1)');
+    const findingsCard = findingsHeading.closest('.card');
+    if (!findingsCard) throw new Error('process findings card not found');
+
+    const liveHeading = await screen.findByText('Live Processes (1)');
+    const liveCard = liveHeading.closest('.card');
+    if (!liveCard) throw new Error('live processes card not found');
+
+    const initialLiveCalls = countProcessCalls('/api/processes/live');
+    const initialFindingCalls = countProcessCalls('/api/processes/analysis');
+    const initialTreeCalls = countProcessCalls('/api/process-tree');
+    const initialDeepChainCalls = countProcessCalls('/api/process-tree/deep-chains');
+
+    expect(initialLiveCalls).toBeGreaterThan(0);
+    expect(initialFindingCalls).toBeGreaterThan(0);
+    expect(initialTreeCalls).toBeGreaterThan(0);
+    expect(initialDeepChainCalls).toBeGreaterThan(0);
+
+    expect(await screen.findByText('Deep Process Chains')).toBeInTheDocument();
+    expect(await screen.findByText('powershell.exe → rundll32.exe')).toBeInTheDocument();
+
+    fireEvent.click(within(findingsCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countProcessCalls('/api/processes/live')).toBe(initialLiveCalls + 1);
+      expect(countProcessCalls('/api/processes/analysis')).toBe(initialFindingCalls + 1);
+      expect(countProcessCalls('/api/process-tree')).toBe(initialTreeCalls + 1);
+      expect(countProcessCalls('/api/process-tree/deep-chains')).toBe(initialDeepChainCalls + 1);
+    });
+
+    fireEvent.click(within(liveCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countProcessCalls('/api/processes/live')).toBe(initialLiveCalls + 2);
+      expect(countProcessCalls('/api/processes/analysis')).toBe(initialFindingCalls + 2);
+      expect(countProcessCalls('/api/process-tree')).toBe(initialTreeCalls + 2);
+      expect(countProcessCalls('/api/process-tree/deep-chains')).toBe(initialDeepChainCalls + 2);
+    });
+  });
+
+  it('refreshes grouped response data from the response workspace', async () => {
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+
+      if (href.includes('/api/response/pending')) {
+        return jsonResponse({
+          actions: [
+            {
+              action: 'block-host',
+              target: 'host-1',
+              severity: 'high',
+              requested: '2024-01-01T00:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (href.includes('/api/response/requests')) {
+        return jsonResponse({
+          requests: [
+            {
+              id: 'resp-1',
+              type: 'Contain host',
+              target: 'host-1',
+              status: 'running',
+              requested_at: '2024-01-01T00:00:00Z',
+              steps: [{ name: 'Isolate host', status: 'running' }],
+            },
+          ],
+        });
+      }
+
+      if (href.includes('/api/response/audit')) {
+        return jsonResponse({
+          entries: [
+            {
+              timestamp: '2024-01-01T00:00:00Z',
+              actor: 'analyst-1',
+              action: 'Requested host isolation',
+            },
+          ],
+        });
+      }
+
+      if (href.includes('/api/response/stats')) {
+        return jsonResponse({ pending: 1, running: 1, completed: 4, failed: 0 });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<SOCWorkbench />, '/soc#response');
+
+    const countResponseCalls = (fragment) =>
+      globalThis.fetch.mock.calls.filter(
+        ([url, options]) =>
+          String(url).includes(fragment) &&
+          String(options?.method || 'GET').toUpperCase() === 'GET',
+      ).length;
+
+    const responseHeader = await screen.findByText('Response Operations');
+    const responseCallout = responseHeader.closest('.detail-callout');
+    if (!responseCallout) throw new Error('response callout not found');
+
+    expect(await screen.findByText('block-host')).toBeInTheDocument();
+    expect(await screen.findByText('Requested host isolation')).toBeInTheDocument();
+
+    const initialPendingCalls = countResponseCalls('/api/response/pending');
+    const initialRequestCalls = countResponseCalls('/api/response/requests');
+    const initialAuditCalls = countResponseCalls('/api/response/audit');
+    const initialStatsCalls = countResponseCalls('/api/response/stats');
+
+    expect(initialPendingCalls).toBeGreaterThan(0);
+    expect(initialRequestCalls).toBeGreaterThan(0);
+    expect(initialAuditCalls).toBeGreaterThan(0);
+    expect(initialStatsCalls).toBeGreaterThan(0);
+
+    fireEvent.click(within(responseCallout).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countResponseCalls('/api/response/pending')).toBe(initialPendingCalls + 1);
+      expect(countResponseCalls('/api/response/requests')).toBe(initialRequestCalls + 1);
+      expect(countResponseCalls('/api/response/audit')).toBe(initialAuditCalls + 1);
+      expect(countResponseCalls('/api/response/stats')).toBe(initialStatsCalls + 1);
+    });
+  });
+
+  it('refreshes grouped escalation data from refresh and mutation actions', async () => {
+    const activeEscalations = [
+      {
+        id: 'esc-1',
+        incident_id: 'inc-7',
+        severity: 'high',
+        policy: 'Critical Route',
+        started: '2024-01-01T00:00:00Z',
+        level: 1,
+      },
+    ];
+    const policies = [
+      {
+        id: 'policy-1',
+        name: 'Critical Route',
+        severity: 'high',
+        channel: 'slack',
+        targets: ['secops@corp.test'],
+        timeout_minutes: 30,
+      },
+    ];
+    const ackBodies = [];
+    const createBodies = [];
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+      const method = String(options?.method || 'GET').toUpperCase();
+
+      if (href.includes('/api/escalation/active') && method === 'GET') {
+        return jsonResponse({ escalations: activeEscalations });
+      }
+
+      if (href.includes('/api/escalation/policies') && method === 'GET') {
+        return jsonResponse({ policies });
+      }
+
+      if (href.includes('/api/escalation/acknowledge') && method === 'POST') {
+        const body = JSON.parse(options.body);
+        ackBodies.push(body);
+        activeEscalations.splice(0, activeEscalations.length);
+        return jsonResponse({ status: 'ok' });
+      }
+
+      if (href.includes('/api/escalation/policies') && method === 'POST') {
+        const body = JSON.parse(options.body);
+        createBodies.push(body);
+        policies.push({ id: `policy-${policies.length + 1}`, ...body });
+        return jsonResponse({ id: `policy-${policies.length}`, status: 'created' });
+      }
+
+      if (href.includes('/api/escalation/start') && method === 'POST') {
+        return jsonResponse({ status: 'started' });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<SOCWorkbench />, '/soc#escalation');
+
+    const countEscalationCalls = (fragment, method = 'GET') =>
+      globalThis.fetch.mock.calls.filter(
+        ([url, options]) =>
+          String(url).includes(fragment) &&
+          String(options?.method || 'GET').toUpperCase() === method,
+      ).length;
+
+    const activeHeading = await screen.findByText('Active Escalations');
+    const activeCard = activeHeading.closest('.card');
+    if (!activeCard) throw new Error('active escalations card not found');
+
+    const policiesHeading = await screen.findByText('Escalation Policies');
+    const policiesCard = policiesHeading.closest('.card');
+    if (!policiesCard) throw new Error('escalation policies card not found');
+
+    expect(within(activeCard).getByText('Critical Route')).toBeInTheDocument();
+    expect(within(policiesCard).getByText('Critical Route')).toBeInTheDocument();
+
+    const initialPolicyCalls = countEscalationCalls('/api/escalation/policies');
+    const initialActiveCalls = countEscalationCalls('/api/escalation/active');
+
+    expect(initialPolicyCalls).toBeGreaterThan(0);
+    expect(initialActiveCalls).toBeGreaterThan(0);
+
+    fireEvent.click(within(activeCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countEscalationCalls('/api/escalation/policies')).toBe(initialPolicyCalls + 1);
+      expect(countEscalationCalls('/api/escalation/active')).toBe(initialActiveCalls + 1);
+    });
+
+    fireEvent.click(within(policiesCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countEscalationCalls('/api/escalation/policies')).toBe(initialPolicyCalls + 2);
+      expect(countEscalationCalls('/api/escalation/active')).toBe(initialActiveCalls + 2);
+    });
+
+    fireEvent.click(within(activeCard).getByRole('button', { name: 'Acknowledge' }));
+
+    await waitFor(() => {
+      expect(ackBodies).toEqual(
+        expect.arrayContaining([expect.objectContaining({ escalation_id: 'esc-1' })]),
+      );
+      expect(countEscalationCalls('/api/escalation/policies')).toBe(initialPolicyCalls + 3);
+      expect(countEscalationCalls('/api/escalation/active')).toBe(initialActiveCalls + 3);
+    });
+
+    expect(await screen.findByText('No active escalations')).toBeInTheDocument();
+
+    fireEvent.click(within(policiesCard).getByRole('button', { name: '+ New Policy' }));
+    fireEvent.change(screen.getByPlaceholderText('Policy name'), {
+      target: { value: 'Containment Follow-up' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Targets (comma-separated)'), {
+      target: { value: 'secops@corp.test, oncall' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Timeout (min)'), {
+      target: { value: '45' },
+    });
+    fireEvent.click(within(policiesCard).getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => {
+      expect(createBodies).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'Containment Follow-up',
+            targets: ['secops@corp.test', 'oncall'],
+            timeout_minutes: 45,
+          }),
+        ]),
+      );
+      expect(countEscalationCalls('/api/escalation/policies')).toBe(initialPolicyCalls + 4);
+      expect(countEscalationCalls('/api/escalation/active')).toBe(initialActiveCalls + 4);
+    });
+
+    expect(await screen.findByText('Containment Follow-up')).toBeInTheDocument();
+  });
+
+  it('refreshes grouped queue data and websocket stats together from the queue workspace', async () => {
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+
+      if (href.includes('/api/queue/alerts')) {
+        return jsonResponse({
+          alerts: [
+            {
+              id: 'alert-1',
+              severity: 'high',
+              summary: 'Password spray against Okta tenant',
+              assigned_to: 'analyst-1',
+            },
+          ],
+        });
+      }
+      if (href.includes('/api/queue/stats')) {
+        return jsonResponse({ pending: 1, high: 1, medium: 0 });
+      }
+      if (href.includes('/api/ws/stats')) {
+        return jsonResponse({ connected_subscribers: 3, events_emitted: 21 });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<SOCWorkbench />, '/soc#queue');
+
+    const countCalls = (fragment) =>
+      globalThis.fetch.mock.calls.filter(([url]) => String(url).includes(fragment)).length;
+
+    const queueHeading = await screen.findByText('SOC Queue (1 alerts)');
+    const queueCard = queueHeading.closest('.card');
+    if (!queueCard) throw new Error('queue card not found');
+
+    expect(await screen.findByText('Live (3)')).toBeInTheDocument();
+
+    const initialQueueCalls = countCalls('/api/queue/alerts');
+    const initialQueueStatsCalls = countCalls('/api/queue/stats');
+    const initialWsStatsCalls = countCalls('/api/ws/stats');
+
+    expect(initialQueueCalls).toBeGreaterThan(0);
+    expect(initialQueueStatsCalls).toBeGreaterThan(0);
+    expect(initialWsStatsCalls).toBeGreaterThan(0);
+
+    fireEvent.click(within(queueCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countCalls('/api/queue/alerts')).toBe(initialQueueCalls + 1);
+      expect(countCalls('/api/queue/stats')).toBe(initialQueueStatsCalls + 1);
+      expect(countCalls('/api/ws/stats')).toBe(initialWsStatsCalls + 1);
+    });
+  });
+
+  it('refreshes grouped efficacy and timeline data from either workspace', async () => {
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+
+      if (href.includes('/api/queue/alerts')) {
+        return jsonResponse({
+          alerts: [
+            {
+              id: 'alert-1',
+              severity: 'high',
+              summary: 'Credential storm alert on host-1',
+              host: 'host-1',
+              assigned_to: 'analyst-1',
+            },
+          ],
+        });
+      }
+      if (href.includes('/api/efficacy/summary')) {
+        return jsonResponse({
+          total_alerts_triaged: 10,
+          overall_tp_rate: 0.7,
+          overall_precision: 0.66,
+        });
+      }
+      if (href.includes('/api/timeline/host')) {
+        return jsonResponse({
+          events: [
+            {
+              timestamp: '2024-01-01T00:00:00Z',
+              host: 'host-1',
+              severity: 'high',
+              event: 'Suspicious PowerShell launched',
+            },
+          ],
+        });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<SOCWorkbench />, '/soc?target=host-1#efficacy');
+
+    const countCalls = (fragment) =>
+      globalThis.fetch.mock.calls.filter(([url]) => String(url).includes(fragment)).length;
+
+    const efficacyHeading = await screen.findByText('Detection Efficacy');
+    const efficacyCard = efficacyHeading.closest('.card');
+    if (!efficacyCard) throw new Error('efficacy card not found');
+
+    await waitFor(() => {
+      expect(countCalls('/api/efficacy/summary')).toBeGreaterThan(0);
+      expect(countCalls('/api/timeline/host')).toBeGreaterThan(0);
+    });
+
+    const initialEfficacyCalls = countCalls('/api/efficacy/summary');
+    const initialTimelineCalls = countCalls('/api/timeline/host');
+
+    fireEvent.click(within(efficacyCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countCalls('/api/efficacy/summary')).toBe(initialEfficacyCalls + 1);
+      expect(countCalls('/api/timeline/host')).toBe(initialTimelineCalls + 1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+
+    const timelineHeading = await screen.findByText('Host Timeline');
+    const timelineCard = timelineHeading.closest('.card');
+    if (!timelineCard) throw new Error('timeline card not found');
+
+    expect(await screen.findByText('Suspicious PowerShell launched')).toBeInTheDocument();
+
+    fireEvent.click(within(timelineCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countCalls('/api/efficacy/summary')).toBe(initialEfficacyCalls + 2);
+      expect(countCalls('/api/timeline/host')).toBe(initialTimelineCalls + 2);
+    });
   });
 
   it('syncs a focused case to external ticketing from the cases workspace', async () => {
@@ -1060,11 +1535,26 @@ describe('workspace shells', () => {
     renderWithProviders(<SOCWorkbench />, '/soc');
     fireEvent.click(await screen.findByRole('button', { name: 'Investigations' }));
 
+    const countCalls = (matcher) =>
+      globalThis.fetch.mock.calls.filter(([url]) => matcher(String(url))).length;
+
     expect(await screen.findByText('Active Investigations')).toBeInTheDocument();
     expect((await screen.findAllByText('Investigate Credential Storm')).length).toBeGreaterThan(0);
     expect(
       (await screen.findAllByRole('button', { name: 'Open Primary Pivot' })).length,
     ).toBeGreaterThan(0);
+
+    const initialWorkflowCalls = countCalls((href) =>
+      href.includes('/api/investigations/workflows'),
+    );
+    const initialActiveCalls = countCalls((href) => href.includes('/api/investigations/active'));
+    const initialCaseCalls = countCalls(
+      (href) => href.includes('/api/cases') && !href.includes('/api/cases/stats'),
+    );
+    const initialCaseStatsCalls = countCalls((href) => href.includes('/api/cases/stats'));
+
+    expect(initialWorkflowCalls).toBeGreaterThan(0);
+    expect(initialActiveCalls).toBeGreaterThan(0);
 
     const noteFields = await screen.findAllByLabelText('Analyst note');
     fireEvent.change(noteFields[0], { target: { value: 'VPN telemetry reviewed' } });
@@ -1075,6 +1565,12 @@ describe('workspace shells', () => {
         expect.arrayContaining([
           expect.objectContaining({ step: 1, note: 'VPN telemetry reviewed' }),
         ]),
+      );
+      expect(countCalls((href) => href.includes('/api/investigations/workflows'))).toBe(
+        initialWorkflowCalls + 1,
+      );
+      expect(countCalls((href) => href.includes('/api/investigations/active'))).toBe(
+        initialActiveCalls + 1,
       );
     });
 
@@ -1109,6 +1605,18 @@ describe('workspace shells', () => {
             summary: 'Containment is stable, but identity scope still needs confirmation.',
           }),
         ]),
+      );
+      expect(countCalls((href) => href.includes('/api/investigations/workflows'))).toBe(
+        initialWorkflowCalls + 3,
+      );
+      expect(countCalls((href) => href.includes('/api/investigations/active'))).toBe(
+        initialActiveCalls + 3,
+      );
+      expect(
+        countCalls((href) => href.includes('/api/cases') && !href.includes('/api/cases/stats')),
+      ).toBe(initialCaseCalls + 1);
+      expect(countCalls((href) => href.includes('/api/cases/stats'))).toBe(
+        initialCaseStatsCalls + 1,
       );
     });
 
