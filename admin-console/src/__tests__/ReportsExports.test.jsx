@@ -665,6 +665,58 @@ describe('ReportsExports', () => {
     );
   });
 
+  it('refreshes grouped evidence context data from the evidence workspace', async () => {
+    const callCounts = {
+      complianceSummary: 0,
+      complianceReport: 0,
+      privacyBudget: 0,
+      attestationStatus: 0,
+    };
+    const defaultImplementation = globalThis.fetch.getMockImplementation();
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const parsed = new URL(String(url), 'http://localhost');
+      const { pathname } = parsed;
+
+      if (pathname === '/api/compliance/summary') {
+        callCounts.complianceSummary += 1;
+      }
+      if (pathname === '/api/compliance/report') {
+        callCounts.complianceReport += 1;
+      }
+      if (pathname === '/api/privacy/budget') {
+        callCounts.privacyBudget += 1;
+      }
+      if (pathname === '/api/attestation/status') {
+        callCounts.attestationStatus += 1;
+      }
+
+      return defaultImplementation(url, options);
+    });
+
+    renderWithProviders('/reports?tab=evidence');
+
+    expect(await screen.findByText('Alert Export Formats')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(callCounts.complianceSummary).toBeGreaterThan(0);
+      expect(callCounts.complianceReport).toBeGreaterThan(0);
+      expect(callCounts.privacyBudget).toBeGreaterThan(0);
+      expect(callCounts.attestationStatus).toBeGreaterThan(0);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Context' }));
+
+    await waitFor(() => {
+      expect(callCounts.complianceSummary).toBe(initialCounts.complianceSummary + 1);
+      expect(callCounts.complianceReport).toBe(initialCounts.complianceReport + 1);
+      expect(callCounts.privacyBudget).toBe(initialCounts.privacyBudget + 1);
+      expect(callCounts.attestationStatus).toBe(initialCounts.attestationStatus + 1);
+    });
+  });
+
   it('persists compliance markdown artifacts and re-downloads the original payload from run history', async () => {
     renderWithProviders(
       '/reports?tab=compliance&case=42&incident=7&investigation=inv-7&source=case',

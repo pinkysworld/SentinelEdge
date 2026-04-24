@@ -381,29 +381,26 @@ export default function ReportsExports() {
     skip: !activeInvestigationId,
   });
   const {
-    data: complianceSummaryData,
-    loading: complianceSummaryLoading,
-    error: complianceSummaryError,
-    reload: reloadComplianceSummary,
-  } = useApi(api.complianceSummary);
-  const {
-    data: complianceReportData,
-    loading: complianceReportsLoading,
-    error: complianceReportsError,
-    reload: reloadComplianceReports,
-  } = useApi(api.complianceReport);
-  const {
-    data: privacyBudgetData,
-    loading: privacyBudgetLoading,
-    error: privacyBudgetError,
-    reload: reloadPrivacyBudget,
-  } = useApi(api.privacyBudget);
-  const {
-    data: attestationData,
-    loading: attestationLoading,
-    error: attestationError,
-    reload: reloadAttestation,
-  } = useApi(api.attestationStatus);
+    data: evidenceContextData,
+    loading: evidenceContextLoading,
+    errors: evidenceContextErrors,
+    reload: reloadEvidenceContext,
+  } = useApiGroup({
+    complianceSummaryData: api.complianceSummary,
+    complianceReportData: api.complianceReport,
+    privacyBudgetData: api.privacyBudget,
+    attestationData: api.attestationStatus,
+  });
+  const { complianceSummaryData, complianceReportData, privacyBudgetData, attestationData } =
+    evidenceContextData;
+  const complianceSummaryLoading = evidenceContextLoading;
+  const complianceReportsLoading = evidenceContextLoading;
+  const privacyBudgetLoading = evidenceContextLoading;
+  const attestationLoading = evidenceContextLoading;
+  const complianceSummaryError = evidenceContextErrors.complianceSummaryData;
+  const complianceReportsError = evidenceContextErrors.complianceReportData;
+  const privacyBudgetError = evidenceContextErrors.privacyBudgetData;
+  const attestationError = evidenceContextErrors.attestationData;
   const { data: responseDeliveryData, reload: reloadResponseDelivery } = useApiGroup(
     {
       responsePendingData: api.responsePending,
@@ -902,12 +899,7 @@ export default function ReportsExports() {
     }
   };
 
-  const refreshEvidenceContext = () => {
-    reloadComplianceSummary();
-    reloadComplianceReports();
-    reloadPrivacyBudget();
-    reloadAttestation();
-  };
+  const refreshEvidenceContext = () => reloadEvidenceContext();
 
   const refreshDeliveryContext = () => reloadResponseDelivery();
 
