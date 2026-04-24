@@ -1014,6 +1014,63 @@ describe('ReportsExports', () => {
     });
   });
 
+  it('refreshes grouped template workspace data after saving a scoped template', async () => {
+    const callCounts = {
+      executiveSummary: 0,
+      baseTemplates: 0,
+      scopedTemplates: 0,
+    };
+    const defaultImplementation = globalThis.fetch.getMockImplementation();
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const parsed = new URL(String(url), 'http://localhost');
+      const { pathname, searchParams } = parsed;
+      const method = options.method || 'GET';
+
+      if (pathname === '/api/reports/executive-summary') {
+        callCounts.executiveSummary += 1;
+      }
+      if (pathname === '/api/report-templates' && method === 'GET') {
+        if (searchParams.get('scope') === 'scoped') {
+          callCounts.scopedTemplates += 1;
+        } else {
+          callCounts.baseTemplates += 1;
+        }
+      }
+
+      return defaultImplementation(url, options);
+    });
+
+    renderWithProviders(
+      '/reports?tab=templates&case=42&incident=7&investigation=inv-7&source=case',
+    );
+
+    expect(await screen.findByText('Reusable Templates')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(callCounts.executiveSummary).toBeGreaterThan(0);
+      expect(callCounts.baseTemplates).toBeGreaterThan(0);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save As Scoped Template' }));
+
+    await waitFor(() => {
+      expect(
+        globalThis.fetch.mock.calls.some(
+          ([url, options]) => String(url) === '/api/report-templates' && options?.method === 'POST',
+        ),
+      ).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(callCounts.executiveSummary).toBe(initialCounts.executiveSummary + 1);
+      expect(callCounts.baseTemplates).toBe(initialCounts.baseTemplates);
+      expect(callCounts.scopedTemplates).toBe(initialCounts.scopedTemplates + 1);
+    });
+  });
+
   it('keeps case and investigation handoff context attached to the reporting workspace', async () => {
     renderWithProviders('/reports?tab=evidence&case=42&incident=7&investigation=inv-7&source=case');
 

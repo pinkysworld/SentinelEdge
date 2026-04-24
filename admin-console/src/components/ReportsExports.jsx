@@ -318,7 +318,6 @@ export default function ReportsExports() {
   const [attachingLegacyId, setAttachingLegacyId] = useState(null);
   const [savingScopedTemplate, setSavingScopedTemplate] = useState(false);
   const [persistingArtifactKey, setPersistingArtifactKey] = useState(null);
-  const { data: execSum } = useApi(api.executiveSummary);
   const artifactReportQuery =
     artifactScopeFilter === 'current' && (activeCaseId || activeIncidentId || activeInvestigationId)
       ? {
@@ -351,10 +350,14 @@ export default function ReportsExports() {
       : templateScopeFilter === 'unscoped'
         ? { scope: 'unscoped' }
         : {};
-  const { data: templateData, reload: reloadTemplates } = useApi(
-    () => api.reportTemplates(templateQuery),
+  const { data: templateWorkspaceData, reload: reloadTemplateWorkspace } = useApiGroup(
+    {
+      execSum: api.executiveSummary,
+      templateData: () => api.reportTemplates(templateQuery),
+    },
     [templateScopeFilter, activeCaseId, activeIncidentId, activeInvestigationId, activeSource],
   );
+  const { execSum, templateData } = templateWorkspaceData;
   const scopedHistoryQuery = hasScopeSelection
     ? {
         caseId: activeCaseId || undefined,
@@ -758,7 +761,7 @@ export default function ReportsExports() {
       });
       toast('Report run created.', 'success');
       reloadReportHistory();
-      reloadTemplates();
+      reloadTemplateWorkspace();
       switchTab('runs');
     } catch {
       toast('Failed to create report run.', 'error');
@@ -780,8 +783,7 @@ export default function ReportsExports() {
         description: template.description,
         ...activeExecutionContext,
       });
-      setTemplateScopeFilter('current');
-      reloadTemplates();
+      refreshTemplateWorkspace({ forceCurrentScope: true });
       toast('Scoped template saved for the active investigation context.', 'success');
     } catch {
       toast('Unable to save a scoped template for the current context.', 'error');
@@ -902,6 +904,14 @@ export default function ReportsExports() {
   const refreshEvidenceContext = () => reloadEvidenceContext();
 
   const refreshDeliveryContext = () => reloadResponseDelivery();
+
+  const refreshTemplateWorkspace = ({ forceCurrentScope = false } = {}) => {
+    if (forceCurrentScope && hasActiveScope && templateScopeFilter !== 'current') {
+      setTemplateScopeFilter('current');
+      return;
+    }
+    reloadTemplateWorkspace();
+  };
 
   const refreshReportInventory = () => {
     if (hasActiveScope && artifactScopeFilter !== 'current') {
