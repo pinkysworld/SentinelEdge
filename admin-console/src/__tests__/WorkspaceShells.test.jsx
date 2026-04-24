@@ -416,6 +416,8 @@ async function defaultFetchImplementation(url) {
     });
   if (String(url).includes('/api/ws/stats'))
     return jsonResponse({ connected_subscribers: 2, events_emitted: 14 });
+  if (String(url).includes('/api/rbac/users')) return jsonResponse({ users: [] });
+  if (String(url).includes('/api/correlation/campaigns')) return jsonResponse({ campaigns: [] });
   if (String(url).includes('/api/inbox')) return jsonResponse({ items: [] });
   return jsonResponse({});
 }
@@ -950,6 +952,66 @@ describe('workspace shells', () => {
       expect(countCalls('/api/queue/stats')).toBe(initialQueueStatsCalls + 1);
       expect(countCalls('/api/ws/stats')).toBe(initialWsStatsCalls + 1);
     });
+  });
+
+  it('refreshes grouped admin data from the RBAC workspace', async () => {
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const href = String(url);
+
+      if (href.includes('/api/rbac/users')) {
+        return jsonResponse({
+          users: [
+            {
+              username: 'analyst-1',
+              role: 'admin',
+              created: '2024-01-01T00:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (href.includes('/api/correlation/campaigns')) {
+        return jsonResponse({
+          campaigns: [
+            {
+              name: 'Credential Storm Cluster',
+              severity: 'high',
+              hosts: ['host-1', 'host-2'],
+            },
+          ],
+        });
+      }
+
+      return defaultFetchImplementation(url, options);
+    });
+
+    renderWithProviders(<SOCWorkbench />, '/soc#rbac');
+
+    const countCalls = (fragment) =>
+      globalThis.fetch.mock.calls.filter(([url]) => String(url).includes(fragment)).length;
+
+    const rbacHeading = await screen.findByText('RBAC Users');
+    const rbacCard = rbacHeading.closest('.card');
+    if (!rbacCard) throw new Error('rbac card not found');
+
+    expect(await screen.findByText('analyst-1')).toBeInTheDocument();
+
+    const initialRbacCalls = countCalls('/api/rbac/users');
+    const initialCampaignCalls = countCalls('/api/correlation/campaigns');
+
+    expect(initialRbacCalls).toBeGreaterThan(0);
+    expect(initialCampaignCalls).toBeGreaterThan(0);
+
+    fireEvent.click(within(rbacCard).getByRole('button', { name: '↻ Refresh' }));
+
+    await waitFor(() => {
+      expect(countCalls('/api/rbac/users')).toBe(initialRbacCalls + 1);
+      expect(countCalls('/api/correlation/campaigns')).toBe(initialCampaignCalls + 1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Campaigns' }));
+    expect(await screen.findByText('Campaign Correlation Graph')).toBeInTheDocument();
+    expect(await screen.findByText(/1 campaign\(s\)/i)).toBeInTheDocument();
   });
 
   it('refreshes grouped efficacy and timeline data from either workspace', async () => {

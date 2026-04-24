@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useApi, useApiGroup, useInterval, useToast } from '../hooks.jsx';
+import { useApiGroup, useInterval, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import ProcessDrawer from './ProcessDrawer.jsx';
 import WorkflowGuidance from './WorkflowGuidance.jsx';
@@ -322,8 +322,7 @@ const formatMs = (value) => {
 };
 
 // ── Campaign Correlation Graph (SVG) ───────────────────────────
-function CampaignGraph() {
-  const { data: campaignData } = useApi(api.campaigns);
+function CampaignGraph({ campaignData }) {
   const campaigns = Array.isArray(campaignData)
     ? campaignData
     : campaignData?.campaigns || campaignData?.groups || [];
@@ -524,7 +523,12 @@ export default function SOCWorkbench() {
     procFindings: api.processesAnalysis,
   });
   const { procs, deepCh, liveProcs, procFindings } = processTreeData;
-  const { data: rbacData, reload: rRbac } = useApi(api.rbacUsers);
+  const { data: socAdminData, reload: reloadSocAdmin } = useApiGroup({
+    rbacData: api.rbacUsers,
+    campaignData: api.campaigns,
+  });
+  const { rbacData, campaignData } = socAdminData;
+  const rRbac = reloadSocAdmin;
   const { data: escalationData, reload: reloadEscalationData } = useApiGroup({
     escPolicies: api.escalationPolicies,
     escActive: api.escalationActive,
@@ -4638,7 +4642,7 @@ export default function SOCWorkbench() {
 
       {tab === 'playbooks' && <PlaybookEditor />}
 
-      {tab === 'campaigns' && <CampaignGraph />}
+      {tab === 'campaigns' && <CampaignGraph campaignData={campaignData} />}
 
       <SideDrawer
         open={caseDrawerOpen}

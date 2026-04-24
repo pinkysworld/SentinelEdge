@@ -93,6 +93,7 @@ async function installApiMocks(page, overrides = {}) {
     'GET /api/cases/stats': { open_cases: 0 },
     'GET /api/queue/alerts': { alerts: [alert] },
     'GET /api/queue/stats': { open_alerts: 1 },
+    'GET /api/ws/stats': { connected_subscribers: 3, events_emitted: 21 },
     'GET /api/response/pending': { pending: [], count: 0 },
     'GET /api/response/requests': { requests: [], count: 0, ready_to_execute: 0 },
     'GET /api/response/audit': { audit_log: [] },
@@ -111,6 +112,7 @@ async function installApiMocks(page, overrides = {}) {
     'GET /api/process-tree/deep-chains': { chains: [] },
     'GET /api/processes/live': { processes: [], count: 0 },
     'GET /api/processes/analysis': { findings: [], total: 0, risk_summary: {} },
+    'GET /api/correlation/campaigns': { campaigns: [] },
     'GET /api/rbac/users': { users: [] },
     'GET /api/timeline/host': { events: [] },
     'GET /api/escalation/policies': { policies: [] },
@@ -217,6 +219,109 @@ test('incident planner suggests and starts an investigation workflow', async ({ 
   await planner.getByRole('button', { name: 'Start' }).click();
   await expect.poll(() => startPayload?.workflow_id).toBe('credential-storm');
   await expect(page).toHaveURL(/\/soc#investigations$/);
+});
+
+test('queue and insight refresh actions re-fetch grouped SOC endpoints', async ({ page }) => {
+  const counts = {
+    queue: 0,
+    queueStats: 0,
+    wsStats: 0,
+    efficacy: 0,
+    timeline: 0,
+  };
+  const alert = {
+    id: 'alert-1',
+    severity: 'critical',
+    summary: 'Credential storm alert on finance identities',
+    message: 'Credential storm alert on finance identities',
+    rule_id: 'rule-credential-storm',
+    host: 'finance-gateway-1',
+    agent_id: 'agent-finance-1',
+  };
+
+  await installApiMocks(page, {
+    'GET /api/queue/alerts': async () => {
+      counts.queue += 1;
+      return { alerts: [alert] };
+    },
+    'GET /api/queue/stats': async () => {
+      counts.queueStats += 1;
+      return { open_alerts: 1 };
+    },
+    'GET /api/ws/stats': async () => {
+      counts.wsStats += 1;
+      return { connected_subscribers: 3, events_emitted: 21 };
+    },
+    'GET /api/efficacy/summary': async () => {
+      counts.efficacy += 1;
+      return {
+        total_alerts_triaged: 10,
+        overall_tp_rate: 0.7,
+        overall_precision: 0.66,
+      };
+    },
+    'GET /api/timeline/host': async (request) => {
+      counts.timeline += 1;
+      const host = new URL(request.url()).searchParams.get('hostname') || 'finance-gateway-1';
+      return {
+        events: [
+          {
+            timestamp: '2026-04-15T09:00:00Z',
+            host,
+            severity: 'high',
+            event: 'Suspicious PowerShell launched',
+          },
+        ],
+      };
+    },
+  });
+
+  await login(page);
+  await page.goto('./soc#queue');
+
+  const queueCard = page.locator('.card').filter({ hasText: 'SOC Queue (1 alerts)' }).first();
+  await expect(queueCard).toBeVisible();
+  await expect(page.getByText('Live (3)')).toBeVisible();
+
+  await expect.poll(() => counts.queue).toBeGreaterThan(0);
+  await expect.poll(() => counts.queueStats).toBeGreaterThan(0);
+  await expect.poll(() => counts.wsStats).toBeGreaterThan(0);
+
+  const initialQueue = counts.queue;
+  const initialQueueStats = counts.queueStats;
+  const initialWsStats = counts.wsStats;
+
+  await queueCard.getByRole('button', { name: '↻ Refresh' }).click();
+
+  await expect.poll(() => counts.queue).toBe(initialQueue + 1);
+  await expect.poll(() => counts.queueStats).toBe(initialQueueStats + 1);
+  await expect.poll(() => counts.wsStats).toBe(initialWsStats + 1);
+
+  await page.getByRole('button', { name: 'Efficacy' }).click();
+
+  const efficacyCard = page.locator('.card').filter({ hasText: 'Detection Efficacy' }).first();
+  await expect(efficacyCard).toBeVisible();
+  await expect.poll(() => counts.efficacy).toBeGreaterThan(0);
+  await expect.poll(() => counts.timeline).toBeGreaterThan(0);
+
+  const initialEfficacy = counts.efficacy;
+  const initialTimeline = counts.timeline;
+
+  await efficacyCard.getByRole('button', { name: '↻ Refresh' }).click();
+
+  await expect.poll(() => counts.efficacy).toBe(initialEfficacy + 1);
+  await expect.poll(() => counts.timeline).toBe(initialTimeline + 1);
+
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+
+  const timelineCard = page.locator('.card').filter({ hasText: 'Host Timeline' }).first();
+  await expect(timelineCard).toBeVisible();
+  await expect(page.getByText('Suspicious PowerShell launched')).toBeVisible();
+
+  await timelineCard.getByRole('button', { name: '↻ Refresh' }).click();
+
+  await expect.poll(() => counts.efficacy).toBe(initialEfficacy + 2);
+  await expect.poll(() => counts.timeline).toBe(initialTimeline + 2);
 });
 
 test('queue hunt pivot opens detection with prefilled hunt context', async ({ page }) => {
