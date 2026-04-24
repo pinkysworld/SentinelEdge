@@ -43,4 +43,22 @@ describe('formatApiError', () => {
     };
     expect(formatApiError(error, 'fallback')).toBe('network disconnected');
   });
+
+  it('appends the requestId when present on the error', () => {
+    const error = {
+      body: JSON.stringify({ error: 'retention bucket invalid' }),
+      requestId: 'req-abc-123',
+    };
+    expect(formatApiError(error, 'fallback')).toBe('retention bucket invalid (id: req-abc-123)');
+  });
+
+  it('appends the requestId to the fallback message when no body/message is available', () => {
+    const error = { requestId: 'req-xyz-789' };
+    expect(formatApiError(error, 'fallback')).toBe('fallback (id: req-xyz-789)');
+  });
+
+  it('does not append an empty-string requestId', () => {
+    const error = { message: 'boom', requestId: '' };
+    expect(formatApiError(error, 'fallback')).toBe('boom');
+  });
 });

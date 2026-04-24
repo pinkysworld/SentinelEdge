@@ -39,11 +39,13 @@ async function request(method, path, body, opts = {}) {
   }
   const url = _baseUrl + path;
   const res = await fetch(url, { method, headers, body, signal });
+  const requestId = res.headers.get('x-request-id') || res.headers.get('X-Request-Id') || null;
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     const err = new Error(`${res.status} ${res.statusText}`);
     err.status = res.status;
     err.body = text;
+    if (requestId) err.requestId = requestId;
     throw err;
   }
   const ct = res.headers.get('content-type') || '';

@@ -70,6 +70,7 @@ describe('request helper', () => {
       ok: false,
       status: 401,
       statusText: 'Unauthorized',
+      headers: { get: () => null },
       text: async () => 'invalid token',
     });
 
@@ -79,6 +80,26 @@ describe('request helper', () => {
     } catch (err) {
       expect(err.status).toBe(401);
       expect(err.body).toBe('invalid token');
+    }
+  });
+
+  it('captures the X-Request-Id header on thrown errors', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      headers: {
+        get: (name) => (name.toLowerCase() === 'x-request-id' ? 'req-abc-123' : null),
+      },
+      text: async () => '{"error":"boom"}',
+    });
+
+    try {
+      await api.health();
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err.status).toBe(500);
+      expect(err.requestId).toBe('req-abc-123');
     }
   });
 
