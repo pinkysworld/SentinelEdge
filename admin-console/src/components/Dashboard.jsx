@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApi, useInterval, useToast, useRole } from '../hooks.jsx';
+import { useApi, useApiGroup, useInterval, useToast, useRole } from '../hooks.jsx';
 import * as api from '../api.js';
 import {
   AreaChart,
@@ -210,27 +210,53 @@ export default function Dashboard() {
   const toast = useToast();
   const navigate = useNavigate();
   const { role } = useRole();
-  const { data: st, loading: l1, reload: r1 } = useApi(api.status);
-  const { data: fleet, reload: r2 } = useApi(api.fleetDashboard);
-  const { data: alertData, reload: r3 } = useApi(api.alerts);
-  const { data: telem, reload: r4 } = useApi(api.telemetryCurrent);
-  const { data: hp, reload: r5 } = useApi(api.health);
-  const { data: detSum, reload: r6 } = useApi(api.detectionSummary);
-  const { data: tiStatus, reload: r7 } = useApi(api.threatIntelStatus);
-  const { data: qStats, reload: r8 } = useApi(api.queueStats);
-  const { data: respStats, reload: r9 } = useApi(api.responseStats);
+  const {
+    data: dashboardOverviewData,
+    loading: l1,
+    reload: reloadDashboardOverview,
+  } = useApiGroup({
+    st: api.status,
+    fleet: api.fleetDashboard,
+    telem: api.telemetryCurrent,
+    hp: api.health,
+  });
+  const { st, fleet, telem, hp } = dashboardOverviewData;
+  const { data: dashboardAlertsData, reload: reloadDashboardAlerts } = useApiGroup({
+    alertData: api.alerts,
+  });
+  const { alertData } = dashboardAlertsData;
   const { data: profile } = useApi(api.detectionProfile);
-  const { data: procAnalysis, reload: rPA } = useApi(api.processesAnalysis);
   const { data: hostInf } = useApi(api.hostInfo);
   const { data: telemHistory } = useApi(api.telemetryHistory);
   const { data: userPrefs } = useApi(api.userPreferences);
-  // Phase 44: additional dashboard data
-  const { data: mwStats, reload: rMW } = useApi(api.malwareStats);
-  const { data: gaps, reload: rGap } = useApi(api.coverageGaps);
-  const { data: qrStats, reload: rQR } = useApi(api.quarantineStats);
-  const { data: lcStats, reload: rLC } = useApi(api.lifecycleStats);
-  const { data: fdStats, reload: rFD } = useApi(api.feedStats);
-  const { data: managerDigest, reload: rMgrDigest } = useApi(api.managerQueueDigest);
+  const { data: dashboardSignalsData, reload: reloadDashboardSignals } = useApiGroup({
+    detSum: api.detectionSummary,
+    tiStatus: api.threatIntelStatus,
+    qStats: api.queueStats,
+    respStats: api.responseStats,
+    procAnalysis: api.processesAnalysis,
+    mwStats: api.malwareStats,
+    gaps: api.coverageGaps,
+    qrStats: api.quarantineStats,
+    lcStats: api.lifecycleStats,
+    fdStats: api.feedStats,
+    managerDigest: api.managerQueueDigest,
+    dnsSummary: api.dnsThreatSummary,
+  });
+  const {
+    detSum,
+    tiStatus,
+    qStats,
+    respStats,
+    procAnalysis,
+    mwStats,
+    gaps,
+    qrStats,
+    lcStats,
+    fdStats,
+    managerDigest,
+    dnsSummary,
+  } = dashboardSignalsData;
   const [refreshing, setRefreshing] = useState(false);
   const [expandedAlert, setExpandedAlert] = useState(null);
   const [sevFilter, setSevFilter] = useState('all');
@@ -242,7 +268,6 @@ export default function Dashboard() {
   const [savedPresets, setSavedPresets] = useState([]);
   const [selectedPresetKey, setSelectedPresetKey] = useState('');
   const [savingPreset, setSavingPreset] = useState(false);
-  const { data: dnsSummary, reload: rDNS } = useApi(api.dnsThreatSummary);
   const hasLocalLayoutRef = useRef(
     Boolean(localStorage.getItem('dashboard') || localStorage.getItem('dashboard_hidden')),
   );
@@ -271,7 +296,6 @@ export default function Dashboard() {
   );
   const {
     order,
-    allWidgets,
     hidden,
     moveWidget,
     removeWidget,
@@ -423,23 +447,9 @@ export default function Dashboard() {
     if (pausedWidgets.size >= DASHBOARD_WIDGETS.length) return;
     setRefreshing(true);
     await Promise.allSettled([
-      r1(),
-      r2(),
-      r3(),
-      r4(),
-      r5(),
-      r6(),
-      r7(),
-      r8(),
-      r9(),
-      rPA(),
-      rMW(),
-      rGap(),
-      rQR(),
-      rLC(),
-      rFD(),
-      rMgrDigest(),
-      rDNS(),
+      reloadDashboardOverview(),
+      reloadDashboardAlerts(),
+      reloadDashboardSignals(),
     ]);
     setRefreshing(false);
   };
@@ -1448,7 +1458,7 @@ export default function Dashboard() {
                         try {
                           await api.alertsClear();
                           toast('Alerts cleared', 'success');
-                          r3();
+                          reloadDashboardAlerts();
                         } catch {
                           toast('Failed to clear alerts', 'error');
                         }
