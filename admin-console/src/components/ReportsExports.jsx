@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useApi, useToast } from '../hooks.jsx';
+import { useApi, useApiGroup, useToast } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid } from './operator.jsx';
 import { downloadData, formatDateTime, formatRelativeTime } from './operatorUtils.js';
@@ -404,26 +404,20 @@ export default function ReportsExports() {
     error: attestationError,
     reload: reloadAttestation,
   } = useApi(api.attestationStatus);
-  const { data: responsePendingData, reload: reloadResponsePending } = useApi(
-    api.responsePending,
-    [],
+  const { data: responseDeliveryData, reload: reloadResponseDelivery } = useApiGroup(
+    {
+      responsePendingData: api.responsePending,
+      responseRequestData: api.responseRequests,
+      responseAuditData: api.responseAudit,
+      responseStatsData: api.responseStats,
+    },
+    [activeTab],
     {
       skip: activeTab !== 'delivery',
     },
   );
-  const { data: responseRequestData, reload: reloadResponseRequests } = useApi(
-    api.responseRequests,
-    [],
-    {
-      skip: activeTab !== 'delivery',
-    },
-  );
-  const { data: responseAuditData, reload: reloadResponseAudit } = useApi(api.responseAudit, [], {
-    skip: activeTab !== 'delivery',
-  });
-  const { data: responseStatsData, reload: reloadResponseStats } = useApi(api.responseStats, [], {
-    skip: activeTab !== 'delivery',
-  });
+  const { responsePendingData, responseRequestData, responseAuditData, responseStatsData } =
+    responseDeliveryData;
   const templates = Array.isArray(templateData?.templates) ? templateData.templates : [];
   const runs = Array.isArray(runData?.runs) ? runData.runs : [];
   const schedules = Array.isArray(scheduleData?.schedules) ? scheduleData.schedules : [];
@@ -915,12 +909,7 @@ export default function ReportsExports() {
     reloadAttestation();
   };
 
-  const refreshDeliveryContext = () => {
-    reloadResponsePending();
-    reloadResponseRequests();
-    reloadResponseAudit();
-    reloadResponseStats();
-  };
+  const refreshDeliveryContext = () => reloadResponseDelivery();
 
   const persistArtifactRun = async ({
     key,

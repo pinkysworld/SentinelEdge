@@ -820,6 +820,59 @@ describe('ReportsExports', () => {
     });
   });
 
+  it('refreshes grouped response delivery data from the delivery workspace', async () => {
+    const callCounts = {
+      responsePending: 0,
+      responseRequests: 0,
+      responseAudit: 0,
+      responseStats: 0,
+    };
+    const defaultImplementation = globalThis.fetch.getMockImplementation();
+
+    globalThis.fetch.mockImplementation(async (url, options = {}) => {
+      const parsed = new URL(String(url), 'http://localhost');
+      const { pathname } = parsed;
+
+      if (pathname === '/api/response/pending') {
+        callCounts.responsePending += 1;
+      }
+      if (pathname === '/api/response/requests') {
+        callCounts.responseRequests += 1;
+      }
+      if (pathname === '/api/response/audit') {
+        callCounts.responseAudit += 1;
+      }
+      if (pathname === '/api/response/stats') {
+        callCounts.responseStats += 1;
+      }
+
+      return defaultImplementation(url, options);
+    });
+
+    renderWithProviders('/reports?tab=delivery&target=finance-admin-01');
+
+    const responseCard = (await screen.findByText('Response Approval Snapshot')).closest('.card');
+    expect(responseCard).toBeTruthy();
+
+    await waitFor(() => {
+      expect(callCounts.responsePending).toBeGreaterThan(0);
+      expect(callCounts.responseRequests).toBeGreaterThan(0);
+      expect(callCounts.responseAudit).toBeGreaterThan(0);
+      expect(callCounts.responseStats).toBeGreaterThan(0);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    fireEvent.click(within(responseCard).getByRole('button', { name: 'Refresh Response' }));
+
+    await waitFor(() => {
+      expect(callCounts.responsePending).toBe(initialCounts.responsePending + 1);
+      expect(callCounts.responseRequests).toBe(initialCounts.responseRequests + 1);
+      expect(callCounts.responseAudit).toBe(initialCounts.responseAudit + 1);
+      expect(callCounts.responseStats).toBe(initialCounts.responseStats + 1);
+    });
+  });
+
   it('keeps case and investigation handoff context attached to the reporting workspace', async () => {
     renderWithProviders('/reports?tab=evidence&case=42&incident=7&investigation=inv-7&source=case');
 
