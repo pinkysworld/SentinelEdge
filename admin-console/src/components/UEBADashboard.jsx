@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useApi, useInterval } from '../hooks.jsx';
+import { useApi, useApiGroup, useInterval } from '../hooks.jsx';
 import * as api from '../api.js';
 import WorkflowGuidance from './WorkflowGuidance.jsx';
 import { buildHref } from './workflowPivots.js';
@@ -131,15 +131,16 @@ export default function UEBADashboard() {
   };
 
   const {
-    data: riskyEntities,
-    loading: loadingRisky,
-    reload: reloadRisky,
-  } = useApi(() => api.uebaRiskyEntities(10));
-  const {
-    data: anomalies,
-    loading: loadingAnomalies,
-    reload: reloadAnomalies,
-  } = useApi(() => api.uebaAnomalies(200));
+    data: uebaOverviewData,
+    loading: loadingUebaOverview,
+    reload: reloadUebaOverview,
+  } = useApiGroup({
+    riskyEntities: () => api.uebaRiskyEntities(10),
+    anomalies: () => api.uebaAnomalies(200),
+  });
+  const { riskyEntities, anomalies } = uebaOverviewData;
+  const loadingRisky = loadingUebaOverview;
+  const loadingAnomalies = loadingUebaOverview;
   const { data: peerGroups } = useApi(api.uebaPeerGroups);
   const { data: entityDetail, loading: loadingDetail } = useApi(
     () => (selectedEntity ? api.uebaEntity(selectedEntity) : Promise.resolve(null)),
@@ -147,9 +148,10 @@ export default function UEBADashboard() {
     { skip: !selectedEntity },
   );
 
+  const refreshUebaOverview = () => reloadUebaOverview();
+
   useInterval(() => {
-    reloadRisky();
-    reloadAnomalies();
+    refreshUebaOverview();
   }, 30000);
 
   const entities = useMemo(() => {
@@ -385,7 +387,7 @@ export default function UEBADashboard() {
             <div className="card-title">Risky Entities</div>
             <button
               className="btn btn-sm"
-              onClick={reloadRisky}
+              onClick={refreshUebaOverview}
               aria-label="Refresh risky entities"
             >
               Refresh

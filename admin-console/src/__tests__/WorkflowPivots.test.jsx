@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../components/Dashboard.jsx';
 import UEBADashboard from '../components/UEBADashboard.jsx';
@@ -204,6 +205,64 @@ describe('Workflow pivots', () => {
     expect(await screen.findByText('Entity: user-b')).toBeInTheDocument();
     expect(screen.getByText('Response Playbook')).toBeInTheDocument();
     expect(screen.getByText('Capture Privacy And Evidence')).toBeInTheDocument();
+  });
+
+  it('refreshes grouped UEBA overview data from the risky entities workspace', async () => {
+    const callCounts = {
+      risky: 0,
+      anomalies: 0,
+    };
+    const user = userEvent.setup();
+
+    mockSharedRoutes({
+      '/api/ueba/risky': () => {
+        callCounts.risky += 1;
+        return jsonOk({
+          items: [
+            {
+              entity_id: 'user-a',
+              entity_kind: 'user',
+              risk_score: 92,
+              anomaly_count: 4,
+              peer_group: 'admins',
+            },
+          ],
+        });
+      },
+      '/api/ueba/anomalies': () => {
+        callCounts.anomalies += 1;
+        return jsonOk({
+          items: [
+            {
+              entity_id: 'user-a',
+              anomaly_type: 'ImpossibleTravel',
+              score: 81,
+              description: 'Unusual travel detected',
+              mitre_technique: 'T1078',
+            },
+          ],
+        });
+      },
+      '/api/ueba/peer-groups': jsonOk([{ group: 'admins', entity_count: 4, avg_risk: 51 }]),
+    });
+
+    renderWithProviders(<UEBADashboard />, { route: '/ueba' });
+
+    expect(await screen.findByText('Risky Entities')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(callCounts.risky).toBeGreaterThan(0);
+      expect(callCounts.anomalies).toBeGreaterThan(0);
+    });
+
+    const initialCounts = { ...callCounts };
+
+    await user.click(screen.getByRole('button', { name: 'Refresh risky entities' }));
+
+    await waitFor(() => {
+      expect(callCounts.risky).toBe(initialCounts.risky + 1);
+      expect(callCounts.anomalies).toBe(initialCounts.anomalies + 1);
+    });
   });
 
   it('restores NDR tab state from the route and renders network pivots', async () => {
