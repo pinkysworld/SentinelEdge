@@ -1268,8 +1268,10 @@ mod tests {
 
     #[test]
     fn aws_patch_preserves_existing_secret_when_blank() {
-        let mut setup = AwsCollectorSetup::default();
-        setup.secret_access_key = "secret-value".to_string();
+        let mut setup = AwsCollectorSetup {
+            secret_access_key: "secret-value".to_string(),
+            ..AwsCollectorSetup::default()
+        };
 
         setup.apply_patch(AwsCollectorSetupPatch {
             secret_access_key: Some(String::new()),

@@ -44,11 +44,16 @@ export default function WorkflowGuidance({
       >
         {visibleItems.map((item) => (
           <article key={item.id || item.title} className="summary-card" style={{ gap: 10 }}>
-            {item.badge ? <span className={`badge ${item.badgeTone || 'badge-info'}`}>{item.badge}</span> : null}
+            {item.badge ? (
+              <span className={`badge ${item.badgeTone || 'badge-info'}`}>{item.badge}</span>
+            ) : null}
             <div style={{ fontSize: 14, fontWeight: 700 }}>{item.title}</div>
             <div className="summary-meta">{item.description}</div>
             <div className="btn-group" style={{ marginTop: 'auto' }}>
-              <Link className={`btn btn-sm ${item.tone === 'primary' ? 'btn-primary' : ''}`} to={item.to}>
+              <Link
+                className={`btn btn-sm ${item.tone === 'primary' ? 'btn-primary' : ''}`}
+                to={item.to}
+              >
                 {item.actionLabel || 'Open'}
               </Link>
               {item.secondaryTo ? (

@@ -303,9 +303,7 @@ export default function HelpDocs() {
     : null;
 
   useEffect(() => {
-    setGraphqlQuery(
-      GRAPHQL_SAMPLES[selectedGraphqlSample]?.query || GRAPHQL_SAMPLES.status.query,
-    );
+    setGraphqlQuery(GRAPHQL_SAMPLES[selectedGraphqlSample]?.query || GRAPHQL_SAMPLES.status.query);
   }, [selectedGraphqlSample]);
 
   useEffect(() => {
@@ -373,8 +371,12 @@ export default function HelpDocs() {
           </div>
           <div className="summary-card">
             <div className="summary-label">Docs Version</div>
-            <div className="summary-value">{docsIndexData?.version || statusData?.version || '—'}</div>
-            <div className="summary-meta">Embedded docs and runbooks currently indexed for this build.</div>
+            <div className="summary-value">
+              {docsIndexData?.version || statusData?.version || '—'}
+            </div>
+            <div className="summary-meta">
+              Embedded docs and runbooks currently indexed for this build.
+            </div>
           </div>
           <div className="summary-card">
             <div className="summary-label">Context Scope</div>
@@ -400,10 +402,13 @@ export default function HelpDocs() {
           <div>
             <span className="card-title">Documentation Center</span>
             <div className="hint" style={{ marginTop: 4 }}>
-              Search embedded runbooks, deployment guides, and SDK references for the current operator context before dropping into lower-level diagnostics.
+              Search embedded runbooks, deployment guides, and SDK references for the current
+              operator context before dropping into lower-level diagnostics.
             </div>
           </div>
-          <span className="badge badge-info">{docsIndexData?.version || statusData?.version || '—'}</span>
+          <span className="badge badge-info">
+            {docsIndexData?.version || statusData?.version || '—'}
+          </span>
         </div>
         <div
           style={{
@@ -462,7 +467,8 @@ export default function HelpDocs() {
             </FilterField>
             <div className="hint">
               {docsIndexData?.total ?? docsEntries.length} document
-              {(docsIndexData?.total ?? docsEntries.length) === 1 ? '' : 's'} indexed for this build.
+              {(docsIndexData?.total ?? docsEntries.length) === 1 ? '' : 's'} indexed for this
+              build.
             </div>
             {docsEntries.length === 0 ? (
               <div className="empty">No documents match the current search.</div>
@@ -474,13 +480,17 @@ export default function HelpDocs() {
                     <button
                       key={entry.path}
                       type="button"
-                      onClick={() => updateSearchParams(searchParams, setSearchParams, { doc: entry.path })}
+                      onClick={() =>
+                        updateSearchParams(searchParams, setSearchParams, { doc: entry.path })
+                      }
                       style={{
                         textAlign: 'left',
                         border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
                         borderRadius: 12,
                         padding: 12,
-                        background: active ? 'var(--bg-soft, rgba(53, 119, 255, 0.08))' : 'var(--card)',
+                        background: active
+                          ? 'var(--bg-soft, rgba(53, 119, 255, 0.08))'
+                          : 'var(--card)',
                         color: 'var(--text)',
                         cursor: 'pointer',
                       }}
@@ -513,10 +523,13 @@ export default function HelpDocs() {
               <div>
                 <div className="detail-hero-title">{docsContent?.title || 'Select a document'}</div>
                 <div className="detail-hero-copy">
-                  {docsContent?.summary || 'Choose a guide or runbook from the list to load it here.'}
+                  {docsContent?.summary ||
+                    'Choose a guide or runbook from the list to load it here.'}
                 </div>
               </div>
-              {docsContent?.section && <span className="badge badge-info">{docsContent.section}</span>}
+              {docsContent?.section && (
+                <span className="badge badge-info">{docsContent.section}</span>
+              )}
             </div>
             {docsContent?.tags?.length > 0 && (
               <div className="chip-row" style={{ marginBottom: 12 }}>
@@ -664,8 +677,8 @@ export default function HelpDocs() {
           <div className="detail-callout" style={{ marginTop: 16 }}>
             <strong>What changed?</strong>
             <div style={{ marginTop: 6 }}>
-              This support center now links embedded runbooks, deployment guidance, API parity,
-              and GraphQL verification into one routed operator surface.
+              This support center now links embedded runbooks, deployment guidance, API parity, and
+              GraphQL verification into one routed operator surface.
             </div>
           </div>
         </div>
@@ -767,7 +780,12 @@ export default function HelpDocs() {
               />
             </FilterField>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" type="button" disabled={graphqlRunning} onClick={runGraphqlQuery}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={graphqlRunning}
+                onClick={runGraphqlQuery}
+              >
                 {graphqlRunning ? 'Running…' : 'Run Query'}
               </button>
             </div>
@@ -776,7 +794,9 @@ export default function HelpDocs() {
                 <SummaryGrid
                   data={{
                     data_keys: graphqlResponse.data ? Object.keys(graphqlResponse.data).length : 0,
-                    error_count: Array.isArray(graphqlResponse.errors) ? graphqlResponse.errors.length : 0,
+                    error_count: Array.isArray(graphqlResponse.errors)
+                      ? graphqlResponse.errors.length
+                      : 0,
                   }}
                   limit={4}
                 />
@@ -859,7 +879,9 @@ export default function HelpDocs() {
               <div className="stat-box">
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span className="badge badge-info">{selectedEndpoint.method || 'GET'}</span>
-                  <strong style={{ fontFamily: 'var(--font-mono)' }}>{selectedEndpoint.path}</strong>
+                  <strong style={{ fontFamily: 'var(--font-mono)' }}>
+                    {selectedEndpoint.path}
+                  </strong>
                   <span className={`badge ${selectedEndpoint.auth ? 'badge-warn' : 'badge-ok'}`}>
                     {selectedEndpoint.auth ? 'Auth required' : 'Public'}
                   </span>
@@ -903,7 +925,9 @@ export default function HelpDocs() {
                     <td>
                       <span className="badge badge-info">{ep.method || 'GET'}</span>
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{ep.path || ep.url || ep}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                      {ep.path || ep.url || ep}
+                    </td>
                     <td>
                       <span className={`badge ${ep.auth ? 'badge-warn' : 'badge-ok'}`}>
                         {ep.auth ? 'Authenticated' : 'Public'}

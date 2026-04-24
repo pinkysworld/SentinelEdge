@@ -143,9 +143,13 @@ describe('AssistantWorkspace', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Ask Assistant' }));
 
-    expect((await screen.findAllByText(/Case #42 has two linked signals/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Case #42 has two linked signals/i)).length).toBeGreaterThan(
+      0,
+    );
     expect(await screen.findByText('Context & citations')).toBeInTheDocument();
-    expect((await screen.findAllByText('Credential dumping observed on db-01')).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText('Credential dumping observed on db-01')).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'Open Case in SOC' })).toHaveAttribute(
       'href',
       '/soc?case=42#cases',

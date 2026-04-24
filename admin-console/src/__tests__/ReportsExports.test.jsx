@@ -666,7 +666,9 @@ describe('ReportsExports', () => {
   });
 
   it('persists compliance markdown artifacts and re-downloads the original payload from run history', async () => {
-    renderWithProviders('/reports?tab=compliance&case=42&incident=7&investigation=inv-7&source=case');
+    renderWithProviders(
+      '/reports?tab=compliance&case=42&incident=7&investigation=inv-7&source=case',
+    );
 
     expect(await screen.findByText('Compliance Snapshot')).toBeInTheDocument();
     const frameworkButton = (await screen.findAllByText('CIS Controls'))
@@ -730,8 +732,7 @@ describe('ReportsExports', () => {
       expect(
         globalThis.fetch.mock.calls.some(
           ([url, options]) =>
-            String(url) === '/api/export/alerts?format=cef' &&
-            (options?.method || 'GET') === 'GET',
+            String(url) === '/api/export/alerts?format=cef' && (options?.method || 'GET') === 'GET',
         ),
       ).toBe(true);
     });
@@ -774,7 +775,9 @@ describe('ReportsExports', () => {
 
     const responseCard = (await screen.findByText('Response Approval Snapshot')).closest('.card');
     expect(responseCard).toBeTruthy();
-    expect((await within(responseCard).findAllByText('finance-admin-01')).length).toBeGreaterThan(0);
+    expect((await within(responseCard).findAllByText('finance-admin-01')).length).toBeGreaterThan(
+      0,
+    );
     expect((await within(responseCard).findAllByText('Isolate host')).length).toBeGreaterThan(0);
     expect(within(responseCard).queryByText('dev-workstation-07')).not.toBeInTheDocument();
 
@@ -852,7 +855,9 @@ describe('ReportsExports', () => {
   });
 
   it('includes scoped handoff context when creating report runs and schedules', async () => {
-    renderWithProviders('/reports?tab=templates&case=42&incident=7&investigation=inv-7&source=case');
+    renderWithProviders(
+      '/reports?tab=templates&case=42&incident=7&investigation=inv-7&source=case',
+    );
 
     expect(await screen.findByText('Reusable Templates')).toBeInTheDocument();
     const templateButton = (await screen.findAllByText('Executive Status'))
@@ -888,12 +893,13 @@ describe('ReportsExports', () => {
       ).toBe(true);
     });
     expect(
-      (
-        await screen.findAllByText('Executive Status for #42 Credential misuse on finance admin')
-      ).length,
+      (await screen.findAllByText('Executive Status for #42 Credential misuse on finance admin'))
+        .length,
     ).toBeGreaterThan(0);
     fireEvent.click(
-      (await screen.findAllByText('Executive Status for #42 Credential misuse on finance admin'))[0],
+      (
+        await screen.findAllByText('Executive Status for #42 Credential misuse on finance admin')
+      )[0],
     );
 
     fireEvent.click(screen.getByText('Create Run'));
@@ -942,12 +948,12 @@ describe('ReportsExports', () => {
     const artifactCard = screen.getByText('Stored Report Artifacts').closest('.card');
     expect(artifactCard).toBeTruthy();
     expect(within(artifactCard).getByText('Scoped Artifact Library')).toBeInTheDocument();
-    expect(within(artifactCard).getByText('Incident package for finance admin')).toBeInTheDocument();
+    expect(
+      within(artifactCard).getByText('Incident package for finance admin'),
+    ).toBeInTheDocument();
     expect(within(artifactCard).queryByText('Global executive snapshot')).not.toBeInTheDocument();
     expect(await screen.findByText('Legacy Backend Reports')).toBeInTheDocument();
-    expect(
-      screen.getByText(/do not carry execution context yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/do not carry execution context yet/i)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Artifact Search'), {
       target: { value: '101' },
@@ -959,9 +965,7 @@ describe('ReportsExports', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      await within(artifactCard).findByText(
-        'No legacy backend reports match the current search.',
-      ),
+      await within(artifactCard).findByText('No legacy backend reports match the current search.'),
     ).toBeInTheDocument();
     expect(within(artifactCard).queryByText('101')).not.toBeInTheDocument();
   });
@@ -972,7 +976,9 @@ describe('ReportsExports', () => {
     expect(await screen.findByText('Run History')).toBeInTheDocument();
     const runHistoryCard = screen.getByText('Run History').closest('.card');
     expect(runHistoryCard).toBeTruthy();
-    expect(await within(runHistoryCard).findByText('Incident package for finance admin')).toBeInTheDocument();
+    expect(
+      await within(runHistoryCard).findByText('Incident package for finance admin'),
+    ).toBeInTheDocument();
     expect(within(runHistoryCard).queryByText('Global executive snapshot')).not.toBeInTheDocument();
 
     await waitFor(() => {
@@ -989,8 +995,12 @@ describe('ReportsExports', () => {
     expect(await screen.findByText('Delivery History')).toBeInTheDocument();
     const deliveryHistoryCard = screen.getByText('Delivery History').closest('.card');
     expect(deliveryHistoryCard).toBeTruthy();
-    expect(await within(deliveryHistoryCard).findByText('Scoped incident package delivery')).toBeInTheDocument();
-    expect(within(deliveryHistoryCard).queryByText('Global executive digest')).not.toBeInTheDocument();
+    expect(
+      await within(deliveryHistoryCard).findByText('Scoped incident package delivery'),
+    ).toBeInTheDocument();
+    expect(
+      within(deliveryHistoryCard).queryByText('Global executive digest'),
+    ).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(
@@ -1011,7 +1021,8 @@ describe('ReportsExports', () => {
 
     await waitFor(() => {
       const reportDetailRequest = globalThis.fetch.mock.calls.find(
-        ([url, options]) => String(url) === '/api/reports/101' && (options?.method || 'GET') === 'GET',
+        ([url, options]) =>
+          String(url) === '/api/reports/101' && (options?.method || 'GET') === 'GET',
       );
       expect(reportDetailRequest).toBeTruthy();
     });
@@ -1050,7 +1061,9 @@ describe('ReportsExports', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Current Scope' }));
     const artifactCard = screen.getByText('Stored Report Artifacts').closest('.card');
     expect(artifactCard).toBeTruthy();
-    expect(await within(artifactCard).findByText('Republished legacy runtime report #101')).toBeInTheDocument();
+    expect(
+      await within(artifactCard).findByText('Republished legacy runtime report #101'),
+    ).toBeInTheDocument();
   });
 
   it('attaches execution context directly to a backend report', async () => {
@@ -1061,7 +1074,8 @@ describe('ReportsExports', () => {
 
     await waitFor(() => {
       const attachRequest = globalThis.fetch.mock.calls.find(
-        ([url, options]) => String(url) === '/api/reports/101/context' && options?.method === 'POST',
+        ([url, options]) =>
+          String(url) === '/api/reports/101/context' && options?.method === 'POST',
       );
       expect(attachRequest).toBeTruthy();
       expect(JSON.parse(attachRequest[1].body)).toEqual(
@@ -1086,10 +1100,12 @@ describe('ReportsExports', () => {
     });
     const artifactCard = screen.getByText('Stored Report Artifacts').closest('.card');
     expect(artifactCard).toBeTruthy();
-    expect(await within(artifactCard).findByText('Context-Aware Backend Reports')).toBeInTheDocument();
-    const scopedBackendRow = (await within(artifactCard).findByText('legacy_runtime_report')).closest(
-      'tr',
-    );
+    expect(
+      await within(artifactCard).findByText('Context-Aware Backend Reports'),
+    ).toBeInTheDocument();
+    const scopedBackendRow = (
+      await within(artifactCard).findByText('legacy_runtime_report')
+    ).closest('tr');
     expect(scopedBackendRow).toBeTruthy();
     expect(within(scopedBackendRow).getByText('Case #42')).toBeInTheDocument();
     expect(within(artifactCard).queryByText('Attach Current Scope')).not.toBeInTheDocument();

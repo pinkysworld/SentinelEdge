@@ -12,7 +12,8 @@ function jsonOk(body, status = 200) {
     status,
     statusText: status === 200 ? 'OK' : 'Error',
     headers: {
-      get: (name) => (String(name || '').toLowerCase() === 'content-type' ? 'application/json' : ''),
+      get: (name) =>
+        String(name || '').toLowerCase() === 'content-type' ? 'application/json' : '',
     },
     json: async () => body,
     text: async () => JSON.stringify(body),
@@ -378,8 +379,12 @@ describe('ThreatIntelOperations', () => {
     expect(await screen.findByText('Normalized malware.bad')).toBeInTheDocument();
     expect(await screen.findByText('TTL 90d · Weight 1.2')).toBeInTheDocument();
     expect((await screen.findAllByText('Recent sightings')).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText('matched Domain indicator: malware.bad')).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText('seen during malware deep scan correlation')).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText('matched Domain indicator: malware.bad')).length,
+    ).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText('seen during malware deep scan correlation')).length,
+    ).toBeGreaterThan(0);
   });
 
   it('purges expired indicators using the selected ttl', async () => {
@@ -402,7 +407,9 @@ describe('ThreatIntelOperations', () => {
     });
 
     await waitFor(() => {
-      expect(within(screen.getByRole('table')).queryByText('198.51.100.22')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('table')).queryByText('198.51.100.22'),
+      ).not.toBeInTheDocument();
     });
   });
 

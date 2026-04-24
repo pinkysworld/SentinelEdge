@@ -81,7 +81,8 @@ export default function NDRDashboard() {
         focus: unusualDests[0]?.dst_addr || topTalkers[0]?.addr || 'network perimeter',
         narrative:
           'Start with the broadest external pressure, then decide whether the signal belongs in asset review, active hunting, or direct case escalation.',
-        nextStep: 'Validate the top external destinations against asset ownership and recent alert history.',
+        nextStep:
+          'Validate the top external destinations against asset ownership and recent alert history.',
       },
       tls: {
         label: 'TLS fingerprinting',
@@ -89,7 +90,8 @@ export default function NDRDashboard() {
         focus: tlsList[0]?.dst_addr || tlsList[0]?.tls_sni || leadAddress || 'suspicious TLS edge',
         narrative:
           'Rare or known-bad JA3/JA4 fingerprints should be treated as possible malware tooling until the client, SNI, and certificate chain are explained.',
-        nextStep: 'Confirm the fingerprint owner, SNI legitimacy, and whether the destination belongs to a sanctioned service.',
+        nextStep:
+          'Confirm the fingerprint owner, SNI legitimacy, and whether the destination belongs to a sanctioned service.',
       },
       dpi: {
         label: 'Protocol mismatch',
@@ -97,7 +99,8 @@ export default function NDRDashboard() {
         focus: dpiList[0]?.dst_addr || leadAddress || 'tunneled destination',
         narrative:
           'Mismatched protocols often point to tunneling, staging, or policy evasion, so the fastest closure path is to verify the owning workload and intended service.',
-        nextStep: 'Review the source workload, expected port usage, and whether the detected protocol is allowed on that path.',
+        nextStep:
+          'Review the source workload, expected port usage, and whether the detected protocol is allowed on that path.',
       },
       entropy: {
         label: 'Encrypted exfiltration risk',
@@ -105,7 +108,8 @@ export default function NDRDashboard() {
         focus: entropyList[0]?.dst_addr || leadAddress || 'high-entropy session',
         narrative:
           'High-entropy sessions can be harmless backup traffic, but they need ownership and volume validation before they are dismissed as noise.',
-        nextStep: 'Compare traffic volume and destination reputation before deciding between suppression and containment.',
+        nextStep:
+          'Compare traffic volume and destination reputation before deciding between suppression and containment.',
       },
       beaconing: {
         label: 'Beaconing cadence',
@@ -113,15 +117,21 @@ export default function NDRDashboard() {
         focus: beaconingList[0]?.dst_addr || leadAddress || 'beacon destination',
         narrative:
           'Stable low-jitter callbacks are strong candidates for C2 behavior, so containment planning and evidence capture should happen in parallel.',
-        nextStep: 'Correlate the callback host with process lineage, DNS history, and any pending response approvals.',
+        nextStep:
+          'Correlate the callback host with process lineage, DNS history, and any pending response approvals.',
       },
       certs: {
         label: 'Certificate trust gap',
         findings: selfSignedList.length,
-        focus: selfSignedList[0]?.dst_addr || selfSignedList[0]?.tls_sni || leadAddress || 'certificate endpoint',
+        focus:
+          selfSignedList[0]?.dst_addr ||
+          selfSignedList[0]?.tls_sni ||
+          leadAddress ||
+          'certificate endpoint',
         narrative:
           'Self-signed or untrusted certificates may be legitimate internal services, but they still require ownership, trust-chain, and exposure confirmation.',
-        nextStep: 'Confirm issuer expectations, trust-store policy, and whether the endpoint is intentionally private.',
+        nextStep:
+          'Confirm issuer expectations, trust-store policy, and whether the endpoint is intentionally private.',
       },
     };
     const active = config[activeTab] || config.overview;
@@ -186,7 +196,8 @@ export default function NDRDashboard() {
       {
         id: 'attack-graph',
         title: 'Map Campaign Propagation',
-        description: 'Use the attack graph to validate whether network findings are part of a broader campaign chain.',
+        description:
+          'Use the attack graph to validate whether network findings are part of a broader campaign chain.',
         to: '/attack-graph',
         minRole: 'analyst',
         badge: 'Graph',
@@ -194,7 +205,8 @@ export default function NDRDashboard() {
       {
         id: 'reports',
         title: 'Package Delivery Evidence',
-        description: 'Open report delivery and evidence workflows for executive or audit-ready exports.',
+        description:
+          'Open report delivery and evidence workflows for executive or audit-ready exports.',
         to: buildHref('/reports', {
           params: {
             tab: 'delivery',
@@ -294,7 +306,9 @@ export default function NDRDashboard() {
           <div className="summary-card">
             <div className="summary-label">Priority signal</div>
             <div className="summary-value">{networkPlaybook.label}</div>
-            <div className="summary-meta">{networkPlaybook.findingCount} findings in this lane.</div>
+            <div className="summary-meta">
+              {networkPlaybook.findingCount} findings in this lane.
+            </div>
           </div>
           <div className="summary-card">
             <div className="summary-label">Primary focus</div>

@@ -201,7 +201,9 @@ function CollectorLaneCard({
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 600 }}>{entry.label || entry.name || entry.provider}</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {entry.label || entry.name || entry.provider}
+                  </div>
                   <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
                     {entry.total_collected || 0} events observed •{' '}
                     {validationStatusLabel(entry.validation?.status)}
@@ -779,9 +781,13 @@ export default function Settings() {
     data: historicalEventsData,
     loading: historicalEventsLoading,
     reload: rHistoricalEvents,
-  } = useApi(() => api.historicalStorageEvents(historicalQuery), [JSON.stringify(historicalQuery)], {
-    skip: tab !== 'admin',
-  });
+  } = useApi(
+    () => api.historicalStorageEvents(historicalQuery),
+    [JSON.stringify(historicalQuery)],
+    {
+      skip: tab !== 'admin',
+    },
+  );
   const { data: collectorsSummary, reload: rCollectorsSummary } = useApi(api.collectorsStatus, [], {
     skip: tab !== 'integrations',
   });
@@ -1113,25 +1119,27 @@ export default function Settings() {
     [idpRows],
   );
   const readyIdpCount = useMemo(
-    () => idpRows.filter((provider) => provider.enabled && provider.validation?.status === 'ready').length,
+    () =>
+      idpRows.filter((provider) => provider.enabled && provider.validation?.status === 'ready')
+        .length,
     [idpRows],
   );
   const reviewIdpCount = useMemo(
-    () => idpRows.filter((provider) => provider.enabled && provider.validation?.status !== 'ready').length,
+    () =>
+      idpRows.filter((provider) => provider.enabled && provider.validation?.status !== 'ready')
+        .length,
     [idpRows],
   );
   const readyCloudCollectorCount = useMemo(
     () =>
-      cloudCollectorRows.filter(
-        (entry) => entry.enabled && entry.validation?.status === 'ready',
-      ).length,
+      cloudCollectorRows.filter((entry) => entry.enabled && entry.validation?.status === 'ready')
+        .length,
     [cloudCollectorRows],
   );
   const readyIdentityCollectorCount = useMemo(
     () =>
-      identityCollectorRows.filter(
-        (entry) => entry.enabled && entry.validation?.status === 'ready',
-      ).length,
+      identityCollectorRows.filter((entry) => entry.enabled && entry.validation?.status === 'ready')
+        .length,
     [identityCollectorRows],
   );
   const readySaasCollectorCount = useMemo(
@@ -1451,7 +1459,9 @@ export default function Settings() {
       const result = await api.validateSiemConfig(buildSiemPayload());
       setSiemValidationResult(result);
       toast(
-        result.success ? 'SIEM configuration validated' : result.error || 'SIEM validation needs attention',
+        result.success
+          ? 'SIEM configuration validated'
+          : result.error || 'SIEM validation needs attention',
         result.success ? 'success' : 'warning',
       );
     } catch (error) {
@@ -1748,7 +1758,10 @@ export default function Settings() {
     try {
       const result = await api.validateSecretReference({ reference: secretsDraft.test_reference });
       setSecretValidationResult(result);
-      toast(result.ok ? 'Secret reference resolved' : result.error || 'Secret validation failed', result.ok ? 'success' : 'warning');
+      toast(
+        result.ok ? 'Secret reference resolved' : result.error || 'Secret validation failed',
+        result.ok ? 'success' : 'warning',
+      );
     } catch (error) {
       toast(formatApiError(error, 'Secret validation failed'), 'error');
     }
@@ -2490,7 +2503,9 @@ export default function Settings() {
               <div className="summary-card">
                 <div className="summary-label">Review required</div>
                 <div className="summary-value">{reviewIdpCount}</div>
-                <div className="summary-meta">Resolve mappings and callback mismatches before sign-in tests.</div>
+                <div className="summary-meta">
+                  Resolve mappings and callback mismatches before sign-in tests.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">SCIM mappings</div>
@@ -2498,7 +2513,9 @@ export default function Settings() {
                   {ssoConfig?.scim?.mapping_count ?? scimValidation.mapping_count}
                 </div>
                 <div className="summary-meta">
-                  {ssoConfig?.scim?.enabled ? `SCIM ${ssoConfig?.scim?.status || 'configured'}` : 'SCIM disabled'}
+                  {ssoConfig?.scim?.enabled
+                    ? `SCIM ${ssoConfig?.scim?.status || 'configured'}`
+                    : 'SCIM disabled'}
                 </div>
               </div>
               <div className="summary-card">
@@ -2506,11 +2523,15 @@ export default function Settings() {
                 <div className="summary-value" style={{ fontSize: 13 }}>
                   {defaultSsoCallbackUri}
                 </div>
-                <div className="summary-meta">This must match every external IdP redirect configuration.</div>
+                <div className="summary-meta">
+                  This must match every external IdP redirect configuration.
+                </div>
               </div>
             </div>
             <div className="detail-callout" style={{ marginTop: 16 }}>
-              Launching an SSO test from here uses the same backend login and callback routes as the real console, so operators can validate the external redirect and return path before rolling identity changes broadly.
+              Launching an SSO test from here uses the same backend login and callback routes as the
+              real console, so operators can validate the external redirect and return path before
+              rolling identity changes broadly.
             </div>
             {readySsoProviders.length > 0 ? (
               <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
@@ -2529,7 +2550,8 @@ export default function Settings() {
                     <div>
                       <div style={{ fontWeight: 600 }}>{provider.display_name}</div>
                       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                        {providerLoginKindLabel(provider.kind)} provider ready for callback validation.
+                        {providerLoginKindLabel(provider.kind)} provider ready for callback
+                        validation.
                       </div>
                     </div>
                     <div className="btn-group" style={{ flexWrap: 'wrap' }}>
@@ -3135,29 +3157,39 @@ export default function Settings() {
               <div className="summary-card">
                 <div className="summary-label">Cloud collectors ready</div>
                 <div className="summary-value">{readyCloudCollectorCount}</div>
-                <div className="summary-meta">AWS, Azure, and GCP lanes ready for validation or polling.</div>
+                <div className="summary-meta">
+                  AWS, Azure, and GCP lanes ready for validation or polling.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">Identity collectors ready</div>
                 <div className="summary-value">{readyIdentityCollectorCount}</div>
-                <div className="summary-meta">Okta and Entra sign-in telemetry ready for SOC and UEBA handoff.</div>
+                <div className="summary-meta">
+                  Okta and Entra sign-in telemetry ready for SOC and UEBA handoff.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">SaaS collectors ready</div>
                 <div className="summary-value">{readySaasCollectorCount}</div>
-                <div className="summary-meta">Microsoft 365 and Google Workspace activity ready for analyst pivots.</div>
+                <div className="summary-meta">
+                  Microsoft 365 and Google Workspace activity ready for analyst pivots.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">Collectors under review</div>
                 <div className="summary-value">{reviewCollectorCount}</div>
-                <div className="summary-meta">Configured lanes that still need credentials, scoping, or cleanup.</div>
+                <div className="summary-meta">
+                  Configured lanes that still need credentials, scoping, or cleanup.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">Secrets manager</div>
                 <div className="summary-value">
                   {validationStatusLabel(secretsManagerValidation.status)}
                 </div>
-                <div className="summary-meta">Credential resolution shared by cloud and identity integrations.</div>
+                <div className="summary-meta">
+                  Credential resolution shared by cloud and identity integrations.
+                </div>
               </div>
             </div>
             <div className="card-grid" style={{ marginTop: 16 }}>
@@ -3296,10 +3328,7 @@ export default function Settings() {
                       ? `Collected ${awsCollectorValidationResult.event_count || 0} event${awsCollectorValidationResult.event_count === 1 ? '' : 's'}.`
                       : awsCollectorValidationResult.error || 'Validation needs attention.'}
                   </div>
-                  <JsonDetails
-                    data={awsCollectorValidationResult}
-                    label="AWS validation details"
-                  />
+                  <JsonDetails data={awsCollectorValidationResult} label="AWS validation details" />
                 </div>
               )}
             </div>
@@ -3415,7 +3444,8 @@ export default function Settings() {
                   {validationStatusLabel(gcpCollectorValidation.status)}
                 </span>
               </div>
-              {(gcpCollectorData?.config?.has_private_key_pem || gcpCollectorData?.config?.key_file_path) && (
+              {(gcpCollectorData?.config?.has_private_key_pem ||
+                gcpCollectorData?.config?.key_file_path) && (
                 <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 12 }}>
                   A key path or private key is already stored. Leave the private key field blank to
                   keep it.
@@ -3546,7 +3576,9 @@ export default function Settings() {
                 label="API Token"
                 type="password"
                 value={oktaCollectorDraft.api_token}
-                onChange={(value) => setOktaCollectorDraft((prev) => ({ ...prev, api_token: value }))}
+                onChange={(value) =>
+                  setOktaCollectorDraft((prev) => ({ ...prev, api_token: value }))
+                }
                 placeholder="Leave blank to keep the current token or reference"
                 description="Supports literal values or secret references such as ${OKTA_API_TOKEN}."
               />
@@ -3701,9 +3733,7 @@ export default function Settings() {
               <ToggleSwitch
                 label="Enable Microsoft 365 collector"
                 checked={m365CollectorDraft.enabled}
-                onChange={(value) =>
-                  setM365CollectorDraft((prev) => ({ ...prev, enabled: value }))
-                }
+                onChange={(value) => setM365CollectorDraft((prev) => ({ ...prev, enabled: value }))}
                 description="Use this when unified audit activity should be validated or queued for downstream SaaS workflows."
               />
               <TextInput
@@ -3964,7 +3994,9 @@ export default function Settings() {
                 onChange={(value) =>
                   setSecretsDraft((prev) => ({ ...prev, test_reference: value }))
                 }
-                placeholder={'${API_TOKEN}\nfile:///run/secrets/token\nvault://secret/wardex/api#token'}
+                placeholder={
+                  '${API_TOKEN}\nfile:///run/secrets/token\nvault://secret/wardex/api#token'
+                }
                 description="Enter one reference at a time when validating."
                 rows={3}
               />
@@ -4006,10 +4038,7 @@ export default function Settings() {
                       ? `Resolved ${secretValidationResult.reference_kind} secret with length ${secretValidationResult.resolved_length}.`
                       : secretValidationResult.error || 'Secret validation needs attention.'}
                   </div>
-                  <JsonDetails
-                    data={secretValidationResult}
-                    label="Secret validation details"
-                  />
+                  <JsonDetails data={secretValidationResult} label="Secret validation details" />
                 </div>
               )}
             </div>
@@ -4267,7 +4296,10 @@ export default function Settings() {
                     ? 'ClickHouse Ready'
                     : 'Not Configured'}
                 </span>
-                <button className="btn btn-sm" onClick={() => Promise.all([rRetention(), rHistoricalEvents(), rStats()])}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => Promise.all([rRetention(), rHistoricalEvents(), rStats()])}
+                >
                   ↻ Refresh
                 </button>
               </div>
@@ -4493,7 +4525,9 @@ export default function Settings() {
                   </thead>
                   <tbody>
                     {historicalEvents.map((event, index) => (
-                      <tr key={`${event.timestamp || 'ts'}-${event.device_id || 'device'}-${index}`}>
+                      <tr
+                        key={`${event.timestamp || 'ts'}-${event.device_id || 'device'}-${index}`}
+                      >
                         <td>{formatAuditTimestamp(event.timestamp)}</td>
                         <td>{event.severity ?? '—'}</td>
                         <td>{event.event_class ?? '—'}</td>
@@ -4526,7 +4560,8 @@ export default function Settings() {
             ) : (
               <div className="empty">
                 {historicalEventsData?.enabled === false
-                  ? historicalEventsData?.error || 'ClickHouse long-retention storage is not configured.'
+                  ? historicalEventsData?.error ||
+                    'ClickHouse long-retention storage is not configured.'
                   : 'No retained events match the current filters.'}
               </div>
             )}

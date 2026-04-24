@@ -370,9 +370,13 @@ export default function ReportsExports() {
     [activeCaseId, activeIncidentId, activeInvestigationId, activeSource],
   );
   const { data: caseList } = useApi(api.cases);
-  const { data: incidentDetail } = useApi(() => api.incidentById(activeIncidentId), [activeIncidentId], {
-    skip: !activeIncidentId,
-  });
+  const { data: incidentDetail } = useApi(
+    () => api.incidentById(activeIncidentId),
+    [activeIncidentId],
+    {
+      skip: !activeIncidentId,
+    },
+  );
   const { data: investigationList } = useApi(api.investigationActive, [], {
     skip: !activeInvestigationId,
   });
@@ -400,9 +404,13 @@ export default function ReportsExports() {
     error: attestationError,
     reload: reloadAttestation,
   } = useApi(api.attestationStatus);
-  const { data: responsePendingData, reload: reloadResponsePending } = useApi(api.responsePending, [], {
-    skip: activeTab !== 'delivery',
-  });
+  const { data: responsePendingData, reload: reloadResponsePending } = useApi(
+    api.responsePending,
+    [],
+    {
+      skip: activeTab !== 'delivery',
+    },
+  );
   const { data: responseRequestData, reload: reloadResponseRequests } = useApi(
     api.responseRequests,
     [],
@@ -569,7 +577,8 @@ export default function ReportsExports() {
   const selectedReport =
     complianceReports.find((report) => report.framework_id === activeComplianceId) || null;
   const activeAlertExport =
-    ALERT_EXPORT_FORMATS.find((format) => format.id === alertExportFormat) || ALERT_EXPORT_FORMATS[0];
+    ALERT_EXPORT_FORMATS.find((format) => format.id === alertExportFormat) ||
+    ALERT_EXPORT_FORMATS[0];
   const complianceSnapshotTemplate =
     templates.find((template) => template.kind === 'compliance_snapshot') ||
     templates.find((template) => template.id === 'tpl-compliance-snapshot') ||
@@ -640,7 +649,7 @@ export default function ReportsExports() {
     protected_assets:
       activeResponseTarget && !activeResponseTarget.startsWith('case:')
         ? 'Filtered view'
-        : responseStatsData?.protected_assets ?? '—',
+        : (responseStatsData?.protected_assets ?? '—'),
   };
   const workflowItems = [
     {
@@ -655,7 +664,8 @@ export default function ReportsExports() {
     {
       id: 'threat-detection',
       title: 'Turn Findings Into Detection Work',
-      description: 'Use Threat Detection to convert failed controls, delivery gaps, or evidence findings into hunts and tuning work.',
+      description:
+        'Use Threat Detection to convert failed controls, delivery gaps, or evidence findings into hunts and tuning work.',
       to: buildHref('/detection', { params: { queue: 'noisy' } }),
       minRole: 'analyst',
       badge: 'Detect',
@@ -677,7 +687,8 @@ export default function ReportsExports() {
     {
       id: 'infrastructure',
       title: 'Review Exposure And Integrity',
-      description: 'Cross-check compliance and evidence findings against exposure, integrity, and observability queues.',
+      description:
+        'Cross-check compliance and evidence findings against exposure, integrity, and observability queues.',
       to: buildHref('/infrastructure', { params: { tab: 'exposure' } }),
       minRole: 'analyst',
       badge: 'Asset',
@@ -685,7 +696,8 @@ export default function ReportsExports() {
     {
       id: 'attack-graph',
       title: 'Validate Campaign Context',
-      description: 'Use the attack graph to see whether report findings fit a broader campaign path.',
+      description:
+        'Use the attack graph to see whether report findings fit a broader campaign path.',
       to: '/attack-graph',
       minRole: 'analyst',
       badge: 'Graph',
@@ -823,14 +835,18 @@ export default function ReportsExports() {
   const republishLegacyReport = async (report) => {
     if (!report?.id) return;
     if (!hasActiveScope) {
-      toast('Select a case, incident, or investigation scope before republishing a legacy report.', 'warning');
+      toast(
+        'Select a case, incident, or investigation scope before republishing a legacy report.',
+        'warning',
+      );
       return;
     }
     setRepublishingLegacyId(String(report.id));
     try {
       const detail = await api.reportById(report.id);
       const detailReport = detail?.report || null;
-      const reportType = detail?.report_type || report.report_type || report.type || 'legacy_report';
+      const reportType =
+        detail?.report_type || report.report_type || report.type || 'legacy_report';
       const previewOverride = {
         republished_at: new Date().toISOString(),
         republished_from: {
@@ -872,7 +888,10 @@ export default function ReportsExports() {
   const attachLegacyReportContext = async (report) => {
     if (!report?.id) return;
     if (!hasActiveScope) {
-      toast('Select a case, incident, or investigation scope before attaching a backend report.', 'warning');
+      toast(
+        'Select a case, incident, or investigation scope before attaching a backend report.',
+        'warning',
+      );
       return;
     }
     setAttachingLegacyId(String(report.id));
@@ -1543,10 +1562,7 @@ export default function ReportsExports() {
                       >
                         Download Preview
                       </button>
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => switchTab('delivery')}
-                      >
+                      <button className="btn btn-sm" onClick={() => switchTab('delivery')}>
                         Schedule Delivery
                       </button>
                       {hasActiveScope ? (
@@ -1555,7 +1571,9 @@ export default function ReportsExports() {
                           disabled={savingScopedTemplate}
                           onClick={() => saveScopedTemplate(selectedTemplate)}
                         >
-                          {savingScopedTemplate ? 'Saving Scoped Template...' : 'Save As Scoped Template'}
+                          {savingScopedTemplate
+                            ? 'Saving Scoped Template...'
+                            : 'Save As Scoped Template'}
                         </button>
                       ) : null}
                     </div>
@@ -1635,10 +1653,7 @@ export default function ReportsExports() {
                         </td>
                         <td>
                           <div className="btn-group">
-                            <button
-                              className="btn btn-sm"
-                              onClick={() => downloadRunArtifact(run)}
-                            >
+                            <button className="btn btn-sm" onClick={() => downloadRunArtifact(run)}>
                               Download
                             </button>
                             <button className="btn btn-sm" onClick={() => rerun(run)}>
@@ -1671,11 +1686,7 @@ export default function ReportsExports() {
                     disabled={filter === 'current' && !hasActiveScope}
                     onClick={() => setArtifactScopeFilter(filter)}
                   >
-                    {filter === 'all'
-                      ? 'All'
-                      : filter === 'current'
-                        ? 'Current Scope'
-                        : 'Unscoped'}
+                    {filter === 'all' ? 'All' : filter === 'current' ? 'Current Scope' : 'Unscoped'}
                   </button>
                 ))}
               </div>
@@ -1731,7 +1742,10 @@ export default function ReportsExports() {
                             {describeExecutionContext(run.execution_context).length > 0 ? (
                               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                 {describeExecutionContext(run.execution_context).map((label) => (
-                                  <span key={`${run.id}-artifact-${label}`} className="badge badge-info">
+                                  <span
+                                    key={`${run.id}-artifact-${label}`}
+                                    className="badge badge-info"
+                                  >
                                     {label}
                                   </span>
                                 ))}
@@ -1745,7 +1759,9 @@ export default function ReportsExports() {
                             <div className="btn-group">
                               <button
                                 className="btn btn-sm"
-                                onClick={() => downloadData(run.preview, `${run.kind}-${run.id}.json`)}
+                                onClick={() =>
+                                  downloadData(run.preview, `${run.kind}-${run.id}.json`)
+                                }
                               >
                                 Download
                               </button>
@@ -1818,13 +1834,12 @@ export default function ReportsExports() {
               </div>
               <div className="hint" style={{ marginBottom: 10 }}>
                 These older stored reports do not carry execution context yet, so they stay
-                searchable but remain unscoped until they are republished through the report
-                center.
+                searchable but remain unscoped until they are republished through the report center.
               </div>
               {hasActiveScope ? (
                 <div className="hint" style={{ marginBottom: 10 }}>
-                  Republish a legacy report to attach the current case handoff and move it into
-                  the scoped artifact library.
+                  Republish a legacy report to attach the current case handoff and move it into the
+                  scoped artifact library.
                 </div>
               ) : (
                 <div className="hint" style={{ marginBottom: 10 }}>
@@ -1857,7 +1872,9 @@ export default function ReportsExports() {
                             <div className="btn-group">
                               <button
                                 className="btn btn-sm"
-                                disabled={!hasActiveScope || String(attachingLegacyId) === String(report.id)}
+                                disabled={
+                                  !hasActiveScope || String(attachingLegacyId) === String(report.id)
+                                }
                                 onClick={() => attachLegacyReportContext(report)}
                               >
                                 {String(attachingLegacyId) === String(report.id)
@@ -1866,7 +1883,10 @@ export default function ReportsExports() {
                               </button>
                               <button
                                 className="btn btn-sm"
-                                disabled={!hasActiveScope || String(republishingLegacyId) === String(report.id)}
+                                disabled={
+                                  !hasActiveScope ||
+                                  String(republishingLegacyId) === String(report.id)
+                                }
                                 onClick={() => republishLegacyReport(report)}
                               >
                                 {String(republishingLegacyId) === String(report.id)
@@ -2227,7 +2247,9 @@ export default function ReportsExports() {
             <aside className="triage-detail">
               <div className="card">
                 {!selectedReport ? (
-                  <div className="empty">Choose a framework to inspect its evidence and findings.</div>
+                  <div className="empty">
+                    Choose a framework to inspect its evidence and findings.
+                  </div>
                 ) : (
                   <>
                     <div className="detail-hero">
@@ -2269,12 +2291,17 @@ export default function ReportsExports() {
                     </div>
 
                     <div className="btn-group" style={{ marginTop: 16 }}>
-                      <button className="btn btn-sm" onClick={() => downloadComplianceJson(selectedReport)}>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => downloadComplianceJson(selectedReport)}
+                      >
                         Download JSON
                       </button>
                       <button
                         className="btn btn-sm"
-                        disabled={persistingArtifactKey === `compliance-json-${selectedReport.framework_id}`}
+                        disabled={
+                          persistingArtifactKey === `compliance-json-${selectedReport.framework_id}`
+                        }
                         onClick={() => saveComplianceJsonArtifact(selectedReport)}
                       >
                         {persistingArtifactKey === `compliance-json-${selectedReport.framework_id}`
@@ -2290,11 +2317,13 @@ export default function ReportsExports() {
                       <button
                         className="btn btn-sm"
                         disabled={
-                          persistingArtifactKey === `compliance-markdown-${selectedReport.framework_id}`
+                          persistingArtifactKey ===
+                          `compliance-markdown-${selectedReport.framework_id}`
                         }
                         onClick={() => saveComplianceMarkdownArtifact(selectedReport)}
                       >
-                        {persistingArtifactKey === `compliance-markdown-${selectedReport.framework_id}`
+                        {persistingArtifactKey ===
+                        `compliance-markdown-${selectedReport.framework_id}`
                           ? 'Saving Markdown Artifact...'
                           : 'Save Markdown Artifact'}
                       </button>
@@ -2384,23 +2413,24 @@ export default function ReportsExports() {
                             </tr>
                           </thead>
                           <tbody>
-                            {(Array.isArray(selectedReport.findings) ? selectedReport.findings : []).map(
-                              (finding) => (
-                                <tr key={finding.control_id}>
-                                  <td>
-                                    <div className="row-primary">{finding.control_id}</div>
-                                    <div className="row-secondary">{finding.title}</div>
-                                  </td>
-                                  <td>
-                                    <span className={`badge ${findingBadgeClass(finding.status)}`}>
-                                      {findingStatusLabel(finding.status)}
-                                    </span>
-                                  </td>
-                                  <td>{finding.evidence || 'No evidence captured.'}</td>
-                                  <td>{finding.remediation || 'No remediation required.'}</td>
-                                </tr>
-                              ),
-                            )}
+                            {(Array.isArray(selectedReport.findings)
+                              ? selectedReport.findings
+                              : []
+                            ).map((finding) => (
+                              <tr key={finding.control_id}>
+                                <td>
+                                  <div className="row-primary">{finding.control_id}</div>
+                                  <div className="row-secondary">{finding.title}</div>
+                                </td>
+                                <td>
+                                  <span className={`badge ${findingBadgeClass(finding.status)}`}>
+                                    {findingStatusLabel(finding.status)}
+                                  </span>
+                                </td>
+                                <td>{finding.evidence || 'No evidence captured.'}</td>
+                                <td>{finding.remediation || 'No remediation required.'}</td>
+                              </tr>
+                            ))}
                           </tbody>
                         </table>
                       </div>

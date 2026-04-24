@@ -189,7 +189,9 @@ export default function UEBADashboard() {
     if (!selectedEntity) return null;
     const riskScore = Number(entityDetail?.risk_score) || 0;
     const peerAvg =
-      entityDetail?.peer_avg_risk === undefined ? riskScore : Number(entityDetail?.peer_avg_risk) || 0;
+      entityDetail?.peer_avg_risk === undefined
+        ? riskScore
+        : Number(entityDetail?.peer_avg_risk) || 0;
     const peerDelta = riskScore - peerAvg;
     const anomalyCount = entityAnomalies.length;
     const primaryAnomaly = topEntityAnomaly?.anomaly_type || 'Entity pressure';
@@ -200,15 +202,16 @@ export default function UEBADashboard() {
           ? 'Service owner'
           : 'Endpoint or platform owner';
     const escalationLane =
-      riskScore >= RISK_THRESHOLDS.high || anomalyCount >= 3 ? 'Immediate case escalation' : 'Analyst validation';
+      riskScore >= RISK_THRESHOLDS.high || anomalyCount >= 3
+        ? 'Immediate case escalation'
+        : 'Analyst validation';
     const narrative =
       peerDelta >= 25
         ? `${selectedEntity} is operating well outside peer baseline and should be validated for account takeover, privilege misuse, or unusual access chaining.`
         : `${selectedEntity} is elevated but still close enough to peer behavior that rapid validation and noise review should happen before broad containment.`;
-    const nextStep =
-      topEntityAnomaly?.mitre_technique
-        ? `Validate the ${topEntityAnomaly.mitre_technique} signal against recent authentication, privilege, and host telemetry.`
-        : `Validate recent authentication and endpoint telemetry for ${selectedEntity}.`;
+    const nextStep = topEntityAnomaly?.mitre_technique
+      ? `Validate the ${topEntityAnomaly.mitre_technique} signal against recent authentication, privilege, and host telemetry.`
+      : `Validate recent authentication and endpoint telemetry for ${selectedEntity}.`;
     return {
       narrative,
       primaryAnomaly,
@@ -521,7 +524,9 @@ export default function UEBADashboard() {
                       <div className="summary-card">
                         <div className="summary-label">Primary pressure</div>
                         <div className="summary-value">{entityPlaybook.primaryAnomaly}</div>
-                        <div className="summary-meta">Lead signal driving this entity selection.</div>
+                        <div className="summary-meta">
+                          Lead signal driving this entity selection.
+                        </div>
                       </div>
                       <div className="summary-card">
                         <div className="summary-label">Peer drift</div>
@@ -529,7 +534,9 @@ export default function UEBADashboard() {
                           {entityPlaybook.peerDelta >= 0 ? '+' : ''}
                           {entityPlaybook.peerDelta.toFixed(1)}
                         </div>
-                        <div className="summary-meta">Difference versus the current peer baseline.</div>
+                        <div className="summary-meta">
+                          Difference versus the current peer baseline.
+                        </div>
                       </div>
                       <div className="summary-card">
                         <div className="summary-label">Suggested owner</div>

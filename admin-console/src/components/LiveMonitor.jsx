@@ -140,8 +140,7 @@ function normalizeLiveEvent(event, index) {
     id: `${eventType}-${index}`,
     eventType,
     timestamp,
-    summary:
-      data.message || data.title || data.action || `${eventType.replace(/_/g, ' ')} event`,
+    summary: data.message || data.title || data.action || `${eventType.replace(/_/g, ' ')} event`,
     subject: data.hostname || data.device_id || data.agent_id || data.id || 'stream',
     severity: data.severity || 'info',
   };
@@ -335,9 +334,12 @@ export default function LiveMonitor() {
     reloadWsStats();
   }, [latestStreamAlertKey, reloadCount, reloadGrouped, reloadWsStats]);
 
-  useInterval(() => {
-    if (tab === 'stream') reloadWsStats();
-  }, tab === 'stream' ? 10000 : null);
+  useInterval(
+    () => {
+      if (tab === 'stream') reloadWsStats();
+    },
+    tab === 'stream' ? 10000 : null,
+  );
 
   const liveEventTypeCounts = useMemo(
     () =>
@@ -611,7 +613,9 @@ export default function LiveMonitor() {
             {hp?.status === 'ok' ? 'System Healthy' : 'Degraded'}
           </span>
           <span className={`badge ${streamStatusBadgeClass}`}>
-            {streamConnected ? `Live feed: ${streamTransportLabel}` : `Live feed ${streamStatusLabel.toLowerCase()}`}
+            {streamConnected
+              ? `Live feed: ${streamTransportLabel}`
+              : `Live feed ${streamStatusLabel.toLowerCase()}`}
           </span>
           <span className="badge badge-info">
             {countData == null
@@ -710,7 +714,9 @@ export default function LiveMonitor() {
               <div className="summary-card">
                 <div className="summary-label">Transport State</div>
                 <div className="summary-value">{streamStatusLabel}</div>
-                <div className="summary-meta">{streamTransportLabel} transport is currently active.</div>
+                <div className="summary-meta">
+                  {streamTransportLabel} transport is currently active.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">Recovery Attempts</div>
@@ -725,19 +731,30 @@ export default function LiveMonitor() {
               <div className="summary-card">
                 <div className="summary-label">Polling Session</div>
                 <div className="summary-value">{pollingSubscriberId ?? 'n/a'}</div>
-                <div className="summary-meta">Active only when the transport is using authenticated polling.</div>
+                <div className="summary-meta">
+                  Active only when the transport is using authenticated polling.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">Server Subscribers</div>
                 <div className="summary-value">{wsStats?.subscribers ?? 0}</div>
-                <div className="summary-meta">{wsConnectionCount} native websocket client{wsConnectionCount === 1 ? '' : 's'} connected.</div>
+                <div className="summary-meta">
+                  {wsConnectionCount} native websocket client{wsConnectionCount === 1 ? '' : 's'}{' '}
+                  connected.
+                </div>
               </div>
               <div className="summary-card">
                 <div className="summary-label">Last Live Event</div>
-                <div className="summary-value">{lastEventAt ? formatRelativeTime(lastEventAt) : 'None yet'}</div>
+                <div className="summary-value">
+                  {lastEventAt ? formatRelativeTime(lastEventAt) : 'None yet'}
+                </div>
                 <div className="summary-meta">
-                  {lastConnectAt ? `Connected ${formatRelativeTime(lastConnectAt)}.` : 'No successful connection yet.'}
-                  {lastDisconnectAt ? ` Last disconnect ${formatRelativeTime(lastDisconnectAt)}.` : ''}
+                  {lastConnectAt
+                    ? `Connected ${formatRelativeTime(lastConnectAt)}.`
+                    : 'No successful connection yet.'}
+                  {lastDisconnectAt
+                    ? ` Last disconnect ${formatRelativeTime(lastDisconnectAt)}.`
+                    : ''}
                 </div>
               </div>
             </div>
@@ -818,375 +835,379 @@ export default function LiveMonitor() {
           </div>
 
           <div className="triage-layout">
-          <section className="triage-list card">
-            <div className="card-header">
-              <span className="card-title">Alert Queue ({filteredAlerts.length})</span>
-              <div className="btn-group">
-                <button className="btn btn-sm" onClick={() => exportAlerts('json')}>
-                  Export JSON
-                </button>
-                <button className="btn btn-sm" onClick={() => exportAlerts('csv')}>
-                  Export CSV
-                </button>
+            <section className="triage-list card">
+              <div className="card-header">
+                <span className="card-title">Alert Queue ({filteredAlerts.length})</span>
+                <div className="btn-group">
+                  <button className="btn btn-sm" onClick={() => exportAlerts('json')}>
+                    Export JSON
+                  </button>
+                  <button className="btn btn-sm" onClick={() => exportAlerts('csv')}>
+                    Export CSV
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="triage-toolbar">
-              <div className="triage-toolbar-group">
-                {ALERT_VIEWS.map((view) => (
-                  <button
-                    key={view.id}
-                    className={`btn btn-sm ${view.id === ALERT_VIEWS.find((candidate) => candidate.severity === sevFilter && candidate.host === hostFilter && candidate.source === sourceFilter && candidate.query === searchFilter)?.id ? 'btn-primary' : ''}`}
-                    onClick={() => {
-                      setSevFilter(view.severity);
-                      setHostFilter(view.host);
-                      setSourceFilter(view.source);
-                      setSearchFilter(view.query);
-                      updateMonitorParams({
-                        sev: view.severity,
-                        host: view.host,
-                        source: view.source,
-                        q: view.query,
-                      });
+              <div className="triage-toolbar">
+                <div className="triage-toolbar-group">
+                  {ALERT_VIEWS.map((view) => (
+                    <button
+                      key={view.id}
+                      className={`btn btn-sm ${view.id === ALERT_VIEWS.find((candidate) => candidate.severity === sevFilter && candidate.host === hostFilter && candidate.source === sourceFilter && candidate.query === searchFilter)?.id ? 'btn-primary' : ''}`}
+                      onClick={() => {
+                        setSevFilter(view.severity);
+                        setHostFilter(view.host);
+                        setSourceFilter(view.source);
+                        setSearchFilter(view.query);
+                        updateMonitorParams({
+                          sev: view.severity,
+                          host: view.host,
+                          source: view.source,
+                          q: view.query,
+                        });
+                      }}
+                    >
+                      {view.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="triage-toolbar-group triage-toolbar-group-right">
+                  <input
+                    className="form-input triage-search"
+                    placeholder="Search message, host, user, category…"
+                    value={searchFilter}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSearchFilter(value);
+                      updateMonitorParams({ q: value });
+                    }}
+                  />
+                  <select
+                    className="form-select"
+                    value={sourceFilter}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSourceFilter(value);
+                      updateMonitorParams({ source: value });
                     }}
                   >
-                    {view.label}
+                    {sourceOptions.map((source) => (
+                      <option key={source} value={source}>
+                        {source === 'all' ? 'All sources' : source}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="form-select"
+                    value={hostFilter}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setHostFilter(value);
+                      updateMonitorParams({ host: value });
+                    }}
+                  >
+                    {hostOptions.map((host) => (
+                      <option key={host} value={host}>
+                        {host === 'all' ? 'All hosts' : host}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="summary-grid triage-summary-grid">
+                <div className="summary-card">
+                  <div className="summary-label">Visible Alerts</div>
+                  <div className="summary-value">{filteredAlerts.length}</div>
+                  <div className="summary-meta">Queue size after the current scope filters</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-label">Critical</div>
+                  <div className="summary-value">{criticalAlertCount}</div>
+                  <div className="summary-meta">Priority items still waiting in the queue</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-label">Selected</div>
+                  <div className="summary-value">{selectedAlerts.size}</div>
+                  <div className="summary-meta">Alerts pinned for bulk actions</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-label">Saved View</div>
+                  <div className="summary-value">{currentView?.label || 'Custom'}</div>
+                  <div className="summary-meta">Preset scope or operator-defined mix</div>
+                </div>
+              </div>
+              <div className="active-filter-chips">
+                {['all', 'critical', 'severe', 'elevated', 'low'].map((severity) => (
+                  <button
+                    key={severity}
+                    className={`filter-chip-button ${sevFilter === severity ? 'active' : ''}`}
+                    onClick={() => {
+                      setSevFilter(severity);
+                      updateMonitorParams({ sev: severity });
+                    }}
+                  >
+                    {severity === 'all' ? 'All severities' : severity}
                   </button>
                 ))}
+                {sourceFilter !== 'all' && (
+                  <span className="scope-chip">Source: {sourceFilter}</span>
+                )}
+                {hostFilter !== 'all' && <span className="scope-chip">Host: {hostFilter}</span>}
+                {searchFilter && <span className="scope-chip">Query: {searchFilter}</span>}
+                {hasAlertFilters && (
+                  <button className="filter-chip-button" onClick={clearAlertFilters}>
+                    Reset filters
+                  </button>
+                )}
               </div>
-              <div className="triage-toolbar-group triage-toolbar-group-right">
-                <input
-                  className="form-input triage-search"
-                  placeholder="Search message, host, user, category…"
-                  value={searchFilter}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setSearchFilter(value);
-                    updateMonitorParams({ q: value });
-                  }}
-                />
+              <div className="triage-meta-bar">
+                <div className="hint">
+                  {filteredAlerts.length} alert{filteredAlerts.length === 1 ? '' : 's'} in scope.{' '}
+                  {criticalAlertCount} critical.{' '}
+                  {currentView?.label ? `Preset: ${currentView.label}.` : 'Custom scope active.'}
+                </div>
+                {hasAlertFilters && (
+                  <button className="btn btn-sm" onClick={clearAlertFilters}>
+                    Clear Scope
+                  </button>
+                )}
+              </div>
+              <div className="sticky-bulk-bar">
+                <div>{selectedAlerts.size} selected</div>
                 <select
+                  value={bulkAction}
+                  onChange={(e) => setBulkAction(e.target.value)}
                   className="form-select"
-                  value={sourceFilter}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setSourceFilter(value);
-                    updateMonitorParams({ source: value });
-                  }}
+                  style={{ maxWidth: 200 }}
                 >
-                  {sourceOptions.map((source) => (
-                    <option key={source} value={source}>
-                      {source === 'all' ? 'All sources' : source}
-                    </option>
-                  ))}
+                  <option value="">Bulk Action…</option>
+                  <option value="fp">Mark as False Positive</option>
+                  <option value="triage">Acknowledge / Triage</option>
+                  <option value="incident">Create Incident</option>
                 </select>
-                <select
-                  className="form-select"
-                  value={hostFilter}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setHostFilter(value);
-                    updateMonitorParams({ host: value });
-                  }}
-                >
-                  {hostOptions.map((host) => (
-                    <option key={host} value={host}>
-                      {host === 'all' ? 'All hosts' : host}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="summary-grid triage-summary-grid">
-              <div className="summary-card">
-                <div className="summary-label">Visible Alerts</div>
-                <div className="summary-value">{filteredAlerts.length}</div>
-                <div className="summary-meta">Queue size after the current scope filters</div>
-              </div>
-              <div className="summary-card">
-                <div className="summary-label">Critical</div>
-                <div className="summary-value">{criticalAlertCount}</div>
-                <div className="summary-meta">Priority items still waiting in the queue</div>
-              </div>
-              <div className="summary-card">
-                <div className="summary-label">Selected</div>
-                <div className="summary-value">{selectedAlerts.size}</div>
-                <div className="summary-meta">Alerts pinned for bulk actions</div>
-              </div>
-              <div className="summary-card">
-                <div className="summary-label">Saved View</div>
-                <div className="summary-value">{currentView?.label || 'Custom'}</div>
-                <div className="summary-meta">Preset scope or operator-defined mix</div>
-              </div>
-            </div>
-            <div className="active-filter-chips">
-              {['all', 'critical', 'severe', 'elevated', 'low'].map((severity) => (
                 <button
-                  key={severity}
-                  className={`filter-chip-button ${sevFilter === severity ? 'active' : ''}`}
-                  onClick={() => {
-                    setSevFilter(severity);
-                    updateMonitorParams({ sev: severity });
-                  }}
+                  className="btn btn-sm btn-primary"
+                  disabled={!bulkAction || selectedAlerts.size === 0}
+                  onClick={executeBulk}
                 >
-                  {severity === 'all' ? 'All severities' : severity}
+                  Apply
                 </button>
-              ))}
-              {sourceFilter !== 'all' && <span className="scope-chip">Source: {sourceFilter}</span>}
-              {hostFilter !== 'all' && <span className="scope-chip">Host: {hostFilter}</span>}
-              {searchFilter && <span className="scope-chip">Query: {searchFilter}</span>}
-              {hasAlertFilters && (
-                <button className="filter-chip-button" onClick={clearAlertFilters}>
-                  Reset filters
-                </button>
-              )}
-            </div>
-            <div className="triage-meta-bar">
-              <div className="hint">
-                {filteredAlerts.length} alert{filteredAlerts.length === 1 ? '' : 's'} in scope.{' '}
-                {criticalAlertCount} critical.{' '}
-                {currentView?.label ? `Preset: ${currentView.label}.` : 'Custom scope active.'}
               </div>
-              {hasAlertFilters && (
-                <button className="btn btn-sm" onClick={clearAlertFilters}>
-                  Clear Scope
-                </button>
-              )}
-            </div>
-            <div className="sticky-bulk-bar">
-              <div>{selectedAlerts.size} selected</div>
-              <select
-                value={bulkAction}
-                onChange={(e) => setBulkAction(e.target.value)}
-                className="form-select"
-                style={{ maxWidth: 200 }}
-              >
-                <option value="">Bulk Action…</option>
-                <option value="fp">Mark as False Positive</option>
-                <option value="triage">Acknowledge / Triage</option>
-                <option value="incident">Create Incident</option>
-              </select>
-              <button
-                className="btn btn-sm btn-primary"
-                disabled={!bulkAction || selectedAlerts.size === 0}
-                onClick={executeBulk}
-              >
-                Apply
-              </button>
-            </div>
-            {filteredAlerts.length === 0 ? (
-              <TriageEmptyState
-                title="No alerts match the current scope"
-                description="The queue is healthy, but the current search, source, or host scope narrowed this view to zero items. Clear the scope or switch presets to continue triage."
-                actionLabel={hasAlertFilters ? 'Clear Filters' : null}
-                onAction={hasAlertFilters ? clearAlertFilters : null}
-              />
-            ) : (
-              <div className="split-list-table">
-                <div className="desktop-table-only">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th style={{ width: 30 }}>
-                          <input
-                            type="checkbox"
-                            checked={
-                              selectedAlerts.size === filteredAlerts.length &&
-                              filteredAlerts.length > 0
-                            }
-                            onChange={toggleSelectAll}
-                            aria-label="Select all visible alerts"
-                          />
-                        </th>
-                        <th>Time</th>
-                        <th>Severity</th>
-                        <th>Source</th>
-                        <th>Category</th>
-                        <th>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAlerts.map((alert, index) => {
-                        const aid = alertIdFor(alert, index);
-                        const isSelected = selectedAlerts.has(aid);
-                        const isActive = selectedId === aid || hoveredId === aid;
-                        return (
-                          <tr
-                            key={aid}
-                            className={isActive ? 'row-active' : ''}
-                            tabIndex={0}
-                            onMouseEnter={() => setHoveredId(aid)}
-                            onFocus={() => setHoveredId(aid)}
-                            onClick={() => setSelectedId(selectedId === aid ? null : aid)}
-                          >
-                            <td onClick={(event) => event.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSelect(aid)}
-                                aria-label={`Select alert ${aid}`}
-                              />
-                            </td>
-                            <td>
-                              <div className="row-primary">
-                                {formatRelativeTime(alert.timestamp || alert.time)}
-                              </div>
-                              <div className="row-secondary">
-                                {formatDateTime(alert.timestamp || alert.time)}
-                              </div>
-                            </td>
-                            <td>
-                              <span
-                                className={`badge ${(alert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (alert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}
-                              >
-                                {alert.severity || 'unknown'}
-                              </span>
-                            </td>
-                            <td>{alert.source || '—'}</td>
-                            <td>{alert.category || alert.type || '—'}</td>
-                            <td>
-                              <div className="row-primary">
-                                {alert.message || alert.description || '—'}
-                              </div>
-                              <div className="row-secondary">
-                                {alert.hostname || alert.origin_agent_id || 'No host context'}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              {filteredAlerts.length === 0 ? (
+                <TriageEmptyState
+                  title="No alerts match the current scope"
+                  description="The queue is healthy, but the current search, source, or host scope narrowed this view to zero items. Clear the scope or switch presets to continue triage."
+                  actionLabel={hasAlertFilters ? 'Clear Filters' : null}
+                  onAction={hasAlertFilters ? clearAlertFilters : null}
+                />
+              ) : (
+                <div className="split-list-table">
+                  <div className="desktop-table-only">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 30 }}>
+                            <input
+                              type="checkbox"
+                              checked={
+                                selectedAlerts.size === filteredAlerts.length &&
+                                filteredAlerts.length > 0
+                              }
+                              onChange={toggleSelectAll}
+                              aria-label="Select all visible alerts"
+                            />
+                          </th>
+                          <th>Time</th>
+                          <th>Severity</th>
+                          <th>Source</th>
+                          <th>Category</th>
+                          <th>Message</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAlerts.map((alert, index) => {
+                          const aid = alertIdFor(alert, index);
+                          const isSelected = selectedAlerts.has(aid);
+                          const isActive = selectedId === aid || hoveredId === aid;
+                          return (
+                            <tr
+                              key={aid}
+                              className={isActive ? 'row-active' : ''}
+                              tabIndex={0}
+                              onMouseEnter={() => setHoveredId(aid)}
+                              onFocus={() => setHoveredId(aid)}
+                              onClick={() => setSelectedId(selectedId === aid ? null : aid)}
+                            >
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelect(aid)}
+                                  aria-label={`Select alert ${aid}`}
+                                />
+                              </td>
+                              <td>
+                                <div className="row-primary">
+                                  {formatRelativeTime(alert.timestamp || alert.time)}
+                                </div>
+                                <div className="row-secondary">
+                                  {formatDateTime(alert.timestamp || alert.time)}
+                                </div>
+                              </td>
+                              <td>
+                                <span
+                                  className={`badge ${(alert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (alert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}
+                                >
+                                  {alert.severity || 'unknown'}
+                                </span>
+                              </td>
+                              <td>{alert.source || '—'}</td>
+                              <td>{alert.category || alert.type || '—'}</td>
+                              <td>
+                                <div className="row-primary">
+                                  {alert.message || alert.description || '—'}
+                                </div>
+                                <div className="row-secondary">
+                                  {alert.hostname || alert.origin_agent_id || 'No host context'}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mobile-stack">
+                    {filteredAlerts.map((alert, index) => {
+                      const aid = alertIdFor(alert, index);
+                      return (
+                        <MobileAlertCard
+                          key={aid}
+                          alert={alert}
+                          index={index}
+                          active={selectedId === aid || hoveredId === aid}
+                          onPreview={(nextId) => {
+                            setHoveredId(nextId);
+                            setSelectedId(nextId);
+                          }}
+                          onOpen={(nextId) => setSelectedId(nextId)}
+                          onMarkFP={markFP}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="mobile-stack">
-                  {filteredAlerts.map((alert, index) => {
-                    const aid = alertIdFor(alert, index);
-                    return (
-                      <MobileAlertCard
-                        key={aid}
-                        alert={alert}
-                        index={index}
-                        active={selectedId === aid || hoveredId === aid}
-                        onPreview={(nextId) => {
-                          setHoveredId(nextId);
-                          setSelectedId(nextId);
-                        }}
-                        onOpen={(nextId) => setSelectedId(nextId)}
-                        onMarkFP={markFP}
-                      />
-                    );
-                  })}
+              )}
+              {Array.isArray(fpStats) && fpStats.length > 0 && (
+                <div className="detail-callout" style={{ marginTop: 16 }}>
+                  FP feedback trends:{' '}
+                  {fpStats
+                    .slice(0, 3)
+                    .map((item) => `${item.pattern} ${(item.fp_ratio * 100).toFixed(0)}%`)
+                    .join(' · ')}
                 </div>
-              </div>
-            )}
-            {Array.isArray(fpStats) && fpStats.length > 0 && (
-              <div className="detail-callout" style={{ marginTop: 16 }}>
-                FP feedback trends:{' '}
-                {fpStats
-                  .slice(0, 3)
-                  .map((item) => `${item.pattern} ${(item.fp_ratio * 100).toFixed(0)}%`)
-                  .join(' · ')}
-              </div>
-            )}
-          </section>
+              )}
+            </section>
 
-          <aside className="triage-detail card">
-            <div className="card-header">
-              <span className="card-title">
-                {previewAlert
-                  ? previewAlert.message || previewAlert.category || 'Alert Preview'
-                  : 'Alert Preview'}
-              </span>
-              {previewAlert && (
-                <div className="btn-group">
-                  <button
-                    className="btn btn-sm"
-                    onClick={() =>
-                      setSelectedId(
-                        selectedAlert ? null : alertIdFor(previewAlert, previewAlertIndex),
-                      )
-                    }
-                  >
-                    {selectedAlert ? 'Close Drawer' : 'Open Drawer'}
-                  </button>
-                  <button className="btn btn-sm" onClick={() => markFP(previewAlert)}>
-                    Mark FP
-                  </button>
-                </div>
-              )}
-            </div>
-            {previewAlert ? (
-              <>
-                <div className="triage-detail-nav">
-                  <span className="scope-chip">
-                    {previewAlertIndex + 1} of {filteredAlerts.length}
-                  </span>
+            <aside className="triage-detail card">
+              <div className="card-header">
+                <span className="card-title">
+                  {previewAlert
+                    ? previewAlert.message || previewAlert.category || 'Alert Preview'
+                    : 'Alert Preview'}
+                </span>
+                {previewAlert && (
                   <div className="btn-group">
                     <button
                       className="btn btn-sm"
-                      onClick={() => moveAlert(-1, selectedAlert != null)}
-                      disabled={previewAlertIndex <= 0}
+                      onClick={() =>
+                        setSelectedId(
+                          selectedAlert ? null : alertIdFor(previewAlert, previewAlertIndex),
+                        )
+                      }
                     >
-                      Previous
+                      {selectedAlert ? 'Close Drawer' : 'Open Drawer'}
                     </button>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => moveAlert(1, selectedAlert != null)}
-                      disabled={previewAlertIndex >= filteredAlerts.length - 1}
-                    >
-                      Next
+                    <button className="btn btn-sm" onClick={() => markFP(previewAlert)}>
+                      Mark FP
                     </button>
-                    {!selectedAlert && (
+                  </div>
+                )}
+              </div>
+              {previewAlert ? (
+                <>
+                  <div className="triage-detail-nav">
+                    <span className="scope-chip">
+                      {previewAlertIndex + 1} of {filteredAlerts.length}
+                    </span>
+                    <div className="btn-group">
                       <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => setSelectedId(alertIdFor(previewAlert, previewAlertIndex))}
+                        className="btn btn-sm"
+                        onClick={() => moveAlert(-1, selectedAlert != null)}
+                        disabled={previewAlertIndex <= 0}
                       >
-                        Pin Preview
+                        Previous
                       </button>
-                    )}
-                  </div>
-                </div>
-                <div className="detail-hero">
-                  <div>
-                    <div className="detail-hero-title">
-                      {previewAlert.category || previewAlert.type || 'Alert context'}
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => moveAlert(1, selectedAlert != null)}
+                        disabled={previewAlertIndex >= filteredAlerts.length - 1}
+                      >
+                        Next
+                      </button>
+                      {!selectedAlert && (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={() => setSelectedId(alertIdFor(previewAlert, previewAlertIndex))}
+                        >
+                          Pin Preview
+                        </button>
+                      )}
                     </div>
-                    <div className="detail-hero-copy">
-                      {previewAlert.message ||
-                        previewAlert.description ||
-                        'Open alert context available in this preview.'}
-                    </div>
                   </div>
-                  <span
-                    className={`badge ${(previewAlert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (previewAlert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}
-                  >
-                    {previewAlert.severity || 'unknown'}
-                  </span>
-                </div>
-                <SummaryGrid
-                  data={{
-                    source: previewAlert.source,
-                    host: previewAlert.hostname || previewAlert.origin_agent_id,
-                    time: formatDateTime(previewAlert.timestamp || previewAlert.time),
-                    relative_time: formatRelativeTime(previewAlert.timestamp || previewAlert.time),
-                    score: previewAlert.score,
-                    status: previewAlert.status || 'open',
-                  }}
-                  limit={6}
+                  <div className="detail-hero">
+                    <div>
+                      <div className="detail-hero-title">
+                        {previewAlert.category || previewAlert.type || 'Alert context'}
+                      </div>
+                      <div className="detail-hero-copy">
+                        {previewAlert.message ||
+                          previewAlert.description ||
+                          'Open alert context available in this preview.'}
+                      </div>
+                    </div>
+                    <span
+                      className={`badge ${(previewAlert.severity || '').toLowerCase() === 'critical' ? 'badge-err' : (previewAlert.severity || '').toLowerCase() === 'low' ? 'badge-info' : 'badge-warn'}`}
+                    >
+                      {previewAlert.severity || 'unknown'}
+                    </span>
+                  </div>
+                  <SummaryGrid
+                    data={{
+                      source: previewAlert.source,
+                      host: previewAlert.hostname || previewAlert.origin_agent_id,
+                      time: formatDateTime(previewAlert.timestamp || previewAlert.time),
+                      relative_time: formatRelativeTime(
+                        previewAlert.timestamp || previewAlert.time,
+                      ),
+                      score: previewAlert.score,
+                      status: previewAlert.status || 'open',
+                    }}
+                    limit={6}
+                  />
+                  <div className="detail-callout" style={{ marginTop: 16 }}>
+                    {previewAlert.hostname
+                      ? `Current scope: ${previewAlert.hostname}. Use this preview to inspect host, source, and severity without losing the surrounding queue.`
+                      : 'This alert has limited host context. Use the full drawer when you need deeper pivoting or raw evidence.'}
+                  </div>
+                  <JsonDetails data={previewAlert} label="Expanded alert context" />
+                </>
+              ) : (
+                <TriageEmptyState
+                  title="No alert preview yet"
+                  description="Hover a row on desktop or tap a card on mobile to keep the surrounding queue visible while you inspect each alert."
                 />
-                <div className="detail-callout" style={{ marginTop: 16 }}>
-                  {previewAlert.hostname
-                    ? `Current scope: ${previewAlert.hostname}. Use this preview to inspect host, source, and severity without losing the surrounding queue.`
-                    : 'This alert has limited host context. Use the full drawer when you need deeper pivoting or raw evidence.'}
-                </div>
-                <JsonDetails data={previewAlert} label="Expanded alert context" />
-              </>
-            ) : (
-              <TriageEmptyState
-                title="No alert preview yet"
-                description="Hover a row on desktop or tap a card on mobile to keep the surrounding queue visible while you inspect each alert."
-              />
-            )}
-          </aside>
+              )}
+            </aside>
           </div>
         </>
       )}
@@ -1438,7 +1459,9 @@ export default function LiveMonitor() {
             >
               <div className="card" style={{ padding: 10 }}>
                 <div className="metric-label">Process Count</div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{procData?.count ?? procList.length}</div>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>
+                  {procData?.count ?? procList.length}
+                </div>
               </div>
               <div className="card" style={{ padding: 10 }}>
                 <div className="metric-label">Total CPU</div>

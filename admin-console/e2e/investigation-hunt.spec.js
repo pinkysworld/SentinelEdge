@@ -167,7 +167,7 @@ test('run-hunt route opens the hunt drawer and saves/runs a hunt', async ({ page
 
   await expect(page.locator('#hunt-name')).toHaveValue('Credential Storm Pivot');
   await expect(page.locator('#hunt-query')).toHaveValue('severity:critical credential storm');
-  await expect(page.getByText('Suggested investigations')).toBeVisible();
+  await expect(page.getByText('Investigate Credential Storm')).toBeVisible();
 
   await page.getByRole('button', { name: 'Run Hunt' }).click();
   await expect.poll(() => requests.hunt?.query).toBe('severity:critical credential storm');

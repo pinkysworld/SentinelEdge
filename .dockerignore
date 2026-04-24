@@ -18,10 +18,11 @@ admin-console/node_modules/
 admin-console/output/
 admin-console/test-results/
 
-# Documentation (not needed in image)
-docs/
+# Documentation (top-level markdown stays excluded except README,
+# but docs/ is required at build time for embedded support-center content)
 *.md
 !README.md
+!docs/**
 
 # CI/CD
 .github/
@@ -29,7 +30,7 @@ docs/
 # Development files
 fuzz/
 demo/
-sdk/
+!sdk/**
 test-results/
 var/
 

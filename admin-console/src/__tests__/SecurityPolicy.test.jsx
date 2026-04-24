@@ -240,7 +240,9 @@ describe('SecurityPolicy', () => {
 
     await waitFor(() => expect(screen.getByText('Resolved Level')).toBeInTheDocument());
 
-    const composeCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/policy/compose'));
+    const composeCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/policy/compose'),
+    );
     expect(composeCall).toBeTruthy();
     expect(JSON.parse(composeCall[1].body)).toEqual({
       operator: 'max',
@@ -283,7 +285,9 @@ describe('SecurityPolicy', () => {
     await waitFor(() => expect(screen.getByText('Strategy Breakdown')).toBeInTheDocument());
     expect(screen.getAllByText('SlowDrip').length).toBeGreaterThan(0);
 
-    const harnessCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/harness/run'));
+    const harnessCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/harness/run'),
+    );
     expect(harnessCall).toBeTruthy();
     expect(JSON.parse(harnessCall[1].body)).toEqual({
       traces_per_strategy: 10,
@@ -304,7 +308,9 @@ describe('SecurityPolicy', () => {
 
     await waitFor(() => expect(screen.getByText('Last Deploy Status')).toBeInTheDocument());
 
-    const deployCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/deception/deploy'));
+    const deployCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/deception/deploy'),
+    );
     expect(deployCall).toBeTruthy();
     expect(JSON.parse(deployCall[1].body)).toEqual({
       decoy_type: 'honeypot',

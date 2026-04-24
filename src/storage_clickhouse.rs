@@ -566,7 +566,7 @@ impl EventStore for ClickHouseStorage {
         let count = body
             .lines()
             .find(|line| !line.trim().is_empty())
-            .map(|line| serde_json::from_str::<CountRow>(line))
+            .map(serde_json::from_str::<CountRow>)
             .transpose()
             .map_err(|error| format!("ClickHouse count parse failed: {error}"))?
             .map(|row| row.count)
@@ -608,7 +608,7 @@ impl EventStore for ClickHouseStorage {
         let persisted = count_body
             .lines()
             .find(|line| !line.trim().is_empty())
-            .map(|line| serde_json::from_str::<CountRow>(line))
+            .map(serde_json::from_str::<CountRow>)
             .transpose()
             .map_err(|error| format!("ClickHouse purge count parse failed: {error}"))?
             .map(|row| row.count)

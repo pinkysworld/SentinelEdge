@@ -131,9 +131,13 @@ export default function AssistantWorkspace() {
   const [history, setHistory] = useState([]);
   const { data: statusData } = useApi(api.assistantStatus);
   const { data: caseList } = useApi(api.cases);
-  const { data: incidentDetail } = useApi(() => api.incidentById(activeIncidentId), [activeIncidentId], {
-    skip: !activeIncidentId,
-  });
+  const { data: incidentDetail } = useApi(
+    () => api.incidentById(activeIncidentId),
+    [activeIncidentId],
+    {
+      skip: !activeIncidentId,
+    },
+  );
   const { data: investigationList } = useApi(api.investigationActive);
 
   const cases = Array.isArray(caseList) ? caseList : caseList?.cases || [];
@@ -185,20 +189,22 @@ export default function AssistantWorkspace() {
       });
       setResponse(payload);
       setConversationId(payload?.conversation_id || '');
-      setHistory((current) => [
-        {
-          question: trimmedQuestion,
-          answer: payload?.answer || '',
-          caseId: caseId || '',
-          incidentId: activeIncidentId || '',
-          investigationId: activeInvestigationId || '',
-          source: activeSource || '',
-          conversationId: payload?.conversation_id || '',
-          mode: payload?.mode || mode,
-          createdAt: new Date().toISOString(),
-        },
-        ...current,
-      ].slice(0, 6));
+      setHistory((current) =>
+        [
+          {
+            question: trimmedQuestion,
+            answer: payload?.answer || '',
+            caseId: caseId || '',
+            incidentId: activeIncidentId || '',
+            investigationId: activeInvestigationId || '',
+            source: activeSource || '',
+            conversationId: payload?.conversation_id || '',
+            mode: payload?.mode || mode,
+            createdAt: new Date().toISOString(),
+          },
+          ...current,
+        ].slice(0, 6),
+      );
     } catch (error) {
       const bodyMessage =
         typeof error?.body === 'string' && error.body.includes('error') ? error.body : null;
@@ -360,7 +366,9 @@ export default function AssistantWorkspace() {
             ) : null}
             {selectedIncident ? (
               <div className="row-card">
-                <div className="row-primary">{selectedIncident.title || `Incident #${selectedIncident.id}`}</div>
+                <div className="row-primary">
+                  {selectedIncident.title || `Incident #${selectedIncident.id}`}
+                </div>
                 <div className="row-secondary" style={{ marginTop: 4 }}>
                   {`${formatCaseValue(selectedIncident.status)} • ${formatCaseValue(selectedIncident.severity)} • ${selectedIncident.assignee || selectedIncident.owner || 'unassigned'}`}
                 </div>
@@ -368,7 +376,10 @@ export default function AssistantWorkspace() {
             ) : null}
           </div>
         ) : (
-          <div className="empty">Open the assistant from a case, incident, or investigation to preserve investigation state.</div>
+          <div className="empty">
+            Open the assistant from a case, incident, or investigation to preserve investigation
+            state.
+          </div>
         )}
       </div>
 
@@ -514,7 +525,9 @@ export default function AssistantWorkspace() {
                     {`${formatCaseValue(selectedCase.status)} • ${formatCaseValue(selectedCase.assignee)}`}
                   </div>
                 </div>
-                <div className="hint">Run a query to pull linked evidence and citations for this case.</div>
+                <div className="hint">
+                  Run a query to pull linked evidence and citations for this case.
+                </div>
               </div>
             ) : (
               <div className="empty">Select a case to attach case-aware context.</div>
@@ -538,7 +551,10 @@ export default function AssistantWorkspace() {
           {contextEvents.length > 0 ? (
             <div style={{ display: 'grid', gap: 10 }}>
               {contextEvents.map((event) => (
-                <div key={`${event.event_type}-${event.id}-${event.timestamp}`} className="row-card">
+                <div
+                  key={`${event.event_type}-${event.id}-${event.timestamp}`}
+                  className="row-card"
+                >
                   <div className="row-primary">{event.summary}</div>
                   <div className="row-secondary" style={{ marginTop: 4 }}>
                     {`${event.event_type} ${event.id} • ${event.device || 'unknown host'} • ${formatDateTime(event.timestamp)}`}

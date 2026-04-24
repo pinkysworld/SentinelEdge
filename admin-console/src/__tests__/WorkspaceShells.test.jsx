@@ -1233,7 +1233,7 @@ describe('workspace shells', () => {
     await waitFor(() => {
       expect(scanBodies).toEqual([
         {
-          data: Buffer.from(sample).toString('base64'),
+          data: globalThis.Buffer.from(sample).toString('base64'),
           filename: 'invoice_update.ps1',
           behavior: {
             suspicious_process_tree: true,

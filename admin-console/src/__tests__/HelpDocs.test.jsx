@@ -81,7 +81,9 @@ describe('HelpDocs', () => {
           jsonOk({
             info: { title: 'Wardex API', version: '0.53.1-local' },
             paths: {
-              '/api/support/parity': { get: { summary: 'API, SDK, and GraphQL parity diagnostics' } },
+              '/api/support/parity': {
+                get: { summary: 'API, SDK, and GraphQL parity diagnostics' },
+              },
               '/api/graphql': { post: { summary: 'Execute GraphQL queries' } },
             },
             components: { schemas: { Status: {}, Error: {} } },
@@ -92,7 +94,9 @@ describe('HelpDocs', () => {
       if (path === '/api/status') return Promise.resolve(jsonOk({ version: '0.53.1-local' }));
       if (path === '/api/inbox') return Promise.resolve(jsonOk({ items: [] }));
       if (path === '/api/manager/overview') {
-        return Promise.resolve(jsonOk({ queue: { pending: 2 }, automation: { active_investigations: 1 } }));
+        return Promise.resolve(
+          jsonOk({ queue: { pending: 2 }, automation: { active_investigations: 1 } }),
+        );
       }
       if (path === '/api/support/diagnostics') {
         return Promise.resolve(
@@ -161,7 +165,8 @@ describe('HelpDocs', () => {
               tags: ['api', 'guides'],
               headings: ['SDK Guide', 'TypeScript SDK'],
               summary: 'Use generated clients.',
-              content: '# SDK Guide\nUse generated clients.\n\n## TypeScript SDK\n```ts\nimport { WardexClient } from "@wardex/sdk";\n```',
+              content:
+                '# SDK Guide\nUse generated clients.\n\n## TypeScript SDK\n```ts\nimport { WardexClient } from "@wardex/sdk";\n```',
             }),
           );
         }
@@ -173,7 +178,8 @@ describe('HelpDocs', () => {
             tags: ['deployment', 'runbooks'],
             headings: ['Deployment & Upgrade Runbook', 'Prerequisites'],
             summary: 'Deploy and upgrade Wardex safely.',
-            content: '# Deployment & Upgrade Runbook\nDeploy and upgrade Wardex safely.\n\n## Prerequisites\n- Access token\n- Backup',
+            content:
+              '# Deployment & Upgrade Runbook\nDeploy and upgrade Wardex safely.\n\n## Prerequisites\n- Access token\n- Backup',
           }),
         );
       }

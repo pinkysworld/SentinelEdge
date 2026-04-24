@@ -13,7 +13,9 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 COPY build.rs ./
 COPY src/ src/
+COPY docs/ docs/
 COPY admin-console/ admin-console/
+COPY sdk/ sdk/
 COPY site/ site/
 COPY examples/ examples/
 COPY benches/ benches/

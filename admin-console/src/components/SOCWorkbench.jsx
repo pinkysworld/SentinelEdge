@@ -259,7 +259,10 @@ function resolveInvestigationPivot(endpoint, context, label) {
           case: context?.case_id || context?.caseId || undefined,
           incident: context?.incident_id || context?.incidentId || undefined,
           investigation:
-            context?.investigation_id || context?.investigationId || context?.workflow_id || undefined,
+            context?.investigation_id ||
+            context?.investigationId ||
+            context?.workflow_id ||
+            undefined,
           source: context?.source || context?.workflow_source || 'investigation',
         },
       }),
@@ -640,7 +643,9 @@ export default function SOCWorkbench() {
   const filteredQueueArr = queueArr.filter((alert) => {
     const q = queueFilterText.trim().toLowerCase();
     if (!q) return true;
-    return JSON.stringify(alert || {}).toLowerCase().includes(q);
+    return JSON.stringify(alert || {})
+      .toLowerCase()
+      .includes(q);
   });
   const casesById = Object.fromEntries(caseArr.map((caseItem) => [String(caseItem.id), caseItem]));
   const selectedCaseIdList = [...selectedCaseIds];
@@ -664,7 +669,9 @@ export default function SOCWorkbench() {
     ? `Case #${activeTicketCase.id}: ${activeTicketCase.title || 'Investigation'}`
     : 'SOC investigation sync';
   const activeTicketSummary = ticketSyncDraft.summary ?? defaultTicketSummary;
-  const assistantCaseHref = activeTicketCaseId ? `/assistant?case=${activeTicketCaseId}` : '/assistant';
+  const assistantCaseHref = activeTicketCaseId
+    ? `/assistant?case=${activeTicketCaseId}`
+    : '/assistant';
   const focusedInvestigation = focusedInvestigationParam
     ? activeInvestigationArr.find((entry) => entry.id === focusedInvestigationParam) || null
     : null;
@@ -710,7 +717,11 @@ export default function SOCWorkbench() {
         }
       : queueSeed || null);
   const queueSeedLabel =
-    queueSeed?.title || queueSeed?.summary || queueSeed?.message || queueSeed?.id || 'active signal';
+    queueSeed?.title ||
+    queueSeed?.summary ||
+    queueSeed?.message ||
+    queueSeed?.id ||
+    'active signal';
   const queueSeedEntity =
     queueSeed?.entity_id || queueSeed?.user || queueSeed?.username || queueSeed?.principal || '';
   const queueSeedHost = queueSeed?.host || queueSeed?.agent_id || queueSeed?.endpoint_id || '';
@@ -761,7 +772,8 @@ export default function SOCWorkbench() {
     {
       id: 'infrastructure',
       title: 'Review Asset Context',
-      description: 'Check infrastructure exposure, drift, and observability evidence around the active case or alert.',
+      description:
+        'Check infrastructure exposure, drift, and observability evidence around the active case or alert.',
       to: buildHref('/infrastructure', {
         params: { tab: 'assets', q: queueSeedHost || queueSeedEntity },
       }),
@@ -771,7 +783,8 @@ export default function SOCWorkbench() {
     {
       id: 'attack-graph',
       title: 'Open Campaign Graph',
-      description: 'Validate whether the current investigation belongs to a broader propagation path.',
+      description:
+        'Validate whether the current investigation belongs to a broader propagation path.',
       to: '/attack-graph',
       minRole: 'analyst',
       badge: 'Graph',
@@ -779,7 +792,8 @@ export default function SOCWorkbench() {
     {
       id: 'reports',
       title: 'Export Delivery Snapshot',
-      description: 'Package response posture, case progress, and approvals into report delivery workflows.',
+      description:
+        'Package response posture, case progress, and approvals into report delivery workflows.',
       to: buildHref('/reports', {
         params: {
           tab: 'delivery',
@@ -939,7 +953,11 @@ export default function SOCWorkbench() {
       nextActions: Array.isArray(handoff?.next_actions) ? handoff.next_actions.join('\n') : '',
       questions: Array.isArray(handoff?.questions) ? handoff.questions.join('\n') : '',
     });
-  }, [selectedInvestigation?.id, selectedInvestigationCase?.id, selectedInvestigationCase?.assignee]);
+  }, [
+    selectedInvestigation?.id,
+    selectedInvestigationCase?.id,
+    selectedInvestigationCase?.assignee,
+  ]);
 
   useEffect(() => {
     localStorage.setItem('wardex_saved_queue_filters', JSON.stringify(savedQueueFilters));
@@ -1064,7 +1082,12 @@ export default function SOCWorkbench() {
     navigate(`/detection?${params.toString()}`);
   };
 
-  const saveInvestigationProgress = async (investigationId, payload, successMessage, progressKey) => {
+  const saveInvestigationProgress = async (
+    investigationId,
+    payload,
+    successMessage,
+    progressKey,
+  ) => {
     if (!investigationId) return;
     setSavingProgressKey(progressKey || investigationId);
     try {
@@ -2028,18 +2051,22 @@ export default function SOCWorkbench() {
                   value={bulkCaseStatus}
                   onChange={(event) => setBulkCaseStatus(event.target.value)}
                 >
-                  {['new', 'triaging', 'investigating', 'escalated', 'resolved', 'closed'].map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
+                  {['new', 'triaging', 'investigating', 'escalated', 'resolved', 'closed'].map(
+                    (status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ),
+                  )}
                 </select>
                 <button
                   className="btn btn-sm"
                   disabled={selectedCaseIds.size === 0}
                   onClick={async () => {
                     const ids = [...selectedCaseIds];
-                    await Promise.allSettled(ids.map((id) => api.updateCase(id, { status: bulkCaseStatus })));
+                    await Promise.allSettled(
+                      ids.map((id) => api.updateCase(id, { status: bulkCaseStatus })),
+                    );
                     toast(`Updated ${ids.length} case(s)`, 'success');
                     setSelectedCaseIds(new Set());
                     rCases();
@@ -2123,7 +2150,9 @@ export default function SOCWorkbench() {
                             }}
                           />
                         </td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{c.id || i}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                          {c.id || i}
+                        </td>
                         <td>
                           <input
                             className="form-input"
@@ -2144,9 +2173,7 @@ export default function SOCWorkbench() {
                           />
                         </td>
                         <td>
-                          <span
-                            className={`badge ${caseStatusBadgeClass(c.status)}`}
-                          >
+                          <span className={`badge ${caseStatusBadgeClass(c.status)}`}>
                             {c.status || '—'}
                           </span>
                         </td>
@@ -2189,7 +2216,10 @@ export default function SOCWorkbench() {
               </div>
               <div className="btn-group">
                 {activeWorkspaceCase && String(activeWorkspaceCase.id) !== focusedCaseId ? (
-                  <button className="btn btn-sm" onClick={() => openCaseFocus(activeWorkspaceCase.id)}>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => openCaseFocus(activeWorkspaceCase.id)}
+                  >
                     Create Deep Link
                   </button>
                 ) : null}
@@ -2335,29 +2365,29 @@ export default function SOCWorkbench() {
                     ) : (
                       <>
                         {activeCaseIncidentIds.length > 0 ? (
-                            <div style={{ marginBottom: 10 }}>
-                              <div className="row-secondary" style={{ marginBottom: 6 }}>
-                                Linked incidents
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                {activeCaseIncidentIds.map((incidentId) => (
-                                  <button
-                                    key={`case-incident-${incidentId}`}
-                                    className="btn btn-sm"
-                                    onClick={() =>
-                                      openIncidentDrawer(incidentId, {
-                                        caseId: activeWorkspaceCase.id,
-                                        panel: 'summary',
-                                        hash: 'cases',
-                                      })
-                                    }
-                                  >
-                                    {`Incident #${incidentId}`}
-                                  </button>
-                                ))}
-                              </div>
+                          <div style={{ marginBottom: 10 }}>
+                            <div className="row-secondary" style={{ marginBottom: 6 }}>
+                              Linked incidents
                             </div>
-                          ) : null}
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {activeCaseIncidentIds.map((incidentId) => (
+                                <button
+                                  key={`case-incident-${incidentId}`}
+                                  className="btn btn-sm"
+                                  onClick={() =>
+                                    openIncidentDrawer(incidentId, {
+                                      caseId: activeWorkspaceCase.id,
+                                      panel: 'summary',
+                                      hash: 'cases',
+                                    })
+                                  }
+                                >
+                                  {`Incident #${incidentId}`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         {activeCaseEventIds.length > 0 ? (
                           <div style={{ marginBottom: 10 }}>
                             <div className="row-secondary" style={{ marginBottom: 6 }}>
@@ -2671,7 +2701,8 @@ export default function SOCWorkbench() {
               />
             </div>
             <div className="hint" style={{ marginTop: 10 }}>
-              Use the assistant route for case-aware summaries and citations before syncing this case.
+              Use the assistant route for case-aware summaries and citations before syncing this
+              case.
             </div>
             {ticketSyncResult ? (
               <div style={{ marginTop: 14 }}>
@@ -2705,7 +2736,11 @@ export default function SOCWorkbench() {
             />
           </div>
           <div className="btn-group" style={{ marginTop: 10 }}>
-            <button className="btn btn-sm btn-primary" onClick={runAnalystQuery} disabled={analystLoading}>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={runAnalystQuery}
+              disabled={analystLoading}
+            >
               {analystLoading ? 'Running…' : 'Run Query'}
             </button>
             <button className="btn btn-sm" onClick={() => setAnalystResult(null)}>
@@ -2760,7 +2795,10 @@ export default function SOCWorkbench() {
                   const query = queueFilterText.trim();
                   if (!query) return;
                   setSavedQueueFilters((current) => {
-                    const next = [...current.filter((item) => item.query !== query), { name, query }];
+                    const next = [
+                      ...current.filter((item) => item.query !== query),
+                      { name, query },
+                    ];
                     return next.slice(-10);
                   });
                 }}
@@ -2854,8 +2892,7 @@ export default function SOCWorkbench() {
                           className="btn btn-sm"
                           onClick={() =>
                             openResponseFocus({
-                              target:
-                                a.host || a.agent_id || a.endpoint_id || a.entity_id || a.id,
+                              target: a.host || a.agent_id || a.endpoint_id || a.entity_id || a.id,
                               source: 'queue',
                             })
                           }
@@ -2897,10 +2934,7 @@ export default function SOCWorkbench() {
                   <button
                     className="btn btn-sm"
                     onClick={() =>
-                      openInvestigationFocus(
-                        focusedInvestigation.id,
-                        focusedInvestigation.case_id,
-                      )
+                      openInvestigationFocus(focusedInvestigation.id, focusedInvestigation.case_id)
                     }
                   >
                     Open Investigation
@@ -3785,7 +3819,8 @@ export default function SOCWorkbench() {
                       {investigationContext.case_id || selectedInvestigationCase?.id || 'Unlinked'}
                     </div>
                     <div className="summary-meta">
-                      {selectedInvestigationCase?.title || 'Start a workflow and hand it into a case when needed.'}
+                      {selectedInvestigationCase?.title ||
+                        'Start a workflow and hand it into a case when needed.'}
                     </div>
                   </div>
                 </div>
@@ -3814,7 +3849,9 @@ export default function SOCWorkbench() {
                           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                             {workflow.description}
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                          <div
+                            style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}
+                          >
                             {(workflow.steps || []).length} steps •{' '}
                             {(workflow.mitre_techniques || []).join(', ') || 'No ATT&CK mapping'}
                           </div>
@@ -3894,7 +3931,9 @@ export default function SOCWorkbench() {
                             </div>
                             <div className="row-secondary">
                               {investigation.analyst} •{' '}
-                              {investigation.case_id ? `Case ${investigation.case_id}` : 'No linked case'}
+                              {investigation.case_id
+                                ? `Case ${investigation.case_id}`
+                                : 'No linked case'}
                             </div>
                           </div>
                           <span
@@ -3908,8 +3947,8 @@ export default function SOCWorkbench() {
                             {investigation.completion_percent || 0}% complete
                           </span>
                           <span className="badge badge-info">
-                            {(investigation.completed_steps || []).length}/{investigation.total_steps || 0}{' '}
-                            steps
+                            {(investigation.completed_steps || []).length}/
+                            {investigation.total_steps || 0} steps
                           </span>
                           {investigation.next_step?.title ? (
                             <span className="badge badge-info">
@@ -3918,7 +3957,8 @@ export default function SOCWorkbench() {
                           ) : null}
                         </div>
                         <div className="row-secondary" style={{ marginTop: 10 }}>
-                          Updated {formatRelativeTime(investigation.updated_at || investigation.started_at)}
+                          Updated{' '}
+                          {formatRelativeTime(investigation.updated_at || investigation.started_at)}
                         </div>
                       </button>
                     ))}
@@ -3950,7 +3990,9 @@ export default function SOCWorkbench() {
                       <tbody>
                         {workflows.map((wf, i) => (
                           <tr key={i}>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{wf.id}</td>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                              {wf.id}
+                            </td>
                             <td>
                               <div className="row-primary">{wf.name}</div>
                               <div className="row-secondary">{wf.description}</div>
@@ -3960,7 +4002,9 @@ export default function SOCWorkbench() {
                                 {wf.severity}
                               </span>
                             </td>
-                            <td style={{ fontSize: 11 }}>{(wf.mitre_techniques || []).join(', ')}</td>
+                            <td style={{ fontSize: 11 }}>
+                              {(wf.mitre_techniques || []).join(', ')}
+                            </td>
                             <td>{wf.estimated_minutes}m</td>
                             <td>{(wf.steps || []).length}</td>
                             <td>
@@ -4064,7 +4108,8 @@ export default function SOCWorkbench() {
                         <strong>Latest handoff</strong>
                         <div style={{ marginTop: 6 }}>
                           {selectedInvestigation.handoff.from_analyst} handed this workflow to{' '}
-                          {selectedInvestigation.handoff.to_analyst} {formatRelativeTime(selectedInvestigation.handoff.updated_at)}.
+                          {selectedInvestigation.handoff.to_analyst}{' '}
+                          {formatRelativeTime(selectedInvestigation.handoff.updated_at)}.
                         </div>
                         <div style={{ marginTop: 6 }}>{selectedInvestigation.handoff.summary}</div>
                       </div>
@@ -4080,7 +4125,9 @@ export default function SOCWorkbench() {
                         ) : null}
                       </div>
                       {(selectedInvestigation.findings || []).length > 0 ? (
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                        <div
+                          style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}
+                        >
                           {selectedInvestigation.findings.map((finding, index) => (
                             <span key={`${finding}-${index}`} className="badge badge-info">
                               {finding}
@@ -4089,7 +4136,8 @@ export default function SOCWorkbench() {
                         </div>
                       ) : (
                         <div className="hint" style={{ marginBottom: 12 }}>
-                          No findings recorded yet. Capture decisive takeaways as the workflow moves.
+                          No findings recorded yet. Capture decisive takeaways as the workflow
+                          moves.
                         </div>
                       )}
                       <div className="form-group">
@@ -4107,7 +4155,10 @@ export default function SOCWorkbench() {
                       <div className="btn-group">
                         <button
                           className="btn btn-sm"
-                          disabled={savingProgressKey === `${selectedInvestigation.id}:finding` || !findingDraft.trim()}
+                          disabled={
+                            savingProgressKey === `${selectedInvestigation.id}:finding` ||
+                            !findingDraft.trim()
+                          }
                           onClick={() =>
                             saveInvestigationProgress(
                               selectedInvestigation.id,
@@ -4148,9 +4199,9 @@ export default function SOCWorkbench() {
                             selectedInvestigation.notes?.[step.order] ??
                             selectedInvestigation.notes?.[String(step.order)] ??
                             '';
-                          const isCompleted = (selectedInvestigation.completed_steps || []).includes(
-                            step.order,
-                          );
+                          const isCompleted = (
+                            selectedInvestigation.completed_steps || []
+                          ).includes(step.order);
                           const stepPivots = collectStepPivots(step, investigationDetailContext);
 
                           return (
@@ -4174,7 +4225,9 @@ export default function SOCWorkbench() {
                               >
                                 <div>
                                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                    <span className={`badge ${isCompleted ? 'badge-ok' : 'badge-info'}`}>
+                                    <span
+                                      className={`badge ${isCompleted ? 'badge-ok' : 'badge-info'}`}
+                                    >
                                       {isCompleted ? 'Done' : `Step ${step.order}`}
                                     </span>
                                     <strong>{step.title}</strong>
@@ -4210,7 +4263,14 @@ export default function SOCWorkbench() {
                               {(step.recommended_actions || []).length > 0 && (
                                 <div>
                                   <div className="row-primary">Recommended actions</div>
-                                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, display: 'grid', gap: 4 }}>
+                                  <ul
+                                    style={{
+                                      margin: '6px 0 0',
+                                      paddingLeft: 18,
+                                      display: 'grid',
+                                      gap: 4,
+                                    }}
+                                  >
                                     {(step.recommended_actions || []).map((action) => (
                                       <li key={action}>{action}</li>
                                     ))}
@@ -4221,7 +4281,14 @@ export default function SOCWorkbench() {
                               {(step.evidence_to_collect || []).length > 0 && (
                                 <div>
                                   <div className="row-primary">Evidence to collect</div>
-                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: 8,
+                                      flexWrap: 'wrap',
+                                      marginTop: 6,
+                                    }}
+                                  >
                                     {(step.evidence_to_collect || []).map((item) => (
                                       <span key={item} className="badge badge-info">
                                         {item}
@@ -4234,7 +4301,10 @@ export default function SOCWorkbench() {
                               {stepPivots.length > 0 && (
                                 <div>
                                   <div className="row-primary">Auto-query pivots</div>
-                                  <div className="btn-group" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                                  <div
+                                    className="btn-group"
+                                    style={{ marginTop: 8, flexWrap: 'wrap' }}
+                                  >
                                     {stepPivots.map((pivot) => (
                                       <button
                                         key={pivot.key}
@@ -4250,7 +4320,10 @@ export default function SOCWorkbench() {
                               )}
 
                               <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label" htmlFor={`investigation-step-note-${step.order}`}>
+                                <label
+                                  className="form-label"
+                                  htmlFor={`investigation-step-note-${step.order}`}
+                                >
                                   Analyst note
                                 </label>
                                 <textarea
@@ -4280,7 +4353,9 @@ export default function SOCWorkbench() {
                                     )
                                   }
                                 >
-                                  {savingProgressKey === `${stepKey}:note` ? 'Saving…' : 'Save Note'}
+                                  {savingProgressKey === `${stepKey}:note`
+                                    ? 'Saving…'
+                                    : 'Save Note'}
                                 </button>
                               </div>
                             </div>
@@ -4307,8 +4382,8 @@ export default function SOCWorkbench() {
                         <div className="detail-callout" style={{ marginBottom: 16 }}>
                           <strong>No linked case</strong>
                           <div style={{ marginTop: 6 }}>
-                            Handoff still records against the investigation, but no case owner will be
-                            synchronized until the workflow is attached to a case.
+                            Handoff still records against the investigation, but no case owner will
+                            be synchronized until the workflow is attached to a case.
                           </div>
                         </div>
                       )}
@@ -4561,8 +4636,7 @@ export default function SOCWorkbench() {
                     events: activeCaseEventIds.length,
                     evidence: activeCaseEvidence.length,
                     comments: activeCaseComments.length,
-                    linked_workflow:
-                      activeWorkspaceInvestigation?.workflow_name || 'Not started',
+                    linked_workflow: activeWorkspaceInvestigation?.workflow_name || 'Not started',
                   }}
                   limit={10}
                 />
@@ -4850,8 +4924,7 @@ export default function SOCWorkbench() {
                       linked_incidents: activeCaseIncidentIds.length,
                       evidence_items: activeCaseEvidence.length,
                       notes: activeCaseComments.length,
-                      linked_workflow:
-                        activeWorkspaceInvestigation?.workflow_name || 'Not started',
+                      linked_workflow: activeWorkspaceInvestigation?.workflow_name || 'Not started',
                     }}
                     limit={4}
                   />
@@ -4950,21 +5023,19 @@ export default function SOCWorkbench() {
                     <div className="card-title" style={{ marginBottom: 8 }}>
                       Related Alerts & Events
                     </div>
-                    {((drawerIncidentDetail.event_ids || []).length === 0 &&
-                      (drawerIncidentDetail.alert_ids || []).length === 0) ? (
+                    {(drawerIncidentDetail.event_ids || []).length === 0 &&
+                    (drawerIncidentDetail.alert_ids || []).length === 0 ? (
                       <div className="empty">No linked alerts or events were provided.</div>
                     ) : (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {[...(drawerIncidentDetail.event_ids || []), ...(drawerIncidentDetail.alert_ids || [])].map(
-                          (entry, index) => (
-                            <span
-                              key={`${entry}-${index}`}
-                              className="badge badge-info"
-                            >
-                              {entry}
-                            </span>
-                          ),
-                        )}
+                        {[
+                          ...(drawerIncidentDetail.event_ids || []),
+                          ...(drawerIncidentDetail.alert_ids || []),
+                        ].map((entry, index) => (
+                          <span key={`${entry}-${index}`} className="badge badge-info">
+                            {entry}
+                          </span>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -4992,8 +5063,8 @@ export default function SOCWorkbench() {
                       </div>
                     )}
                     <div className="hint" style={{ marginTop: 10 }}>
-                      Keep this drawer open while pivoting so the incident context remains
-                      shareable and easy to resume.
+                      Keep this drawer open while pivoting so the incident context remains shareable
+                      and easy to resume.
                     </div>
                   </div>
                 </div>
@@ -5005,7 +5076,9 @@ export default function SOCWorkbench() {
             {incidentDrawerPanel === 'storyline' && (
               <>
                 {drawerIncidentEvents.length === 0 ? (
-                  <div className="empty">No storyline events are available for this incident yet.</div>
+                  <div className="empty">
+                    No storyline events are available for this incident yet.
+                  </div>
                 ) : (
                   <div style={{ display: 'grid', gap: 10 }}>
                     {drawerIncidentEvents.map((event, index) => (
@@ -5019,7 +5092,10 @@ export default function SOCWorkbench() {
                         }}
                       >
                         <div className="row-primary">
-                          {event.description || event.message || event.action || `Step ${index + 1}`}
+                          {event.description ||
+                            event.message ||
+                            event.action ||
+                            `Step ${index + 1}`}
                         </div>
                         <div className="row-secondary" style={{ marginTop: 4 }}>
                           {event.timestamp || event.time || `Step ${index + 1}`}
@@ -5030,10 +5106,7 @@ export default function SOCWorkbench() {
                 )}
 
                 {drawerIncidentStoryline ? (
-                  <JsonDetails
-                    data={drawerIncidentStoryline}
-                    label="Incident storyline payload"
-                  />
+                  <JsonDetails data={drawerIncidentStoryline} label="Incident storyline payload" />
                 ) : null}
               </>
             )}
@@ -5046,7 +5119,10 @@ export default function SOCWorkbench() {
                 </div>
                 <div className="btn-group" style={{ flexWrap: 'wrap' }}>
                   {drawerIncidentCaseId ? (
-                    <button className="btn btn-sm" onClick={() => openCaseFocus(drawerIncidentCaseId)}>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => openCaseFocus(drawerIncidentCaseId)}
+                    >
                       Open Linked Case
                     </button>
                   ) : null}

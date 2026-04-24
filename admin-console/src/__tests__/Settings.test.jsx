@@ -388,7 +388,8 @@ describe('Settings', () => {
               stage: 'Validation',
               status: 'warning',
               title: 'Validation review',
-              detail: 'Workspace delegated admin coverage still needs activation before ingestion can start.',
+              detail:
+                'Workspace delegated admin coverage still needs activation before ingestion can start.',
             },
           ],
         },
@@ -1235,14 +1236,17 @@ describe('Settings', () => {
     expect(screen.getByText('Cloud Audit Lane')).toBeInTheDocument();
     expect(screen.getByText('SaaS Activity Lane')).toBeInTheDocument();
     expect(
-      screen.getAllByText('User session start telemetry is routed into UEBA and SOC triage workflows.')
+      screen.getAllByText(
+        'User session start telemetry is routed into UEBA and SOC triage workflows.',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('CloudTrail management events are routed into infrastructure review.')
         .length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText('CloudTrail management events are routed into infrastructure review.').length,
-    ).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText('Microsoft 365 activity is ready for assistant and report pivots.').length,
+      screen.getAllByText('Microsoft 365 activity is ready for assistant and report pivots.')
+        .length,
     ).toBeGreaterThan(0);
 
     const providerCell = within(idpCard).getByRole('cell', { name: 'Corporate SSO' });
@@ -1325,7 +1329,9 @@ describe('Settings', () => {
     expect(updatedProviderRow).not.toBeNull();
     expect(within(updatedProviderRow).getByText('Ready')).toBeInTheDocument();
     expect(within(updatedProviderRow).getByText('0 issues • 1 mapping')).toBeInTheDocument();
-    expect(within(updatedProviderRow).getByRole('button', { name: 'Start SSO Test' })).toBeInTheDocument();
+    expect(
+      within(updatedProviderRow).getByRole('button', { name: 'Start SSO Test' }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit SCIM' }));
     const defaultRoleInput = await screen.findByLabelText('Default Role');
@@ -1462,12 +1468,15 @@ describe('Settings', () => {
     await user.click(screen.getByRole('button', { name: 'Validate AWS' }));
     expect(await screen.findByText('Collected 2 events.')).toBeInTheDocument();
 
-    const m365Card = screen.getByText('Microsoft 365 Activity').closest('.card');
+    const m365SaveButton = screen.getByRole('button', {
+      name: 'Save Microsoft 365 Setup',
+    });
+    const m365Card = m365SaveButton.closest('.card');
     expect(m365Card).not.toBeNull();
     const m365TenantInput = within(m365Card).getByLabelText('Tenant ID');
     await user.clear(m365TenantInput);
     await user.type(m365TenantInput, 'm365-eu-tenant');
-    await user.click(within(m365Card).getByRole('button', { name: 'Save Microsoft 365 Setup' }));
+    await user.click(m365SaveButton);
 
     await waitFor(() => {
       const m365SaveCall = globalThis.fetch.mock.calls.find(
@@ -1484,7 +1493,10 @@ describe('Settings', () => {
     await user.click(within(m365Card).getByRole('button', { name: 'Validate Microsoft 365' }));
     expect(await screen.findByText('Microsoft 365 validation details')).toBeInTheDocument();
 
-    const workspaceCard = screen.getByText('Google Workspace Activity').closest('.card');
+    const workspaceSaveButton = screen.getByRole('button', {
+      name: 'Save Workspace Setup',
+    });
+    const workspaceCard = workspaceSaveButton.closest('.card');
     expect(workspaceCard).not.toBeNull();
     const delegatedAdminInput = within(workspaceCard).getByLabelText('Delegated Admin Email');
     await user.clear(delegatedAdminInput);
@@ -1492,7 +1504,7 @@ describe('Settings', () => {
     const credentialsInput = within(workspaceCard).getByLabelText('Credentials JSON');
     await user.click(credentialsInput);
     await user.paste('{"type":"service_account"}');
-    await user.click(within(workspaceCard).getByRole('button', { name: 'Save Workspace Setup' }));
+    await user.click(workspaceSaveButton);
 
     await waitFor(() => {
       const workspaceSaveCall = globalThis.fetch.mock.calls.find(

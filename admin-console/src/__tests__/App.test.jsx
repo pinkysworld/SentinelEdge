@@ -195,7 +195,9 @@ describe('App', () => {
           return { mode: 'retrieval-only', model: 'retrieval-only' };
         }
         if (url === '/api/cases') {
-          return { cases: [{ id: 42, title: 'Identity escalation case', status: 'investigating' }] };
+          return {
+            cases: [{ id: 42, title: 'Identity escalation case', status: 'investigating' }],
+          };
         }
         return {};
       },

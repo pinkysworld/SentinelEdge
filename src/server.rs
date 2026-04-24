@@ -5567,7 +5567,10 @@ fn replay_false_positive_rate(false_positives: usize, true_negatives: usize) -> 
 fn evaluate_replay_corpus(
     corpus: &[ReplayCorpusEntry],
     threshold: f32,
-) -> (crate::benchmark::BenchmarkResult, Vec<ReplayCorpusEvaluation>) {
+) -> (
+    crate::benchmark::BenchmarkResult,
+    Vec<ReplayCorpusEvaluation>,
+) {
     let mut detector = AnomalyDetector::default();
     let mut harness = crate::benchmark::BenchmarkHarness::new();
     let mut evaluations = Vec::new();
@@ -7668,7 +7671,9 @@ fn collector_scope_markers(summary: &serde_json::Value) -> Vec<String> {
                 markers.push(format!("{label}: {text}"));
             }
             serde_json::Value::Number(number) => {
-                if let Some(value) = number.as_u64() && value > 0 {
+                if let Some(value) = number.as_u64()
+                    && value > 0
+                {
                     markers.push(format!("{value} {label}"));
                 }
             }

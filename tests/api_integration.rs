@@ -194,7 +194,7 @@ fn detection_feedback_roundtrip_and_explainability_include_feedback() {
         .expect("detection explain");
     assert_eq!(explain.status(), 200);
     let explain_body: serde_json::Value = explain.into_json().unwrap();
-    assert!(explain_body["why_fired"].as_array().unwrap().len() >= 1);
+    assert!(!explain_body["why_fired"].as_array().unwrap().is_empty());
     assert_eq!(explain_body["feedback"].as_array().unwrap().len(), 1);
     let entity_scores = explain_body["entity_scores"].as_array().unwrap();
     assert!(
@@ -217,9 +217,19 @@ fn detection_feedback_roundtrip_and_explainability_include_feedback() {
         .find(|score| score["entity_kind"] == "host")
         .unwrap();
     assert!(host_score["score_components"].as_array().unwrap().len() >= 2);
-    assert!(host_score["sequence_signals"].as_array().unwrap().len() >= 1);
-    assert!(host_score["graph_context"].as_array().unwrap().len() >= 1);
-    assert!(host_score["recommended_pivots"].as_array().unwrap().len() >= 1);
+    assert!(
+        !host_score["sequence_signals"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!host_score["graph_context"].as_array().unwrap().is_empty());
+    assert!(
+        !host_score["recommended_pivots"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -274,7 +284,7 @@ fn correlation_campaigns_cluster_stored_events_into_graph_view() {
             >= 2
     );
     assert!(body["graph"]["nodes"].as_array().unwrap().len() >= 2);
-    assert!(body["graph"]["edges"].as_array().unwrap().len() >= 1);
+    assert!(!body["graph"]["edges"].as_array().unwrap().is_empty());
     assert!(
         body["sequence_summaries"].as_array().unwrap()[0]["sequence_signals"]
             .as_array()
@@ -312,7 +322,11 @@ fn detection_replay_corpus_exposes_acceptance_gate() {
     assert!(body["platform_deltas"].as_array().unwrap().len() >= 2);
     assert!(body["signal_type_deltas"].as_array().unwrap().len() >= 3);
     assert!(categories.iter().any(|item| item["platform"] == "linux"));
-    assert!(categories.iter().any(|item| item["signal_type"] == "identity"));
+    assert!(
+        categories
+            .iter()
+            .any(|item| item["signal_type"] == "identity")
+    );
 }
 
 #[test]
@@ -554,7 +568,7 @@ fn deep_scan_v2_and_threat_intel_v2_expose_profiles_and_sightings() {
     let scan_body: serde_json::Value = scan.into_json().unwrap();
     assert!(scan_body.get("static_profile").is_some());
     assert!(scan_body.get("behavior_profile").is_some());
-    assert!(scan_body["scan"]["matches"].as_array().unwrap().len() >= 1);
+    assert!(!scan_body["scan"]["matches"].as_array().unwrap().is_empty());
 
     let library = ureq::get(&format!("{}/api/threat-intel/library/v2", base(port)))
         .set("Authorization", &auth)
@@ -1041,28 +1055,31 @@ fn auth_session_accepts_sso_session_token_and_logout_revokes_it() {
 }
 
 #[test]
-fn sso_login_returns_503_when_not_configured() {
+fn sso_login_returns_400_when_no_provider_is_ready() {
     let (port, _token) = spawn_test_server();
     match ureq::get(&format!("{}/api/auth/sso/login", base(port))).call() {
-        Err(ureq::Error::Status(503, response)) => {
+        Err(ureq::Error::Status(400, response)) => {
             let body: serde_json::Value = response.into_json().unwrap();
-            assert_eq!(body["error"], "SSO login flow is not configured");
+            assert_eq!(
+                body["error"],
+                "no configured SSO providers are ready for login"
+            );
         }
-        other => panic!("expected 503 for unconfigured SSO login, got {other:?}"),
+        other => panic!("expected 400 for unconfigured SSO login, got {other:?}"),
     }
 }
 
 #[test]
-fn sso_callback_returns_503_when_not_configured() {
+fn sso_callback_returns_invalid_state_before_provider_config_check() {
     let (port, _token) = spawn_test_server();
     match ureq::post(&format!("{}/api/auth/sso/callback", base(port)))
         .send_json(serde_json::json!({"code": "test-code", "state": "test-state"}))
     {
         Err(ureq::Error::Status(503, response)) => {
             let body: serde_json::Value = response.into_json().unwrap();
-            assert_eq!(body["error"], "SSO login flow is not configured");
+            assert_eq!(body["error"], "state parameter is invalid or expired");
         }
-        other => panic!("expected 503 for unconfigured SSO callback, got {other:?}"),
+        other => panic!("expected 503 for SSO callback without pending state, got {other:?}"),
     }
 }
 

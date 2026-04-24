@@ -468,9 +468,17 @@ mod tests {
     #[test]
     fn support_parity_reports_sdk_versions_and_graphql() {
         let payload = support_parity("0.53.1-local");
+        let python_sdk = load_python_sdk().unwrap();
+        let typescript_sdk = load_typescript_sdk().unwrap();
+
         assert_eq!(payload["runtime"]["version"], "0.53.1-local");
-        assert_eq!(payload["sdk"]["python"]["version"], "0.53.0");
-        assert_eq!(payload["sdk"]["typescript"]["version"], "0.53.0");
+        assert_eq!(payload["sdk"]["python"]["version"], python_sdk.version);
+        assert_eq!(
+            payload["sdk"]["typescript"]["version"],
+            typescript_sdk.version
+        );
+        assert!(!payload["sdk"]["python"]["aligned"].as_bool().unwrap());
+        assert!(!payload["sdk"]["typescript"]["aligned"].as_bool().unwrap());
         assert!(payload["graphql"]["documented"].as_bool().unwrap());
         assert!(payload["issues"].as_array().unwrap().iter().any(|issue| {
             issue

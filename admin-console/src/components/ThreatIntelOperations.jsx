@@ -61,7 +61,9 @@ const defaultDeceptionDraft = () => ({
 });
 
 function normalizeIocType(value) {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (normalized === 'ipaddress' || normalized === 'ip') return 'ip';
   if (normalized === 'domain') return 'domain';
   if (normalized === 'filehash' || normalized === 'hash') return 'hash';
@@ -222,20 +224,29 @@ export default function ThreatIntelOperations() {
 
   const indicatorSources = [...new Set(iocs.map((ioc) => ioc.source).filter(Boolean))].sort();
   const indicatorSeverities = [...new Set(iocs.map((ioc) => ioc.severity).filter(Boolean))].sort();
-  const connectorStatuses = [...new Set(connectors.map((connector) => connector.status).filter(Boolean))].sort();
+  const connectorStatuses = [
+    ...new Set(connectors.map((connector) => connector.status).filter(Boolean)),
+  ].sort();
 
   const filteredIocs = iocs.filter((ioc) => {
     const query = indicatorQuery.trim().toLowerCase();
     const normalizedType = normalizeIocType(ioc.ioc_type);
     const queryMatch =
       !query ||
-      String(ioc.value || '').toLowerCase().includes(query) ||
+      String(ioc.value || '')
+        .toLowerCase()
+        .includes(query) ||
       String(ioc.metadata?.normalized_value || '')
         .toLowerCase()
         .includes(query) ||
-      String(ioc.source || '').toLowerCase().includes(query) ||
-      String(ioc.severity || '').toLowerCase().includes(query) ||
-      (Array.isArray(ioc.tags) && ioc.tags.some((tag) => String(tag).toLowerCase().includes(query)));
+      String(ioc.source || '')
+        .toLowerCase()
+        .includes(query) ||
+      String(ioc.severity || '')
+        .toLowerCase()
+        .includes(query) ||
+      (Array.isArray(ioc.tags) &&
+        ioc.tags.some((tag) => String(tag).toLowerCase().includes(query)));
     const typeMatch = indicatorTypeFilter === 'all' || normalizedType === indicatorTypeFilter;
     const sourceMatch = indicatorSourceFilter === 'all' || ioc.source === indicatorSourceFilter;
     const severityMatch =
@@ -247,9 +258,15 @@ export default function ThreatIntelOperations() {
     const query = connectorQuery.trim().toLowerCase();
     const queryMatch =
       !query ||
-      String(connector.display_name || connector.id || '').toLowerCase().includes(query) ||
-      String(connector.kind || '').toLowerCase().includes(query) ||
-      String(connector.endpoint || '').toLowerCase().includes(query);
+      String(connector.display_name || connector.id || '')
+        .toLowerCase()
+        .includes(query) ||
+      String(connector.kind || '')
+        .toLowerCase()
+        .includes(query) ||
+      String(connector.endpoint || '')
+        .toLowerCase()
+        .includes(query);
     const statusMatch =
       connectorStatusFilter === 'all' || connector.status === connectorStatusFilter;
     return queryMatch && statusMatch;
@@ -260,9 +277,15 @@ export default function ThreatIntelOperations() {
     const decoyType = String(decoy.decoy_type || '').toLowerCase();
     const queryMatch =
       !query ||
-      String(decoy.name || '').toLowerCase().includes(query) ||
-      String(decoy.description || '').toLowerCase().includes(query) ||
-      String(decoy.fingerprint || '').toLowerCase().includes(query);
+      String(decoy.name || '')
+        .toLowerCase()
+        .includes(query) ||
+      String(decoy.description || '')
+        .toLowerCase()
+        .includes(query) ||
+      String(decoy.fingerprint || '')
+        .toLowerCase()
+        .includes(query);
     const typeMatch = deceptionTypeFilter === 'all' || decoyType === deceptionTypeFilter;
     return queryMatch && typeMatch;
   });
@@ -548,11 +571,7 @@ export default function ThreatIntelOperations() {
                 onChange={(event) => setPurgeTtlDays(event.target.value)}
               />
             </div>
-            <button
-              className="btn btn-sm"
-              disabled={purgingIndicators}
-              onClick={purgeIndicators}
-            >
+            <button className="btn btn-sm" disabled={purgingIndicators} onClick={purgeIndicators}>
               {purgingIndicators ? 'Purging...' : 'Purge Expired'}
             </button>
           </div>
@@ -645,7 +664,8 @@ export default function ThreatIntelOperations() {
                           {ioc.metadata?.normalized_value &&
                           ioc.metadata.normalized_value !== ioc.value ? (
                             <div className="row-secondary">
-                              First seen {ioc.first_seen ? formatRelativeTime(ioc.first_seen) : 'unknown'}
+                              First seen{' '}
+                              {ioc.first_seen ? formatRelativeTime(ioc.first_seen) : 'unknown'}
                             </div>
                           ) : null}
                         </td>
@@ -679,7 +699,7 @@ export default function ThreatIntelOperations() {
                                 : 'unknown'}
                           </div>
                           <div className="row-secondary">
-                            {(ioc.metadata?.sightings ?? ioc.sightings?.length ?? 0)} sightings
+                            {ioc.metadata?.sightings ?? ioc.sightings?.length ?? 0} sightings
                           </div>
                           <div className="row-secondary">
                             {ioc.metadata?.last_sighting
@@ -704,7 +724,8 @@ export default function ThreatIntelOperations() {
             <SummaryGrid
               data={{
                 total_iocs: libraryStats?.total_iocs ?? iocs.length,
-                active_feeds: libraryStats?.active_feeds ?? feeds.filter((feed) => feed.active).length,
+                active_feeds:
+                  libraryStats?.active_feeds ?? feeds.filter((feed) => feed.active).length,
                 total_feeds: libraryStats?.total_feeds ?? feeds.length,
                 match_history: libraryStats?.match_history_size ?? recentMatches.length,
                 recent_sightings: recentSightings.length,
@@ -756,17 +777,19 @@ export default function ThreatIntelOperations() {
                     style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}
                   >
                     <div className="row-primary">{sighting.value || 'Unknown indicator'}</div>
-                    <div className="row-secondary">{sighting.context || sighting.source || 'No context'}</div>
+                    <div className="row-secondary">
+                      {sighting.context || sighting.source || 'No context'}
+                    </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                      <span className="badge badge-info">
-                        {iocTypeLabel(sighting.ioc_type)}
-                      </span>
+                      <span className="badge badge-info">{iocTypeLabel(sighting.ioc_type)}</span>
                       <span
                         className={`badge ${sighting.severity === 'high' || sighting.severity === 'critical' ? 'badge-err' : 'badge-info'}`}
                       >
                         {sighting.severity || 'unknown'}
                       </span>
-                      <span className="badge badge-info">{sighting.source || 'unknown source'}</span>
+                      <span className="badge badge-info">
+                        {sighting.source || 'unknown source'}
+                      </span>
                       <span className="badge badge-info">
                         Weight {formatWeight(sighting.weight)}
                       </span>
@@ -879,7 +902,9 @@ export default function ThreatIntelOperations() {
                     >
                       <div>
                         <div className="row-primary">{connector.display_name || connector.id}</div>
-                        <div className="row-secondary">{connector.endpoint || 'No endpoint configured'}</div>
+                        <div className="row-secondary">
+                          {connector.endpoint || 'No endpoint configured'}
+                        </div>
                       </div>
                       <span
                         className={`badge ${connector.status === 'ready' ? 'badge-ok' : connector.status === 'error' ? 'badge-err' : 'badge-warn'}`}
@@ -1110,11 +1135,22 @@ export default function ThreatIntelOperations() {
                           <tr key={decoy.id}>
                             <td>
                               <div className="row-primary">{decoy.name}</div>
-                              <div className="row-secondary">{decoy.description || 'No description'}</div>
+                              <div className="row-secondary">
+                                {decoy.description || 'No description'}
+                              </div>
                             </td>
-                            <td>{DECOY_TYPE_OPTIONS.find((option) => option.value === String(decoy.decoy_type || '').toLowerCase())?.label || decoy.decoy_type || 'Unknown'}</td>
                             <td>
-                              <span className={`badge ${decoy.deployed ? 'badge-ok' : 'badge-warn'}`}>
+                              {DECOY_TYPE_OPTIONS.find(
+                                (option) =>
+                                  option.value === String(decoy.decoy_type || '').toLowerCase(),
+                              )?.label ||
+                                decoy.decoy_type ||
+                                'Unknown'}
+                            </td>
+                            <td>
+                              <span
+                                className={`badge ${decoy.deployed ? 'badge-ok' : 'badge-warn'}`}
+                              >
                                 {decoy.deployed ? 'Deployed' : 'Inactive'}
                               </span>
                             </td>

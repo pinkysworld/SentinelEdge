@@ -258,7 +258,8 @@ export default function App() {
   useEffect(() => {
     if (authenticated) return undefined;
     let cancelled = false;
-    api.authSsoConfig()
+    api
+      .authSsoConfig()
       .then((config) => {
         if (!cancelled) {
           setSsoConfig(config || null);
@@ -849,7 +850,11 @@ export default function App() {
                   More
                 </button>
                 {showTopbarActions && (
-                  <div className="card mobile-topbar-actions-menu" role="menu" aria-label="More actions">
+                  <div
+                    className="card mobile-topbar-actions-menu"
+                    role="menu"
+                    aria-label="More actions"
+                  >
                     <button
                       className="btn btn-sm"
                       type="button"
@@ -1009,11 +1014,14 @@ export default function App() {
                     <div className="summary-card">
                       <div className="summary-label">SCIM status</div>
                       <div className="summary-value">
-                        {ssoConfig?.scim?.enabled ? ssoConfig?.scim?.status || 'configured' : 'disabled'}
+                        {ssoConfig?.scim?.enabled
+                          ? ssoConfig?.scim?.status || 'configured'
+                          : 'disabled'}
                       </div>
                       <div className="summary-meta">
                         {ssoConfig?.scim?.mapping_count ?? 0} group mapping
-                        {(ssoConfig?.scim?.mapping_count ?? 0) === 1 ? '' : 's'} ready for lifecycle sync.
+                        {(ssoConfig?.scim?.mapping_count ?? 0) === 1 ? '' : 's'} ready for lifecycle
+                        sync.
                       </div>
                     </div>
                     <div className="summary-card">
@@ -1022,16 +1030,22 @@ export default function App() {
                         /api/auth/sso/callback
                       </div>
                       <div className="summary-meta">
-                        After external sign-in, Wardex returns here through the configured callback route.
+                        After external sign-in, Wardex returns here through the configured callback
+                        route.
                       </div>
                     </div>
                   </div>
                   <div className="hint" style={{ marginTop: 12 }}>
-                    Use the provider buttons above to validate the external redirect and callback flow with the same routes the live console uses.
+                    Use the provider buttons above to validate the external redirect and callback
+                    flow with the same routes the live console uses.
                   </div>
                 </div>
               )}
-              {authError && <div className="auth-error" style={{ marginTop: 16 }}>{authError}</div>}
+              {authError && (
+                <div className="auth-error" style={{ marginTop: 16 }}>
+                  {authError}
+                </div>
+              )}
             </div>
           ) : (
             <Routes>

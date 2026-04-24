@@ -30,7 +30,8 @@ const UPDATE_PANELS = [
   {
     id: 'health',
     label: 'Deployment Health',
-    description: 'Review release drift, rollout targets, and deployment readiness before broad rollout.',
+    description:
+      'Review release drift, rollout targets, and deployment readiness before broad rollout.',
   },
 ];
 
@@ -110,11 +111,7 @@ export default function FleetAgents() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(() => searchParams.get('fleetTab') || 'fleet');
-  const updatesPanel = normalizePanelId(
-    searchParams.get('updatesPanel'),
-    UPDATE_PANELS,
-    'rollout',
-  );
+  const updatesPanel = normalizePanelId(searchParams.get('updatesPanel'), UPDATE_PANELS, 'rollout');
   const [query, setQuery] = useState(() => searchParams.get('q') || '');
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || 'all');
   const [osFilter, setOsFilter] = useState(() => searchParams.get('os') || 'all');
@@ -1101,7 +1098,9 @@ export default function FleetAgents() {
                   <button
                     key={panel.id}
                     className={`filter-chip-button ${updatesPanel === panel.id ? 'active' : ''}`}
-                    onClick={() => setFleetQueryState({ fleetTab: 'updates', updatesPanel: panel.id })}
+                    onClick={() =>
+                      setFleetQueryState({ fleetTab: 'updates', updatesPanel: panel.id })
+                    }
                   >
                     {panel.label}
                   </button>
@@ -1135,7 +1134,8 @@ export default function FleetAgents() {
                         {event.agent_id || event.target || event.platform || 'Shared rollout'}
                       </div>
                       <div className="row-secondary">
-                        {event.status || 'unknown'} • {event.rollout_group || event.group || 'default'}
+                        {event.status || 'unknown'} •{' '}
+                        {event.rollout_group || event.group || 'default'}
                       </div>
                       <div className="hint" style={{ marginTop: 4 }}>
                         {event.notes || event.summary || 'No rollout notes captured.'}
@@ -1187,7 +1187,8 @@ export default function FleetAgents() {
                         {agent.status} • {agent.version} • {agent.os}
                       </div>
                       <div className="hint" style={{ marginTop: 4 }}>
-                        Last seen {formatRelativeTime(agent.lastSeen)} • {formatDateTime(agent.lastSeen)}
+                        Last seen {formatRelativeTime(agent.lastSeen)} •{' '}
+                        {formatDateTime(agent.lastSeen)}
                       </div>
                     </div>
                   ))
@@ -1213,7 +1214,10 @@ export default function FleetAgents() {
                   are waiting on rollout completion, transport recovery, or local host drift.
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  {(policyHistoryEntries.length > 0 ? policyHistoryEntries : [{ summary: 'No policy-change history captured yet.' }])
+                  {(policyHistoryEntries.length > 0
+                    ? policyHistoryEntries
+                    : [{ summary: 'No policy-change history captured yet.' }]
+                  )
                     .slice(0, 4)
                     .map((entry, index) => (
                       <div
@@ -1227,7 +1231,9 @@ export default function FleetAgents() {
                           {entry.action || entry.status || 'Change recorded'}
                         </div>
                         <div className="hint" style={{ marginTop: 4 }}>
-                          {entry.timestamp ? formatDateTime(entry.timestamp) : 'Timestamp unavailable'}
+                          {entry.timestamp
+                            ? formatDateTime(entry.timestamp)
+                            : 'Timestamp unavailable'}
                         </div>
                       </div>
                     ))}
@@ -1270,9 +1276,7 @@ export default function FleetAgents() {
                     <JsonDetails data={releases} label="Release metadata" />
                   </>
                 ) : (
-                  <div className="hint">
-                    Release metadata is not available yet.
-                  </div>
+                  <div className="hint">Release metadata is not available yet.</div>
                 )}
               </div>
             </div>

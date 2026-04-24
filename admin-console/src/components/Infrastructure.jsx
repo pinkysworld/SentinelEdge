@@ -63,7 +63,8 @@ function encodeBase64Utf8(value) {
     binary += String.fromCharCode(byte);
   });
   if (typeof btoa === 'function') return btoa(binary);
-  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
+  if (typeof globalThis.Buffer !== 'undefined')
+    return globalThis.Buffer.from(bytes).toString('base64');
   return binary;
 }
 
@@ -99,8 +100,9 @@ function normalizePanel(value, panels, fallback) {
 }
 
 function normalizeRecentMalwareEntries(malwareRecent) {
-  const items =
-    Array.isArray(malwareRecent) ? malwareRecent : malwareRecent?.matches || malwareRecent?.recent || malwareRecent?.items || [];
+  const items = Array.isArray(malwareRecent)
+    ? malwareRecent
+    : malwareRecent?.matches || malwareRecent?.recent || malwareRecent?.items || [];
   return items.map((entry, index) => ({
     id: entry.id || entry.sha256 || entry.hash || `malware-${index}`,
     title: entry.name || entry.family || entry.file || entry.hash || `Malware finding ${index + 1}`,
@@ -180,7 +182,12 @@ function normalizeAssets(
     items.push({
       id: entry.id || entry.sha256 || entry.hash || `malware-${index}`,
       title:
-        entry.title || entry.name || entry.family || entry.file || entry.hash || `Malware finding ${index + 1}`,
+        entry.title ||
+        entry.name ||
+        entry.family ||
+        entry.file ||
+        entry.hash ||
+        `Malware finding ${index + 1}`,
       subtitle: entry.subtitle || entry.hostname || entry.signature || 'Recent malware activity',
       type: 'malware',
       status: entry.status || entry.verdict || 'detected',
@@ -349,40 +356,58 @@ export default function Infrastructure() {
     if (!selectedAsset) return null;
     const assetType = selectedAsset.type || 'asset';
     const base = {
-      summary: 'Confirm ownership, preserve evidence, and choose between remediation or escalation without leaving the current scope.',
-      immediate: 'Validate the owning team and capture the supporting payload before changing state.',
-      followup: 'Use case or reporting pivots when this finding needs tracked approval or evidence packaging.',
+      summary:
+        'Confirm ownership, preserve evidence, and choose between remediation or escalation without leaving the current scope.',
+      immediate:
+        'Validate the owning team and capture the supporting payload before changing state.',
+      followup:
+        'Use case or reporting pivots when this finding needs tracked approval or evidence packaging.',
       owner: 'Platform owner',
     };
     const typeSpecific = {
       vulnerability: {
-        summary: 'Patch or mitigate the exposed component, then verify exploitability and exposure reach.',
-        immediate: 'Confirm the vulnerable package or host is internet-facing and assign a patch or mitigation owner.',
-        followup: 'Package exposure evidence if the finding needs audit, change-review, or exception tracking.',
+        summary:
+          'Patch or mitigate the exposed component, then verify exploitability and exposure reach.',
+        immediate:
+          'Confirm the vulnerable package or host is internet-facing and assign a patch or mitigation owner.',
+        followup:
+          'Package exposure evidence if the finding needs audit, change-review, or exception tracking.',
         owner: 'Patch owner',
       },
       certificate: {
-        summary: 'Renew or replace the affected certificate and verify the service reload path before expiry becomes an outage.',
-        immediate: 'Confirm service ownership, issuer expectations, and days remaining before scheduling the renewal window.',
-        followup: 'Capture the certificate chain and renewal plan if the issue crosses an audit or compliance boundary.',
+        summary:
+          'Renew or replace the affected certificate and verify the service reload path before expiry becomes an outage.',
+        immediate:
+          'Confirm service ownership, issuer expectations, and days remaining before scheduling the renewal window.',
+        followup:
+          'Capture the certificate chain and renewal plan if the issue crosses an audit or compliance boundary.',
         owner: 'Service owner',
       },
       drift: {
-        summary: 'Compare the drifted state against the approved baseline before deciding whether to revert or bless the change.',
-        immediate: 'Review the changed path or setting, identify the operator or deploy, and decide whether the drift is authorized.',
-        followup: 'Reset the drift baseline only after the change is understood and formally accepted.',
+        summary:
+          'Compare the drifted state against the approved baseline before deciding whether to revert or bless the change.',
+        immediate:
+          'Review the changed path or setting, identify the operator or deploy, and decide whether the drift is authorized.',
+        followup:
+          'Reset the drift baseline only after the change is understood and formally accepted.',
         owner: 'Configuration owner',
       },
       malware: {
-        summary: 'Preserve evidence, scope the blast radius, and decide quickly whether the host needs containment.',
-        immediate: 'Review the detection source, family, and recent telemetry before taking response actions.',
-        followup: 'Run or review the deep malware scan to explain why the verdict fired and what needs containment.',
+        summary:
+          'Preserve evidence, scope the blast radius, and decide quickly whether the host needs containment.',
+        immediate:
+          'Review the detection source, family, and recent telemetry before taking response actions.',
+        followup:
+          'Run or review the deep malware scan to explain why the verdict fired and what needs containment.',
         owner: 'Incident responder',
       },
       container: {
-        summary: 'Rebuild or replace the risky image, then confirm runtime controls and registry hygiene.',
-        immediate: 'Identify the image owner, namespace, and deployment path before suppressing or accepting container findings.',
-        followup: 'Carry the container context into detection or reporting if the issue affects multiple workloads.',
+        summary:
+          'Rebuild or replace the risky image, then confirm runtime controls and registry hygiene.',
+        immediate:
+          'Identify the image owner, namespace, and deployment path before suppressing or accepting container findings.',
+        followup:
+          'Carry the container context into detection or reporting if the issue affects multiple workloads.',
         owner: 'Workload owner',
       },
     };
@@ -417,7 +442,8 @@ export default function Infrastructure() {
       focusedMalware?.evidence?.name ||
       focusedMalware?.evidence?.sha256 ||
       'malware verdict';
-    const verdict = scan?.verdict || focusedMalware?.evidence?.verdict || focusedMalware?.status || 'detected';
+    const verdict =
+      scan?.verdict || focusedMalware?.evidence?.verdict || focusedMalware?.status || 'detected';
     const confidence =
       typeof scan?.confidence === 'number'
         ? `${Math.round(scan.confidence * 100)}%`
@@ -443,7 +469,9 @@ export default function Infrastructure() {
         ? `Internal tool allowlist matched "${staticProfile.internal_tool_match}".`
         : null,
       staticProfile?.probable_signed ? 'Probable signing artefacts were detected.' : null,
-      ...(behaviorProfile?.allowlist_match ? [`Behavior allowlist matched "${behaviorProfile.allowlist_match}".`] : []),
+      ...(behaviorProfile?.allowlist_match
+        ? [`Behavior allowlist matched "${behaviorProfile.allowlist_match}".`]
+        : []),
     ].filter(Boolean);
     const actions =
       behaviorProfile?.recommended_actions?.length > 0
@@ -499,7 +527,8 @@ export default function Infrastructure() {
     {
       id: 'soc-workbench',
       title: 'Escalate Into Cases',
-      description: 'Move the selected asset context into case triage, approvals, and response tracking.',
+      description:
+        'Move the selected asset context into case triage, approvals, and response tracking.',
       to: '/soc#cases',
       minRole: 'analyst',
       badge: 'Investigate',
@@ -507,7 +536,8 @@ export default function Infrastructure() {
     {
       id: 'attack-graph',
       title: 'Check Campaign Linkage',
-      description: 'Cross-check whether infrastructure findings align with active attack paths or propagation chains.',
+      description:
+        'Cross-check whether infrastructure findings align with active attack paths or propagation chains.',
       to: '/attack-graph',
       minRole: 'analyst',
       badge: 'Graph',
@@ -515,7 +545,8 @@ export default function Infrastructure() {
     {
       id: 'reports',
       title: 'Open Compliance And Evidence',
-      description: 'Use reporting workflows to package compliance, attestation, and evidence for the current backlog.',
+      description:
+        'Use reporting workflows to package compliance, attestation, and evidence for the current backlog.',
       to: buildHref('/reports', {
         params: {
           tab: 'compliance',
@@ -762,10 +793,7 @@ export default function Infrastructure() {
                   </select>
                 </div>
                 <div className="triage-toolbar-group">
-                  <button
-                    className="btn btn-sm"
-                    onClick={refreshInfrastructure}
-                  >
+                  <button className="btn btn-sm" onClick={refreshInfrastructure}>
                     Refresh
                   </button>
                 </div>
@@ -929,7 +957,9 @@ export default function Infrastructure() {
                         <div className="summary-card">
                           <div className="summary-label">Evidence route</div>
                           <div className="summary-value">{savedView}</div>
-                          <div className="summary-meta">Keep the current saved view attached while escalating.</div>
+                          <div className="summary-meta">
+                            Keep the current saved view attached while escalating.
+                          </div>
                         </div>
                       </div>
                       <div className="btn-group" style={{ flexWrap: 'wrap' }}>
@@ -1152,7 +1182,11 @@ export default function Infrastructure() {
                     Malware Verdict Workspace
                   </div>
                   <div className="detail-callout" style={{ marginBottom: 12 }}>
-                    Reopen this view with <code>?tab=integrity&amp;malware={focusedMalware.id}&amp;malwarePanel={malwarePanel}</code> to keep verdict, provenance, and response context together.
+                    Reopen this view with{' '}
+                    <code>
+                      ?tab=integrity&amp;malware={focusedMalware.id}&amp;malwarePanel={malwarePanel}
+                    </code>{' '}
+                    to keep verdict, provenance, and response context together.
                   </div>
                   <div className="chip-row" style={{ marginBottom: 12 }}>
                     {MALWARE_PANELS.map((panel) => (
@@ -1187,7 +1221,9 @@ export default function Infrastructure() {
                     <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
                       <div className="card-title">Why this fired</div>
                       {malwareVerdictWorkspace.evidence.length === 0 ? (
-                        <div className="empty">No deep-scan provenance has been captured for this verdict yet.</div>
+                        <div className="empty">
+                          No deep-scan provenance has been captured for this verdict yet.
+                        </div>
                       ) : (
                         malwareVerdictWorkspace.evidence.map((line, index) => (
                           <div key={`malware-evidence-${index}`} className="stat-box">
@@ -1199,7 +1235,9 @@ export default function Infrastructure() {
                         Why this might be safe or noisy
                       </div>
                       {malwareVerdictWorkspace.safeOrNoisy.length === 0 ? (
-                        <div className="empty">No allowlist, signing, or internal-tool context reduced the verdict.</div>
+                        <div className="empty">
+                          No allowlist, signing, or internal-tool context reduced the verdict.
+                        </div>
                       ) : (
                         malwareVerdictWorkspace.safeOrNoisy.map((line) => (
                           <div key={line} className="stat-box">
@@ -1274,12 +1312,18 @@ export default function Infrastructure() {
                         <div className="summary-card">
                           <div className="summary-label">Execution surface</div>
                           <div className="summary-value">{malwareVerdictWorkspace.platform}</div>
-                          <div className="summary-meta">Platform or script hint from static analysis.</div>
+                          <div className="summary-meta">
+                            Platform or script hint from static analysis.
+                          </div>
                         </div>
                         <div className="summary-card">
                           <div className="summary-label">Runtime tactics</div>
-                          <div className="summary-value">{malwareVerdictWorkspace.tactics.length}</div>
-                          <div className="summary-meta">Observed behavior signals attached to the scan.</div>
+                          <div className="summary-value">
+                            {malwareVerdictWorkspace.tactics.length}
+                          </div>
+                          <div className="summary-meta">
+                            Observed behavior signals attached to the scan.
+                          </div>
                         </div>
                       </div>
                       <JsonDetails
@@ -1305,8 +1349,8 @@ export default function Infrastructure() {
                 <div>
                   <span className="card-title">Deep Malware Scan</span>
                   <div className="hint" style={{ marginTop: 6 }}>
-                    Combine static content, runtime behavior, and allowlist context to explain why
-                    a sample is malicious, noisy, or likely safe.
+                    Combine static content, runtime behavior, and allowlist context to explain why a
+                    sample is malicious, noisy, or likely safe.
                   </div>
                 </div>
                 <button className="btn btn-sm" onClick={() => setDeepScanResult(null)}>

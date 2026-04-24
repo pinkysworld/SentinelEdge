@@ -74,7 +74,8 @@ const SHARED_DASHBOARD_PRESETS = [
   {
     id: 'analyst-triage',
     name: 'Analyst Triage',
-    description: 'Prioritize queue pressure, recent alerts, and tuning signals for active analysts.',
+    description:
+      'Prioritize queue pressure, recent alerts, and tuning signals for active analysts.',
     widgets: [
       'threat-overview',
       'recent-alerts',
@@ -94,7 +95,8 @@ const SHARED_DASHBOARD_PRESETS = [
   {
     id: 'admin-operations',
     name: 'Admin Operations',
-    description: 'Balance platform health, telemetry, lifecycle, and response readiness for operators.',
+    description:
+      'Balance platform health, telemetry, lifecycle, and response readiness for operators.',
     widgets: [
       'system-health',
       'telemetry',
@@ -114,7 +116,8 @@ const SHARED_DASHBOARD_PRESETS = [
   {
     id: 'noc-wall',
     name: 'NOC Wall',
-    description: 'Keep the wallboard focused on posture, alert pressure, and broad telemetry trends.',
+    description:
+      'Keep the wallboard focused on posture, alert pressure, and broad telemetry trends.',
     widgets: [
       'system-health',
       'threat-overview',
@@ -391,7 +394,13 @@ export default function Dashboard() {
       const fallbackPreset = findPresetByKey(fallbackPresetKey, nextPresets);
       if (fallbackPreset) applyLayout(fallbackPreset);
     }
-  }, [applyLayout, recommendedSharedPresetId, savedPresets, selectedPresetKey, updatePresetPreferences]);
+  }, [
+    applyLayout,
+    recommendedSharedPresetId,
+    savedPresets,
+    selectedPresetKey,
+    updatePresetPreferences,
+  ]);
 
   // Per-widget auto-refresh toggle
   const [pausedWidgets, setPausedWidgets] = useState(() => {
@@ -579,7 +588,11 @@ export default function Dashboard() {
       onAction: () => navigate('/soc#response'),
     },
   ];
-  const coverageGapCount = Array.isArray(gaps?.gaps) ? gaps.gaps.length : Array.isArray(gaps) ? gaps.length : 0;
+  const coverageGapCount = Array.isArray(gaps?.gaps)
+    ? gaps.gaps.length
+    : Array.isArray(gaps)
+      ? gaps.length
+      : 0;
   const workflowItems = [
     {
       id: 'soc-triage',
@@ -601,7 +614,8 @@ export default function Dashboard() {
     {
       id: 'infrastructure',
       title: 'Review Critical Assets',
-      description: 'Use infrastructure queues to validate drift, malware, and observability hotspots behind the current posture.',
+      description:
+        'Use infrastructure queues to validate drift, malware, and observability hotspots behind the current posture.',
       to: buildHref('/infrastructure', { params: { tab: 'assets', view: 'critical' } }),
       minRole: 'analyst',
       badge: 'Asset',
@@ -684,7 +698,8 @@ export default function Dashboard() {
             <div className="summary-label">Selected Layout</div>
             <div className="summary-value">{activePreset?.name || 'Custom Layout'}</div>
             <div className="summary-meta">
-              {activePreset?.description || 'The current widget order is running from local layout state.'}
+              {activePreset?.description ||
+                'The current widget order is running from local layout state.'}
             </div>
           </div>
           <div className="summary-card">
@@ -692,12 +707,17 @@ export default function Dashboard() {
             <div className="summary-value">
               {activePreset?.audience || (isSavedPresetKey(selectedPresetKey) ? 'personal' : role)}
             </div>
-            <div className="summary-meta">Recommended shared preset for this role: {role === 'admin' ? 'Admin Operations' : 'Analyst Triage'}.</div>
+            <div className="summary-meta">
+              Recommended shared preset for this role:{' '}
+              {role === 'admin' ? 'Admin Operations' : 'Analyst Triage'}.
+            </div>
           </div>
           <div className="summary-card">
             <div className="summary-label">Hidden Widgets</div>
             <div className="summary-value">{hidden.size}</div>
-            <div className="summary-meta">Hidden widgets remain restorable below the dashboard grid.</div>
+            <div className="summary-meta">
+              Hidden widgets remain restorable below the dashboard grid.
+            </div>
           </div>
         </div>
         <div className="triage-toolbar" style={{ marginBottom: 10 }}>
@@ -1375,9 +1395,11 @@ export default function Dashboard() {
                     What Changed
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7, fontSize: 13 }}>
-                    {(managerDigest.changes_since_last_shift || []).slice(0, 4).map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
+                    {(managerDigest.changes_since_last_shift || [])
+                      .slice(0, 4)
+                      .map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
                   </ul>
                 </div>
                 <div className="card">

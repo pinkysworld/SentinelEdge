@@ -126,7 +126,7 @@ function DataTable({ columns, rows, emptyMessage = 'No records available.', rowK
             <tr key={rowKey ? rowKey(row, index) : row.id || row.name || row.action || index}>
               {columns.map((column) => (
                 <td key={column.label}>
-                  {column.render ? column.render(row, index) : row[column.key] ?? '-'}
+                  {column.render ? column.render(row, index) : (row[column.key] ?? '-')}
                 </td>
               ))}
             </tr>
@@ -138,7 +138,8 @@ function DataTable({ columns, rows, emptyMessage = 'No records available.', rowK
 }
 
 function BucketBars({ buckets }) {
-  if (!Array.isArray(buckets) || buckets.length === 0) return <div className="empty">No bucket data yet.</div>;
+  if (!Array.isArray(buckets) || buckets.length === 0)
+    return <div className="empty">No bucket data yet.</div>;
 
   const maxCount = Math.max(...buckets, 1);
 
@@ -261,7 +262,9 @@ export default function SecurityPolicy() {
   const [runningQuarantine, setRunningQuarantine] = useState(false);
 
   const twinDevices = Array.isArray(twin?.devices) ? twin.devices : [];
-  const harnessStrategies = Array.isArray(harnessResult?.strategies) ? harnessResult.strategies : [];
+  const harnessStrategies = Array.isArray(harnessResult?.strategies)
+    ? harnessResult.strategies
+    : [];
   const deceptionDecoys = Array.isArray(deception?.decoys) ? deception.decoys : [];
   const attackerProfiles = Array.isArray(deception?.attacker_profiles)
     ? deception.attacker_profiles
@@ -579,9 +582,15 @@ export default function SecurityPolicy() {
           <div className="card-header">
             <div>
               <span className="card-title">Post-Quantum Key Status</span>
-              <div className="hint">Rotate the active epoch and confirm the new cryptographic state.</div>
+              <div className="hint">
+                Rotate the active epoch and confirm the new cryptographic state.
+              </div>
             </div>
-            <button className="btn btn-sm btn-primary" onClick={handleRotateKeys} disabled={rotatingKeys}>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={handleRotateKeys}
+              disabled={rotatingKeys}
+            >
               {rotatingKeys ? 'Rotating...' : 'Rotate Keys'}
             </button>
           </div>
@@ -605,12 +614,20 @@ export default function SecurityPolicy() {
               <MetricCard
                 label="Last Run Alerts"
                 value={simResult?.alerts || 0}
-                meta={simResult ? `${simResult.event_type} on ${simResult.device_id}` : 'No simulation run yet.'}
+                meta={
+                  simResult
+                    ? `${simResult.event_type} on ${simResult.device_id}`
+                    : 'No simulation run yet.'
+                }
               />
               <MetricCard
                 label="Last Run Transitions"
                 value={simResult?.transitions || 0}
-                meta={simResult?.seeded_device ? 'Latest run seeded a new device twin.' : 'Latest run used an existing twin.'}
+                meta={
+                  simResult?.seeded_device
+                    ? 'Latest run seeded a new device twin.'
+                    : 'Latest run used an existing twin.'
+                }
               />
             </div>
             <DataTable
@@ -618,7 +635,9 @@ export default function SecurityPolicy() {
                 { label: 'Device', key: 'device_id' },
                 {
                   label: 'State',
-                  render: (row) => <span className="badge badge-info">{row.state || 'Unknown'}</span>,
+                  render: (row) => (
+                    <span className="badge badge-info">{row.state || 'Unknown'}</span>
+                  ),
                 },
                 { label: 'Threat Score', render: (row) => formatScore(row.threat_score) },
                 { label: 'CPU', render: (row) => `${Math.round(Number(row.cpu_load) || 0)}%` },
@@ -676,7 +695,11 @@ export default function SecurityPolicy() {
                 }
               </div>
               <div className="btn-group">
-                <button className="btn btn-sm btn-primary" type="submit" disabled={runningSimulation}>
+                <button
+                  className="btn btn-sm btn-primary"
+                  type="submit"
+                  disabled={runningSimulation}
+                >
                   {runningSimulation ? 'Running...' : 'Run Simulation'}
                 </button>
               </div>
@@ -693,7 +716,11 @@ export default function SecurityPolicy() {
                   <MetricCard
                     label="Alerts Generated"
                     value={simResult.alerts || 0}
-                    meta={simResult.seeded_device ? 'A new twin was seeded for this run.' : 'Run executed against an existing twin.'}
+                    meta={
+                      simResult.seeded_device
+                        ? 'A new twin was seeded for this run.'
+                        : 'Run executed against an existing twin.'
+                    }
                   />
                   <MetricCard
                     label="State Transitions"
@@ -950,7 +977,10 @@ export default function SecurityPolicy() {
                 </select>
               </label>
               <div className="hint">
-                {DECEPTION_TYPES.find((item) => item.value === deceptionDraft.decoyType)?.description}
+                {
+                  DECEPTION_TYPES.find((item) => item.value === deceptionDraft.decoyType)
+                    ?.description
+                }
               </div>
               <label style={{ display: 'grid', gap: 6 }}>
                 <span>Decoy Name</span>
@@ -971,7 +1001,10 @@ export default function SecurityPolicy() {
                   rows={4}
                   value={deceptionDraft.description}
                   onChange={(event) =>
-                    setDeceptionDraft((current) => ({ ...current, description: event.target.value }))
+                    setDeceptionDraft((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -985,7 +1018,10 @@ export default function SecurityPolicy() {
             {deployResult ? (
               <div style={{ marginTop: 16 }}>
                 <div className="summary-grid">
-                  <MetricCard label="Last Deploy Status" value={deployResult.status || 'deployed'} />
+                  <MetricCard
+                    label="Last Deploy Status"
+                    value={deployResult.status || 'deployed'}
+                  />
                   <MetricCard label="Decoy ID" value={deployResult.decoy_id || '-'} />
                 </div>
               </div>
@@ -1004,7 +1040,8 @@ export default function SecurityPolicy() {
                 },
                 {
                   label: 'Decoys Touched',
-                  render: (row) => (Array.isArray(row.decoys_touched) ? row.decoys_touched.join(', ') : '-'),
+                  render: (row) =>
+                    Array.isArray(row.decoys_touched) ? row.decoys_touched.join(', ') : '-',
                 },
               ]}
               rows={attackerProfiles}
@@ -1043,7 +1080,10 @@ export default function SecurityPolicy() {
                 meta={`${enforcement?.topology_nodes || 0} topology nodes tracked.`}
               />
             </div>
-            <SummaryGrid data={enforcement?.tpm ? { tpm: enforcement.tpm } : enforcement} limit={6} />
+            <SummaryGrid
+              data={enforcement?.tpm ? { tpm: enforcement.tpm } : enforcement}
+              limit={6}
+            />
             <JsonDetails data={enforcement} label="Enforcement details" />
           </div>
 
@@ -1052,7 +1092,8 @@ export default function SecurityPolicy() {
               <div>
                 <span className="card-title">Quarantine Target</span>
                 <div className="hint">
-                  Execute the quarantine workflow and inspect the exact actions returned by the engine.
+                  Execute the quarantine workflow and inspect the exact actions returned by the
+                  engine.
                 </div>
               </div>
             </div>
@@ -1067,7 +1108,11 @@ export default function SecurityPolicy() {
                 />
               </label>
               <div className="btn-group">
-                <button className="btn btn-sm btn-primary" type="submit" disabled={runningQuarantine}>
+                <button
+                  className="btn btn-sm btn-primary"
+                  type="submit"
+                  disabled={runningQuarantine}
+                >
                   {runningQuarantine ? 'Quarantining...' : 'Quarantine Target'}
                 </button>
               </div>
