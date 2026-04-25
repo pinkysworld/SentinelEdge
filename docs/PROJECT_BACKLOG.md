@@ -313,6 +313,17 @@ This backlog lists the next concrete tasks in build order.
 
 - [x] T258: Broaden the routed release-gate browser smoke coverage across detection, response, collector health, fleet rollout, and infrastructure malware/remediation workflows.
 
+## Phase 37 — Admin-console quality sweep & panic-policy guard
+
+- [x] T259: Centralize admin-console API error formatting in `utils/errors.js` and replace duplicated implementations across Settings, Email Security, and other workspaces.
+- [x] T260: Capture and surface the backend `X-Request-Id` header on thrown API errors so operator-facing failure messages can be matched to server logs.
+- [x] T261: Add reusable `WorkspaceEmptyState` and `WorkspaceErrorState` primitives with proper ARIA semantics and migrate Email Security as the first adopter.
+- [x] T262: Add `role="tablist"` / `role="tab"` / `aria-selected` semantics to Settings, Infrastructure, Reports & Exports, Email Security, and NDR Dashboard tab strips.
+- [x] T263: Split `Settings.jsx` by extracting 35 pure helpers into `components/settings/helpers.js` and 8 reusable widgets into `components/settings/components.jsx`.
+- [x] T264: Add a panic-policy CI guard (`scripts/check_panic_policy.py` plus baseline file) that blocks regressions in non-test `unwrap`/`expect` density.
+- [x] T265: Run a `knip` dead-code audit and remove three unused admin-console files and two over-exported helpers.
+- [x] T266: Refresh README, STATUS, ROADMAP, REPRODUCIBILITY, installation runbook, OpenAPI metadata, helm and otlp manifests, SDK notes, website footers, and version metadata for `v0.53.6`.
+
 ## Recommended next build order
 
 Phases 0–36 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector ingestion timelines, and expanded live workflow smoke coverage are all in place.

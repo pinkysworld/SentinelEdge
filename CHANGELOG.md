@@ -4,6 +4,26 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.53.6] — Admin-Console Quality Sweep & Panic-Policy Guard
+
+### Operator-experience hardening
+- **Shared API error formatting** — Admin-console error rendering is now centralized in `formatApiError`, replacing the ad-hoc message-derivation that was duplicated across Settings, Email Security, and other workspaces. Error toasts and inline failure states now read consistently and surface the backend `X-Request-Id` so support handoffs can be matched to server logs without log archeology.
+- **Workspace empty/error primitives** — A reusable `WorkspaceEmptyState` / `WorkspaceErrorState` pair now backs operator workspaces, with `role="status"` / `role="alert"` semantics, optional retry handlers, and a uniform layout. Email Security has migrated its policies empty state onto the shared primitive as the first adopter.
+- **Tablist semantics across workspaces** — Settings, Infrastructure, Reports & Exports, Email Security, and NDR Dashboard tab strips now expose proper `role="tablist"` / `role="tab"` / `aria-selected` semantics, restoring keyboard and assistive-technology navigation parity with Live Monitor.
+
+### Code structure
+- **Settings module split** — The 5,000-line `Settings.jsx` has been broken up: 35 pure helpers and constants extracted into `components/settings/helpers.js`, and 8 reusable widgets (`ToggleSwitch`, `NumberInput`, `TextInput`, `SelectInput`, `TextAreaInput`, `ValidationIssues`, `CollectorTimelineList`, `CollectorLaneCard`) extracted into `components/settings/components.jsx`. The main file is now ~14% smaller with no behavior change.
+- **Dead-code sweep** — A `knip` audit identified three unused admin-console files (`__tests__/test-utils.js`, `components/RuleEditor.jsx`, `types.ts`) and two over-exported helpers; all have been removed without test or build regressions.
+
+### Release confidence
+- **Panic-policy CI guard** — A new `panic-policy` job in `.github/workflows/ci.yml` runs `scripts/check_panic_policy.py` on every PR and refuses regressions in non-test `unwrap`/`expect` density (baseline: 19). The policy and verification command are documented in `CONTRIBUTING.md`.
+- **Focused regression depth** — 30 new admin-console tests cover Email Security, Investigation Timeline, NDR Dashboard, the shared error formatter, the API client's `X-Request-Id` capture path, the workspace state primitives, and tablist semantics, taking the admin-console suite to 208/208 passing.
+- **Release-document accuracy** — README, status, roadmap, reproducibility, installation, OpenAPI, helm, otlp, SDK, and website surfaces are aligned on the `v0.53.6` baseline.
+
+### Verification
+- 208/208 admin-console vitest tests passing.
+- `cargo check` clean, panic-policy guard at baseline.
+
 ## [0.53.5] — Replay Drift, Collector Timelines & Release-Gate Expansion
 
 ### Detection validation depth

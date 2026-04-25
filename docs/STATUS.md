@@ -2,7 +2,7 @@
 
 ## Current release
 
-- **Version:** `0.53.5`
+- **Version:** `0.53.6`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
@@ -98,6 +98,16 @@ The current release has been verified with:
 ## Current product posture
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
+
+## Recently shipped (v0.53.6)
+
+- **Shared API error formatting** — admin-console workspaces now derive operator error messages through a single `formatApiError` helper, removing four duplicated implementations and surfacing the backend `X-Request-Id` for support correlation.
+- **Workspace empty/error primitives** — reusable `WorkspaceEmptyState` and `WorkspaceErrorState` components with proper ARIA semantics now back operator workspaces, with Email Security migrated as the first adopter.
+- **Tablist semantics** — Settings, Infrastructure, Reports & Exports, Email Security, and NDR Dashboard tab strips now expose `role="tablist"` / `role="tab"` / `aria-selected` so keyboard and assistive-technology navigation match Live Monitor.
+- **Settings module split** — the 5,000-line Settings workspace has been broken into a pure-helpers file and a widget-components file, shrinking the main file by ~14% with no behavior change.
+- **Panic-policy CI guard** — a new CI job blocks regressions in non-test `unwrap`/`expect` density against a checked-in baseline; verifiable locally via `python3 scripts/check_panic_policy.py`.
+- **Dead-code removal** — a `knip` audit removed three unused admin-console files and two over-exported helpers without test or build regressions.
+- **Release-document accuracy** — README, status, roadmap, reproducibility, installation, OpenAPI, helm, otlp, SDK, and website surfaces are aligned on the `v0.53.6` baseline.
 
 ## Recently shipped (v0.53.5)
 
