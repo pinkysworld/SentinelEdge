@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.53.7`
+- **Version:** `0.53.8`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
-- **Verification:** Rust integration coverage, focused explainability/onboarding/reporting persistence tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
+- **Verification:** Rust integration coverage, focused session-cookie exchange tests, collector lifecycle tests, remediation change-review tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
 - **Production hardening:** 100% (59/59 controls implemented)
 
 ## Shipped in the current platform
@@ -67,7 +67,7 @@
 
 ### Governance and enterprise controls
 
-- RBAC, session TTL, token rotation, session-backed identity groups, audit and retention controls, ClickHouse-backed retained-event search, and retention apply workflows
+- RBAC, session TTL, token rotation, HttpOnly console sessions, session-backed identity groups, audit and retention controls, ClickHouse-backed retained-event search, and retention apply workflows
 - IDP, SCIM, cloud collector, and secrets manager configuration surfaces with validation and health visibility, plus enterprise-provider discovery on the unauthenticated sign-in shell
 - Change control entries, admin audit export, diagnostics bundle, dependency health endpoints, persisted rollout history, and persisted playbook analytics history
 
@@ -78,12 +78,12 @@
 
 ### Supportability and documentation
 
-- Help & Docs support center with searchable embedded documentation, version-aware runbooks and deployment guidance, operator inbox context, support diagnostics, REST/OpenAPI/GraphQL/SDK parity diagnostics, live GraphQL query execution, and API endpoint exploration
+- Help & Docs support center with searchable embedded documentation, version-aware runbooks and deployment guidance, operator inbox context, production demo lab, support diagnostics, REST/OpenAPI/GraphQL/SDK parity diagnostics, live GraphQL query execution, and API endpoint exploration
 
 ### Integrations and evidence
 
 - SIEM output, OCSF normalization, TAXII pull, threat-intel `v2` enrichment metadata, and indicator sightings
-- Ticket sync, forensic evidence export, context-aware report artifacts/templates, persisted response/compliance/audit evidence snapshots, tamper-evident audit chain, encrypted event buffering, and deep malware scan `v2` profiles
+- Ticket sync, forensic evidence export, remediation change-review history, collector lifecycle analytics, context-aware report artifacts/templates, persisted response/compliance/audit evidence snapshots, tamper-evident audit chain, encrypted event buffering, and deep malware scan `v2` profiles
 - Deployment, disaster recovery, threat model, SLO, and runbook documentation
 
 ## Verification snapshot
@@ -98,6 +98,22 @@ The current release has been verified with:
 ## Current product posture
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
+
+## Recently shipped (v0.53.8)
+
+- **HttpOnly admin-console sessions** — pasted admin tokens are now exchanged for server-side `wardex_session` cookies through `POST /api/auth/session`, legacy `wardex_token` localStorage persistence is removed, and cookie-backed reconnect remains compatible with bearer-token automation.
+- **Collector lifecycle analytics** — cloud, SaaS, and identity collectors now retain lifecycle history, last-success/error checkpoints, retry/backoff state, freshness, failure streaks, and 24h ingestion counts in the shared collector status contract and Settings lane cards.
+- **Remediation change-review ledger** — Infrastructure now records and displays approval/recovery history for malware verdicts and remediation candidates through `/api/remediation/change-reviews`.
+- **Production demo lab** — Help & Docs can seed an evaluation-ready scenario via `/api/demo/lab`, including telemetry, case context, response dry-run approval, report artifacts, and evidence metadata.
+- **SDK and release-document alignment** — the TypeScript SDK is cookie/session-aware, release-doc validation guards historical-plan drift, and website/docs/package metadata are aligned on the `v0.53.8` baseline.
+
+## Roadmap completion in progress
+
+- **Signed multi-approver remediation** — change reviews now require risk-aware approver counts, record signed approval-chain digests, and attach rollback proof with recovery plans when approval quorum is reached.
+- **Collector ingestion evidence pivots** — collector lifecycle status now carries SOC Workbench and Infrastructure pivots plus recent ingestion evidence for cloud, identity, and SaaS lanes.
+- **Expanded production demo lab** — demo seeding now includes cloud, identity, SaaS, UEBA, NDR, and attack-graph evidence alongside case, response, report, and artifact proof.
+- **IdP lifecycle validation depth** — identity-provider summaries now expose launch checks for metadata, callback route alignment, client credentials, group mappings, and test-login paths.
+- **SDK parity continuation** — Python and TypeScript SDKs include collector status, remediation review creation, and signed remediation approval helpers used by console workflows.
 
 ## Recently shipped (v0.53.7)
 
@@ -138,10 +154,9 @@ Wardex is now positioned as a professional XDR/SIEM control plane with incident-
 
 ## Next release priorities
 
-- persisted ingestion counters, last-success checkpoints, and richer lifecycle analytics for cloud, SaaS, and identity collectors
-- broader change-review, approval, and recovery-history workflows on top of the shipped infrastructure remediation and malware verdict workspaces
-- continued federated IdP lifecycle validation and regression depth as SSO providers evolve
-- deeper UEBA, NDR, and infrastructure workflow depth on top of the shipped route-aware pivots
+- continue browser regression depth for signed remediation approvals, collector pivots, and IdP launch validation
+- keep console API helpers and generated SDK methods aligned as new workflow endpoints are added
+- expand rollback proof from planned recovery evidence into adapter-backed execution where platform permissions allow it
 
 ## Recently shipped (v0.43.1)
 

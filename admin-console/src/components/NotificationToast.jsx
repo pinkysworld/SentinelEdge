@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as api from '../api.js';
-import { getToken } from '../api.js';
 
 const POLL_INTERVAL = 30_000;
 const MAX_TOASTS = 8;
 const DEFAULT_DISMISS_MS = 8000;
 const CRITICAL_DISMISS_MS = 30000; // critical alerts stay longer
 
-export default function NotificationToast() {
+export default function NotificationToast({ active = false }) {
   const [items, setItems] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(
     () => localStorage.getItem('wardex_notif_sound') !== 'false',
@@ -77,10 +76,9 @@ export default function NotificationToast() {
 
   useEffect(() => {
     let mounted = true;
-    const token = getToken();
-    if (!token) return;
+    if (!active) return;
     const poll = async () => {
-      if (!mounted || !getToken()) return;
+      if (!mounted || !active) return;
       try {
         const [alerts, feeds] = await Promise.all([
           api.alertsCount().catch(() => null),
@@ -115,7 +113,7 @@ export default function NotificationToast() {
       mounted = false;
       clearInterval(timer);
     };
-  }, [push]);
+  }, [active, push]);
 
   if (items.length === 0) return null;
 

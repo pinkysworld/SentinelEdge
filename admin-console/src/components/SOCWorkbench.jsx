@@ -195,6 +195,33 @@ const mergeSearchState = (searchParams, updates = {}) => {
   return next;
 };
 
+const formatResponseTarget = (entry) => {
+  if (!entry) return '—';
+
+  const target = entry.target;
+  const targetTags = Array.isArray(target?.asset_tags) ? target.asset_tags.filter(Boolean) : [];
+  const parts = [
+    typeof target === 'string' ? target : '',
+    entry.target_hostname,
+    target?.hostname,
+    entry.target_agent_uid,
+    target?.agent_uid,
+    entry.host,
+    entry.hostname,
+    entry.agent_id,
+    entry.endpoint_id,
+    entry.entity_id,
+    ...targetTags,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  if (parts.length > 0) return parts.join(' · ');
+  if (typeof target === 'number') return String(target);
+  if (target && typeof target === 'object') return JSON.stringify(target);
+  return String(entry.id || entry.alert_id || '—');
+};
+
 function resolveInvestigationPivot(endpoint, context, label) {
   const normalized = String(endpoint || '').trim();
   if (!normalized) return null;
@@ -827,6 +854,24 @@ export default function SOCWorkbench() {
       }),
       minRole: 'analyst',
       badge: 'Asset',
+    },
+    {
+      id: 'process-tree',
+      title: 'Open Process Tree',
+      description: queueSeedHost
+        ? `Inspect live processes, deep chains, and raw process evidence for ${queueSeedHost}.`
+        : 'Inspect live processes, deep chains, and raw process evidence for the active scope.',
+      to: buildHref('/soc', {
+        params: {
+          case: focusedCaseId || undefined,
+          incident: focusedIncidentParam || undefined,
+          investigation: focusedInvestigationParam || undefined,
+        },
+        hash: 'process-tree',
+      }),
+      actionLabel: 'Open Process Tree',
+      minRole: 'analyst',
+      badge: 'Process',
     },
     {
       id: 'attack-graph',
@@ -3031,7 +3076,7 @@ export default function SOCWorkbench() {
                           <tr key={i}>
                             <td style={{ fontWeight: 600 }}>{a.action || a.type || '—'}</td>
                             <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                              {a.target || a.host || '—'}
+                              {formatResponseTarget(a)}
                             </td>
                             <td>
                               <span className={`sev-${(a.severity || 'low').toLowerCase()}`}>
@@ -3113,7 +3158,7 @@ export default function SOCWorkbench() {
                                 {r.id || i}
                               </td>
                               <td>{r.type || r.action || '—'}</td>
-                              <td>{r.target || r.host || '—'}</td>
+                              <td>{formatResponseTarget(r)}</td>
                               <td>
                                 <span className={`badge ${statusClass}`}>{r.status || '—'}</span>
                               </td>
@@ -3183,7 +3228,7 @@ export default function SOCWorkbench() {
                           }}
                         >
                           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-                            Playbook Steps — {r.type || r.action} → {r.target || r.host}
+                            Playbook Steps — {r.type || r.action} → {formatResponseTarget(r)}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             {r.steps.map((step, si) => (

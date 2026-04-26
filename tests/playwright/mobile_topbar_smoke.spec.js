@@ -98,11 +98,14 @@ test("mobile help action preserves threat-detection route scope", async ({
     `${BASE}/admin/detection?intent=run-hunt&huntName=Mobile%20Topbar%20Pivot`,
     { waitUntil: "domcontentloaded" },
   );
+  await expect(page).toHaveURL(/\/admin\/detection\?.*rule=/);
 
   await page.getByRole("button", { name: "More" }).click();
-  const menu = page.getByRole("menu", { name: "More actions" });
-  await expect(menu).toBeVisible();
-  await menu.getByRole("menuitem", { name: "Help For View" }).click();
+  await expect(page.getByRole("menu", { name: "More actions" })).toBeVisible();
+  await Promise.all([
+    page.waitForURL(/\/admin\/help\?/),
+    page.getByRole("menuitem", { name: "Help For View" }).click(),
+  ]);
 
   await expect(page).toHaveURL(/\/admin\/help\?/);
   await expect(page).toHaveURL(/intent=run-hunt/);

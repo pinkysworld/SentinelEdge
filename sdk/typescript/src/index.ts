@@ -57,6 +57,7 @@ export interface WardexConfig {
   baseUrl: string;
   apiKey?: string;
   timeout?: number;
+  credentials?: RequestCredentials;
 }
 
 export interface Alert {
@@ -273,6 +274,7 @@ export class WardexClient {
   private baseUrl: string;
   private apiKey?: string;
   private timeout: number;
+  private credentials?: RequestCredentials;
 
   constructor(config: WardexConfig) {
     if (!/^https?:\/\//i.test(config.baseUrl)) {
@@ -281,6 +283,7 @@ export class WardexClient {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
     this.apiKey = config.apiKey;
     this.timeout = config.timeout ?? 30000;
+    this.credentials = config.credentials;
   }
 
   private async request<T>(
@@ -306,6 +309,7 @@ export class WardexClient {
         headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        credentials: this.credentials,
       });
 
       if (!resp.ok) {
@@ -350,6 +354,30 @@ export class WardexClient {
 
   async health(): Promise<HealthStatus> {
     return this.request("GET", "/api/health");
+  }
+
+  async authSession(): Promise<unknown> {
+    return this.request("GET", "/api/auth/session");
+  }
+
+  async createAuthSession(): Promise<unknown> {
+    return this.request("POST", "/api/auth/session");
+  }
+
+  async openApiSpec(): Promise<unknown> {
+    return this.request("GET", "/api/openapi.json");
+  }
+
+  async supportParity(): Promise<unknown> {
+    return this.request("GET", "/api/support/parity");
+  }
+
+  async readinessEvidence(): Promise<unknown> {
+    return this.request("GET", "/api/support/readiness-evidence");
+  }
+
+  async firstRunProof(): Promise<unknown> {
+    return this.request("POST", "/api/support/first-run-proof");
   }
 
   // ── Alerts ───────────────────────────────────────────────────────
@@ -402,6 +430,26 @@ export class WardexClient {
 
   async malwareRecent(): Promise<ScanMatch[]> {
     return this.request("GET", "/api/malware/recent");
+  }
+
+  async collectorsStatus(): Promise<unknown> {
+    return this.request("GET", "/api/collectors/status");
+  }
+
+  async remediationChangeReviews(): Promise<unknown> {
+    return this.request("GET", "/api/remediation/change-reviews");
+  }
+
+  async recordRemediationChangeReview(review: unknown): Promise<unknown> {
+    return this.request("POST", "/api/remediation/change-reviews", review);
+  }
+
+  async approveRemediationChangeReview(id: string, approval: unknown): Promise<unknown> {
+    return this.request(
+      "POST",
+      `/api/remediation/change-reviews/${encodeURIComponent(id)}/approval`,
+      approval,
+    );
   }
 
   async malwareImport(data: string): Promise<{ imported: number }> {

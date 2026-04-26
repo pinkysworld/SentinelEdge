@@ -268,6 +268,8 @@ export default function HelpDocs() {
   );
   const [graphqlResponse, setGraphqlResponse] = useState(null);
   const [graphqlRunning, setGraphqlRunning] = useState(false);
+  const [firstRunProof, setFirstRunProof] = useState(null);
+  const [firstRunProofRunning, setFirstRunProofRunning] = useState(false);
 
   const { data: epList } = useApi(api.endpoints);
   const { data: research } = useApi(api.researchTracks);
@@ -277,6 +279,7 @@ export default function HelpDocs() {
   const { data: inboxData, reload: reloadInbox } = useApi(api.inbox);
   const { data: managerOverview } = useApi(api.managerOverview);
   const { data: supportDiagnostics } = useApi(api.supportDiag);
+  const { data: readinessEvidence } = useApi(api.supportReadinessEvidence);
   const { data: parityData } = useApi(api.supportParity);
   const { data: docsIndexData } = useApi(
     () => api.docsIndex({ q: docsQuery, section: docsSection, limit: 40 }),
@@ -293,6 +296,10 @@ export default function HelpDocs() {
     [docsIndexData],
   );
   const parityIssues = Array.isArray(parityData?.issues) ? parityData.issues : [];
+  const readiness = readinessEvidence?.evidence || null;
+  const readinessLimitations = Array.isArray(readiness?.known_limitations)
+    ? readiness.known_limitations
+    : [];
   const openApiSummary = openApi
     ? {
         title: openApi?.info?.title,
@@ -353,6 +360,36 @@ export default function HelpDocs() {
     }
   };
 
+  const runFirstRunProof = async () => {
+    setFirstRunProofRunning(true);
+    try {
+      const result = await api.firstRunProof();
+      setFirstRunProof(result);
+      toast('First-run proof completed.', 'success');
+    } catch (error) {
+      const message = error?.body || error?.message || 'First-run proof failed';
+      setFirstRunProof({ error: message });
+      toast('First-run proof failed.', 'error');
+    } finally {
+      setFirstRunProofRunning(false);
+    }
+  };
+
+  const runProductionDemoLab = async () => {
+    setFirstRunProofRunning(true);
+    try {
+      const result = await api.productionDemoLab();
+      setFirstRunProof(result);
+      toast('Production demo lab seeded.', 'success');
+    } catch (error) {
+      const message = error?.body || error?.message || 'Production demo lab failed';
+      setFirstRunProof({ error: message });
+      toast('Production demo lab failed.', 'error');
+    } finally {
+      setFirstRunProofRunning(false);
+    }
+  };
+
   return (
     <div>
       <div className="card" style={{ marginBottom: 16 }}>
@@ -392,6 +429,15 @@ export default function HelpDocs() {
             <div className="summary-value">{parityIssues.length}</div>
             <div className="summary-meta">
               OpenAPI, GraphQL, and generated SDK drift is summarized below.
+            </div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-label">Readiness</div>
+            <div className="summary-value">{readiness?.status || '—'}</div>
+            <div className="summary-meta">
+              {readinessEvidence?.digest
+                ? `Evidence digest ${String(readinessEvidence.digest).slice(0, 12)}`
+                : 'Production evidence pack is loading.'}
             </div>
           </div>
         </div>
@@ -685,6 +731,59 @@ export default function HelpDocs() {
       </div>
 
       <div className="card-grid" style={{ marginTop: 16 }}>
+        <div className="card">
+          <div className="card-header" style={{ marginBottom: 12 }}>
+            <div className="card-title">Production Readiness</div>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={runFirstRunProof}
+              disabled={firstRunProofRunning}
+            >
+              {firstRunProofRunning ? 'Running...' : 'Run Proof'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={runProductionDemoLab}
+              disabled={firstRunProofRunning}
+            >
+              Demo Lab
+            </button>
+          </div>
+          <SummaryGrid
+            data={{
+              status: readiness?.status,
+              runtime: readiness?.version?.runtime,
+              enabled_collectors: readiness?.collectors?.enabled,
+              audit_chain: readiness?.audit_chain?.status,
+              contract_status: readiness?.contracts?.status,
+              response_history: readiness?.response_history?.closed_or_reopenable,
+              report_artifacts: readiness?.evidence?.reports_with_artifact_metadata,
+              observed_backups: readiness?.backup?.observed_backups,
+            }}
+            limit={8}
+          />
+          {readinessLimitations.length === 0 ? (
+            <div className="empty">No readiness blockers are currently reported.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+              {readinessLimitations.map((item) => (
+                <div key={item} className="stat-box" style={{ fontSize: 12 }}>
+                  <span className="badge badge-warn" style={{ marginRight: 8 }}>
+                    Review
+                  </span>
+                  {item}
+                </div>
+              ))}
+            </div>
+          )}
+          {firstRunProof ? (
+            <JsonDetails data={firstRunProof} label="First-run proof result" />
+          ) : null}
+          <JsonDetails data={readinessEvidence} label="Production readiness evidence pack" />
+        </div>
+
         <div className="card">
           <div className="card-title" style={{ marginBottom: 12 }}>
             Support Snapshot

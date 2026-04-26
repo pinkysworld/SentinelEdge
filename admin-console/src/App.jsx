@@ -1234,7 +1234,7 @@ export default function App() {
           if (targetPath) navigate(targetPath);
         }}
       />
-      <NotificationToast />
+      <NotificationToast active={authenticated} />
       {authenticated && showOnboarding && (
         <OnboardingWizard
           onComplete={() => {

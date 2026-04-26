@@ -53,6 +53,7 @@ import {
   ToggleSwitch,
   ValidationIssues,
 } from './settings/components.jsx';
+import { SettingsTabs } from './settings/tabs.jsx';
 
 export default function Settings() {
   const toast = useToast();
@@ -1134,19 +1135,7 @@ export default function Settings() {
 
   return (
     <div>
-      <div className="tabs" role="tablist" aria-label="Settings sections">
-        {['config', 'monitoring', 'integrations', 'flags', 'team', 'admin'].map((t) => (
-          <button
-            key={t}
-            className={`tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
-            role="tab"
-            aria-selected={tab === t}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+      <SettingsTabs activeTab={tab} onChange={setTab} />
 
       {tab === 'config' && (
         <>
@@ -2003,6 +1992,18 @@ export default function Settings() {
                                 {p.validation?.mapping_count || 0} mapping
                                 {(p.validation?.mapping_count || 0) === 1 ? '' : 's'}
                               </div>
+                              {p.launch_validation && (
+                                <div style={{ fontSize: 12, marginTop: 4, opacity: 0.75 }}>
+                                  Callback{' '}
+                                  {p.launch_validation.callback_matches_console_route
+                                    ? 'matches'
+                                    : 'needs review'}{' '}
+                                  • credentials{' '}
+                                  {p.launch_validation.client_credentials_present
+                                    ? 'present'
+                                    : 'missing'}
+                                </div>
+                              )}
                             </td>
                             <td>
                               <div className="btn-group" style={{ flexWrap: 'wrap' }}>

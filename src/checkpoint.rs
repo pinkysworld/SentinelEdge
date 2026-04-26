@@ -1,3 +1,12 @@
+//! In-memory checkpoint capture and restore support.
+//!
+//! `CheckpointStore` keeps detector/device rollback snapshots inside the
+//! running process. These entries are not serialized by this module and are
+//! therefore protected by the server process boundary rather than by a file
+//! authenticity scheme. If future work persists checkpoints or accepts them
+//! from another trust boundary, add keyed authenticity (for example HMAC over
+//! the serialized entry) before loading them back into detector state.
+
 use std::collections::VecDeque;
 
 use crate::actions::{ActionResult, DeviceController, DeviceStateSnapshot};

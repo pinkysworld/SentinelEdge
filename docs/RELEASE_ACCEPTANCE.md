@@ -14,9 +14,12 @@ The wrapper is implemented in `scripts/release_acceptance.sh` and runs these che
 
 1. `admin-console` production build via `npm run build`.
 2. Root `cargo build` so embedded assets and backend routes match the browser bundle.
-3. Published marketing-site link validation across `site/*.html`.
-4. Live admin reachability check against `WARDEX_BASE_URL`.
-5. Routed browser release suite:
+3. API/OpenAPI/SDK contract parity via `python3 scripts/check_contract_parity.py`.
+4. Release-document consistency via `python3 scripts/validate_release_docs.py`, including `STATUS`, roadmap, feature UI coverage, and routed smoke mappings.
+5. Published marketing-site link validation across `site/*.html`.
+6. Managed mode only: start a temporary local Wardex instance on a loopback port with a cloned acceptance config that disables request throttling for the smoke run.
+7. Live admin reachability check against `WARDEX_BASE_URL`.
+8. Routed browser release suite:
    - `tests/playwright/live_release_smoke.spec.js`
    - `tests/playwright/advanced_console_workflows.spec.js`
    - `tests/playwright/enterprise_console_smoke.spec.js`
@@ -27,13 +30,23 @@ The wrapper is implemented in `scripts/release_acceptance.sh` and runs these che
 ## Preconditions
 
 - `admin-console/node_modules` must exist.
-- A local or remote Wardex instance must already be running at `WARDEX_BASE_URL`.
-- `WARDEX_ADMIN_TOKEN` must be set, or a token file must exist at `/tmp/wardex_smoke_token`.
+- Managed mode uses the local `var/wardex.toml` as its base config and starts its own temporary Wardex instance automatically.
+- External mode still expects a local or remote Wardex instance to already be running at `WARDEX_BASE_URL`.
+- `WARDEX_ADMIN_TOKEN` can be set explicitly; otherwise the wrapper uses `WARDEX_ADMIN_TOKEN_FILE` when it exists, and managed mode will generate a temporary token if neither is provided.
 
 Default values:
 
-- `WARDEX_BASE_URL=http://127.0.0.1:8080`
+- `WARDEX_RELEASE_ACCEPTANCE_MODE=managed`
+- `WARDEX_BASE_URL=http://127.0.0.1:<auto-picked-port>` in managed mode, `http://127.0.0.1:8080` in external mode
 - `WARDEX_ADMIN_TOKEN_FILE=/tmp/wardex_smoke_token`
+
+To target an already running instance instead of letting the wrapper self-host one:
+
+```bash
+WARDEX_RELEASE_ACCEPTANCE_MODE=external \
+WARDEX_BASE_URL=http://127.0.0.1:8080 \
+bash scripts/release_acceptance.sh
+```
 
 ## Manual release review
 

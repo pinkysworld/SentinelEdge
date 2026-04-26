@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::event_forward::EventStore;
 use crate::incident::{Incident, IncidentStore};
 use crate::runtime::{RunResult, RunSummary};
-use crate::support::ReportExecutionContext;
+use crate::support::{ReportArtifactMetadata, ReportExecutionContext};
 use crate::telemetry::MitreAttack;
 
 fn html_escape(s: &str) -> String {
@@ -171,6 +171,8 @@ pub struct StoredReport {
     pub report_type: String,
     #[serde(default)]
     pub execution_context: Option<ReportExecutionContext>,
+    #[serde(default)]
+    pub artifact_metadata: Option<ReportArtifactMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -256,11 +258,32 @@ impl ReportStore {
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
+        let artifact = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({}));
+        let input = serde_json::json!({
+            "report_id": id,
+            "report_type": report_type,
+            "generated_at": report.generated_at.clone(),
+            "execution_context": execution_context.clone(),
+        });
+        let scope = execution_context
+            .as_ref()
+            .and_then(|context| context.source.as_deref())
+            .filter(|source| !source.trim().is_empty())
+            .unwrap_or("global")
+            .to_string();
         let stored = StoredReport {
             id,
             generated_at: report.generated_at.clone(),
             report,
             report_type: report_type.to_string(),
+            artifact_metadata: Some(ReportArtifactMetadata::from_payload(
+                &scope,
+                Some(id.to_string()),
+                "wardex-runtime",
+                &input,
+                &artifact,
+                execution_context.as_ref(),
+            )),
             execution_context,
         };
         self.reports.push(stored);
@@ -289,6 +312,7 @@ impl ReportStore {
                     "alert_count": r.report.summary.alert_count,
                     "critical_count": r.report.summary.critical_count,
                     "execution_context": r.execution_context,
+                    "artifact_metadata": r.artifact_metadata,
                 })
             })
             .collect()
@@ -316,6 +340,29 @@ impl ReportStore {
     ) -> Option<StoredReport> {
         let report = self.reports.iter_mut().find(|report| report.id == id)?;
         report.execution_context = execution_context;
+        let artifact =
+            serde_json::to_value(&report.report).unwrap_or_else(|_| serde_json::json!({}));
+        let input = serde_json::json!({
+            "report_id": report.id,
+            "report_type": report.report_type,
+            "generated_at": report.generated_at.clone(),
+            "execution_context": report.execution_context.clone(),
+        });
+        let scope = report
+            .execution_context
+            .as_ref()
+            .and_then(|context| context.source.as_deref())
+            .filter(|source| !source.trim().is_empty())
+            .unwrap_or("global")
+            .to_string();
+        report.artifact_metadata = Some(ReportArtifactMetadata::from_payload(
+            &scope,
+            Some(report.id.to_string()),
+            "wardex-runtime",
+            &input,
+            &artifact,
+            report.execution_context.as_ref(),
+        ));
         let updated = report.clone();
         self.persist();
         Some(updated)
@@ -601,6 +648,20 @@ mod tests {
                 .and_then(|value| value.case_id.as_deref()),
             Some("42")
         );
+        let updated_metadata = updated
+            .artifact_metadata
+            .as_ref()
+            .expect("updated report should include artifact metadata");
+        assert_eq!(updated_metadata.scope, "case");
+        assert_eq!(
+            updated_metadata
+                .replayable_context_id
+                .as_deref()
+                .map(str::len),
+            Some(64)
+        );
+        assert!(!updated_metadata.input_hash.is_empty());
+        assert!(!updated_metadata.artifact_hash.is_empty());
 
         let reloaded = ReportStore::new(&path);
         let persisted = reloaded.get(report_id).expect("report should persist");
@@ -610,6 +671,10 @@ mod tests {
                 .as_ref()
                 .and_then(|value| value.investigation_id.as_deref()),
             Some("inv-7")
+        );
+        assert!(
+            persisted.artifact_metadata.is_some(),
+            "artifact metadata should persist"
         );
 
         let _ = std::fs::remove_file(path);

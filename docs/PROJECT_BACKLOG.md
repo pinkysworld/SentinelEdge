@@ -334,14 +334,31 @@ This backlog lists the next concrete tasks in build order.
 - [x] T272: Continue the `WorkspaceEmptyState` migration into Assistant Workspace (5 sites), Fleet Agents, and Threat Detection rule list / detail.
 - [x] T273: Refresh release docs, OpenAPI metadata, helm/otlp values, status, roadmap, SDK notes, and website surfaces for `v0.53.7`.
 
+## Phase 39 — Session hardening, lifecycle analytics, and release readiness
+
+- [x] T274: Exchange pasted admin-console tokens for HttpOnly `wardex_session` cookies and remove legacy localStorage token persistence while preserving bearer-token automation compatibility.
+- [x] T275: Add persisted collector lifecycle analytics with validation run history, last-success/error checkpoints, retry/backoff state, freshness, failure streaks, and 24h ingestion counts.
+- [x] T276: Add remediation change-review and recovery-history APIs plus Infrastructure workflow cards for malware verdicts and remediation candidates.
+- [x] T277: Add a production demo lab entry point in Help & Docs backed by the first-run proof scenario.
+- [x] T278: Update SDK/session helpers, release-doc drift validation, website, OpenAPI, Helm/OTLP, reproducibility, status, roadmap, and release metadata for `v0.53.8`.
+
+## Phase 40 — Roadmap closure: approval proofs, collector pivots, and IdP validation
+
+- [x] T279: Add signed remediation approval records with risk-aware multi-approver quorum, approval-chain digests, and generated rollback proof.
+- [x] T280: Add collector ingestion evidence and SOC/Infrastructure pivots to cloud, identity, and SaaS collector status.
+- [x] T281: Expand production demo lab proof across cloud, identity, SaaS, UEBA, NDR, and attack-graph evidence surfaces.
+- [x] T282: Surface IdP launch-validation checks for metadata, callback route alignment, credentials, mappings, and test-login paths.
+- [x] T283: Extend Python and TypeScript SDK helpers for collector status, remediation reviews, and signed remediation approvals.
+
 ## Recommended next build order
 
-Phases 0–36 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector ingestion timelines, and expanded live workflow smoke coverage are all in place.
+Phases 0–40 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector lifecycle analytics, remediation change-review history, signed approval-chain proof, collector ingestion pivots, IdP launch validation, and expanded live workflow smoke coverage are all in place.
 
 Recommended next sequence:
 
-1. Expand collector timeline depth with persisted ingestion counters and last-success checkpoints once live collection history is retained per provider.
-2. Extend the shipped infrastructure remediation and malware-verdict explorer into broader change-review, approval, and recovery-history workflows.
+1. Add browser regression coverage for signed remediation approvals, rollback-proof display, collector pivots, and IdP launch validation.
+2. Keep admin-console API helpers and generated SDK methods aligned as new workflow endpoints are added.
+3. Expand rollback proof from planned recovery evidence into adapter-backed execution where platform permissions allow it.
 
 See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the broader professional roadmap beyond the current implementation order.
 

@@ -196,6 +196,8 @@ body {
   min-height: var(--topbar-h);
   background: var(--bg-topbar);
   border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 1301;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -607,6 +609,7 @@ tr:hover td {
   top: 16px;
   right: 16px;
   z-index: 9999;
+  pointer-events: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -619,6 +622,7 @@ tr:hover td {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   animation: slideIn 0.3s ease;
   min-width: 250px;
+  pointer-events: none;
 }
 .toast-info {
   background: var(--accent);
@@ -876,7 +880,10 @@ tr:hover td {
 
 .drawer-overlay {
   position: fixed;
-  inset: 0;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: rgba(15, 17, 23, 0.58);
   display: flex;
   justify-content: flex-end;
@@ -886,7 +893,7 @@ tr:hover td {
 
 .drawer-panel {
   width: min(620px, 92vw);
-  height: 100vh;
+  height: calc(100vh - var(--topbar-h));
   background: var(--bg-card);
   border-left: 1px solid var(--border);
   box-shadow: -16px 0 32px rgba(0, 0, 0, 0.28);

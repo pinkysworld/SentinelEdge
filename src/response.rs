@@ -141,6 +141,12 @@ pub struct ResponseAuditEntry {
     pub timestamp: String,
     pub dry_run: bool,
     pub approvals: Vec<ApprovalRecord>,
+    pub actor: String,
+    pub reason: String,
+    pub input_context: serde_json::Value,
+    pub dry_run_result: Option<DryRunResult>,
+    pub execution_result: Option<String>,
+    pub reversal_path: String,
 }
 
 impl ResponseOrchestrator {
@@ -417,6 +423,10 @@ impl ResponseOrchestrator {
     }
 
     fn record_audit(&self, req: &ResponseRequest) {
+        self.record_audit_with_result(req, None);
+    }
+
+    fn record_audit_with_result(&self, req: &ResponseRequest, execution_result: Option<String>) {
         self.audit_ledger
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -429,6 +439,25 @@ impl ResponseOrchestrator {
                 timestamp: req.requested_at.clone(),
                 dry_run: req.dry_run,
                 approvals: req.approvals.clone(),
+                actor: req.requested_by.clone(),
+                reason: req.reason.clone(),
+                input_context: response_input_context(req),
+                dry_run_result: req.dry_run.then(|| {
+                    let Some(blast_radius) = req.blast_radius.clone() else {
+                        return dry_run_simulate(self, &req.action, &req.target);
+                    };
+                    DryRunResult {
+                        request_id: req.id.clone(),
+                        would_execute: req.tier != ActionTier::BreakGlass,
+                        tier: req.tier,
+                        blast_radius,
+                        is_protected: req.is_protected_asset,
+                        approvals_required: approvals_required(req.tier),
+                        simulated_effects: simulated_effects(&req.action, &req.target),
+                    }
+                }),
+                execution_result,
+                reversal_path: reversal_path(&req.action, &req.target),
             });
     }
 
@@ -445,6 +474,27 @@ impl ResponseOrchestrator {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 dry_run: req.dry_run,
                 approvals: req.approvals.clone(),
+                actor: req
+                    .approvals
+                    .last()
+                    .map(|record| record.approver.clone())
+                    .unwrap_or_else(|| req.requested_by.clone()),
+                reason: req.reason.clone(),
+                input_context: response_input_context(req),
+                dry_run_result: req.dry_run.then(|| DryRunResult {
+                    request_id: req.id.clone(),
+                    would_execute: req.tier != ActionTier::BreakGlass,
+                    tier: req.tier,
+                    blast_radius: req
+                        .blast_radius
+                        .clone()
+                        .unwrap_or_else(|| self.assess_blast_radius(&req.action, &req.target)),
+                    is_protected: req.is_protected_asset,
+                    approvals_required: approvals_required(req.tier),
+                    simulated_effects: simulated_effects(&req.action, &req.target),
+                }),
+                execution_result: None,
+                reversal_path: reversal_path(&req.action, &req.target),
             });
     }
 
@@ -502,12 +552,12 @@ impl ResponseOrchestrator {
                 ),
             };
             req.status = ApprovalStatus::Executed;
-            executed.push(description);
-            executed_reqs.push(req.clone());
+            executed.push(description.clone());
+            executed_reqs.push((req.clone(), description));
         }
         drop(requests);
-        for req in &executed_reqs {
-            self.record_audit(req);
+        for (req, description) in &executed_reqs {
+            self.record_audit_with_result(req, Some(description.clone()));
         }
         executed
     }
@@ -550,31 +600,6 @@ pub fn dry_run_simulate(
         ActionTier::BreakGlass => usize::MAX,
     };
 
-    let mut effects = Vec::new();
-    match action {
-        ResponseAction::KillProcess { pid, process_name } => {
-            effects.push(format!("Would kill process {} (PID {})", process_name, pid))
-        }
-        ResponseAction::Isolate => effects.push(format!("Would isolate host {}", target.hostname)),
-        ResponseAction::BlockIp { ip } => effects.push(format!("Would block IP {}", ip)),
-        ResponseAction::QuarantineFile { path } => {
-            effects.push(format!("Would quarantine file {}", path))
-        }
-        ResponseAction::DisableAccount { username } => {
-            effects.push(format!("Would disable account {}", username))
-        }
-        ResponseAction::Throttle { rate_limit_kbps } => {
-            effects.push(format!("Would throttle to {} kbps", rate_limit_kbps))
-        }
-        ResponseAction::RollbackConfig { config_name } => {
-            effects.push(format!("Would rollback config {}", config_name))
-        }
-        ResponseAction::Alert => effects.push("Would generate alert notification".into()),
-        ResponseAction::Custom { name, .. } => {
-            effects.push(format!("Would execute custom action: {}", name))
-        }
-    }
-
     DryRunResult {
         request_id: "dry-run".into(),
         would_execute: tier != ActionTier::BreakGlass,
@@ -582,7 +607,94 @@ pub fn dry_run_simulate(
         blast_radius: blast,
         is_protected,
         approvals_required,
-        simulated_effects: effects,
+        simulated_effects: simulated_effects(action, target),
+    }
+}
+
+fn approvals_required(tier: ActionTier) -> usize {
+    match tier {
+        ActionTier::Auto => 0,
+        ActionTier::SingleApproval => 1,
+        ActionTier::DualApproval => 2,
+        ActionTier::BreakGlass => usize::MAX,
+    }
+}
+
+fn response_input_context(req: &ResponseRequest) -> serde_json::Value {
+    serde_json::json!({
+        "target": req.target.clone(),
+        "severity": req.severity.clone(),
+        "tier": req.tier,
+        "dry_run": req.dry_run,
+        "protected_asset": req.is_protected_asset,
+        "blast_radius": req.blast_radius.clone(),
+        "requested_at": req.requested_at.clone(),
+    })
+}
+
+fn simulated_effects(action: &ResponseAction, target: &ResponseTarget) -> Vec<String> {
+    match action {
+        ResponseAction::KillProcess { pid, process_name } => {
+            vec![format!("Would kill process {} (PID {})", process_name, pid)]
+        }
+        ResponseAction::Isolate => vec![format!("Would isolate host {}", target.hostname)],
+        ResponseAction::BlockIp { ip } => vec![format!("Would block IP {}", ip)],
+        ResponseAction::QuarantineFile { path } => {
+            vec![format!("Would quarantine file {}", path)]
+        }
+        ResponseAction::DisableAccount { username } => {
+            vec![format!("Would disable account {}", username)]
+        }
+        ResponseAction::Throttle { rate_limit_kbps } => {
+            vec![format!("Would throttle to {} kbps", rate_limit_kbps)]
+        }
+        ResponseAction::RollbackConfig { config_name } => {
+            vec![format!("Would rollback config {}", config_name)]
+        }
+        ResponseAction::Alert => vec!["Would generate alert notification".into()],
+        ResponseAction::Custom { name, .. } => {
+            vec![format!("Would execute custom action: {}", name)]
+        }
+    }
+}
+
+fn reversal_path(action: &ResponseAction, target: &ResponseTarget) -> String {
+    match action {
+        ResponseAction::Alert => "No reversal required; notification-only action.".to_string(),
+        ResponseAction::Isolate => format!(
+            "Remove host {} from isolation and verify heartbeat plus policy sync.",
+            target.hostname
+        ),
+        ResponseAction::Throttle { .. } => format!(
+            "Restore normal rate limits for {} and verify service latency.",
+            target.hostname
+        ),
+        ResponseAction::KillProcess { process_name, .. } => {
+            format!(
+                "Restart {process_name} only from a verified clean binary if business impact requires it."
+            )
+        }
+        ResponseAction::QuarantineFile { path } => {
+            format!("Release {path} from quarantine only after hash, YARA, and provenance review.")
+        }
+        ResponseAction::BlockIp { ip } => {
+            format!(
+                "Remove block for {ip} from network controls and confirm no active incident dependency."
+            )
+        }
+        ResponseAction::DisableAccount { username } => {
+            format!(
+                "Re-enable {username} after credential reset, MFA verification, and owner approval."
+            )
+        }
+        ResponseAction::RollbackConfig { config_name } => {
+            format!(
+                "Reapply the superseded {config_name} config through change control if rollback is no longer needed."
+            )
+        }
+        ResponseAction::Custom { name, .. } => {
+            format!("Follow the documented reversal procedure for custom action {name}.")
+        }
     }
 }
 
@@ -891,6 +1003,37 @@ mod tests {
         let ledger = orch.audit_ledger();
         assert!(!ledger.is_empty());
         assert_eq!(ledger[0].request_id, "r8");
+        assert_eq!(ledger[0].actor, "system");
+        assert_eq!(ledger[0].reason, "test");
+        assert!(ledger[0].input_context.is_object());
+        assert!(ledger[0].reversal_path.contains("No reversal required"));
+    }
+
+    #[test]
+    fn dry_run_audit_record_is_reopenable() {
+        let orch = ResponseOrchestrator::new();
+        let req = make_request("r8-dry", ResponseAction::Isolate, "host-1", true);
+        orch.submit(req).unwrap();
+        orch.approve(
+            "r8-dry",
+            ApprovalRecord {
+                approver: "analyst".into(),
+                decision: ApprovalDecision::Approve,
+                timestamp: "now".into(),
+                comment: Some("reviewed dry-run".into()),
+            },
+        )
+        .unwrap();
+
+        let ledger = orch.audit_ledger();
+        let completed = ledger
+            .iter()
+            .find(|entry| entry.status == ApprovalStatus::DryRunCompleted)
+            .expect("dry-run completion audit entry");
+        assert_eq!(completed.actor, "analyst");
+        assert!(completed.dry_run_result.is_some());
+        assert_eq!(completed.input_context["target"]["hostname"], "host-1");
+        assert!(completed.reversal_path.contains("Remove host"));
     }
 
     #[test]

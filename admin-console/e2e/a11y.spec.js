@@ -1,6 +1,23 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { installAppMocks, resetStoredSession, seedAuthenticatedSession } from './support/mockApi.js';
+import {
+  installAppMocks,
+  resetStoredSession,
+  seedAuthenticatedSession,
+} from './support/mockApi.js';
+
+const STRICT_A11Y_LABELS = new Set(
+  (process.env.WARDEX_A11Y_STRICT || '')
+    .split(',')
+    .map((label) => label.trim())
+    .filter(Boolean),
+);
+
+function strictFor(label) {
+  return (
+    STRICT_A11Y_LABELS.has('1') || STRICT_A11Y_LABELS.has('all') || STRICT_A11Y_LABELS.has(label)
+  );
+}
 
 // ════════════════════════════════════════════════════════════════════
 // Accessibility smoke tests (advisory)
@@ -38,6 +55,9 @@ async function report(page, label) {
     console.log(`[a11y:${label}] details:`, JSON.stringify(summary, null, 2));
     // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] nodes:`, JSON.stringify(nodeDetails, null, 2));
+    if (strictFor(label)) {
+      expect(blocking, `strict a11y violations for ${label}`).toEqual([]);
+    }
   } else {
     // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] clean`);

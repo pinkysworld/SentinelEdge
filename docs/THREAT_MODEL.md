@@ -46,12 +46,12 @@ A compromised agent sends crafted telemetry to bias the detector baseline.
 - Adversarial harness validates detector resilience.
 
 ### AC-3: Checkpoint Tampering
-An attacker modifies checkpoint files to reset detection state.
+An attacker modifies checkpoint material to reset detection state.
 
 **Mitigations**:
-- CRC32 integrity check on checkpoint load.
-- Checkpoints stored in `var/` with OS-level permissions.
-- Planned: HMAC signing of checkpoint files (Phase 28+).
+- Runtime checkpoints are process-local in-memory snapshots; they are not loaded from `var/` by `src/checkpoint.rs`.
+- Filesystem durability for related evidence is covered by the audit hash chain, report artifact hashes, and OS-level permissions.
+- Future persisted checkpoint files must be keyed-authenticated before load, for example with HMAC over the serialized entry and metadata.
 
 ### AC-4: API Token Theft via Side-Channel
 Timing analysis of auth comparison reveals token bytes.

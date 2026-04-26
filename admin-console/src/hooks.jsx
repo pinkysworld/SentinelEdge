@@ -6,6 +6,7 @@ import {
   authCheck,
   authLogout,
   authSession,
+  createAuthSession,
   userPreferences as getUserPreferences,
   setUserPreferences as updateUserPreferences,
   wsConnect,
@@ -23,16 +24,20 @@ export function AuthProvider({ children }) {
   const [checking, setChecking] = useState(false);
 
   const connect = useCallback(async (token) => {
-    setToken(token);
+    const trimmed = token.trim();
+    setToken(trimmed);
     setChecking(true);
     try {
       await authCheck();
+      await createAuthSession();
+      setToken('');
       setAuthenticated(true);
-      localStorage.setItem('wardex_token', token);
+      localStorage.removeItem('wardex_token');
       return true;
     } catch {
       setAuthenticated(false);
       setToken('');
+      localStorage.removeItem('wardex_token');
       return false;
     } finally {
       setChecking(false);
@@ -48,7 +53,8 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('wardex_token');
   }, []);
 
-  // auto-reconnect from localStorage or an existing session cookie
+  // Auto-reconnect from an existing HttpOnly session cookie. Older console
+  // builds persisted bearer tokens in localStorage, so migrate and delete one.
   useEffect(() => {
     const saved = localStorage.getItem('wardex_token');
     let cancelled = false;
@@ -253,6 +259,23 @@ export function useToast() {
 
 // ── useApi hook ──────────────────────────────────────────────
 
+/**
+ * @template T
+ * @typedef {Object} UseApiResult
+ * @property {T | null} data
+ * @property {boolean} loading
+ * @property {unknown} error
+ * @property {() => Promise<void>} reload
+ */
+
+/**
+ * @template T
+ * @param {() => Promise<T>} fn
+ * @param {Array<unknown>} deps
+ * @param {{skip?: boolean}} opts
+ * @returns {UseApiResult<T>}
+ */
+
 export function useApi(fn, deps = [], opts = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(!opts.skip);
@@ -384,7 +407,11 @@ export function useInterval(callback, delayMs) {
   }, [callback]);
   useEffect(() => {
     if (delayMs == null) return;
-    const id = setInterval(() => savedCallback.current(), delayMs);
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      savedCallback.current();
+    };
+    const id = setInterval(tick, delayMs);
     return () => clearInterval(id);
   }, [delayMs]);
 }

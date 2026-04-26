@@ -59,6 +59,28 @@ jobs:
       - name: Check panic policy
         run: python3 scripts/check_panic_policy.py
 
+  contract-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - name: Check API and SDK contract parity
+        run: python3 scripts/check_contract_parity.py
+
+  release-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - name: Check release docs consistency
+        run: python3 scripts/validate_release_docs.py
+
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -247,6 +269,54 @@ jobs:
       - name: Playwright E2E tests
         run: npx playwright test --project=chromium
 
+  managed-release-acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin-console/package-lock.json
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Cache cargo registry & build
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-acceptance-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: release-acceptance-${{ runner.os }}-
+      - name: Install admin console dependencies
+        run: npm ci --prefix admin-console
+      - name: Install Playwright browser
+        run: cd admin-console && npx playwright install --with-deps chromium
+      - name: Run managed release acceptance
+        run: WARDEX_RELEASE_ACCEPTANCE_MODE=managed bash scripts/release_acceptance.sh
+      - name: Upload managed release acceptance Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: managed-release-acceptance-playwright
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload managed Wardex server log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: managed-release-acceptance-server-log
+          path: /tmp/wardex-release-acceptance-log-*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
   feature-flags:
     runs-on: ubuntu-latest
     steps:
@@ -378,6 +448,8 @@ jobs:
     if: always()
     needs:
       - test
+      - contract-parity
+      - release-docs
       - audit
       - deny
       - coverage
@@ -387,6 +459,7 @@ jobs:
       - semver-check
       - typescript-sdk
       - frontend
+      - managed-release-acceptance
       - feature-flags
       - sdk-generation
       - container-scan
