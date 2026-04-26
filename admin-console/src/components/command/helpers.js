@@ -110,7 +110,10 @@ export const asArray = (value, keys = []) => {
   return [];
 };
 
-export const normalizedStatus = (value) => String(value || '').trim().toLowerCase();
+export const normalizedStatus = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
 
 export const statusBadge = (value) => {
   const status = normalizedStatus(value);
@@ -152,7 +155,11 @@ export const connectorStatus = (connector, data) => {
     validation.status ||
     setup.status ||
     details.status ||
-    (setup.enabled || details.enabled ? 'configured' : connector.newLane ? 'setup_ready' : 'not configured');
+    (setup.enabled || details.enabled
+      ? 'configured'
+      : connector.newLane
+        ? 'setup_ready'
+        : 'not configured');
   const lastSuccess =
     setup.last_success_at || validation.last_success_at || details.last_success_at || null;
   return {

@@ -2,11 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as api from '../../api.js';
 import { JsonDetails, SideDrawer, SummaryGrid, WorkspaceEmptyState } from '../operator.jsx';
-import {
-  CONNECTOR_LANES,
-  defaultPlannedConnectorConfig,
-  statusBadge,
-} from './helpers.js';
+import { CONNECTOR_LANES, defaultPlannedConnectorConfig, statusBadge } from './helpers.js';
 
 const VALIDATE_CONNECTOR = {
   aws: api.validateAwsCollector,
@@ -125,18 +121,32 @@ function ConnectorDrawer({ drawer, connectorRows, onClose, onReload }) {
           <p className="hint">{selected.detail}</p>
           <div className="actions">
             {canSaveSample && (
-              <button className="btn" type="button" onClick={() => runAction('save')} disabled={busy}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => runAction('save')}
+                disabled={busy}
+              >
                 Save setup draft
               </button>
             )}
-            <button className="btn btn-primary" type="button" onClick={() => runAction('validate')} disabled={busy || !canValidate}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => runAction('validate')}
+              disabled={busy || !canValidate}
+            >
               {busy ? 'Running...' : 'Validate now'}
             </button>
           </div>
           <ActionResult result={result} />
         </>
       ) : (
-        <WorkspaceEmptyState compact title="No connectors loaded" description="Connector lanes will appear here after the command data refresh completes." />
+        <WorkspaceEmptyState
+          compact
+          title="No connectors loaded"
+          description="Connector lanes will appear here after the command data refresh completes."
+        />
       )}
     </SideDrawer>
   );
@@ -163,7 +173,11 @@ function RemediationDrawer({ drawer, reviews, onClose, onReload }) {
       });
       onReload?.();
     } catch (error) {
-      setResult({ ok: false, title: 'Review update failed', message: error?.message || String(error) });
+      setResult({
+        ok: false,
+        title: 'Review update failed',
+        message: error?.message || String(error),
+      });
     } finally {
       setBusy(false);
     }
@@ -175,13 +189,20 @@ function RemediationDrawer({ drawer, reviews, onClose, onReload }) {
       title="Remediation Approval"
       subtitle="Review blast radius, approval quorum, rollback proof, and signed approval status."
       onClose={onClose}
-      actions={<Link className="btn btn-sm" to="/infrastructure">Open infrastructure</Link>}
+      actions={
+        <Link className="btn btn-sm" to="/infrastructure">
+          Open infrastructure
+        </Link>
+      }
     >
       {reviews.length > 0 ? (
         <>
           <label className="field">
             <span>Change review</span>
-            <select value={selected?.id || ''} onChange={(event) => setSelectedId(event.target.value)}>
+            <select
+              value={selected?.id || ''}
+              onChange={(event) => setSelectedId(event.target.value)}
+            >
               {reviews.map((review) => (
                 <option key={review.id} value={review.id}>
                   {review.title || review.id}
@@ -200,13 +221,27 @@ function RemediationDrawer({ drawer, reviews, onClose, onReload }) {
           />
           <label className="field">
             <span>Approval comment</span>
-            <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={4} />
+            <textarea
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              rows={4}
+            />
           </label>
           <div className="actions">
-            <button className="btn" type="button" onClick={() => submitDecision('deny')} disabled={busy}>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => submitDecision('deny')}
+              disabled={busy}
+            >
               Deny
             </button>
-            <button className="btn btn-primary" type="button" onClick={() => submitDecision('approve')} disabled={busy}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => submitDecision('approve')}
+              disabled={busy}
+            >
               {busy ? 'Signing...' : 'Approve'}
             </button>
           </div>
@@ -214,7 +249,11 @@ function RemediationDrawer({ drawer, reviews, onClose, onReload }) {
           <ActionResult result={result} />
         </>
       ) : (
-        <WorkspaceEmptyState compact title="No reviews pending" description="New remediation reviews will appear here with approval quorum and rollback-proof state." />
+        <WorkspaceEmptyState
+          compact
+          title="No reviews pending"
+          description="New remediation reviews will appear here with approval quorum and rollback-proof state."
+        />
       )}
     </SideDrawer>
   );
@@ -252,13 +291,20 @@ function RuleReplayDrawer({ drawer, rules, suppressionCount, onClose, onReload }
       title="Rule Replay and Promotion"
       subtitle="Validate noisy or stale detections before suppression or promotion decisions."
       onClose={onClose}
-      actions={<Link className="btn btn-sm" to="/detection">Open detection</Link>}
+      actions={
+        <Link className="btn btn-sm" to="/detection">
+          Open detection
+        </Link>
+      }
     >
       {rules.length > 0 ? (
         <>
           <label className="field">
             <span>Rule</span>
-            <select value={selected?.id || ''} onChange={(event) => setSelectedId(event.target.value)}>
+            <select
+              value={selected?.id || ''}
+              onChange={(event) => setSelectedId(event.target.value)}
+            >
               {rules.map((rule) => (
                 <option key={rule.id} value={rule.id}>
                   {rule.name || rule.title || rule.id}
@@ -279,7 +325,10 @@ function RuleReplayDrawer({ drawer, rules, suppressionCount, onClose, onReload }
             <button className="btn btn-primary" type="button" onClick={runReplay} disabled={busy}>
               {busy ? 'Running replay...' : 'Run replay'}
             </button>
-            <Link className="btn" to={`/detection?rule=${encodeURIComponent(selected?.id || '')}&panel=promotion`}>
+            <Link
+              className="btn"
+              to={`/detection?rule=${encodeURIComponent(selected?.id || '')}&panel=promotion`}
+            >
               Promotion view
             </Link>
           </div>
@@ -287,7 +336,11 @@ function RuleReplayDrawer({ drawer, rules, suppressionCount, onClose, onReload }
           <ActionResult result={result} />
         </>
       ) : (
-        <WorkspaceEmptyState compact title="No rules need tuning" description="Noisy and stale rules will appear here when replay or suppression review is needed." />
+        <WorkspaceEmptyState
+          compact
+          title="No rules need tuning"
+          description="Noisy and stale rules will appear here when replay or suppression review is needed."
+        />
       )}
     </SideDrawer>
   );
@@ -301,7 +354,11 @@ function ReleaseDrawer({ drawer, releases, configData, sbomData, onClose }) {
       title="Release Readiness"
       subtitle="Check version inventory, SBOM state, package metadata, and rollback posture."
       onClose={onClose}
-      actions={<Link className="btn btn-sm" to="/infrastructure">Open rollouts</Link>}
+      actions={
+        <Link className="btn btn-sm" to="/infrastructure">
+          Open rollouts
+        </Link>
+      }
     >
       <SummaryGrid
         data={{
@@ -344,7 +401,11 @@ function EvidenceDrawer({ drawer, reportTemplates, complianceData, onClose, onRe
       });
       onReload?.();
     } catch (error) {
-      setResult({ ok: false, title: 'Evidence export failed', message: error?.message || String(error) });
+      setResult({
+        ok: false,
+        title: 'Evidence export failed',
+        message: error?.message || String(error),
+      });
     } finally {
       setBusy(false);
     }
@@ -356,12 +417,19 @@ function EvidenceDrawer({ drawer, reportTemplates, complianceData, onClose, onRe
       title="Compliance Evidence Pack"
       subtitle="Persist a report run from operational truth, release metadata, and compliance posture."
       onClose={onClose}
-      actions={<Link className="btn btn-sm" to="/reports">Open reports</Link>}
+      actions={
+        <Link className="btn btn-sm" to="/reports">
+          Open reports
+        </Link>
+      }
     >
       {reportTemplates.length > 0 && (
         <label className="field">
           <span>Template</span>
-          <select value={selected?.id || ''} onChange={(event) => setSelectedId(event.target.value)}>
+          <select
+            value={selected?.id || ''}
+            onChange={(event) => setSelectedId(event.target.value)}
+          >
             {reportTemplates.map((template) => (
               <option key={template.id || template.name} value={template.id || template.name}>
                 {template.name || template.title}
@@ -405,7 +473,12 @@ export default function CommandActionDrawers({
 
   return (
     <>
-      <ConnectorDrawer drawer={drawer} connectorRows={connectorRows} onClose={onClose} onReload={onReload} />
+      <ConnectorDrawer
+        drawer={drawer}
+        connectorRows={connectorRows}
+        onClose={onClose}
+        onReload={onReload}
+      />
       <RemediationDrawer drawer={drawer} reviews={reviews} onClose={onClose} onReload={onReload} />
       <RuleReplayDrawer
         drawer={drawer}

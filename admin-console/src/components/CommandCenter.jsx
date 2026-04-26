@@ -112,7 +112,9 @@ export default function CommandCenter() {
   const pendingReviews = reviews.filter((review) =>
     ['pending_review', 'pending', 'requested'].includes(normalizedStatus(review.approval_status)),
   );
-  const approvedReviews = reviews.filter((review) => normalizedStatus(review.approval_status) === 'approved');
+  const approvedReviews = reviews.filter(
+    (review) => normalizedStatus(review.approval_status) === 'approved',
+  );
   const readyRollbacks = reviews.filter((review) => Boolean(review.rollback_proof));
   const activeIncidents = incidents.filter(
     (incident) => !['closed', 'resolved', 'contained'].includes(normalizedStatus(incident.status)),
@@ -125,11 +127,16 @@ export default function CommandCenter() {
     ...connectorStatus(connector, data),
   }));
   const connectorIssues = connectorRows.filter(
-    (connector) => !['ok', 'ready', 'healthy', 'connected'].includes(normalizedStatus(connector.status)),
+    (connector) =>
+      !['ok', 'ready', 'healthy', 'connected'].includes(normalizedStatus(connector.status)),
   );
-  const activeRelease = releases[0] || data.updatesData?.current || data.updatesData?.latest || null;
+  const activeRelease =
+    releases[0] || data.updatesData?.current || data.updatesData?.latest || null;
   const complianceStatus =
-    data.complianceData?.status || data.complianceData?.overall_status || data.complianceData?.state || 'unknown';
+    data.complianceData?.status ||
+    data.complianceData?.overall_status ||
+    data.complianceData?.state ||
+    'unknown';
   const assistantMode = data.assistantStatus?.mode || 'retrieval-only';
   const assistantGuardrailTone = assistantMode === 'retrieval-only' ? 'badge-info' : 'badge-warn';
   const evidenceBoundaryWarnings = [
@@ -278,30 +285,47 @@ export default function CommandCenter() {
           eyebrow="Incident Command Center"
           title="Resolve incidents without losing context"
           description="Open cases, current incidents, response pressure, and evidence-export paths stay visible together."
-          actions={<Link className="btn btn-sm" to="/soc">Open investigation workspace</Link>}
+          actions={
+            <Link className="btn btn-sm" to="/soc">
+              Open investigation workspace
+            </Link>
+          }
         >
           {activeIncidents.length > 0 ? (
-            activeIncidents.slice(0, 4).map((incident) => (
-              <WorkItem
-                key={incident.id || incident.title}
-                title={incident.title || incident.name || `Incident ${incident.id}`}
-                detail={`${incident.status || 'open'} - ${incident.severity || incident.priority || 'unscored'} - ${compactTimestamp(incident.updated_at || incident.created_at)}`}
-                badge={incident.severity || incident.priority || 'open'}
-                tone={riskBadge(incident.severity || incident.priority)}
-                to={buildHref('/soc', { params: { incident: incident.id || undefined } })}
-              />
-            ))
+            activeIncidents
+              .slice(0, 4)
+              .map((incident) => (
+                <WorkItem
+                  key={incident.id || incident.title}
+                  title={incident.title || incident.name || `Incident ${incident.id}`}
+                  detail={`${incident.status || 'open'} - ${incident.severity || incident.priority || 'unscored'} - ${compactTimestamp(incident.updated_at || incident.created_at)}`}
+                  badge={incident.severity || incident.priority || 'open'}
+                  tone={riskBadge(incident.severity || incident.priority)}
+                  to={buildHref('/soc', { params: { incident: incident.id || undefined } })}
+                />
+              ))
           ) : (
-            <WorkspaceEmptyState compact title="No active incidents loaded" description="Live incident, case, rollback, and report context will appear here as soon as data is available." />
+            <WorkspaceEmptyState
+              compact
+              title="No active incidents loaded"
+              description="Live incident, case, rollback, and report context will appear here as soon as data is available."
+            />
           )}
-          <SummaryGrid data={{ queue: data.queueStats || {}, response: data.responseStats || {} }} limit={4} />
+          <SummaryGrid
+            data={{ queue: data.queueStats || {}, response: data.responseStats || {} }}
+            limit={4}
+          />
         </CommandSection>
 
         <CommandSection
           eyebrow="Connector Onboarding Wizard"
           title="Guide every collector from setup to proof"
           description="Each lane needs saved config, connection validation, sample event preview, and recent data proof."
-          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('connectors')}>Validate connectors</button>}
+          actions={
+            <button className="btn btn-sm" type="button" onClick={() => openDrawer('connectors')}>
+              Validate connectors
+            </button>
+          }
         >
           <div className="table-wrap">
             <table className="data-table compact-table">
@@ -317,13 +341,19 @@ export default function CommandCenter() {
                 {connectorRows.map((connector) => (
                   <tr key={connector.id}>
                     <td>
-                      <button className="btn-link command-inline-action" type="button" onClick={() => openDrawer('connectors', connector)}>
+                      <button
+                        className="btn-link command-inline-action"
+                        type="button"
+                        onClick={() => openDrawer('connectors', connector)}
+                      >
                         {connector.label}
                       </button>
                     </td>
                     <td>{connector.category}</td>
                     <td>
-                      <span className={`badge ${statusBadge(connector.status)}`}>{connector.status}</span>
+                      <span className={`badge ${statusBadge(connector.status)}`}>
+                        {connector.status}
+                      </span>
                       <div className="hint">{connector.detail}</div>
                     </td>
                     <td>{connector.sample}</td>
@@ -339,7 +369,11 @@ export default function CommandCenter() {
           eyebrow="Detection Quality Dashboard"
           title="Track noisy, stale, and suppression-heavy detections"
           description="Precision, false positives, tuning debt, and ATT&CK coverage work are visible before promotion."
-          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('rules')}>Run replay</button>}
+          actions={
+            <button className="btn btn-sm" type="button" onClick={() => openDrawer('rules')}>
+              Run replay
+            </button>
+          }
         >
           <SummaryGrid
             data={{
@@ -367,13 +401,19 @@ export default function CommandCenter() {
           eyebrow="Release and Upgrade Center"
           title="Make upgrades auditable before operators click deploy"
           description="The release lane connects version inventory, SBOM, package readiness, and rollback posture."
-          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('release')}>Check readiness</button>}
+          actions={
+            <button className="btn btn-sm" type="button" onClick={() => openDrawer('release')}>
+              Check readiness
+            </button>
+          }
         >
           <SummaryGrid
             data={{
-              current_version: data.configData?.version || data.configData?.app_version || 'unknown',
+              current_version:
+                data.configData?.version || data.configData?.app_version || 'unknown',
               latest_release: activeRelease?.version || activeRelease?.tag || 'unknown',
-              sbom_components: data.sbomData?.components?.length || data.sbomData?.component_count || 0,
+              sbom_components:
+                data.sbomData?.components?.length || data.sbomData?.component_count || 0,
               release_count: releases.length,
             }}
             limit={4}
@@ -382,7 +422,11 @@ export default function CommandCenter() {
             <WorkItem
               key={release.version || release.tag || release.id}
               title={release.version || release.tag || release.name || 'Release candidate'}
-              detail={release.notes || release.summary || compactTimestamp(release.created_at || release.published_at)}
+              detail={
+                release.notes ||
+                release.summary ||
+                compactTimestamp(release.created_at || release.published_at)
+              }
               badge={release.status || 'candidate'}
               tone={statusBadge(release.status)}
               onClick={() => openDrawer('release', release)}
@@ -394,30 +438,51 @@ export default function CommandCenter() {
           eyebrow="Guided Remediation Approval Flow"
           title="Show blast radius before live execution"
           description="Approvals, required approver count, rollback proof, dry-run evidence, and typed-host gates stay together."
-          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('remediation')}>Review changes</button>}
+          actions={
+            <button className="btn btn-sm" type="button" onClick={() => openDrawer('remediation')}>
+              Review changes
+            </button>
+          }
         >
           {reviews.length > 0 ? (
-            reviews.slice(0, 5).map((review) => (
-              <WorkItem
-                key={review.id || review.title}
-                title={review.title || review.change_type || 'Remediation review'}
-                detail={`${review.asset_id || 'unscoped'} - ${review.approvals?.length || 0}/${review.required_approvers || 1} approvals - rollback ${review.rollback_proof ? 'ready' : 'pending'}`}
-                badge={review.approval_status || 'pending'}
-                tone={statusBadge(review.approval_status)}
-                onClick={() => openDrawer('remediation', review)}
-              />
-            ))
+            reviews
+              .slice(0, 5)
+              .map((review) => (
+                <WorkItem
+                  key={review.id || review.title}
+                  title={review.title || review.change_type || 'Remediation review'}
+                  detail={`${review.asset_id || 'unscoped'} - ${review.approvals?.length || 0}/${review.required_approvers || 1} approvals - rollback ${review.rollback_proof ? 'ready' : 'pending'}`}
+                  badge={review.approval_status || 'pending'}
+                  tone={statusBadge(review.approval_status)}
+                  onClick={() => openDrawer('remediation', review)}
+                />
+              ))
           ) : (
-            <WorkspaceEmptyState compact title="No remediation reviews loaded" description="Live rollback requests will appear here with blast radius, approval chain, and rollback proof state." />
+            <WorkspaceEmptyState
+              compact
+              title="No remediation reviews loaded"
+              description="Live rollback requests will appear here with blast radius, approval chain, and rollback proof state."
+            />
           )}
-          <SummaryGrid data={{ pending: pendingReviews.length, approved: approvedReviews.length, rollback_ready: readyRollbacks.length }} limit={3} />
+          <SummaryGrid
+            data={{
+              pending: pendingReviews.length,
+              approved: approvedReviews.length,
+              rollback_ready: readyRollbacks.length,
+            }}
+            limit={3}
+          />
         </CommandSection>
 
         <CommandSection
           eyebrow="AI Analyst Evidence Boundaries"
           title="Keep assistant answers inside cited evidence"
           description="Assistant output declares scope, evidence, confidence, and uncertainty before it becomes action."
-          actions={<Link className="btn btn-sm" to="/assistant">Open assistant</Link>}
+          actions={
+            <Link className="btn btn-sm" to="/assistant">
+              Open assistant
+            </Link>
+          }
         >
           <SummaryGrid
             data={{
@@ -429,7 +494,12 @@ export default function CommandCenter() {
             limit={4}
           />
           {evidenceBoundaryWarnings.map((warning) => (
-            <WorkItem key={warning} title={warning} badge="guardrail" tone={assistantGuardrailTone} />
+            <WorkItem
+              key={warning}
+              title={warning}
+              badge="guardrail"
+              tone={assistantGuardrailTone}
+            />
           ))}
         </CommandSection>
 
@@ -437,7 +507,11 @@ export default function CommandCenter() {
           eyebrow="Attack Storytelling"
           title="Turn detections into a readable attack narrative"
           description="Incident storylines and graph pivots explain initial access, lateral movement, containment, and impact."
-          actions={<Link className="btn btn-sm" to="/attack-graph">Open attack graph</Link>}
+          actions={
+            <Link className="btn btn-sm" to="/attack-graph">
+              Open attack graph
+            </Link>
+          }
         >
           {activeIncidents.slice(0, 4).map((incident) => (
             <WorkItem
@@ -446,11 +520,17 @@ export default function CommandCenter() {
               detail="Open storyline, graph pivot, and report export context."
               badge="storyline"
               tone="badge-info"
-              to={buildHref('/soc', { params: { incident: incident.id || undefined, incidentPanel: 'storyline' } })}
+              to={buildHref('/soc', {
+                params: { incident: incident.id || undefined, incidentPanel: 'storyline' },
+              })}
             />
           ))}
           {activeIncidents.length === 0 && (
-            <WorkspaceEmptyState compact title="No attack stories queued" description="The next incident with linked evidence will expose storyline and graph pivots here." />
+            <WorkspaceEmptyState
+              compact
+              title="No attack stories queued"
+              description="The next incident with linked evidence will expose storyline and graph pivots here."
+            />
           )}
         </CommandSection>
 
@@ -458,7 +538,11 @@ export default function CommandCenter() {
           eyebrow="Tenant and Team RBAC Polish"
           title="Preview access risk before role changes"
           description="Role templates, scoped API keys, JIT admin elevation, and access-change audit checks are tracked from this lane."
-          actions={<Link className="btn btn-sm" to="/settings">Open identity settings</Link>}
+          actions={
+            <Link className="btn btn-sm" to="/settings">
+              Open identity settings
+            </Link>
+          }
         >
           <SummaryGrid
             data={{
@@ -484,7 +568,11 @@ export default function CommandCenter() {
           eyebrow="Rule Tuning Workflow"
           title="Move from false-positive feedback to safe promotion"
           description="Noisy rule triage, suppression drafts, replay validation, and promotion checklist live in one flow."
-          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('rules')}>Open checklist</button>}
+          actions={
+            <button className="btn btn-sm" type="button" onClick={() => openDrawer('rules')}>
+              Open checklist
+            </button>
+          }
         >
           {(staleRules.length > 0 ? staleRules : noisyRules).slice(0, 4).map((rule) => (
             <RuleTuningChecklist
@@ -495,7 +583,11 @@ export default function CommandCenter() {
             />
           ))}
           {staleRules.length === 0 && noisyRules.length === 0 && (
-            <WorkspaceEmptyState compact title="No stale rules detected" description="Rules needing replay, suppression, or promotion evidence will appear here." />
+            <WorkspaceEmptyState
+              compact
+              title="No stale rules detected"
+              description="Rules needing replay, suppression, or promotion evidence will appear here."
+            />
           )}
         </CommandSection>
 
@@ -503,7 +595,11 @@ export default function CommandCenter() {
           eyebrow="Evidence-Ready Compliance Packs"
           title="Prepare auditor-ready exports from operational truth"
           description="Compliance packs combine incidents, release attestations, config state, and report templates."
-          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('evidence')}>Create evidence pack</button>}
+          actions={
+            <button className="btn btn-sm" type="button" onClick={() => openDrawer('evidence')}>
+              Create evidence pack
+            </button>
+          }
         >
           <SummaryGrid
             data={{
@@ -518,7 +614,9 @@ export default function CommandCenter() {
             <WorkItem
               key={template.id || template.name}
               title={template.name || template.title || 'Evidence template'}
-              detail={template.description || template.scope || 'Ready for compliance evidence export.'}
+              detail={
+                template.description || template.scope || 'Ready for compliance evidence export.'
+              }
               badge={template.framework || template.type || 'pack'}
               tone="badge-info"
               onClick={() => openDrawer('evidence', template)}

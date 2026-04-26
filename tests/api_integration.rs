@@ -166,10 +166,7 @@ fn planned_connector_config_and_validation_persist() {
         saved_body["config"]["token_ref"].as_str().unwrap(),
         "********"
     );
-    assert_eq!(
-        saved_body["config"]["has_token_ref"].as_bool().unwrap(),
-        true
-    );
+    assert!(saved_body["config"]["has_token_ref"].as_bool().unwrap());
 
     let loaded = ureq::get(&format!("{}/api/collectors/github", base(port)))
         .set("Authorization", &auth_header(&token))
@@ -195,7 +192,7 @@ fn planned_connector_config_and_validation_persist() {
         validation_body["provider"].as_str().unwrap(),
         "github_audit"
     );
-    assert_eq!(validation_body["success"].as_bool().unwrap(), true);
+    assert!(validation_body["success"].as_bool().unwrap());
     assert!(validation_body["event_count"].as_u64().unwrap() > 0);
     assert!(
         validation_body["reliability"]["checkpoint_id"]

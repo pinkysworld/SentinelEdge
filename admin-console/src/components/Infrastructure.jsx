@@ -604,7 +604,8 @@ export default function Infrastructure() {
       await api.recordRemediationChangeReview({
         title: `Review ${asset.title || asset.id}`,
         asset_id: asset.id || asset.title || 'unscoped',
-        change_type: asset.type === 'malware' ? 'malware_containment' : 'infrastructure_remediation',
+        change_type:
+          asset.type === 'malware' ? 'malware_containment' : 'infrastructure_remediation',
         source: asset.type || 'infrastructure',
         summary:
           asset.subtitle ||
@@ -612,8 +613,11 @@ export default function Infrastructure() {
         risk: asset.severity || 'medium',
         approval_status: 'pending_review',
         recovery_status: 'not_started',
-        required_approvers:
-          ['critical', 'high'].includes(String(asset.severity || '').toLowerCase()) ? 2 : 1,
+        required_approvers: ['critical', 'high'].includes(
+          String(asset.severity || '').toLowerCase(),
+        )
+          ? 2
+          : 1,
         evidence: asset.evidence || asset,
       });
       await reloadRemediationReviews();
@@ -837,7 +841,9 @@ export default function Infrastructure() {
               <div className="summary-grid" style={{ marginBottom: 12 }}>
                 <div className="summary-card">
                   <div className="summary-label">Pending Review</div>
-                  <div className="summary-value">{remediationReviewsData?.summary?.pending || 0}</div>
+                  <div className="summary-value">
+                    {remediationReviewsData?.summary?.pending || 0}
+                  </div>
                   <div className="summary-meta">Remediation decisions waiting for approval.</div>
                 </div>
                 <div className="summary-card">
@@ -849,7 +855,9 @@ export default function Infrastructure() {
                 </div>
                 <div className="summary-card">
                   <div className="summary-label">Signed Reviews</div>
-                  <div className="summary-value">{remediationReviewsData?.summary?.signed || 0}</div>
+                  <div className="summary-value">
+                    {remediationReviewsData?.summary?.signed || 0}
+                  </div>
                   <div className="summary-meta">Approval chains with tamper-evident digests.</div>
                 </div>
                 <div className="summary-card">
@@ -888,9 +896,7 @@ export default function Infrastructure() {
                       </div>
                     )}
                     {review.rollback_proof?.recovery_plan?.length > 0 && (
-                      <div className="hint">
-                        Rollback: {review.rollback_proof.recovery_plan[0]}
-                      </div>
+                      <div className="hint">Rollback: {review.rollback_proof.recovery_plan[0]}</div>
                     )}
                     {(review.approval_status === 'pending_review' ||
                       review.rollback_proof?.status === 'ready' ||

@@ -9,20 +9,21 @@ function CheckState({ label, ready }) {
   );
 }
 
-
 export default function RuleTuningChecklist({ rule, suppressionCount = 0, onReplay }) {
   if (!rule) return null;
   const replayReady = Boolean(rule.last_test_at || Number(rule.last_test_match_count || 0) > 0);
   const suppressionReviewed = suppressionCount === 0 || Boolean(rule.last_suppression_review_at);
   const lifecycle = normalizedStatus(rule.lifecycle || 'draft');
-  const promotionReady = replayReady && suppressionReviewed && ['test', 'canary'].includes(lifecycle);
+  const promotionReady =
+    replayReady && suppressionReviewed && ['test', 'canary'].includes(lifecycle);
 
   return (
     <div className="command-checklist">
       <div>
         <div className="row-primary">{rule.name || rule.title || rule.id}</div>
         <div className="row-secondary">
-          {formatCount(rule.last_test_match_count || 0)} replay hits, {formatCount(suppressionCount)} suppressions, lifecycle {rule.lifecycle || 'draft'}.
+          {formatCount(rule.last_test_match_count || 0)} replay hits,{' '}
+          {formatCount(suppressionCount)} suppressions, lifecycle {rule.lifecycle || 'draft'}.
         </div>
       </div>
       <div className="chip-row">
@@ -36,7 +37,10 @@ export default function RuleTuningChecklist({ rule, suppressionCount = 0, onRepl
         <button className="btn btn-sm" type="button" onClick={() => onReplay?.(rule)}>
           Run replay
         </button>
-        <Link className="btn btn-sm" to={`/detection?rule=${encodeURIComponent(rule.id || '')}&panel=promotion`}>
+        <Link
+          className="btn btn-sm"
+          to={`/detection?rule=${encodeURIComponent(rule.id || '')}&panel=promotion`}
+        >
           Open rule
         </Link>
       </div>

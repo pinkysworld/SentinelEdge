@@ -570,10 +570,7 @@ export default function AssistantWorkspace() {
               ))}
             </div>
           ) : (
-            <WorkspaceEmptyState
-              compact
-              description="Assistant context events will appear here."
-            />
+            <WorkspaceEmptyState compact description="Assistant context events will appear here." />
           )}
         </div>
 

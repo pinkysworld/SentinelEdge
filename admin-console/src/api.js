@@ -373,8 +373,7 @@ export const validateGithubCollector = () => post('/api/collectors/github/valida
 export const collectorsCrowdStrike = () => get('/api/collectors/crowdstrike');
 export const saveCrowdStrikeCollectorConfig = (body) =>
   post('/api/collectors/crowdstrike/config', body);
-export const validateCrowdStrikeCollector = () =>
-  post('/api/collectors/crowdstrike/validate', {});
+export const validateCrowdStrikeCollector = () => post('/api/collectors/crowdstrike/validate', {});
 export const collectorsSyslog = () => get('/api/collectors/syslog');
 export const saveSyslogCollectorConfig = (body) => post('/api/collectors/syslog/config', body);
 export const validateSyslogCollector = () => post('/api/collectors/syslog/validate', {});

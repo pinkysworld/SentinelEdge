@@ -75,7 +75,8 @@ export function CollectorLaneCard({
                     {entry.freshness || validationStatusLabel(entry.validation?.status)}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                    Checkpoint {entry.checkpoint_id ? String(entry.checkpoint_id).slice(0, 10) : '—'}
+                    Checkpoint{' '}
+                    {entry.checkpoint_id ? String(entry.checkpoint_id).slice(0, 10) : '—'}
                     {entry.lag_seconds != null ? ` • lag ${entry.lag_seconds}s` : ''}
                     {entry.error_category ? ` • ${entry.error_category}` : ''}
                   </div>

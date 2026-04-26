@@ -53,16 +53,12 @@ export default function NDRDashboard() {
   const encStats = r.encrypted_traffic || {};
   const tlsList = useMemo(
     () =>
-      Array.isArray(tlsAnomalies)
-        ? tlsAnomalies
-        : tlsAnomalies?.items || r.tls_anomalies || [],
+      Array.isArray(tlsAnomalies) ? tlsAnomalies : tlsAnomalies?.items || r.tls_anomalies || [],
     [tlsAnomalies, r.tls_anomalies],
   );
   const dpiList = useMemo(
     () =>
-      Array.isArray(dpiAnomalies)
-        ? dpiAnomalies
-        : dpiAnomalies?.items || r.dpi_anomalies || [],
+      Array.isArray(dpiAnomalies) ? dpiAnomalies : dpiAnomalies?.items || r.dpi_anomalies || [],
     [dpiAnomalies, r.dpi_anomalies],
   );
   const entropyList = useMemo(() => r.entropy_anomalies || [], [r.entropy_anomalies]);

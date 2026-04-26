@@ -1283,7 +1283,9 @@ describe('Settings', () => {
     expect(within(providerRow).getByText('OIDC')).toBeInTheDocument();
     expect(within(providerRow).getByText('Review')).toBeInTheDocument();
     expect(within(providerRow).getByText('1 issue • 0 mappings')).toBeInTheDocument();
-    expect(within(providerRow).getByText('Callback matches • credentials present')).toBeInTheDocument();
+    expect(
+      within(providerRow).getByText('Callback matches • credentials present'),
+    ).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'SOC Workbench' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: 'Infrastructure' }).length).toBeGreaterThan(0);
     expect(
