@@ -14,3 +14,5 @@ migrate_axum.py
 migrate_fixup.py
 *.bak
 sdk/typescript/node_modules/
+scripts/__pycache__/
+**/__pycache__/
