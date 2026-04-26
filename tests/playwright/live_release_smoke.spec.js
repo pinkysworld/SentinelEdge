@@ -27,6 +27,15 @@ test('wardex live admin smoke', async ({ page }) => {
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.locator('.auth-badge')).toContainText(/Connected/i);
 
+  const proofResponse = await page.request.post(`${BASE}/api/support/first-run-proof`, {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+  });
+  expect(proofResponse.ok()).toBeTruthy();
+  const proof = await proofResponse.json();
+  expect(proof.proof.status).toBe('completed');
+  expect(proof.proof.response_status).toBe('DryRunCompleted');
+  expect(proof.digest).toBeTruthy();
+
   const onboardingDialog = page.getByRole('dialog', {
     name: 'Set up the Wardex admin console',
   });

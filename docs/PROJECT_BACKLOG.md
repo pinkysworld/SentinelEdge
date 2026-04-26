@@ -334,14 +334,23 @@ This backlog lists the next concrete tasks in build order.
 - [x] T272: Continue the `WorkspaceEmptyState` migration into Assistant Workspace (5 sites), Fleet Agents, and Threat Detection rule list / detail.
 - [x] T273: Refresh release docs, OpenAPI metadata, helm/otlp values, status, roadmap, SDK notes, and website surfaces for `v0.53.7`.
 
+## Phase 39 — Session hardening, lifecycle analytics, and release readiness
+
+- [x] T274: Exchange pasted admin-console tokens for HttpOnly `wardex_session` cookies and remove legacy localStorage token persistence while preserving bearer-token automation compatibility.
+- [x] T275: Add persisted collector lifecycle analytics with validation run history, last-success/error checkpoints, retry/backoff state, freshness, failure streaks, and 24h ingestion counts.
+- [x] T276: Add remediation change-review and recovery-history APIs plus Infrastructure workflow cards for malware verdicts and remediation candidates.
+- [x] T277: Add a production demo lab entry point in Help & Docs backed by the first-run proof scenario.
+- [x] T278: Update SDK/session helpers, release-doc drift validation, website, OpenAPI, Helm/OTLP, reproducibility, status, roadmap, and release metadata for `v0.53.8`.
+
 ## Recommended next build order
 
-Phases 0–36 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector ingestion timelines, and expanded live workflow smoke coverage are all in place.
+Phases 0–39 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector lifecycle analytics, remediation change-review history, and expanded live workflow smoke coverage are all in place.
 
 Recommended next sequence:
 
-1. Expand collector timeline depth with persisted ingestion counters and last-success checkpoints once live collection history is retained per provider.
-2. Extend the shipped infrastructure remediation and malware-verdict explorer into broader change-review, approval, and recovery-history workflows.
+1. Deepen remediation approval decisions into signed multi-approver workflows and rollback execution evidence.
+2. Continue migrating admin-console API calls toward generated SDK-backed contracts.
+3. Broaden the production demo lab across cloud, identity, SaaS, UEBA, NDR, and attack-graph workflows.
 
 See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the broader professional roadmap beyond the current implementation order.
 

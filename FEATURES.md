@@ -76,7 +76,7 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 
 - **Enterprise controls**
   - RBAC with endpoint-level enforcement
-  - Session TTL, token rotation, audit and retention controls
+  - HttpOnly admin-console session exchange, session TTL, token rotation, audit and retention controls
   - IDP and SCIM configuration surfaces
   - Change control, admin audit export, diagnostics, and dependency health
   - Digital twin calibration from real-world telemetry
@@ -122,6 +122,7 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
   - HA cluster snapshots with log compaction and persistent Raft state schema
   - OIDC/SAML SSO with session management (config, login, callback, session, logout)
   - Cloud collectors for AWS CloudTrail (SigV4), Azure Activity Log (OAuth2), and GCP Audit Log (JWT/RS256) with live polling
+  - Collector lifecycle history with last-success/error checkpoints, retry/backoff context, freshness, failure-streak analytics, and 24h ingestion counters
   - Full-text search index with Tantivy persistent event store, query parsing, and faceted results
   - SigmaHQ YAML rule import from the community repository
   - Usage metering with plan limits and overage calculation
@@ -149,6 +150,7 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 
 - Structured form editor with toggle switches and number inputs (no raw JSON required)
 - Config diff view (line-by-line green/red comparison between saved and current)
+- HttpOnly session-backed authentication flow that removes persisted browser tokens after login
 - Reset-to-defaults and monitoring scope toggles (per-feature enable/disable)
 - Dashboard Recharts visualizations: severity pie chart, 24h alert timeline bar chart, CPU/memory area chart
 - Clickable/expandable alert and process rows for drill-down inspection
@@ -156,6 +158,8 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 - Bulk alert actions: Mark as FP, Acknowledge/Triage, Create Incident
 - Alert severity filter (all/critical/severe/elevated/low) on Dashboard and Live Monitor
 - Fully structured displays across all tabs — zero raw JSON dumps
+- Remediation change-review and recovery-history cards for malware verdicts and infrastructure remediation candidates
+- Production demo lab seeding from Help & Docs for evaluation-ready telemetry, case, response, report, and evidence workflows
 
 ## Product posture
 

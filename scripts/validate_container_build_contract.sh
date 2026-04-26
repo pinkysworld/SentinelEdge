@@ -23,6 +23,28 @@ copy_required() {
   cp -R "$source_path" "$destination_path"
 }
 
+require_file_in_workdir() {
+  local relative_path="$1"
+  local description="$2"
+  local path="$WORK_DIR/$relative_path"
+
+  if [[ ! -s "$path" ]]; then
+    echo "error: expected $description at $relative_path" >&2
+    exit 1
+  fi
+}
+
+require_executable_in_workdir() {
+  local relative_path="$1"
+  local description="$2"
+  local path="$WORK_DIR/$relative_path"
+
+  if [[ ! -x "$path" ]]; then
+    echo "error: expected executable $description at $relative_path" >&2
+    exit 1
+  fi
+}
+
 trap cleanup EXIT
 
 # Keep this list aligned with the Docker builder-stage COPY inputs.
@@ -47,5 +69,12 @@ done
 cd "$WORK_DIR"
 npm ci --prefix admin-console
 cargo build --release --features tls --bin wardex
+
+require_executable_in_workdir "target/release/wardex" "release wardex binary"
+require_file_in_workdir "admin-console/dist/index.html" "embedded admin console entrypoint"
+require_file_in_workdir "site/index.html" "runtime site entrypoint"
+require_file_in_workdir "examples/README.md" "runtime examples index"
+require_file_in_workdir "docs/README.md" "embedded documentation index"
+require_file_in_workdir "sdk/typescript/package.json" "SDK generation input"
 
 echo "container build contract validation passed"

@@ -130,6 +130,37 @@ describe('HelpDocs', () => {
           }),
         );
       }
+      if (path === '/api/support/readiness-evidence') {
+        return Promise.resolve(
+          jsonOk({
+            digest: 'readiness-digest-123456',
+            evidence: {
+              status: 'review',
+              version: { runtime: '0.53.1-local' },
+              collectors: { enabled: 2 },
+              audit_chain: { status: 'verified' },
+              contracts: { status: 'aligned' },
+              response_history: { closed_or_reopenable: 4 },
+              evidence: { reports_with_artifact_metadata: 3 },
+              backup: { observed_backups: 1 },
+              known_limitations: ['No cloud, identity, or SaaS collectors are enabled yet.'],
+            },
+          }),
+        );
+      }
+      if (path === '/api/support/first-run-proof' && method === 'POST') {
+        return Promise.resolve(
+          jsonOk({
+            digest: 'first-run-proof-digest',
+            proof: {
+              status: 'completed',
+              case_id: 42,
+              report_id: 7,
+              response_request_id: 'resp-1',
+            },
+          }),
+        );
+      }
       if (path === '/api/docs/index') {
         const query = parsed.searchParams.get('q') || '';
         const section = parsed.searchParams.get('section') || 'all';
@@ -211,6 +242,15 @@ describe('HelpDocs', () => {
         )
       ).length,
     ).toBeGreaterThan(0);
+    expect(await screen.findByText('Production Readiness')).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText('No cloud, identity, or SaaS collectors are enabled yet.'))
+        .length,
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Run Proof' }));
+    expect(await screen.findByText('First-run proof result')).toBeInTheDocument();
+    expect(await screen.findByText(/first-run-proof-digest/)).toBeInTheDocument();
 
     const docsSearch = screen.getByLabelText('Search docs');
     await user.clear(docsSearch);

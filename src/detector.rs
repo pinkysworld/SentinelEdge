@@ -646,7 +646,7 @@ impl DriftDetector {
 /// when absolute values haven't yet breached fixed thresholds.
 #[derive(Debug, Clone)]
 pub struct VelocityDetector {
-    history: Vec<[f32; 9]>,
+    history: VecDeque<[f32; 9]>,
     window_cap: usize,
     velocity_sigma: f32,
 }
@@ -663,7 +663,7 @@ pub struct VelocityReport {
 impl VelocityDetector {
     pub fn new(window_cap: usize, velocity_sigma: f32) -> Self {
         Self {
-            history: Vec::with_capacity(window_cap),
+            history: VecDeque::with_capacity(window_cap),
             window_cap,
             velocity_sigma,
         }
@@ -703,9 +703,9 @@ impl VelocityDetector {
     pub fn update(&mut self, sample: &TelemetrySample) -> VelocityReport {
         let arr = Self::sample_to_array(sample);
         if self.history.len() >= self.window_cap {
-            self.history.remove(0);
+            self.history.pop_front();
         }
-        self.history.push(arr);
+        self.history.push_back(arr);
 
         if self.history.len() < 3 {
             return VelocityReport {
@@ -716,40 +716,45 @@ impl VelocityDetector {
             };
         }
 
-        let _n = self.history.len();
         let mut anomalous = Vec::new();
         let mut max_vel: f32 = 0.0;
         let mut max_acc: f32 = 0.0;
         let mut boost: f32 = 0.0;
 
         for dim in 0..9 {
-            // Compute velocities (first differences)
-            let velocities: Vec<f32> = self
-                .history
-                .windows(2)
-                .map(|w| w[1][dim] - w[0][dim])
-                .collect();
+            let mut velocity_count = 0usize;
+            let mut velocity_sum = 0.0_f32;
+            let mut velocity_sum_sq = 0.0_f32;
+            let mut last_vel = 0.0_f32;
+            let mut previous_vel = None;
 
-            // Last velocity
-            let last_vel = velocities.last().copied().unwrap_or(0.0);
+            for (previous, current) in self.history.iter().zip(self.history.iter().skip(1)) {
+                let velocity = current[dim] - previous[dim];
+                velocity_count += 1;
+                velocity_sum += velocity;
+                velocity_sum_sq += velocity * velocity;
+                previous_vel = Some(last_vel);
+                last_vel = velocity;
+            }
+
+            if velocity_count == 0 {
+                continue;
+            }
+
             let vel_abs = last_vel.abs();
             if vel_abs > max_vel {
                 max_vel = vel_abs;
             }
 
-            // Acceleration (second differences)
-            if velocities.len() >= 2 {
-                let tail = velocities.len();
-                let acc = (velocities[tail - 1] - velocities[tail - 2]).abs();
+            if let Some(prev_vel) = previous_vel {
+                let acc = (last_vel - prev_vel).abs();
                 if acc > max_acc {
                     max_acc = acc;
                 }
             }
 
-            // Mean and std of velocity history
-            let v_mean: f32 = velocities.iter().sum::<f32>() / velocities.len() as f32;
-            let v_var: f32 = velocities.iter().map(|v| (v - v_mean).powi(2)).sum::<f32>()
-                / velocities.len() as f32;
+            let v_mean = velocity_sum / velocity_count as f32;
+            let v_var = ((velocity_sum_sq / velocity_count as f32) - (v_mean * v_mean)).max(0.0);
             let v_std = v_var.sqrt().max(0.001);
 
             // Check if latest velocity is an outlier (proper z-score)
@@ -781,7 +786,7 @@ impl VelocityDetector {
 /// anomalous behaviour.
 #[derive(Debug, Clone)]
 pub struct EntropyDetector {
-    window: Vec<[f32; 9]>,
+    window: VecDeque<[f32; 9]>,
     window_cap: usize,
     bins: usize,
 }
@@ -797,7 +802,7 @@ pub struct EntropyReport {
 impl EntropyDetector {
     pub fn new(window_cap: usize, bins: usize) -> Self {
         Self {
-            window: Vec::with_capacity(window_cap),
+            window: VecDeque::with_capacity(window_cap),
             window_cap,
             bins: bins.max(4),
         }
@@ -814,9 +819,9 @@ impl EntropyDetector {
     pub fn update(&mut self, sample: &TelemetrySample) -> EntropyReport {
         let arr = VelocityDetector::sample_to_array(sample);
         if self.window.len() >= self.window_cap {
-            self.window.remove(0);
+            self.window.pop_front();
         }
-        self.window.push(arr);
+        self.window.push_back(arr);
 
         if self.window.len() < 5 {
             return EntropyReport {
@@ -832,14 +837,21 @@ impl EntropyDetector {
         let mut boost: f32 = 0.0;
 
         for dim in 0..9 {
-            let values: Vec<f32> = self.window.iter().map(|a| a[dim]).collect();
-            let min_v = values.iter().cloned().fold(f32::INFINITY, f32::min);
-            let max_v = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let min_v = self
+                .window
+                .iter()
+                .map(|a| a[dim])
+                .fold(f32::INFINITY, f32::min);
+            let max_v = self
+                .window
+                .iter()
+                .map(|a| a[dim])
+                .fold(f32::NEG_INFINITY, f32::max);
             let range = (max_v - min_v).max(0.001);
 
             // Bin the values
             let mut hist = vec![0u32; self.bins];
-            for &v in &values {
+            for v in self.window.iter().map(|a| a[dim]) {
                 let idx = (((v - min_v) / range) * (self.bins as f32 - 1.0)) as usize;
                 let idx = idx.min(self.bins - 1);
                 hist[idx] += 1;

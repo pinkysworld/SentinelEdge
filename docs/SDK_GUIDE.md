@@ -117,4 +117,4 @@ The full API is documented at `docs/openapi.yaml`. Key areas include:
 | Feature flags     | `/api/feature-flags/*`                 |
 | Health            | `/api/healthz/*`, `/api/status-json`   |
 
-Recent 0.53.7 additions reflected in the generated SDKs include the same surface as 0.53.6 — no API surface changes. The 0.53.7 release is admin-console and CI-quality scoped (zero-warnings ESLint, vitest coverage gate, knip dead-code gate, panic-policy baseline lowered to 6, and continued empty-state primitive migration).
+Recent 0.53.8 additions reflected in the generated SDKs include cookie-aware request credentials, admin session inspection/exchange helpers, collector lifecycle status access, and remediation change-review read/write helpers. These updates align SDK consumers with the same HttpOnly-session and workflow-history surfaces now used by the admin console.

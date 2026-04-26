@@ -42,7 +42,7 @@ test('siem settings live workflow', async ({ page }) => {
 
   const sidebar = page.locator('#sidebar-nav');
   await sidebar.getByRole('link', { name: 'Settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Integrations' }).click();
+  await page.getByRole('tab', { name: 'Integrations' }).click();
   await expect(page.getByText('SIEM Integration')).toBeVisible();
 
   const siemCard = page.locator('.card').filter({

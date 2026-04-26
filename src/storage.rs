@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::time::Instant;
 
 use rusqlite::{Connection, params};
 
@@ -1523,6 +1525,22 @@ pub struct SharedStorage {
     dedup: Arc<Mutex<AlertDedupCache>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StorageLockObservation {
+    pub wait: Duration,
+    pub hold: Duration,
+}
+
+impl StorageLockObservation {
+    pub fn wait_micros(self) -> u128 {
+        self.wait.as_micros()
+    }
+
+    pub fn hold_micros(self) -> u128 {
+        self.hold.as_micros()
+    }
+}
+
 impl SharedStorage {
     pub fn open(base_dir: &str) -> Result<Self, StorageError> {
         let backend = StorageBackend::open(base_dir)?;
@@ -1536,11 +1554,23 @@ impl SharedStorage {
     where
         F: FnOnce(&mut StorageBackend) -> Result<R, StorageError>,
     {
+        self.with_observed(f).map(|(value, _)| value)
+    }
+
+    pub fn with_observed<F, R>(&self, f: F) -> Result<(R, StorageLockObservation), StorageError>
+    where
+        F: FnOnce(&mut StorageBackend) -> Result<R, StorageError>,
+    {
+        let wait_start = Instant::now();
         let mut guard = self.inner.lock().map_err(|e| StorageError {
             code: StorageErrorCode::ConnectionFailed,
             message: format!("lock poisoned: {e}"),
         })?;
-        f(&mut guard)
+        let wait = wait_start.elapsed();
+        let hold_start = Instant::now();
+        let result = f(&mut guard);
+        let hold = hold_start.elapsed();
+        result.map(|value| (value, StorageLockObservation { wait, hold }))
     }
 
     /// Insert alert with dedup: if a matching signature exists within the window,
@@ -1851,6 +1881,22 @@ mod tests {
             })
             .unwrap();
         assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn shared_storage_reports_lock_observation() {
+        let dir = std::env::temp_dir().join(format!(
+            "wardex_shared_observed_test_{}",
+            rand::random::<u32>()
+        ));
+        let shared = SharedStorage::open(dir.to_str().unwrap()).unwrap();
+
+        let (version, observation) = shared
+            .with_observed(|store| Ok(store.schema_version()))
+            .unwrap();
+
+        assert!(version >= 1);
+        assert!(observation.hold_micros() > 0 || observation.wait_micros() > 0);
     }
 
     #[test]

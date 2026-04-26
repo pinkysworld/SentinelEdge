@@ -747,6 +747,34 @@ fn run_demo_returns_report() {
     assert!(body.get("samples").is_some());
 }
 
+#[test]
+fn first_run_proof_creates_reopenable_evidence() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::post(&format!("{}/api/support/first-run-proof", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .send_string("")
+        .expect("first-run proof");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(
+        body["digest"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
+    assert_eq!(body["proof"]["status"], serde_json::json!("completed"));
+    assert!(body["proof"]["case_id"].as_u64().is_some());
+    assert!(body["proof"]["report_id"].as_u64().is_some());
+    assert_eq!(
+        body["proof"]["response_status"],
+        serde_json::json!("DryRunCompleted")
+    );
+    assert!(
+        body["proof"]["artifact_metadata"]["support_run"]["artifact_hash"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
+}
+
 // ── Checkpoint round-trip ──────────────────────────────────────
 
 #[test]
@@ -1012,6 +1040,37 @@ fn auth_check_with_valid_token_returns_ok() {
 }
 
 #[test]
+fn auth_session_exchange_sets_cookie_and_accepts_cookie_session() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::post(&format!("{}/api/auth/session", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("session exchange");
+    assert_eq!(resp.status(), 200);
+    let cookie = resp
+        .header("Set-Cookie")
+        .expect("session exchange should set a cookie")
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["authenticated"], true);
+    assert_eq!(body["role"], "admin");
+    assert_eq!(body["cookie"]["http_only"], true);
+    assert_eq!(body["cookie"]["same_site"], "Lax");
+
+    let session = ureq::get(&format!("{}/api/auth/session", base(port)))
+        .set("Cookie", &cookie)
+        .call()
+        .expect("cookie-backed auth session");
+    let session_body: serde_json::Value = session.into_json().unwrap();
+    assert_eq!(session_body["authenticated"], true);
+    assert_eq!(session_body["source"], "session");
+    assert_eq!(session_body["role"], "admin");
+}
+
+#[test]
 fn auth_session_accepts_sso_session_token_and_logout_revokes_it() {
     let (port, _token) = spawn_test_server();
     let session_path = test_state_path(port, "sessions.json");
@@ -1052,6 +1111,39 @@ fn auth_session_accepts_sso_session_token_and_logout_revokes_it() {
         Err(ureq::Error::Status(401, _)) => {}
         other => panic!("expected 401 after SSO logout, got {other:?}"),
     }
+}
+
+#[test]
+fn remediation_change_reviews_can_be_recorded_and_listed() {
+    let (port, token) = spawn_test_server();
+    let payload = serde_json::json!({
+        "title": "Review suspicious binary quarantine",
+        "asset_id": "host-a:/tmp/dropper",
+        "change_type": "malware_containment",
+        "source": "malware-verdict",
+        "summary": "Validate blast radius before quarantine.",
+        "risk": "high",
+        "approval_status": "pending_review",
+        "recovery_status": "not_started",
+        "evidence": {"sha256": "abc123"}
+    });
+    let created = ureq::post(&format!("{}/api/remediation/change-reviews", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .set("Content-Type", "application/json")
+        .send_string(&payload.to_string())
+        .expect("record remediation review");
+    assert_eq!(created.status(), 200);
+    let created_body: serde_json::Value = created.into_json().unwrap();
+    assert_eq!(created_body["status"], "recorded");
+    assert_eq!(created_body["review"]["requested_by"], "admin");
+
+    let listed = ureq::get(&format!("{}/api/remediation/change-reviews", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("list remediation reviews");
+    let listed_body: serde_json::Value = listed.into_json().unwrap();
+    assert_eq!(listed_body["summary"]["pending"].as_u64().unwrap(), 1);
+    assert_eq!(listed_body["reviews"][0]["asset_id"], "host-a:/tmp/dropper");
 }
 
 #[test]

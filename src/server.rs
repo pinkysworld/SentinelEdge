@@ -129,7 +129,7 @@ use crate::response::{
 use crate::sigma::SigmaEngine;
 use crate::spool::EncryptedSpool;
 use crate::storage::SharedStorage;
-use crate::support::{InboxItem, SupportStore};
+use crate::support::{InboxItem, ReportExecutionContext, SupportStore};
 use sha2::Digest;
 
 // ── Rate Limiter ────────────────────────────────────────────
@@ -2819,7 +2819,12 @@ fn session_cookie_header(session_id: &str, expires_at: chrono::DateTime<chrono::
         .signed_duration_since(chrono::Utc::now())
         .num_seconds()
         .max(0);
-    format!("{SESSION_COOKIE_NAME}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}")
+    let secure = std::env::var("WARDEX_SESSION_COOKIE_SECURE")
+        .ok()
+        .and_then(|value| parse_bool_query(&value))
+        .unwrap_or(false);
+    let secure_attr = if secure { "; Secure" } else { "" };
+    format!("{SESSION_COOKIE_NAME}={session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure_attr}")
 }
 
 fn clear_session_cookie_header() -> String {
@@ -2833,6 +2838,57 @@ fn apply_set_cookie(mut response: Response<Body>, cookie: &str) -> Response<Body
         response.headers_mut().insert(SET_COOKIE, value);
     }
     response
+}
+
+fn create_console_session_for_identity(
+    state: &mut AppState,
+    identity: &AuthIdentity,
+) -> Option<(crate::auth::Session, String)> {
+    let ttl_hours = (state.config.security.token_ttl_secs.max(1) / 3600).max(1) as i64;
+    match identity {
+        AuthIdentity::AdminToken => {
+            let session_id = state.session_store.create_session(
+                "admin",
+                "admin@local.wardex",
+                "admin",
+                &["wardex-admins".to_string()],
+                ttl_hours,
+            );
+            state
+                .session_store
+                .get_session(&session_id)
+                .map(|session| (session, session_id))
+        }
+        AuthIdentity::UserToken(user) => {
+            let role = role_label(user.role);
+            let session_id = state.session_store.create_session(
+                &user.username,
+                &format!("{}@local.wardex", user.username),
+                role,
+                &[],
+                ttl_hours,
+            );
+            state
+                .session_store
+                .get_session(&session_id)
+                .map(|session| (session, session_id))
+        }
+        AuthIdentity::SessionToken { user, groups } => {
+            let role = role_label(user.role);
+            let session_id = state.session_store.create_session(
+                &user.username,
+                &format!("{}@local.wardex", user.username),
+                role,
+                groups,
+                ttl_hours,
+            );
+            state
+                .session_store
+                .get_session(&session_id)
+                .map(|session| (session, session_id))
+        }
+        AuthIdentity::None => None,
+    }
 }
 
 fn auth_redirect_response(location: &str) -> Response<Body> {
@@ -6747,6 +6803,54 @@ const ENTRA_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.entra";
 const M365_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.m365";
 const WORKSPACE_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.workspace";
 const SECRETS_MANAGER_SETUP_KEY: &str = "integrations.secrets.manager";
+const REMEDIATION_CHANGE_REVIEWS_KEY: &str = "remediation.change_reviews";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct CollectorCheckpoint {
+    last_success_at: Option<String>,
+    last_error_at: Option<String>,
+    error_category: Option<String>,
+    events_ingested: u64,
+    lag_seconds: Option<u64>,
+    checkpoint_id: Option<String>,
+    retry_count: u32,
+    backoff_seconds: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct RemediationChangeReview {
+    id: String,
+    title: String,
+    asset_id: String,
+    change_type: String,
+    source: String,
+    summary: String,
+    risk: String,
+    approval_status: String,
+    recovery_status: String,
+    requested_by: String,
+    requested_at: String,
+    evidence: serde_json::Value,
+}
+
+impl Default for RemediationChangeReview {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            title: String::new(),
+            asset_id: String::new(),
+            change_type: "remediation".to_string(),
+            source: "infrastructure".to_string(),
+            summary: String::new(),
+            risk: "medium".to_string(),
+            approval_status: "pending_review".to_string(),
+            recovery_status: "not_started".to_string(),
+            requested_by: "system".to_string(),
+            requested_at: chrono::Utc::now().to_rfc3339(),
+            evidence: serde_json::json!({}),
+        }
+    }
+}
 
 fn assistant_provider_from_env(value: &str) -> crate::llm_analyst::LlmProvider {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -7165,6 +7269,99 @@ where
         .map_err(|e| e.safe_message().to_string())
 }
 
+fn load_remediation_change_reviews(storage: &SharedStorage) -> Vec<RemediationChangeReview> {
+    load_stored_json(storage, REMEDIATION_CHANGE_REVIEWS_KEY)
+}
+
+fn save_remediation_change_reviews(
+    storage: &SharedStorage,
+    reviews: &[RemediationChangeReview],
+) -> Result<(), String> {
+    save_stored_json(storage, REMEDIATION_CHANGE_REVIEWS_KEY, &reviews)
+}
+
+fn remediation_review_from_payload(
+    payload: serde_json::Value,
+    actor: &str,
+) -> Result<RemediationChangeReview, String> {
+    let title = payload
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if title.is_empty() {
+        return Err("title is required".to_string());
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut review = RemediationChangeReview {
+        id: payload
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                format!(
+                    "review-{}",
+                    chrono::Utc::now().timestamp_millis().unsigned_abs()
+                )
+            }),
+        title: title.to_string(),
+        asset_id: payload
+            .get("asset_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unscoped")
+            .trim()
+            .to_string(),
+        change_type: payload
+            .get("change_type")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("remediation")
+            .trim()
+            .to_string(),
+        source: payload
+            .get("source")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("infrastructure")
+            .trim()
+            .to_string(),
+        summary: payload
+            .get("summary")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string(),
+        risk: payload
+            .get("risk")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("medium")
+            .trim()
+            .to_string(),
+        approval_status: payload
+            .get("approval_status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("pending_review")
+            .trim()
+            .to_string(),
+        recovery_status: payload
+            .get("recovery_status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("not_started")
+            .trim()
+            .to_string(),
+        requested_by: actor.to_string(),
+        requested_at: now,
+        evidence: payload
+            .get("evidence")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    };
+    if review.summary.is_empty() {
+        review.summary = format!("Review {} for {}.", review.change_type, review.asset_id);
+    }
+    Ok(review)
+}
+
 fn load_aws_collector_setup(storage: &SharedStorage) -> AwsCollectorSetup {
     load_stored_json(storage, AWS_COLLECTOR_SETUP_KEY)
 }
@@ -7195,6 +7392,174 @@ fn load_workspace_collector_setup(storage: &SharedStorage) -> WorkspaceCollector
 
 fn load_secrets_manager_setup(storage: &SharedStorage) -> SecretsManagerSetup {
     load_stored_json(storage, SECRETS_MANAGER_SETUP_KEY)
+}
+
+fn collector_checkpoint_key(provider: &str) -> String {
+    format!("integrations.collectors.{provider}.checkpoint")
+}
+
+fn collector_lifecycle_key(provider: &str) -> String {
+    format!("integrations.collectors.{provider}.lifecycle")
+}
+
+fn load_collector_checkpoint(storage: &SharedStorage, provider: &str) -> CollectorCheckpoint {
+    load_stored_json(storage, &collector_checkpoint_key(provider))
+}
+
+fn load_collector_lifecycle(storage: &SharedStorage, provider: &str) -> Vec<serde_json::Value> {
+    load_stored_json(storage, &collector_lifecycle_key(provider))
+}
+
+fn collector_lifecycle_analytics(history: &[serde_json::Value]) -> serde_json::Value {
+    let total_runs = history.len();
+    let success_runs = history
+        .iter()
+        .filter(|entry| entry.get("success").and_then(serde_json::Value::as_bool) == Some(true))
+        .count();
+    let failure_runs = total_runs.saturating_sub(success_runs);
+    let recent_failures = history
+        .iter()
+        .rev()
+        .take_while(|entry| entry.get("success").and_then(serde_json::Value::as_bool) != Some(true))
+        .count();
+    let events_last_24h = history
+        .iter()
+        .filter_map(|entry| {
+            let recorded_at = entry.get("recorded_at").and_then(serde_json::Value::as_str)?;
+            let parsed = chrono::DateTime::parse_from_rfc3339(recorded_at).ok()?;
+            (chrono::Utc::now().signed_duration_since(parsed.with_timezone(&chrono::Utc))
+                <= chrono::Duration::hours(24))
+            .then(|| {
+                entry
+                    .get("event_count")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+            })
+        })
+        .sum::<u64>();
+    serde_json::json!({
+        "total_runs": total_runs,
+        "success_runs": success_runs,
+        "failure_runs": failure_runs,
+        "success_rate": if total_runs == 0 { 0.0 } else { success_runs as f64 / total_runs as f64 },
+        "recent_failure_streak": recent_failures,
+        "events_last_24h": events_last_24h,
+    })
+}
+
+fn classify_collector_error(error: Option<&str>) -> Option<String> {
+    let text = error?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let lower = text.to_ascii_lowercase();
+    let category = if lower.contains("auth")
+        || lower.contains("token")
+        || lower.contains("credential")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+    {
+        "authentication"
+    } else if lower.contains("timeout") || lower.contains("connect") || lower.contains("dns") {
+        "network"
+    } else if lower.contains("rate") || lower.contains("429") || lower.contains("throttle") {
+        "rate_limit"
+    } else if lower.contains("parse") || lower.contains("json") || lower.contains("schema") {
+        "parse"
+    } else if lower.contains("incomplete") || lower.contains("required") {
+        "configuration"
+    } else {
+        "provider"
+    };
+    Some(category.to_string())
+}
+
+fn checkpoint_lag_seconds(last_success_at: Option<&str>) -> Option<u64> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(last_success_at?).ok()?;
+    let now = chrono::Utc::now();
+    Some(
+        now.signed_duration_since(parsed.with_timezone(&chrono::Utc))
+            .num_seconds()
+            .max(0) as u64,
+    )
+}
+
+fn record_collector_checkpoint(
+    storage: &SharedStorage,
+    provider: &str,
+    success: bool,
+    event_count: u64,
+    error: Option<&str>,
+) -> CollectorCheckpoint {
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut checkpoint = load_collector_checkpoint(storage, provider);
+    if success {
+        checkpoint.last_success_at = Some(now.clone());
+        checkpoint.error_category = None;
+        checkpoint.retry_count = 0;
+        checkpoint.backoff_seconds = 0;
+        checkpoint.events_ingested = checkpoint.events_ingested.saturating_add(event_count);
+    } else {
+        checkpoint.last_error_at = Some(now.clone());
+        checkpoint.error_category = classify_collector_error(error);
+        checkpoint.retry_count = checkpoint.retry_count.saturating_add(1);
+        checkpoint.backoff_seconds = 2_u64.saturating_pow(checkpoint.retry_count.min(6)).min(300);
+    }
+    checkpoint.lag_seconds = checkpoint_lag_seconds(checkpoint.last_success_at.as_deref());
+    checkpoint.checkpoint_id = Some(crate::audit::sha256_hex(
+        format!(
+            "{}|{}|{}|{}|{}",
+            provider, now, success, checkpoint.events_ingested, checkpoint.retry_count
+        )
+        .as_bytes(),
+    ));
+    let _ = save_stored_json(storage, &collector_checkpoint_key(provider), &checkpoint);
+    let mut lifecycle = load_collector_lifecycle(storage, provider);
+    lifecycle.push(serde_json::json!({
+        "provider": provider,
+        "recorded_at": now,
+        "success": success,
+        "event_count": event_count,
+        "total_events_ingested": checkpoint.events_ingested,
+        "last_success_at": checkpoint.last_success_at.clone(),
+        "last_error_at": checkpoint.last_error_at.clone(),
+        "error_category": checkpoint.error_category.clone(),
+        "error": error.unwrap_or(""),
+        "retry_count": checkpoint.retry_count,
+        "backoff_seconds": checkpoint.backoff_seconds,
+        "lag_seconds": checkpoint.lag_seconds,
+        "checkpoint_id": checkpoint.checkpoint_id.clone(),
+    }));
+    if lifecycle.len() > 40 {
+        let overflow = lifecycle.len() - 40;
+        lifecycle.drain(0..overflow);
+    }
+    let _ = save_stored_json(storage, &collector_lifecycle_key(provider), &lifecycle);
+    checkpoint
+}
+
+fn collector_validation_response(
+    storage: &SharedStorage,
+    provider: &str,
+    mut body: serde_json::Value,
+) -> Response<Body> {
+    let success = body
+        .get("success")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let event_count = body
+        .get("event_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let error = body.get("error").and_then(serde_json::Value::as_str);
+    let checkpoint = record_collector_checkpoint(storage, provider, success, event_count, error);
+    if let Some(object) = body.as_object_mut() {
+        object.insert(
+            "reliability".to_string(),
+            serde_json::to_value(checkpoint).unwrap_or_else(|_| serde_json::json!({})),
+        );
+    }
+    json_response(&body.to_string(), 200)
 }
 
 fn build_secrets_resolver(storage: &SharedStorage) -> crate::secrets::SecretsResolver {
@@ -7809,7 +8174,12 @@ fn collector_status_entry(
     poll_interval_secs: u64,
     summary: serde_json::Value,
     validation: SetupValidation,
+    reliability: CollectorCheckpoint,
+    lifecycle: Vec<serde_json::Value>,
 ) -> serde_json::Value {
+    let lag_seconds =
+        checkpoint_lag_seconds(reliability.last_success_at.as_deref()).or(reliability.lag_seconds);
+    let lifecycle_analytics = collector_lifecycle_analytics(&lifecycle);
     serde_json::json!({
         "name": name,
         "provider": name,
@@ -7817,12 +8187,429 @@ fn collector_status_entry(
         "lane": collector_lane(name),
         "enabled": enabled,
         "poll_interval_secs": poll_interval_secs,
-        "total_collected": 0,
+        "total_collected": reliability.events_ingested,
+        "last_success_at": reliability.last_success_at,
+        "last_error_at": reliability.last_error_at,
+        "error_category": reliability.error_category,
+        "events_ingested": reliability.events_ingested,
+        "lag_seconds": lag_seconds,
+        "checkpoint_id": reliability.checkpoint_id,
+        "retry_count": reliability.retry_count,
+        "backoff_seconds": reliability.backoff_seconds,
+        "freshness": if !enabled {
+            "disabled"
+        } else if reliability.last_success_at.is_none() && reliability.last_error_at.is_some() {
+            "error"
+        } else if lag_seconds.is_some_and(|lag| lag > poll_interval_secs.saturating_mul(3).max(300)) {
+            "stale"
+        } else if reliability.last_success_at.is_some() {
+            "fresh"
+        } else {
+            "unknown"
+        },
         "route_targets": collector_route_targets(name),
+        "lifecycle": lifecycle.iter().rev().take(8).cloned().collect::<Vec<_>>(),
+        "lifecycle_analytics": lifecycle_analytics,
         "summary": summary,
         "validation": validation,
         "timeline": build_collector_timeline(name, enabled, poll_interval_secs, &summary, &validation),
     })
+}
+
+fn collector_readiness_summary(state: &AppState) -> serde_json::Value {
+    let providers = [
+        (
+            "aws_cloudtrail",
+            load_aws_collector_setup(&state.storage).enabled,
+        ),
+        (
+            "azure_activity",
+            load_azure_collector_setup(&state.storage).enabled,
+        ),
+        (
+            "gcp_audit",
+            load_gcp_collector_setup(&state.storage).enabled,
+        ),
+        (
+            "okta_identity",
+            load_okta_collector_setup(&state.storage).enabled,
+        ),
+        (
+            "entra_identity",
+            load_entra_collector_setup(&state.storage).enabled,
+        ),
+        (
+            "m365_saas",
+            load_m365_collector_setup(&state.storage).enabled,
+        ),
+        (
+            "workspace_saas",
+            load_workspace_collector_setup(&state.storage).enabled,
+        ),
+    ];
+    let collectors = providers
+        .iter()
+        .map(|(provider, enabled)| {
+            let checkpoint = load_collector_checkpoint(&state.storage, provider);
+            serde_json::json!({
+                "provider": provider,
+                "label": collector_display_label(provider),
+                "lane": collector_lane(provider),
+                "enabled": enabled,
+                "last_success_at": checkpoint.last_success_at,
+                "last_error_at": checkpoint.last_error_at,
+                "error_category": checkpoint.error_category,
+                "events_ingested": checkpoint.events_ingested,
+                "lag_seconds": checkpoint_lag_seconds(checkpoint.last_success_at.as_deref()).or(checkpoint.lag_seconds),
+                "checkpoint_id": checkpoint.checkpoint_id,
+                "retry_count": checkpoint.retry_count,
+                "backoff_seconds": checkpoint.backoff_seconds,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "enabled": providers.iter().filter(|(_, enabled)| *enabled).count(),
+        "configured": providers.len(),
+        "collectors": collectors,
+    })
+}
+
+fn production_readiness_evidence(state: &mut AppState) -> serde_json::Value {
+    state.agent_registry.refresh_staleness();
+    let parity = crate::support_center::support_parity(env!("CARGO_PKG_VERSION"));
+    let parity_issue_count = parity
+        .get("issues")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let storage_stats = state.storage.with(|store| Ok(store.stats())).ok();
+    let audit_chain = state.storage.with(|store| store.verify_audit_chain()).ok();
+    let backup_config = crate::backup::BackupConfig::default();
+    let backup_path = Path::new(&backup_config.path);
+    let backup_count = fs::read_dir(backup_path)
+        .ok()
+        .map(|entries| entries.filter_map(Result::ok).count())
+        .unwrap_or(0);
+    let collectors = collector_readiness_summary(state);
+    let enabled_collectors = collectors
+        .get("enabled")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let report_artifacts_with_metadata = state
+        .report_store
+        .list()
+        .iter()
+        .filter(|report| !report["artifact_metadata"].is_null())
+        .count();
+    let response_requests = state.response_orchestrator.all_requests();
+    let response_history = response_requests
+        .iter()
+        .filter(|request| {
+            matches!(
+                request.status,
+                ApprovalStatus::Executed
+                    | ApprovalStatus::DryRunCompleted
+                    | ApprovalStatus::Approved
+                    | ApprovalStatus::Denied
+                    | ApprovalStatus::Expired
+            )
+        })
+        .count();
+
+    let blockers = [
+        (
+            parity_issue_count > 0,
+            format!("{parity_issue_count} API/SDK contract parity issue(s) need review."),
+        ),
+        (
+            audit_chain.is_none(),
+            "Audit-chain verification could not be completed.".to_string(),
+        ),
+        (
+            enabled_collectors == 0,
+            "No cloud, identity, or SaaS collectors are enabled yet.".to_string(),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(active, message)| active.then_some(message))
+    .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "status": if blockers.is_empty() { "ready" } else { "review" },
+        "version": {
+            "package": env!("CARGO_PKG_NAME"),
+            "runtime": env!("CARGO_PKG_VERSION"),
+            "edition": "private-cloud",
+        },
+        "config_posture": {
+            "config_path": state.config_path.to_string_lossy().to_string(),
+            "monitoring_enabled": state.config.monitor.duration_secs > 0 || state.config.monitor.interval_secs > 0,
+            "siem_enabled": state.config.siem.enabled,
+            "taxii_enabled": state.config.taxii.enabled,
+            "clickhouse_enabled": state.clickhouse_store.is_some(),
+            "rate_limit_read_per_minute": state.config.server.rate_limit_read_per_minute,
+            "rate_limit_write_per_minute": state.config.server.rate_limit_write_per_minute,
+        },
+        "auth": {
+            "token_ttl_secs": state.config.security.token_ttl_secs,
+            "token_age_secs": state.token_issued_at.elapsed().as_secs(),
+            "rbac_users": state.rbac.list_users().len(),
+            "idp_provider_count": state.enterprise.idp_providers().len(),
+            "session_store": "enabled",
+        },
+        "tls": {
+            "enabled": state.listener_mode.is_tls(),
+            "mtls_required_for_agents": state.config.security.require_mtls_agents,
+            "agent_ca_cert_path": state.config.security.agent_ca_cert_path.clone(),
+        },
+        "storage": {
+            "backend": "sqlite",
+            "stats": storage_stats,
+            "event_persistence": state.event_store.has_persistence(),
+            "event_store_path": state.event_store.storage_path(),
+        },
+        "retention": {
+            "audit_max_records": state.config.retention.audit_max_records,
+            "alert_max_records": state.config.retention.alert_max_records,
+            "event_max_records": state.config.retention.event_max_records,
+            "audit_max_age_secs": state.config.retention.audit_max_age_secs,
+            "remote_syslog_endpoint": state.config.retention.remote_syslog_endpoint.clone(),
+        },
+        "backup": {
+            "enabled": backup_config.enabled,
+            "path": backup_config.path,
+            "retention_count": backup_config.retention_count,
+            "observed_backups": backup_count,
+        },
+        "audit_chain": {
+            "status": if audit_chain.is_some() { "verified" } else { "unverified" },
+            "storage_chain_length": audit_chain,
+        },
+        "collectors": collectors,
+        "response_history": {
+            "requests": response_requests.len(),
+            "closed_or_reopenable": response_history,
+            "audit_entries": state.response_orchestrator.audit_ledger().len(),
+        },
+        "evidence": {
+            "stored_reports": state.report_store.list().len(),
+            "reports_with_artifact_metadata": report_artifacts_with_metadata,
+            "report_runs": state.support_store.report_runs().len(),
+        },
+        "contracts": {
+            "status": if parity_issue_count == 0 { "aligned" } else { "review" },
+            "parity_issue_count": parity_issue_count,
+            "parity": parity,
+        },
+        "experimental_surfaces": [
+            {"name": "ML triage and shadow inference", "status": "experimental", "gate": "model registry, shadow reports, replay corpus"},
+            {"name": "LLM analyst assistant", "status": "experimental", "gate": "retrieval fallback, citations, provider status"},
+            {"name": "Zero-knowledge proof workflows", "status": "experimental", "gate": "proof registry and witness verification"},
+            {"name": "Quantum-inspired modeling", "status": "experimental", "gate": "key/status and simulation endpoints"}
+        ],
+        "known_limitations": blockers,
+    })
+}
+
+fn first_run_operator_proof(state: &Arc<Mutex<AppState>>, auth: &AuthIdentity) -> Response<Body> {
+    let demo = runtime::demo_samples();
+    let result = runtime::execute(&demo);
+    let report = JsonReport::from_run_result(&result);
+    let report_size_bytes = serde_json::to_vec(&report)
+        .map(|bytes| bytes.len() as u64)
+        .unwrap_or(0);
+    let requested_by = response_requested_by(auth);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+    for (sample, sample_report) in demo.iter().zip(result.reports.iter()) {
+        let pre = s
+            .detector
+            .snapshot()
+            .map(|snap| serde_json::to_vec(&snap).unwrap_or_default())
+            .unwrap_or_default();
+        s.detector.evaluate(sample);
+        let post = s
+            .detector
+            .snapshot()
+            .map(|snap| serde_json::to_vec(&snap).unwrap_or_default())
+            .unwrap_or_default();
+        s.proofs
+            .record("first_run_proof_baseline_update", &pre, &post);
+        s.device.apply_decision(&sample_report.decision);
+        s.replay.push(*sample);
+    }
+
+    let case_id = s
+        .case_store
+        .create(
+            "First-run proof investigation".to_string(),
+            "Guided demo scenario proving ingest, triage, investigation, response approval, reporting, and evidence packaging end to end.".to_string(),
+            CasePriority::High,
+            Vec::new(),
+            Vec::new(),
+            vec!["first-run-proof".to_string(), "demo".to_string()],
+        )
+        .id;
+    let _ = s.case_store.add_comment(
+        case_id,
+        requested_by.clone(),
+        format!(
+            "First-run proof ingested {} demo samples and generated {} alert(s).",
+            result.summary.total_samples, result.summary.alert_count
+        ),
+    );
+
+    let execution_context = ReportExecutionContext {
+        case_id: Some(case_id.to_string()),
+        incident_id: None,
+        investigation_id: Some(format!("first-run-proof-{case_id}")),
+        source: Some("first_run_proof".to_string()),
+    };
+    let report_id = s.report_store.store_with_context(
+        report.clone(),
+        "first_run_proof",
+        Some(execution_context.clone()),
+    );
+
+    let response_request_id = next_response_request_id();
+    let response_request = ResponseRequest {
+        id: response_request_id.clone(),
+        action: ResponseAction::Isolate,
+        target: ResponseTarget {
+            hostname: "first-run-demo-host".to_string(),
+            agent_uid: None,
+            asset_tags: vec!["demo".to_string(), "first-run-proof".to_string()],
+        },
+        reason: "First-run operator proof dry-run containment".to_string(),
+        severity: "high".to_string(),
+        tier: ActionTier::Auto,
+        status: ApprovalStatus::Pending,
+        requested_at: now,
+        requested_by: requested_by.clone(),
+        approvals: Vec::new(),
+        dry_run: true,
+        blast_radius: None,
+        is_protected_asset: false,
+    };
+    let stored_response_id = match s.response_orchestrator.submit(response_request) {
+        Ok(id) => id,
+        Err(e) => return error_json(&format!("first-run response setup failed: {e}"), 500),
+    };
+    let approver = if requested_by == "first-run-proof-approver" {
+        "first-run-proof-reviewer"
+    } else {
+        "first-run-proof-approver"
+    };
+    let response_status = s
+        .response_orchestrator
+        .approve(
+            &stored_response_id,
+            ResponseApprovalRecord {
+                approver: approver.to_string(),
+                decision: ResponseApprovalDecision::Approve,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                comment: Some(
+                    "Approved demo dry-run response for first-run operator proof.".to_string(),
+                ),
+            },
+        )
+        .unwrap_or_else(|_| {
+            s.response_orchestrator
+                .get_request(&stored_response_id)
+                .map(|request| request.status)
+                .unwrap_or(ApprovalStatus::Pending)
+        });
+    let response_record = s.response_orchestrator.get_request(&stored_response_id);
+
+    let preview = serde_json::json!({
+        "summary": report.summary.clone(),
+        "case_id": case_id,
+        "report_id": report_id,
+        "response_request_id": stored_response_id,
+        "response_status": format!("{:?}", response_status),
+        "steps": [
+            "ingest_sample",
+            "triage_alert",
+            "open_case",
+            "approve_response_dry_run",
+            "generate_report",
+            "package_evidence"
+        ],
+    });
+    let report_run = s.support_store.add_report_run(
+        "First-run Operator Proof".to_string(),
+        "first_run_proof".to_string(),
+        "case".to_string(),
+        "json".to_string(),
+        "operator".to_string(),
+        "completed".to_string(),
+        "Created telemetry, case, response dry-run approval, report, and evidence metadata."
+            .to_string(),
+        report_size_bytes,
+        preview,
+        Some(execution_context),
+    );
+
+    let evidence_refs = [
+        ("telemetry_demo", "runtime::demo_samples".to_string()),
+        ("report", report_id.to_string()),
+        ("report_run", report_run.id.clone()),
+        ("response_request", stored_response_id.clone()),
+    ];
+    for (kind, reference_id) in evidence_refs {
+        let _ = s.case_store.add_evidence(
+            case_id,
+            kind.to_string(),
+            reference_id,
+            "First-run proof evidence artifact".to_string(),
+        );
+    }
+
+    s.last_report = Some(report.clone());
+    let report_artifact_metadata = s
+        .report_store
+        .get(report_id)
+        .and_then(|stored| stored.artifact_metadata.clone());
+    let proof = serde_json::json!({
+        "status": "completed",
+        "estimated_minutes": 10,
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "actor": requested_by,
+        "case_id": case_id,
+        "report_id": report_id,
+        "report_run_id": report_run.id,
+        "response_request_id": stored_response_id,
+        "response_status": format!("{:?}", response_status),
+        "telemetry": {
+            "samples": result.summary.total_samples,
+            "alerts": result.summary.alert_count,
+            "critical": result.summary.critical_count,
+        },
+        "artifact_metadata": {
+            "report": report_artifact_metadata,
+            "support_run": report_run.artifact_metadata,
+        },
+        "response_history": response_record.as_ref().map(response_request_json),
+        "steps": [
+            {"name": "ingest_sample", "status": "completed"},
+            {"name": "triage_alert", "status": "completed"},
+            {"name": "open_case", "status": "completed"},
+            {"name": "approve_response_dry_run", "status": "completed"},
+            {"name": "generate_report", "status": "completed"},
+            {"name": "package_evidence", "status": "completed"}
+        ],
+    });
+    let digest = crate::audit::sha256_hex(proof.to_string().as_bytes());
+    json_response(
+        &serde_json::json!({
+            "proof": proof,
+            "digest": digest,
+        })
+        .to_string(),
+        200,
+    )
 }
 
 fn secret_reference_kind(reference: &str) -> &'static str {
@@ -8299,6 +9086,8 @@ fn handle_api(
                 | (Method::Post, "/api/control/mode")
                 | (Method::Post, "/api/control/reset-baseline")
                 | (Method::Post, "/api/control/run-demo")
+                | (Method::Post, "/api/demo/lab")
+                | (Method::Post, "/api/support/first-run-proof")
                 | (Method::Post, "/api/control/checkpoint")
                 | (Method::Post, "/api/control/restore-checkpoint")
                 | (Method::Post, "/api/fleet/register")
@@ -8381,6 +9170,9 @@ fn handle_api(
         || (method == Method::Post && route_path == "/api/scim/config")
         || (method == Method::Get && route_path == "/api/audit/admin")
         || (method == Method::Get && route_path == "/api/support/diagnostics")
+        || (method == Method::Get && route_path == "/api/support/readiness-evidence")
+        || (method == Method::Post && route_path == "/api/support/first-run-proof")
+        || (method == Method::Post && route_path == "/api/demo/lab")
         || (method == Method::Get && route_path == "/api/support/parity")
         || (method == Method::Get && route_path == "/api/docs/index")
         || (method == Method::Get && route_path == "/api/docs/content")
@@ -8523,6 +9315,8 @@ fn handle_api(
         || (method == Method::Post && route_path == "/api/remediation/plan")
         || (method == Method::Get && route_path == "/api/remediation/results")
         || (method == Method::Get && route_path == "/api/remediation/stats")
+        || (method == Method::Get && route_path == "/api/remediation/change-reviews")
+        || (method == Method::Post && route_path == "/api/remediation/change-reviews")
         || (method == Method::Get && route_path == "/api/escalation/policies")
         || (method == Method::Post && route_path == "/api/escalation/policies")
         || (method == Method::Post && route_path == "/api/escalation/start")
@@ -8595,6 +9389,7 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/backup/status")
         // Auth (session/logout require auth; SSO login/callback/config are pre-auth)
         || (method == Method::Get && route_path == "/api/auth/session")
+        || (method == Method::Post && route_path == "/api/auth/session")
         || (method == Method::Post && route_path == "/api/auth/logout")
         // Cloud collectors
         || (method == Method::Get && route_path == "/api/collectors/status")
@@ -10440,6 +11235,8 @@ fn handle_api(
                 {"method": "POST", "path": "/api/scim/config", "auth": true, "description": "Update SCIM provisioning configuration"},
                 {"method": "GET", "path": "/api/audit/admin", "auth": true, "description": "Enterprise admin audit, change control, and approval history"},
                 {"method": "GET", "path": "/api/support/diagnostics", "auth": true, "description": "Support diagnostics bundle with dependency, auth, content, and operations state"},
+                {"method": "GET", "path": "/api/support/readiness-evidence", "auth": true, "description": "Production readiness evidence pack for support, audit, and procurement review"},
+                {"method": "POST", "path": "/api/support/first-run-proof", "auth": true, "description": "Run the first-run operator proof scenario end to end"},
                 {"method": "GET", "path": "/api/system/health/dependencies", "auth": true, "description": "Dependency and rollout health across storage, SIEM, connectors, and fleet state"},
                 {"method": "POST", "path": "/api/events/{id}/triage", "auth": true, "description": "Update event triage state, assignee, tags, and analyst notes"},
                 {"method": "GET", "path": "/api/policy/history", "auth": true, "description": "Published policy history"},
@@ -12323,6 +13120,19 @@ fn handle_api(
                 200,
             )
         }
+        (Method::Get, "/api/support/readiness-evidence") => {
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let payload = production_readiness_evidence(&mut s);
+            let digest = crate::audit::sha256_hex(payload.to_string().as_bytes());
+            json_response(
+                &serde_json::json!({"evidence": payload, "digest": digest}).to_string(),
+                200,
+            )
+        }
+        (Method::Post, "/api/support/first-run-proof") => {
+            first_run_operator_proof(state, &auth_identity)
+        }
+        (Method::Post, "/api/demo/lab") => first_run_operator_proof(state, &auth_identity),
         (Method::Get, "/api/support/parity") => {
             let payload = crate::support_center::support_parity(env!("CARGO_PKG_VERSION"));
             json_response(&payload.to_string(), 200)
@@ -12566,12 +13376,18 @@ fn handle_api(
                 .iter()
                 .map(|e| {
                     serde_json::json!({
-                        "request_id": e.request_id,
-                        "action": format!("{:?}", e.action),
-                        "target": e.target_hostname,
+                        "request_id": e.request_id.clone(),
+                        "action": e.action.clone(),
+                        "target": e.target_hostname.clone(),
                         "outcome": format!("{:?}", e.status),
-                        "timestamp": e.timestamp,
-                        "approvers": e.approvals,
+                        "timestamp": e.timestamp.clone(),
+                        "approvers": e.approvals.clone(),
+                        "actor": e.actor.clone(),
+                        "reason": e.reason.clone(),
+                        "input_context": e.input_context.clone(),
+                        "dry_run_result": e.dry_run_result.clone(),
+                        "execution_result": e.execution_result.clone(),
+                        "reversal_path": e.reversal_path.clone(),
                     })
                 })
                 .collect();
@@ -15319,6 +16135,51 @@ fn handle_api(
                     &serde_json::to_string(&stats).unwrap_or_else(|_| "{}".to_string()),
                     200,
                 )
+            } else if method == Method::Get && url_path == "/api/remediation/change-reviews" {
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                let mut reviews = load_remediation_change_reviews(&s.storage);
+                reviews.sort_by(|left, right| right.requested_at.cmp(&left.requested_at));
+                let summary = serde_json::json!({
+                    "total": reviews.len(),
+                    "pending": reviews.iter().filter(|review| review.approval_status == "pending_review").count(),
+                    "approved": reviews.iter().filter(|review| review.approval_status == "approved").count(),
+                    "recovery_ready": reviews.iter().filter(|review| review.recovery_status == "ready" || review.recovery_status == "verified").count(),
+                });
+                let body = serde_json::json!({
+                    "summary": summary,
+                    "reviews": reviews,
+                });
+                json_response(&body.to_string(), 200)
+            } else if method == Method::Post && url_path == "/api/remediation/change-reviews" {
+                match read_json_value(body, 64 * 1024) {
+                    Ok(payload) => {
+                        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        match remediation_review_from_payload(payload, auth_identity.actor()) {
+                            Ok(review) => {
+                                let mut reviews = load_remediation_change_reviews(&s.storage);
+                                reviews.retain(|entry| entry.id != review.id);
+                                reviews.push(review.clone());
+                                if reviews.len() > 100 {
+                                    let overflow = reviews.len() - 100;
+                                    reviews.drain(0..overflow);
+                                }
+                                match save_remediation_change_reviews(&s.storage, &reviews) {
+                                    Ok(()) => json_response(
+                                        &serde_json::json!({
+                                            "status": "recorded",
+                                            "review": review,
+                                        })
+                                        .to_string(),
+                                        200,
+                                    ),
+                                    Err(error) => error_json(&error, 500),
+                                }
+                            }
+                            Err(error) => error_json(&error, 400),
+                        }
+                    }
+                    Err(error) => error_json(&error, 400),
+                }
 
             // Escalation
             } else if method == Method::Get && url_path == "/api/escalation/policies" {
@@ -16324,6 +17185,37 @@ fn handle_api(
                     "source": source,
                 });
                 json_response(&body.to_string(), 200)
+            } else if method == Method::Post && url_path == "/api/auth/session" {
+                let identity = authenticate_request(headers, state);
+                if !identity.is_authenticated() {
+                    error_json("unauthorized", 401)
+                } else {
+                    let (session, session_id) = {
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        match create_console_session_for_identity(&mut s, &identity) {
+                            Some(created) => created,
+                            None => return error_json("unable to create session", 500),
+                        }
+                    };
+                    let cookie = session_cookie_header(&session_id, session.expires_at);
+                    let body = serde_json::json!({
+                        "authenticated": true,
+                        "user_id": session.user_id,
+                        "role": session.role,
+                        "groups": session.groups,
+                        "source": "session",
+                        "expires_at": session.expires_at,
+                        "cookie": {
+                            "http_only": true,
+                            "same_site": "Lax",
+                            "secure": std::env::var("WARDEX_SESSION_COOKIE_SECURE")
+                                .ok()
+                                .and_then(|value| parse_bool_query(&value))
+                                .unwrap_or(false),
+                        },
+                    });
+                    apply_set_cookie(json_response(&body.to_string(), 200), &cookie)
+                }
             } else if method == Method::Post && url_path == "/api/auth/logout" {
                 let session_revoked = session_cookie_token(headers)
                     .or_else(|| bearer_token(headers))
@@ -16376,6 +17268,8 @@ fn handle_api(
                                 "has_session_token": aws.session_token.as_ref().is_some_and(|value| !value.trim().is_empty()),
                             }),
                             aws_validation,
+                            load_collector_checkpoint(&s.storage, "aws_cloudtrail"),
+                            load_collector_lifecycle(&s.storage, "aws_cloudtrail"),
                         ),
                         collector_status_entry(
                             "azure_activity",
@@ -16388,6 +17282,8 @@ fn handle_api(
                                 "has_client_secret": !azure.client_secret.trim().is_empty(),
                             }),
                             azure_validation,
+                            load_collector_checkpoint(&s.storage, "azure_activity"),
+                            load_collector_lifecycle(&s.storage, "azure_activity"),
                         ),
                         collector_status_entry(
                             "gcp_audit",
@@ -16400,6 +17296,8 @@ fn handle_api(
                                 "has_private_key_pem": gcp.private_key_pem.as_ref().is_some_and(|value| !value.trim().is_empty()),
                             }),
                             gcp_validation,
+                            load_collector_checkpoint(&s.storage, "gcp_audit"),
+                            load_collector_lifecycle(&s.storage, "gcp_audit"),
                         ),
                         collector_status_entry(
                             "okta_identity",
@@ -16411,6 +17309,8 @@ fn handle_api(
                                 "has_api_token": !okta.api_token.trim().is_empty(),
                             }),
                             okta_validation,
+                            load_collector_checkpoint(&s.storage, "okta_identity"),
+                            load_collector_lifecycle(&s.storage, "okta_identity"),
                         ),
                         collector_status_entry(
                             "entra_identity",
@@ -16422,6 +17322,8 @@ fn handle_api(
                                 "has_client_secret": !entra.client_secret.trim().is_empty(),
                             }),
                             entra_validation,
+                            load_collector_checkpoint(&s.storage, "entra_identity"),
+                            load_collector_lifecycle(&s.storage, "entra_identity"),
                         ),
                         collector_status_entry(
                             "m365_saas",
@@ -16434,6 +17336,8 @@ fn handle_api(
                                 "has_client_secret": !m365.client_secret.trim().is_empty(),
                             }),
                             m365_validation,
+                            load_collector_checkpoint(&s.storage, "m365_saas"),
+                            load_collector_lifecycle(&s.storage, "m365_saas"),
                         ),
                         collector_status_entry(
                             "workspace_saas",
@@ -16447,6 +17351,8 @@ fn handle_api(
                                 "has_credentials_json": !workspace.credentials_json.trim().is_empty(),
                             }),
                             workspace_validation,
+                            load_collector_checkpoint(&s.storage, "workspace_saas"),
+                            load_collector_lifecycle(&s.storage, "workspace_saas"),
                         ),
                     ],
                 });
@@ -16490,7 +17396,7 @@ fn handle_api(
                         "validation": validation,
                         "error": "Collector configuration is incomplete.",
                     });
-                    json_response(&body.to_string(), 200)
+                    collector_validation_response(&s.storage, "aws_cloudtrail", body)
                 } else {
                     let resolver = build_secrets_resolver(&s.storage);
                     match setup.to_runtime(&resolver) {
@@ -16510,7 +17416,7 @@ fn handle_api(
                                 "validation": validation,
                                 "error": result.error,
                             });
-                            json_response(&body.to_string(), 200)
+                            collector_validation_response(&s.storage, "aws_cloudtrail", body)
                         }
                         Err(error) => {
                             let body = serde_json::json!({
@@ -16521,7 +17427,7 @@ fn handle_api(
                                 "validation": validation,
                                 "error": error,
                             });
-                            json_response(&body.to_string(), 200)
+                            collector_validation_response(&s.storage, "aws_cloudtrail", body)
                         }
                     }
                 }
@@ -16564,7 +17470,7 @@ fn handle_api(
                         "validation": validation,
                         "error": "Collector configuration is incomplete.",
                     });
-                    json_response(&body.to_string(), 200)
+                    collector_validation_response(&s.storage, "azure_activity", body)
                 } else {
                     let resolver = build_secrets_resolver(&s.storage);
                     match setup.to_runtime(&resolver) {
@@ -16583,7 +17489,7 @@ fn handle_api(
                                 "validation": validation,
                                 "error": result.error,
                             });
-                            json_response(&body.to_string(), 200)
+                            collector_validation_response(&s.storage, "azure_activity", body)
                         }
                         Err(error) => {
                             let body = serde_json::json!({
@@ -16594,7 +17500,7 @@ fn handle_api(
                                 "validation": validation,
                                 "error": error,
                             });
-                            json_response(&body.to_string(), 200)
+                            collector_validation_response(&s.storage, "azure_activity", body)
                         }
                     }
                 }
@@ -16637,7 +17543,7 @@ fn handle_api(
                         "validation": validation,
                         "error": "Collector configuration is incomplete.",
                     });
-                    json_response(&body.to_string(), 200)
+                    collector_validation_response(&s.storage, "gcp_audit", body)
                 } else {
                     let resolver = build_secrets_resolver(&s.storage);
                     match setup.to_runtime(&resolver) {
@@ -16657,7 +17563,7 @@ fn handle_api(
                                 "validation": validation,
                                 "error": result.error,
                             });
-                            json_response(&body.to_string(), 200)
+                            collector_validation_response(&s.storage, "gcp_audit", body)
                         }
                         Err(error) => {
                             let body = serde_json::json!({
@@ -16668,7 +17574,7 @@ fn handle_api(
                                 "validation": validation,
                                 "error": error,
                             });
-                            json_response(&body.to_string(), 200)
+                            collector_validation_response(&s.storage, "gcp_audit", body)
                         }
                     }
                 }
@@ -16703,7 +17609,7 @@ fn handle_api(
                 let setup = load_okta_collector_setup(&s.storage);
                 let resolver = build_secrets_resolver(&s.storage);
                 let body = validate_okta_collector(&setup, &resolver);
-                json_response(&body.to_string(), 200)
+                collector_validation_response(&s.storage, "okta_identity", body)
             } else if method == Method::Get && url_path == "/api/collectors/entra" {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let setup = load_entra_collector_setup(&s.storage);
@@ -16735,7 +17641,7 @@ fn handle_api(
                 let setup = load_entra_collector_setup(&s.storage);
                 let resolver = build_secrets_resolver(&s.storage);
                 let body = validate_entra_collector(&setup, &resolver);
-                json_response(&body.to_string(), 200)
+                collector_validation_response(&s.storage, "entra_identity", body)
             } else if method == Method::Get && url_path == "/api/collectors/m365" {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let setup = load_m365_collector_setup(&s.storage);
@@ -16767,7 +17673,7 @@ fn handle_api(
                 let setup = load_m365_collector_setup(&s.storage);
                 let resolver = build_secrets_resolver(&s.storage);
                 let body = validate_m365_collector(&setup, &resolver);
-                json_response(&body.to_string(), 200)
+                collector_validation_response(&s.storage, "m365_saas", body)
             } else if method == Method::Get && url_path == "/api/collectors/workspace" {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let setup = load_workspace_collector_setup(&s.storage);
@@ -16799,7 +17705,7 @@ fn handle_api(
                 let setup = load_workspace_collector_setup(&s.storage);
                 let resolver = build_secrets_resolver(&s.storage);
                 let body = validate_workspace_collector(&setup, &resolver);
-                json_response(&body.to_string(), 200)
+                collector_validation_response(&s.storage, "workspace_saas", body)
 
             // ── Secrets Manager ──────────────────────────────────
             } else if method == Method::Get && url_path == "/api/secrets/status" {
@@ -20411,20 +21317,20 @@ fn response_request_json(request: &ResponseRequest) -> serde_json::Value {
         .filter(|record| record.decision == ResponseApprovalDecision::Approve)
         .count();
     serde_json::json!({
-        "id": request.id,
+        "id": request.id.clone(),
         "action": format!("{:?}", request.action),
         "action_label": response_action_label(&request.action),
-        "target": request.target,
-        "target_hostname": request.target.hostname,
-        "target_agent_uid": request.target.agent_uid,
+        "target": request.target.clone(),
+        "target_hostname": request.target.hostname.clone(),
+        "target_agent_uid": request.target.agent_uid.clone(),
         "tier": format!("{:?}", request.tier),
         "status": format!("{:?}", request.status),
-        "created_at": request.requested_at,
-        "requested_at": request.requested_at,
-        "requested_by": request.requested_by,
-        "reason": request.reason,
-        "severity": request.severity,
-        "approvals": request.approvals,
+        "created_at": request.requested_at.clone(),
+        "requested_at": request.requested_at.clone(),
+        "requested_by": request.requested_by.clone(),
+        "reason": request.reason.clone(),
+        "severity": request.severity.clone(),
+        "approvals": request.approvals.clone(),
         "approval_count": approved_count,
         "approvals_required": response_required_approvals(request.tier),
         "dry_run": request.dry_run,
@@ -20432,11 +21338,71 @@ fn response_request_json(request: &ResponseRequest) -> serde_json::Value {
         "blast_radius": request.blast_radius.as_ref().map(|blast| serde_json::json!({
             "affected_services": blast.affected_services,
             "affected_endpoints": blast.affected_endpoints,
-            "risk_level": blast.risk_level,
-            "impact_summary": blast.impact_summary,
+            "risk_level": blast.risk_level.clone(),
+            "impact_summary": blast.impact_summary.clone(),
         })),
         "blast_radius_summary": request.blast_radius.as_ref().map(|blast| blast.impact_summary.clone()),
+        "input_context": {
+            "target": request.target.clone(),
+            "severity": request.severity.clone(),
+            "tier": format!("{:?}", request.tier),
+            "dry_run": request.dry_run,
+            "protected_asset": request.is_protected_asset,
+            "requested_at": request.requested_at.clone(),
+        },
+        "dry_run_result": request.dry_run.then(|| serde_json::json!({
+            "request_id": request.id.clone(),
+            "would_execute": request.tier != ActionTier::BreakGlass,
+            "tier": format!("{:?}", request.tier),
+            "blast_radius": request.blast_radius.clone(),
+            "is_protected": request.is_protected_asset,
+            "approvals_required": response_required_approvals(request.tier),
+        })),
+        "execution_result": (request.status == ApprovalStatus::Executed).then(|| {
+            format!("{} completed for {}", response_action_label(&request.action), request.target.hostname)
+        }),
+        "reversal_path": response_reversal_path(&request.action, &request.target),
     })
+}
+
+fn response_reversal_path(action: &ResponseAction, target: &ResponseTarget) -> String {
+    match action {
+        ResponseAction::Alert => "No reversal required; notification-only action.".to_string(),
+        ResponseAction::Isolate => format!(
+            "Remove host {} from isolation and verify heartbeat plus policy sync.",
+            target.hostname
+        ),
+        ResponseAction::Throttle { .. } => format!(
+            "Restore normal rate limits for {} and verify service latency.",
+            target.hostname
+        ),
+        ResponseAction::KillProcess { process_name, .. } => {
+            format!(
+                "Restart {process_name} only from a verified clean binary if business impact requires it."
+            )
+        }
+        ResponseAction::QuarantineFile { path } => {
+            format!("Release {path} from quarantine only after hash, YARA, and provenance review.")
+        }
+        ResponseAction::BlockIp { ip } => {
+            format!(
+                "Remove block for {ip} from network controls and confirm no active incident dependency."
+            )
+        }
+        ResponseAction::DisableAccount { username } => {
+            format!(
+                "Re-enable {username} after credential reset, MFA verification, and owner approval."
+            )
+        }
+        ResponseAction::RollbackConfig { config_name } => {
+            format!(
+                "Reapply the superseded {config_name} config through change control if rollback is no longer needed."
+            )
+        }
+        ResponseAction::Custom { name, .. } => {
+            format!("Follow the documented reversal procedure for custom action {name}.")
+        }
+    }
 }
 
 fn response_action_from_json(value: &serde_json::Value) -> Result<ResponseAction, String> {
@@ -23463,6 +24429,36 @@ mod tests {
         let store = crate::incident::IncidentStore::new(&path.to_string_lossy());
         assert_eq!(store.list().len(), 0);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn collector_checkpoint_persists_success_and_failure() {
+        let dir = std::env::temp_dir().join(format!(
+            "wardex_collector_checkpoint_{}",
+            rand::random::<u32>()
+        ));
+        let storage = SharedStorage::open(dir.to_str().unwrap()).expect("shared storage");
+
+        let success = record_collector_checkpoint(&storage, "aws_cloudtrail", true, 9, None);
+        assert_eq!(success.events_ingested, 9);
+        assert!(success.last_success_at.is_some());
+        assert!(success.checkpoint_id.is_some());
+
+        let reloaded = load_collector_checkpoint(&storage, "aws_cloudtrail");
+        assert_eq!(reloaded.events_ingested, 9);
+        assert_eq!(reloaded.retry_count, 0);
+
+        let failure = record_collector_checkpoint(
+            &storage,
+            "aws_cloudtrail",
+            false,
+            0,
+            Some("unauthorized token"),
+        );
+        assert_eq!(failure.events_ingested, 9);
+        assert_eq!(failure.error_category.as_deref(), Some("authentication"));
+        assert_eq!(failure.retry_count, 1);
+        assert!(failure.backoff_seconds > 0);
     }
 
     #[test]

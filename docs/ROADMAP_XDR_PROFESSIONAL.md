@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.53.7` delivers the current private-cloud XDR and SIEM control-plane baseline:
+`v0.53.8` delivers the current private-cloud XDR and SIEM control-plane baseline:
 
 - SOC Workbench for queue, cases, investigations, guided workflows, response approvals, escalation management, and incident-first case/incident drawers
 - Analyst Assistant for case-aware questions, citations, ticket-sync pivots, and investigation-scope handoffs inside analyst workflows
@@ -45,13 +45,13 @@
 ## Current gaps
 
 - Federated SSO launch and callback validation is now exposed in both the login shell and Settings, but broader IdP lifecycle coverage still needs continued regression depth as providers evolve.
-- Collector routing, readiness, and validation dashboards now include staged ingestion-health timelines across the shipped cloud, identity, and SaaS lanes. The next gap is persisted ingestion counters, last-success checkpoints, and broader lifecycle analytics per provider.
+- Collector routing, readiness, and validation dashboards now include staged ingestion-health timelines, persisted lifecycle history, last-success/error checkpoints, retry/backoff context, freshness, and failure-streak analytics across the shipped cloud, identity, and SaaS lanes. The next gap is richer ingestion evidence and cross-surface pivots from collector health into active SOC and Infrastructure workflows.
 - Detection Engineering, Fleet & Agents, SOC Workbench response, collector health, and infrastructure malware/remediation routes are now covered by the live release-gate smoke. The remaining work is keeping that live coverage aligned as those workflows continue to evolve.
-- Malware analysis and infrastructure remediation now have route-aware verdict, integrity, and guided-remediation views. The next gap is broader change-review, approval, and recovery-history depth on top of those shipped pivots.
+- Malware analysis and infrastructure remediation now have route-aware verdict, integrity, guided-remediation, change-review, approval, and recovery-history views. The next gap is signed multi-approver review, rollback proof, and deeper recovery evidence for high-risk remediation.
 
 ## Success criteria
 
-| Metric | Current (`v0.53.7`) | Target |
+| Metric | Current (`v0.53.8`) | Target |
 |---|---|---|
 | Automated tests | 1272 lib + 190 integration + focused browser/admin regressions | maintained and expanded on every release |
 | OpenAPI and SDK contract | versioned OpenAPI plus generated Python and TypeScript SDKs | kept in lockstep on every release |

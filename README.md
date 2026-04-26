@@ -6,7 +6,7 @@
 
 Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted security operations. It combines cross-platform telemetry collection, detection engineering, analyst workflows, approval-gated response, agent lifecycle management, SIEM integrations, and tamper-evident evidence handling in a single deployable product.
 
-## What ships in `v0.53.7`
+## What ships in `v0.53.8`
 
 - 139 Rust source modules covering telemetry collection, detection engineering, hunt/search, SOC workflows, fleet operations, governance, and automated incident response.
 - A versioned OpenAPI contract with regenerated Python and TypeScript SDKs for authenticated admin-console workflows, explainability, onboarding readiness, threat-intel enrichment, malware analysis, reports, hunts, investigations, NDR, and enterprise support surfaces.
@@ -17,7 +17,9 @@ Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted s
 - **Scoped reporting and artifacts** — reports, report runs, schedules, templates, and stored artifacts can now carry case / incident / investigation execution context, with backend filtering and republish flows for older unscoped reports.
 - **Artifact persistence and response closure** — compliance exports, evidence bundles, audit exports, privacy snapshots, backend-native alert exports, and response-approval snapshots can now be persisted into scoped run history and reopened with their original payloads.
 - **Threat-intel and malware depth** — richer threat-intel `v2` metadata, indicator sightings, deep malware scan `v2` static and behavior profiles, route-aware malware verdict workspaces, and analyst-facing provenance views are now wired through the console.
-- **Enterprise integration health** — federated sign-in readiness plus cloud, identity, and SaaS collector lanes now expose staged validation and ingestion-health checkpoints instead of snapshot-only summaries.
+- **Session and integration hardening** — pasted console tokens are exchanged for HttpOnly admin sessions, while federated sign-in readiness plus cloud, identity, and SaaS collector lanes expose staged validation, lifecycle history, failure streaks, last-success/error checkpoints, and ingestion-health analytics instead of snapshot-only summaries.
+- **Remediation review history** — Infrastructure now records approval and recovery notes for malware verdicts and remediation candidates, giving operators a durable change-review ledger for high-risk action paths.
+- **Production demo lab** — Help & Docs can seed an evaluation-ready scenario with telemetry, case context, response dry-run approval, report artifacts, and evidence metadata.
 - **Manager and analyst efficiency** — morning-brief style dashboard summaries, saved queue filters, deep-linked alert/case selection, and target-aware assistant/reporting handoffs from SOC, NDR, UEBA, detection, attack-graph, and infrastructure flows reduce console re-navigation and make exact workflows shareable.
 - **Deterministic regression coverage** — focused Rust, admin-console, and routed Playwright release checks now cover explainability, replay drift, collector timelines, deep malware scan profiles, threat-intel sightings, and scoped report/report-template persistence.
 

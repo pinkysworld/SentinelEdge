@@ -124,6 +124,95 @@
         }
       };
 
+      function findRedocHeadingAnchor(hash) {
+        if (!hash || hash === "#") return null;
+
+        return Array.from(document.querySelectorAll("#redoc-wrap a[href]"))
+          .find((anchor) => anchor.getAttribute("href") === hash && anchor.closest("h1, h2, h3, h4, h5, h6"));
+      }
+
+      function syncRedocHashScroll(hash = window.location.hash, behavior = "smooth") {
+        const anchor = findRedocHeadingAnchor(hash);
+        if (!anchor) return false;
+
+        const target = anchor.closest("h1, h2, h3, h4, h5, h6") || anchor;
+        const offsetTop = window.scrollY + target.getBoundingClientRect().top - 92;
+
+        window.scrollTo({
+          top: Math.max(0, offsetTop),
+          behavior,
+        });
+        return true;
+      }
+
+      function scheduleRedocHashScroll(hash = window.location.hash, behavior = "smooth") {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            syncRedocHashScroll(hash, behavior);
+          });
+        });
+      }
+
+      function redocTagGroups() {
+        return Array.from(document.querySelectorAll("#redoc-wrap li[data-item-id]"))
+          .filter((item) => item.dataset.itemId?.startsWith("tag/") && !item.dataset.itemId.includes("/paths/"));
+      }
+
+      function setRedocTagGroupExpanded(group, expanded) {
+        if (!group) return;
+
+        const childList = group.querySelector(":scope > ul");
+        const icon = group.querySelector(":scope > label svg");
+
+        group.setAttribute("aria-expanded", expanded ? "true" : "false");
+        if (childList) childList.style.display = expanded ? "block" : "none";
+        if (icon) icon.style.transform = expanded ? "rotate(0deg)" : "rotate(-90deg)";
+      }
+
+      function toggleRedocTagGroup(group) {
+        const isExpanded = group?.getAttribute("aria-expanded") === "true";
+
+        redocTagGroups().forEach((item) => {
+          if (item !== group) setRedocTagGroupExpanded(item, false);
+        });
+
+        setRedocTagGroupExpanded(group, !isExpanded);
+        return !isExpanded;
+      }
+
+      window.addEventListener("hashchange", () => {
+        scheduleRedocHashScroll(window.location.hash);
+      });
+
+      document.getElementById("redoc-wrap").addEventListener("click", (event) => {
+        const sidebarLabel = event.target.closest('li[data-item-id] > label');
+        const sidebarItem = sidebarLabel?.parentElement;
+        const itemId = sidebarItem?.dataset?.itemId;
+
+        if (!itemId || !itemId.includes("/paths/")) return;
+        scheduleRedocHashScroll(`#${itemId}`);
+      });
+
+      document.getElementById("redoc-wrap").addEventListener("click", (event) => {
+        const sidebarLabel = event.target.closest('li[data-item-id] > label');
+        const sidebarItem = sidebarLabel?.parentElement;
+        const itemId = sidebarItem?.dataset?.itemId;
+
+        if (!itemId || !itemId.startsWith("tag/") || itemId.includes("/paths/")) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const opened = toggleRedocTagGroup(sidebarItem);
+        if (!opened) return;
+
+        const nextHash = `#${itemId}`;
+        if (window.location.hash !== nextHash) {
+          window.history.replaceState(null, "", nextHash);
+        }
+        scheduleRedocHashScroll(nextHash);
+      }, true);
+
       Redoc.init(
         "https://raw.githubusercontent.com/pinkysworld/Wardex/main/docs/openapi.yaml",
         {
@@ -133,7 +222,10 @@
           expandResponses: "200,201",
           nativeScrollbars: true
         },
-        document.getElementById("redoc-wrap")
+        document.getElementById("redoc-wrap"),
+        () => {
+          scheduleRedocHashScroll(window.location.hash, "auto");
+        }
       );
     </script>
   </body>

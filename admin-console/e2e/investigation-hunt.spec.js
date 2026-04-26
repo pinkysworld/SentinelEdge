@@ -337,3 +337,19 @@ test('queue hunt pivot opens detection with prefilled hunt context', async ({ pa
   await expect(page.locator('#hunt-query')).toHaveValue(/severity:critical/i);
   await expect(page.locator('#hunt-query')).toHaveValue(/rule-credential-storm/i);
 });
+
+test('visible process tree pivot opens the SOC process tree workspace', async ({ page }) => {
+  await installApiMocks(page);
+  await login(page);
+  await page.goto('./soc#overview');
+
+  await expect(page.locator('h1.topbar-title')).toContainText('SOC Workbench');
+
+  const processTreeLink = page.getByRole('link', { name: 'Open Process Tree' });
+  await expect(processTreeLink).toBeVisible();
+  await processTreeLink.click();
+
+  await expect(page).toHaveURL(/\/soc(?:\?.*)?#process-tree$/);
+  await expect(page.getByText('Live Processes (0)')).toBeVisible();
+  await expect(page.locator('.card-title').filter({ hasText: /^Deep Process Chains$/ })).toBeVisible();
+});

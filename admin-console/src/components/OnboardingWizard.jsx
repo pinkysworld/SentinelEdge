@@ -24,7 +24,7 @@ function ChecklistItem({ label, complete, helper, actionLabel, onAction, busy })
 }
 
 export default function OnboardingWizard({ onComplete }) {
-  const [token, setToken] = useState(localStorage.getItem('wardex_token') || '');
+  const [token, setToken] = useState('');
   const [role, setRole] = useState(localStorage.getItem('wardex_role') || 'analyst');
   const [selectedFeeds, setSelectedFeeds] = useState([FEEDS[0]]);
   const [readiness, setReadiness] = useState(null);
@@ -100,7 +100,10 @@ export default function OnboardingWizard({ onComplete }) {
           try {
             api.setToken(token.trim());
             await api.authCheck();
+            await api.createAuthSession();
             await refreshReadiness();
+            api.setToken('');
+            localStorage.removeItem('wardex_token');
             setTokenCheck({ busy: false, ok: true, message: 'Backend accepted the token.' });
           } catch {
             setTokenCheck({
@@ -205,7 +208,7 @@ export default function OnboardingWizard({ onComplete }) {
   };
 
   const finish = async () => {
-    if (token) localStorage.setItem('wardex_token', token);
+    localStorage.removeItem('wardex_token');
     if (role) localStorage.setItem('wardex_role', role);
     localStorage.setItem('wardex_onboarding_complete', '1');
     for (const feed of selectedFeeds) {

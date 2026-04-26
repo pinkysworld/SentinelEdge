@@ -5,6 +5,15 @@ let _token = '';
 let _baseUrl = '';
 let _pendingSignal = null;
 
+/**
+ * @typedef {Object} WardexRequestOptions
+ * @property {AbortSignal=} signal Abort signal owned by the calling hook or workflow.
+ */
+
+/**
+ * @typedef {Error & {status?: number, body?: string, requestId?: string}} WardexApiError
+ */
+
 export function setToken(t) {
   _token = t;
 }
@@ -27,6 +36,14 @@ export function withSignal(signal, fn) {
   return result;
 }
 
+/**
+ * @param {'GET'|'POST'|'PUT'|'DELETE'} method
+ * @param {string} path
+ * @param {unknown=} body
+ * @param {WardexRequestOptions=} opts
+ * @returns {Promise<unknown>}
+ * @throws {WardexApiError}
+ */
 async function request(method, path, body, opts = {}) {
   const signal = opts.signal || _pendingSignal;
   const headers = {};
@@ -38,10 +55,11 @@ async function request(method, path, body, opts = {}) {
     headers['Content-Type'] = 'application/json';
   }
   const url = _baseUrl + path;
-  const res = await fetch(url, { method, headers, body, signal });
+  const res = await fetch(url, { method, headers, body, signal, credentials: 'include' });
   const requestId = res.headers.get('x-request-id') || res.headers.get('X-Request-Id') || null;
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    /** @type {WardexApiError} */
     const err = new Error(`${res.status} ${res.statusText}`);
     err.status = res.status;
     err.body = text;
@@ -71,6 +89,7 @@ const toQuery = (params = {}) => {
 export const authCheck = () => get('/api/auth/check');
 export const authRotate = () => post('/api/auth/rotate');
 export const authSession = () => get('/api/auth/session');
+export const createAuthSession = () => post('/api/auth/session');
 export const authLogout = () => post('/api/auth/logout');
 export const authSsoConfig = () => get('/api/auth/sso/config');
 export const assistantStatus = () => get('/api/assistant/status');
@@ -93,6 +112,9 @@ export const openapi = () => get('/api/openapi.json');
 export const metrics = () => get('/api/metrics');
 export const sloStatus = () => get('/api/slo/status');
 export const supportDiag = () => get('/api/support/diagnostics');
+export const supportReadinessEvidence = () => get('/api/support/readiness-evidence');
+export const firstRunProof = () => post('/api/support/first-run-proof');
+export const productionDemoLab = () => post('/api/demo/lab');
 export const supportParity = () => get('/api/support/parity');
 export const docsIndex = ({ q, section, limit } = {}) => {
   const query = new URLSearchParams();
@@ -262,6 +284,12 @@ export const swarmIntelStats = () => get('/api/swarm/intel/stats');
 export const tlsStatus = () => get('/api/tls/status');
 export const meshHealth = () => get('/api/mesh/health');
 export const meshHeal = () => post('/api/mesh/heal');
+export const remediationPlan = (body) => post('/api/remediation/plan', body);
+export const remediationResults = () => get('/api/remediation/results');
+export const remediationStats = () => get('/api/remediation/stats');
+export const remediationChangeReviews = () => get('/api/remediation/change-reviews');
+export const recordRemediationChangeReview = (body) =>
+  post('/api/remediation/change-reviews', body);
 
 // ── Energy & Edge ────────────────────────────────────────────
 export const energyStatus = () => get('/api/energy/status');

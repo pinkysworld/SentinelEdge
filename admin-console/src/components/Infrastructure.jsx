@@ -252,6 +252,9 @@ export default function Infrastructure() {
     malwareRecentData: api.malwareRecent,
   });
   const { malwareStatsData, malwareRecentData } = infrastructureMalwareData;
+  const { data: remediationReviewsData, reload: reloadRemediationReviews } = useApi(
+    api.remediationChangeReviews,
+  );
   const { data: compData } = useApi(api.complianceSummary);
   const { data: analyticsData } = useApi(api.apiAnalytics);
   const { data: tracesData } = useApi(api.traces);
@@ -585,7 +588,37 @@ export default function Infrastructure() {
   };
 
   const refreshInfrastructure = async () => {
-    await Promise.allSettled([reloadInfrastructureAssets(), reloadInfrastructureMalware()]);
+    await Promise.allSettled([
+      reloadInfrastructureAssets(),
+      reloadInfrastructureMalware(),
+      reloadRemediationReviews(),
+    ]);
+  };
+
+  const createChangeReview = async (asset = selectedAsset || focusedMalware) => {
+    if (!asset) {
+      toast('Select an asset or malware verdict before opening change review.', 'warning');
+      return;
+    }
+    try {
+      await api.recordRemediationChangeReview({
+        title: `Review ${asset.title || asset.id}`,
+        asset_id: asset.id || asset.title || 'unscoped',
+        change_type: asset.type === 'malware' ? 'malware_containment' : 'infrastructure_remediation',
+        source: asset.type || 'infrastructure',
+        summary:
+          asset.subtitle ||
+          'Review the proposed remediation, approval requirement, and recovery evidence.',
+        risk: asset.severity || 'medium',
+        approval_status: 'pending_review',
+        recovery_status: 'not_started',
+        evidence: asset.evidence || asset,
+      });
+      await reloadRemediationReviews();
+      toast('Change review recorded.', 'success');
+    } catch {
+      toast('Unable to record change review.', 'error');
+    }
   };
 
   const runDeepMalwareScan = async () => {
@@ -689,6 +722,9 @@ export default function Infrastructure() {
                 <button className="btn btn-sm" onClick={() => updateParams({ tab: 'integrity' })}>
                   Review Integrity
                 </button>
+                <button className="btn btn-sm" onClick={() => createChangeReview()}>
+                  Open Change Review
+                </button>
               </div>
             </div>
             <div className="summary-grid">
@@ -726,6 +762,46 @@ export default function Infrastructure() {
           </div>
 
           <div className="card-grid">
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>
+                Change Review & Recovery
+              </div>
+              <div className="summary-grid" style={{ marginBottom: 12 }}>
+                <div className="summary-card">
+                  <div className="summary-label">Pending Review</div>
+                  <div className="summary-value">{remediationReviewsData?.summary?.pending || 0}</div>
+                  <div className="summary-meta">Remediation decisions waiting for approval.</div>
+                </div>
+                <div className="summary-card">
+                  <div className="summary-label">Recovery Ready</div>
+                  <div className="summary-value">
+                    {remediationReviewsData?.summary?.recovery_ready || 0}
+                  </div>
+                  <div className="summary-meta">Changes with rollback or recovery evidence.</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {(remediationReviewsData?.reviews || []).slice(0, 4).map((review) => (
+                  <div key={review.id} className="stat-box">
+                    <div className="chip-row" style={{ marginBottom: 6 }}>
+                      <span className={`badge ${verdictBadgeClass(review.risk)}`}>
+                        {review.risk || 'medium'}
+                      </span>
+                      <span className="scope-chip">{review.approval_status}</span>
+                      <span className="scope-chip">{review.recovery_status}</span>
+                    </div>
+                    <div style={{ fontWeight: 600 }}>{review.title}</div>
+                    <div className="hint">
+                      {review.asset_id} • {formatRelativeTime(review.requested_at)}
+                    </div>
+                  </div>
+                ))}
+                {(!remediationReviewsData?.reviews ||
+                  remediationReviewsData.reviews.length === 0) && (
+                  <div className="empty">No remediation change reviews have been recorded yet.</div>
+                )}
+              </div>
+            </div>
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>
                 Platform Overview
@@ -1305,6 +1381,13 @@ export default function Infrastructure() {
                         >
                           Ask Assistant
                         </a>
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          onClick={() => createChangeReview(focusedMalware)}
+                        >
+                          Record Review
+                        </button>
                       </div>
                     </div>
                   )}

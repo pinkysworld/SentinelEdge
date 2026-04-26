@@ -2159,6 +2159,24 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
             ),
         )
         .path(
+            "/api/support/readiness-evidence",
+            "get",
+            op(
+                "getReadinessEvidence",
+                "Production readiness evidence pack",
+                &["status"],
+            ),
+        )
+        .path(
+            "/api/support/first-run-proof",
+            "post",
+            op(
+                "runFirstRunProof",
+                "Run the first-run operator proof scenario",
+                &["status"],
+            ),
+        )
+        .path(
             "/api/support/parity",
             "get",
             op(
@@ -2266,6 +2284,8 @@ mod tests {
         assert!(spec.paths.contains_key("/api/fleet/dashboard"));
         assert!(spec.paths.contains_key("/api/events/search"));
         assert!(spec.paths.contains_key("/api/rollout/config"));
+        assert!(spec.paths.contains_key("/api/support/readiness-evidence"));
+        assert!(spec.paths.contains_key("/api/support/first-run-proof"));
     }
 
     #[test]

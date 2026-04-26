@@ -4,6 +4,31 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.53.8] — Session Hardening, Collector Lifecycle & Release Readiness
+
+### Security and session handling
+- **HttpOnly console sessions** — The admin console now exchanges pasted admin tokens for server-side `wardex_session` cookies via `POST /api/auth/session`, sends API requests with credentials, removes legacy `wardex_token` localStorage persistence, and keeps bearer-token auth available for SDKs, automation, and tests.
+- **Cookie-aware SDK and console clients** — The TypeScript SDK now supports `credentials`, session inspection/exchange helpers, collector lifecycle status, and remediation change-review APIs so downstream consumers can follow the same session-safe path as the console.
+
+### Collector and remediation workflow depth
+- **Persisted collector lifecycle analytics** — Cloud, SaaS, and identity collector status now retains validation lifecycle history, last-success/error checkpoints, retry/backoff state, freshness, failure streaks, and 24h ingestion counts directly in the shared collector contract and Settings lane cards.
+- **Remediation change-review ledger** — Infrastructure workflows now expose a persisted change-review and recovery queue for malware verdicts and remediation candidates, including approval status, recovery status, risk, evidence, and focused review creation from the malware verdict workspace.
+
+### Demo, docs, and release confidence
+- **Production demo lab** — Help & Docs adds a Demo Lab action backed by `/api/demo/lab`, reusing the first-run proof path to seed telemetry, case context, response dry-run approval, reports, and evidence metadata for realistic evaluation.
+- **Release-document drift guard** — Release-doc validation now checks that historical implementation plans are clearly marked as archives and point to current status documents, reducing stale roadmap/product-claim drift.
+- **Website and release metadata refresh** — README, status, roadmap, SDK guide, reproducibility notes, OpenAPI metadata, Helm/OTLP values, package versions, and website release surfaces are aligned on the `v0.53.8` baseline.
+
+### Verification
+- `cargo check`
+- `npm run lint --prefix admin-console`
+- `python3 scripts/validate_release_docs.py`
+- `npm run test:file --prefix admin-console -- src/__tests__/api.test.js src/__tests__/hooks.test.jsx src/__tests__/App.test.jsx src/__tests__/HelpDocs.test.jsx`
+- `cargo test collector`
+- `cargo test auth_session`
+- `cargo test auth_session_exchange_sets_cookie_and_accepts_cookie_session`
+- `cargo test remediation_change_reviews_can_be_recorded_and_listed`
+
 ## [0.53.7] — Lint, Coverage & Panic-Policy Tightening
 
 ### Quality gates

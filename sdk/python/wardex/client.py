@@ -473,6 +473,15 @@ class WardexClient:
     def openapi_spec(self) -> dict[str, Any]:
         return self._get("/api/openapi.json")
 
+    def support_parity(self) -> dict[str, Any]:
+        return self._get("/api/support/parity")
+
+    def readiness_evidence(self) -> dict[str, Any]:
+        return self._get("/api/support/readiness-evidence")
+
+    def first_run_proof(self) -> dict[str, Any]:
+        return self._post("/api/support/first-run-proof")
+
     # ── vulnerability scanner ─────────────────────────────────────────
 
     def vulnerability_scan(self) -> dict[str, Any]:

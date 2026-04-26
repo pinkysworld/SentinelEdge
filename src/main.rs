@@ -68,9 +68,25 @@ async fn run() -> Result<(), String> {
     match command.as_str() {
         "start" => {
             // Combined mode: HTTP server + live monitor (the "just works" default)
+            let mut port = 8080u16;
+            let mut monitor_args = Vec::new();
+
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--port" => {
+                        let value = args
+                            .next()
+                            .ok_or_else(|| "`start --port` requires a value".to_string())?;
+                        port = value
+                            .parse::<u16>()
+                            .map_err(|_| "invalid port number".to_string())?;
+                    }
+                    _ => monitor_args.push(arg),
+                }
+            }
+
             let config = load_or_create_config();
-            let mon = collector::parse_monitor_args(&mut args);
-            let port = 8080u16;
+            let mon = collector::parse_monitor_args(&mut monitor_args.into_iter());
             let site_dir = resolve_site_dir(&PathBuf::from("site"))?;
 
             let shutdown = Arc::new(AtomicBool::new(false));
@@ -517,7 +533,7 @@ fn print_usage() {
     println!("  agent   status                     Check agent service status");
     println!();
     println!("Standalone Commands:");
-    println!("  start   [flags]                    Server + monitor (same as no args)");
+    println!("  start   [--port <port>] [flags]    Server + monitor (same as no args)");
     println!("  monitor [flags]                    CLI-only monitor (no web server)");
     println!("  serve   [port] [site_dir]          Web server only (no monitor)");
     println!("  demo    [audit_path]               Run demo telemetry analysis");

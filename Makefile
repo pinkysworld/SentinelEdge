@@ -1,5 +1,5 @@
 # ── Wardex — Developer Makefile ────────────────────────
-.PHONY: build run test lint fmt check clean release dev admin fuzz bench doc release-acceptance
+.PHONY: build run test lint fmt check clean release dev admin fuzz bench doc release-acceptance release-docs-check
 
 # ── Build ──
 build:
@@ -79,3 +79,6 @@ ci: fmt-check lint test admin-test
 
 release-acceptance:
 	bash ./scripts/release_acceptance.sh
+
+release-docs-check:
+	python3 ./scripts/validate_release_docs.py

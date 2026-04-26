@@ -6,6 +6,9 @@ const TOKEN = process.env.WARDEX_ADMIN_TOKEN || '';
 test('advanced admin console workflows smoke', async ({ page }) => {
   test.skip(!TOKEN, 'Set WARDEX_ADMIN_TOKEN to run the advanced admin smoke.');
 
+  const huntName = `Credential Storm Pivot ${Date.now()}`;
+  const huntQuery = 'severity:critical credential storm';
+
   const consoleErrors = [];
   const pageErrors = [];
   const badResponses = [];
@@ -45,13 +48,23 @@ test('advanced admin console workflows smoke', async ({ page }) => {
   await sidebar.getByRole('link', { name: 'Dashboard', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Security Overview' })).toBeVisible();
 
-  await sidebar.getByRole('link', { name: 'SOC Workbench', exact: true }).click();
+  await page.goto(
+    `${BASE}/admin/detection?intent=run-hunt&huntName=${encodeURIComponent(huntName)}&huntQuery=${encodeURIComponent(huntQuery)}`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  await expect(page.locator('#hunt-name')).toHaveValue(huntName);
+  await expect(page.locator('#hunt-query')).toHaveValue(huntQuery);
+  await page.getByRole('button', { name: 'Run Hunt' }).click();
+  await expect(page.getByText('Hunt completed.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save Hunt' }).click();
+  await expect(page.getByText('Hunt saved.', { exact: true })).toBeVisible();
+  await page.goto(`${BASE}/admin/soc`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Workbench Overview')).toBeVisible();
   await expect(page.getByText('Investigations In Flight')).toBeVisible();
-  await page.getByRole('button', { name: 'Respond', exact: true }).click();
-  await expect(page.getByText('Pending Responses')).toBeVisible();
-  await expect(page.getByText('Response Stats')).toBeVisible();
-  await expect(page.getByText('Response Requests')).toBeVisible();
+  await page.getByRole('button', { name: 'Response', exact: true }).click();
+  await expect(page.getByText('Pending Responses', { exact: true })).toBeVisible();
+  await expect(page.getByText('Response Stats', { exact: true })).toBeVisible();
+  await expect(page.getByText('Response Requests', { exact: true })).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Security Policy', exact: true }).click();
   await page.getByRole('button', { name: 'Policy', exact: true }).click();
@@ -61,30 +74,32 @@ test('advanced admin console workflows smoke', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Quarantine Target' })).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Integrations' }).click();
+  await page.getByRole('tab', { name: 'Integrations' }).click();
   await expect(page.getByText('IdP Providers')).toBeVisible();
   await expect(page.getByText('Cloud Collectors & Secrets')).toBeVisible();
   await expect(page.getByText('Collector Routing & Health')).toBeVisible();
   await expect(page.getByText('Identity Telemetry Lane')).toBeVisible();
   await expect(page.getByText('SaaS Activity Lane')).toBeVisible();
-  await page.getByRole('button', { name: 'Admin' }).click();
+  await page.getByRole('tab', { name: 'Admin' }).click();
   await expect(page.getByText('Long-Retention History')).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Fleet & Agents', exact: true }).click();
   await page.getByRole('button', { name: 'Updates', exact: true }).click();
-  await expect(page.getByText('Updates focus')).toBeVisible();
-  await expect(page.getByText('Recent Rollout History')).toBeVisible();
-  await page.getByRole('button', { name: 'Recovery Watchlist', exact: true }).click();
-  await expect(page.getByText('Recovery Watchlist')).toBeVisible();
+  await expect(page.getByText('Updates focus', { exact: true })).toBeVisible();
+  await expect(page.getByText('Recent Rollout History', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Recovery', exact: true }).click();
+  await expect(page.getByText('Recovery Watchlist', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Deployment Health', exact: true }).click();
-  await expect(page.getByText('Deployment Health')).toBeVisible();
+  await expect(page.locator('.card-title').filter({ hasText: /^Deployment Health$/ })).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Infrastructure', exact: true }).click();
-  await page.getByRole('button', { name: 'Assets', exact: true }).click();
-  await expect(page.getByText('Saved Views')).toBeVisible();
-  await expect(page.getByText('Guided Remediation Brief')).toBeVisible();
-  await page.getByRole('button', { name: 'Integrity', exact: true }).click();
-  await expect(page.getByText(/Integrity And Recovery Playbook:/)).toBeVisible();
+  await page.getByRole('tab', { name: 'Assets', exact: true }).click();
+  await expect(page.getByText('Saved Views', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Select an asset to review posture, related evidence, and subsystem details.'),
+  ).toBeVisible();
+  await page.getByRole('tab', { name: 'Integrity', exact: true }).click();
+  await expect(page.getByText('Recent Malware Triage', { exact: true })).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'Help & Docs', exact: true }).click();
   await expect(page.getByText('Documentation Center', { exact: true })).toBeVisible();

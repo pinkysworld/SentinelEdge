@@ -1,12 +1,31 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use wardex::detector::AnomalyDetector;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use wardex::detector::{AnomalyDetector, EntropyDetector, VelocityDetector};
 use wardex::policy::PolicyEngine;
 use wardex::runtime::{demo_samples, execute};
+use wardex::storage::{SharedStorage, StoredAlert};
 use wardex::telemetry::TelemetrySample;
 
 fn make_samples(n: usize) -> Vec<TelemetrySample> {
     let base = demo_samples();
     base.into_iter().cycle().take(n).collect()
+}
+
+fn make_alert(id: u64) -> StoredAlert {
+    StoredAlert {
+        id: format!("bench-alert-{id}"),
+        timestamp: "2026-04-25T00:00:00Z".into(),
+        device_id: format!("bench-device-{}", id % 32),
+        score: 0.87,
+        level: "Elevated".into(),
+        reasons: vec!["benchmark".into(), "storage-lock-audit".into()],
+        acknowledged: false,
+        assigned_to: None,
+        case_id: None,
+        tenant_id: "bench".into(),
+    }
 }
 
 fn bench_full_pipeline(c: &mut Criterion) {
@@ -26,6 +45,64 @@ fn bench_detector_evaluate(c: &mut Criterion) {
         b.iter(|| {
             let mut detector = AnomalyDetector::default();
             detector.evaluate(black_box(&samples[4]));
+        });
+    });
+}
+
+fn bench_detector_window_stream(c: &mut Criterion) {
+    let samples = make_samples(256);
+    c.bench_function("detector_window_stream_256", |b| {
+        b.iter(|| {
+            let mut velocity = VelocityDetector::new(64, 2.5);
+            let mut entropy = EntropyDetector::new(64, 8);
+            for sample in black_box(&samples) {
+                let _ = velocity.update(sample);
+                let _ = entropy.update(sample);
+            }
+        });
+    });
+}
+
+fn bench_shared_storage_lock_observation(c: &mut Criterion) {
+    let dir = tempfile::tempdir().expect("bench storage tempdir");
+    let storage = SharedStorage::open(dir.path().to_str().expect("utf-8 tempdir"))
+        .expect("bench shared storage");
+
+    c.bench_function("shared_storage_observed_schema_read", |b| {
+        b.iter(|| {
+            let (_, observation) = storage
+                .with_observed(|store| Ok(store.schema_version()))
+                .expect("observed storage read");
+            black_box((observation.wait_micros(), observation.hold_micros()))
+        });
+    });
+}
+
+fn bench_shared_storage_concurrent_alert_inserts(c: &mut Criterion) {
+    let dir = tempfile::tempdir().expect("bench storage tempdir");
+    let storage = SharedStorage::open(dir.path().to_str().expect("utf-8 tempdir"))
+        .expect("bench shared storage");
+    let storage = Arc::new(storage);
+    let next_id = Arc::new(AtomicU64::new(1));
+
+    c.bench_function("shared_storage_4_threads_64_alerts", |b| {
+        b.iter(|| {
+            let mut handles = Vec::new();
+            for _ in 0..4 {
+                let storage = Arc::clone(&storage);
+                let next_id = Arc::clone(&next_id);
+                handles.push(thread::spawn(move || {
+                    for _ in 0..16 {
+                        let id = next_id.fetch_add(1, Ordering::Relaxed);
+                        storage
+                            .insert_alert_dedup(make_alert(id))
+                            .expect("insert alert");
+                    }
+                }));
+            }
+            for handle in handles {
+                handle.join().expect("storage worker");
+            }
         });
     });
 }
@@ -226,6 +303,9 @@ criterion_group!(
     benches,
     bench_full_pipeline,
     bench_detector_evaluate,
+    bench_detector_window_stream,
+    bench_shared_storage_lock_observation,
+    bench_shared_storage_concurrent_alert_inserts,
     bench_policy_evaluate,
     bench_throughput,
     bench_search_index,

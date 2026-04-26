@@ -71,15 +71,40 @@ export function CollectorLaneCard({
                     {entry.label || entry.name || entry.provider}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                    {entry.total_collected || 0} events observed •{' '}
-                    {validationStatusLabel(entry.validation?.status)}
+                    {entry.events_ingested ?? entry.total_collected ?? 0} events ingested •{' '}
+                    {entry.freshness || validationStatusLabel(entry.validation?.status)}
                   </div>
+                  <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                    Checkpoint {entry.checkpoint_id ? String(entry.checkpoint_id).slice(0, 10) : '—'}
+                    {entry.lag_seconds != null ? ` • lag ${entry.lag_seconds}s` : ''}
+                    {entry.error_category ? ` • ${entry.error_category}` : ''}
+                  </div>
+                  {entry.lifecycle_analytics && (
+                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                      {entry.lifecycle_analytics.total_runs || 0} validation run
+                      {(entry.lifecycle_analytics.total_runs || 0) === 1 ? '' : 's'} •{' '}
+                      {entry.lifecycle_analytics.events_last_24h || 0} events in 24h • failure
+                      streak {entry.lifecycle_analytics.recent_failure_streak || 0}
+                    </div>
+                  )}
                 </div>
                 <span className={`badge ${validationBadgeClass(entry.validation?.status)}`}>
                   {validationStatusLabel(entry.validation?.status)}
                 </span>
               </div>
               <CollectorTimelineList timeline={normalizeCollectorTimeline(entry)} />
+              {Array.isArray(entry.lifecycle) && entry.lifecycle.length > 0 && (
+                <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+                  {entry.lifecycle.slice(0, 3).map((run, runIndex) => (
+                    <div key={`${collectorIdentifier(entry)}-run-${runIndex}`} className="hint">
+                      {run.recorded_at || 'Recorded run'} •{' '}
+                      {run.success ? 'success' : run.error_category || 'failed'} •{' '}
+                      {run.event_count || 0} event
+                      {(run.event_count || 0) === 1 ? '' : 's'}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))
         )}

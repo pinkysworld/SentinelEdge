@@ -268,6 +268,10 @@ describe('Settings', () => {
           lane: 'cloud',
           enabled: awsCollectorState.enabled,
           validation: awsCollectorState.validation,
+          events_ingested: 24,
+          freshness: 'fresh',
+          checkpoint_id: 'aws-checkpoint-123456',
+          lag_seconds: 45,
           total_collected: 2,
           timeline: [
             {
@@ -1244,6 +1248,8 @@ describe('Settings', () => {
       screen.getAllByText('CloudTrail management events are routed into infrastructure review.')
         .length,
     ).toBeGreaterThan(0);
+    expect(screen.getByText(/24 events ingested/)).toBeInTheDocument();
+    expect(screen.getByText(/Checkpoint aws-check/)).toBeInTheDocument();
     expect(
       screen.getAllByText('Microsoft 365 activity is ready for assistant and report pivots.')
         .length,

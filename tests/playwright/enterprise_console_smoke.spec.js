@@ -55,8 +55,11 @@ test('enterprise admin console smoke', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Test Selected' })).toBeVisible();
 
   await sidebar.getByRole('link', { name: 'SOC Workbench', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Process tree/i })).toBeVisible();
-  await page.getByRole('button', { name: /Process tree/i }).click();
+  await expect(page.getByText('Workbench Overview')).toBeVisible();
+  const processTreeLink = page.getByRole('link', { name: 'Open Process Tree' });
+  await expect(processTreeLink).toBeVisible();
+  await processTreeLink.click();
+  await expect(page).toHaveURL(/\/admin\/soc.*#process-tree$/);
   await expect(page.getByText(/Live Processes \(/)).toBeVisible();
   await expect(page.getByText('Deep Process Chains', { exact: true })).toBeVisible();
 

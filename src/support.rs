@@ -30,6 +30,37 @@ pub struct ReportExecutionContext {
     pub source: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportArtifactMetadata {
+    pub scope: String,
+    pub source_run_id: Option<String>,
+    pub generated_by: String,
+    pub input_hash: String,
+    pub artifact_hash: String,
+    pub replayable_context_id: Option<String>,
+}
+
+impl ReportArtifactMetadata {
+    pub fn from_payload(
+        scope: &str,
+        source_run_id: Option<String>,
+        generated_by: &str,
+        input: &serde_json::Value,
+        artifact: &serde_json::Value,
+        execution_context: Option<&ReportExecutionContext>,
+    ) -> Self {
+        let replayable_context_id = execution_context.and_then(replayable_context_id);
+        Self {
+            scope: scope.to_string(),
+            source_run_id,
+            generated_by: generated_by.to_string(),
+            input_hash: crate::audit::sha256_hex(input.to_string().as_bytes()),
+            artifact_hash: crate::audit::sha256_hex(artifact.to_string().as_bytes()),
+            replayable_context_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReportExecutionScopeFilter {
     #[default]
@@ -63,6 +94,8 @@ pub struct ReportRunRecord {
     pub preview: serde_json::Value,
     #[serde(default)]
     pub execution_context: Option<ReportExecutionContext>,
+    #[serde(default)]
+    pub artifact_metadata: Option<ReportArtifactMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -367,8 +400,26 @@ impl SupportStore {
         execution_context: Option<ReportExecutionContext>,
     ) -> ReportRunRecord {
         let now = now_rfc3339();
+        let id = self.next_id("run");
+        let input = serde_json::json!({
+            "name": name.clone(),
+            "kind": kind.clone(),
+            "scope": scope.clone(),
+            "format": format.clone(),
+            "audience": audience.clone(),
+            "status": status.clone(),
+            "execution_context": execution_context.clone(),
+        });
+        let artifact_metadata = ReportArtifactMetadata::from_payload(
+            &scope,
+            Some(id.clone()),
+            "wardex-report-center",
+            &input,
+            &preview,
+            execution_context.as_ref(),
+        );
         let created = ReportRunRecord {
-            id: self.next_id("run"),
+            id,
             name: name.clone(),
             kind: kind.clone(),
             scope: scope.clone(),
@@ -381,6 +432,7 @@ impl SupportStore {
             size_bytes,
             preview,
             execution_context,
+            artifact_metadata: Some(artifact_metadata),
         };
         self.snapshot.runs.insert(0, created.clone());
         self.snapshot.runs.truncate(100);
@@ -520,6 +572,31 @@ fn execution_context_matches(
         && field_matches(context.source.as_ref(), filter.source.as_ref())
 }
 
+fn replayable_context_id(context: &ReportExecutionContext) -> Option<String> {
+    let parts = [
+        context
+            .case_id
+            .as_deref()
+            .map(|value| format!("case:{value}")),
+        context
+            .incident_id
+            .as_deref()
+            .map(|value| format!("incident:{value}")),
+        context
+            .investigation_id
+            .as_deref()
+            .map(|value| format!("investigation:{value}")),
+        context
+            .source
+            .as_deref()
+            .map(|value| format!("source:{value}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    (!parts.is_empty()).then(|| crate::audit::sha256_hex(parts.join("|").as_bytes()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -579,6 +656,18 @@ mod tests {
                 .as_ref()
                 .and_then(|context| context.case_id.as_deref()),
             Some("42")
+        );
+        let metadata = run
+            .artifact_metadata
+            .as_ref()
+            .expect("report run should include artifact metadata");
+        assert_eq!(metadata.scope, "incidents");
+        assert_eq!(metadata.source_run_id.as_deref(), Some(run.id.as_str()));
+        assert!(!metadata.input_hash.is_empty());
+        assert!(!metadata.artifact_hash.is_empty());
+        assert_eq!(
+            metadata.replayable_context_id.as_deref().map(str::len),
+            Some(64)
         );
         assert_eq!(
             schedule
