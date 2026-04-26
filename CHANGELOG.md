@@ -4,6 +4,30 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.54.0] — Product Command Center, Action Drawers & Connector Onboarding
+
+### Command Center
+- **Analyst default workspace** — `/command` is now the analyst primary destination, bringing incidents, active cases, connector gaps, remediation approvals, noisy rules, release readiness, and compliance evidence into one routed operator surface.
+- **Inline action drawers** — Command Center metric cards now open focused connector validation, remediation approval, rule replay, release readiness, and evidence-pack drawers so operators can act without losing the command context.
+- **Backend summary contract** — New `GET /api/command/summary` aggregates lane health across incidents, cases, remediation reviews, collector readiness, rule quality, release metadata, report templates, compliance posture, and fleet gaps.
+
+### Connector and tuning workflows
+- **Planned connector onboarding** — GitHub Audit Log, CrowdStrike Falcon, and Generic Syslog now have setup, validation, public summary, sample-event preview, collector status, OpenAPI, and console API coverage.
+- **Rule tuning checklist** — The command surface now shows replay, suppression, and promotion readiness checks for noisy/stale rules before analysts move into the full detection workspace.
+
+### Documentation and validation
+- **Command Center runbook** — A new operator runbook covers shift-start triage, connector validation, remediation approvals, rule tuning, release readiness, evidence packs, and escalation handoffs.
+- **Routed browser smoke** — Playwright now covers desktop action drawers and the mobile Command Center layout across Chromium, Firefox, and WebKit.
+- **Release metadata aligned on v0.54.0** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, install docs, reproducibility notes, and website release surfaces point to the same release baseline.
+
+### Verification
+- `cargo test --test api_integration command_summary_returns_lane_health -- --exact`
+- `cargo test --test api_integration planned_connector_config_and_validation_persist -- --exact`
+- `npm run lint --prefix admin-console`
+- `npm test --prefix admin-console -- --run src/__tests__/App.test.jsx`
+- `npm run build --prefix admin-console`
+- `npx playwright test e2e/command-center.spec.js`
+
 ## [0.53.9] — Quality Ratchets, Cross-Browser CI & Live Rollback Hardening
 
 ### Quality gates

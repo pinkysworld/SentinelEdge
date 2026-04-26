@@ -1,167 +1,28 @@
 import { Link } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useApiGroup } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid, WorkspaceEmptyState } from './operator.jsx';
-import { formatDateTime, formatRelativeTime } from './operatorUtils.js';
 import { buildHref } from './workflowPivots.js';
-
-const CONNECTOR_LANES = [
-  { id: 'aws', label: 'AWS CloudTrail', category: 'Cloud', statusKey: 'awsCollector' },
-  { id: 'azure', label: 'Azure Activity', category: 'Cloud', statusKey: 'azureCollector' },
-  { id: 'gcp', label: 'GCP Audit Logs', category: 'Cloud', statusKey: 'gcpCollector' },
-  { id: 'okta', label: 'Okta System Log', category: 'Identity', statusKey: 'oktaCollector' },
-  { id: 'entra', label: 'Microsoft Entra', category: 'Identity', statusKey: 'entraCollector' },
-  { id: 'm365', label: 'Microsoft 365', category: 'SaaS', statusKey: 'm365Collector' },
-  { id: 'workspace', label: 'Google Workspace', category: 'SaaS', statusKey: 'workspaceCollector' },
-  { id: 'github', label: 'GitHub Audit Log', category: 'SaaS', planned: true },
-  { id: 'crowdstrike', label: 'CrowdStrike Falcon', category: 'EDR', planned: true },
-  { id: 'syslog', label: 'Generic Syslog', category: 'Network', planned: true },
-];
-
-const IMPROVEMENT_LANES = [
-  'Incident Command Center',
-  'Connector Onboarding Wizard',
-  'Detection Quality Dashboard',
-  'Release and Upgrade Center',
-  'Guided Remediation Approval Flow',
-  'AI Analyst Evidence Boundaries',
-  'Attack Storytelling',
-  'RBAC Polish',
-  'Rule Tuning Workflow',
-  'Compliance Evidence Packs',
-];
-
-const asArray = (value, keys = []) => {
-  if (Array.isArray(value)) return value;
-  for (const key of keys) {
-    if (Array.isArray(value?.[key])) return value[key];
-  }
-  return [];
-};
-
-const normalizedStatus = (value) => String(value || '').trim().toLowerCase();
-
-const statusBadge = (value) => {
-  const status = normalizedStatus(value);
-  if (['ok', 'ready', 'healthy', 'enabled', 'active', 'passing', 'connected'].includes(status)) {
-    return 'badge-ok';
-  }
-  if (['failed', 'error', 'blocked', 'critical', 'degraded', 'unhealthy'].includes(status)) {
-    return 'badge-err';
-  }
-  if (['pending', 'warning', 'configured', 'partial', 'draft'].includes(status)) {
-    return 'badge-warn';
-  }
-  return 'badge-info';
-};
-
-const riskBadge = (value) => {
-  const risk = normalizedStatus(value);
-  if (risk === 'critical' || risk === 'high') return 'badge-err';
-  if (risk === 'medium') return 'badge-warn';
-  return 'badge-info';
-};
-
-const formatCount = (value) => {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return '0';
-  return numeric.toLocaleString();
-};
-
-const compactTimestamp = (value) => {
-  if (!value) return 'No timestamp';
-  return formatRelativeTime(value) || formatDateTime(value);
-};
-
-const connectorStatus = (connector, data) => {
-  if (connector.planned) {
-    return {
-      status: 'planned',
-      detail: 'Roadmap lane captured for guided setup, validation, and sample event preview.',
-      sample: 'Not wired yet',
-    };
-  }
-
-  const details = data[connector.statusKey] || {};
-  const setup = details.setup || details.config || details;
-  const validation = details.validation || setup.validation || {};
-  const status =
-    validation.status ||
-    setup.status ||
-    details.status ||
-    (setup.enabled || details.enabled ? 'configured' : 'not configured');
-  const lastSuccess =
-    setup.last_success_at || validation.last_success_at || details.last_success_at || null;
-  return {
-    status,
-    detail:
-      validation.message ||
-      setup.message ||
-      details.detail ||
-      (lastSuccess ? `Last successful collection ${compactTimestamp(lastSuccess)}.` : 'Awaiting validation.'),
-    sample:
-      setup.sample_event_type ||
-      validation.sample_event_type ||
-      details.sample_event_type ||
-      setup.checkpoint_id ||
-      'Sample preview pending',
-  };
-};
-
-function MetricCard({ label, value, detail, tone = 'badge-info', to }) {
-  const body = (
-    <div className="summary-card command-metric-card">
-      <div className="summary-label">{label}</div>
-      <div className="summary-value">{value}</div>
-      {detail && <div className="summary-meta">{detail}</div>}
-      <span className={`badge ${tone}`}>Open</span>
-    </div>
-  );
-  if (!to) return body;
-  return (
-    <Link className="command-card-link" to={to}>
-      {body}
-    </Link>
-  );
-}
-
-function CommandSection({ title, eyebrow, description, actions, children }) {
-  return (
-    <section className="card command-section">
-      <div className="section-header">
-        <div>
-          {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-          <h3>{title}</h3>
-          {description && <p>{description}</p>}
-        </div>
-        {actions && <div className="actions">{actions}</div>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function WorkItem({ title, detail, tone = 'badge-info', badge, to }) {
-  const content = (
-    <div className="row-card">
-      <div>
-        <div className="row-primary">{title}</div>
-        {detail && <div className="row-secondary">{detail}</div>}
-      </div>
-      {badge && <span className={`badge ${tone}`}>{badge}</span>}
-    </div>
-  );
-  if (!to) return content;
-  return (
-    <Link className="command-card-link" to={to}>
-      {content}
-    </Link>
-  );
-}
+import CommandActionDrawers from './command/CommandActionDrawers.jsx';
+import RuleTuningChecklist from './command/RuleTuningChecklist.jsx';
+import {
+  CONNECTOR_LANES,
+  IMPROVEMENT_LANES,
+  asArray,
+  compactTimestamp,
+  connectorStatus,
+  formatCount,
+  normalizedStatus,
+  riskBadge,
+  statusBadge,
+} from './command/helpers.js';
+import { CommandSection, MetricCard, WorkItem } from './command/primitives.jsx';
 
 export default function CommandCenter() {
+  const [drawer, setDrawer] = useState(null);
   const { data, loading, errors, reload } = useApiGroup({
+    commandSummary: api.commandSummary,
     incidentsData: api.incidents,
     casesData: api.cases,
     queueStats: api.queueStats,
@@ -176,6 +37,9 @@ export default function CommandCenter() {
     entraCollector: api.collectorsEntra,
     m365Collector: api.collectorsM365,
     workspaceCollector: api.collectorsWorkspace,
+    githubCollector: api.collectorsGithub,
+    crowdstrikeCollector: api.collectorsCrowdStrike,
+    syslogCollector: api.collectorsSyslog,
     efficacySummary: api.efficacySummary,
     contentRulesData: api.contentRules,
     suppressionsData: api.suppressions,
@@ -254,29 +118,33 @@ export default function CommandCenter() {
     ...connectorStatus(connector, data),
   }));
   const connectorIssues = connectorRows.filter(
-    (connector) => connector.planned || !['ok', 'ready', 'healthy', 'connected'].includes(normalizedStatus(connector.status)),
+    (connector) => !['ok', 'ready', 'healthy', 'connected'].includes(normalizedStatus(connector.status)),
   );
   const activeRelease = releases[0] || data.updatesData?.current || data.updatesData?.latest || null;
   const complianceStatus =
     data.complianceData?.status || data.complianceData?.overall_status || data.complianceData?.state || 'unknown';
   const assistantMode = data.assistantStatus?.mode || 'retrieval-only';
+  const assistantGuardrailTone = assistantMode === 'retrieval-only' ? 'badge-info' : 'badge-warn';
   const evidenceBoundaryWarnings = [
     'Require citations for every assistant recommendation.',
     'Label uncertainty before response or executive export.',
     'Keep prompts scoped to incident, case, investigation, or selected evidence.',
   ];
   const failedRequests = Object.keys(errors || {}).length;
-
+  const summaryMetrics = data.commandSummary?.metrics || {};
   const commandMetrics = {
-    incidents: activeIncidents.length,
-    cases: activeCases.length,
-    pendingReviews: pendingReviews.length,
-    connectorIssues: connectorIssues.length,
-    noisyRules: noisyRules.length,
-    staleRules: staleRules.length,
-    releaseCandidates: releases.length,
-    compliancePacks: reportTemplates.length,
+    incidents: summaryMetrics.open_incidents ?? activeIncidents.length,
+    cases: summaryMetrics.active_cases ?? activeCases.length,
+    pendingReviews: summaryMetrics.pending_remediation_reviews ?? pendingReviews.length,
+    connectorIssues: summaryMetrics.connector_issues ?? connectorIssues.length,
+    noisyRules: summaryMetrics.noisy_rules ?? noisyRules.length,
+    staleRules: summaryMetrics.stale_rules ?? staleRules.length,
+    releaseCandidates: summaryMetrics.release_candidates ?? releases.length,
+    compliancePacks: summaryMetrics.compliance_packs ?? reportTemplates.length,
   };
+
+  const openDrawer = (type, item = null) => setDrawer({ type, item });
+  const closeDrawer = () => setDrawer(null);
 
   return (
     <div className="workspace command-center-workspace">
@@ -285,9 +153,8 @@ export default function CommandCenter() {
           <div className="eyebrow">Product Command Center</div>
           <h2>Operate incidents, connectors, quality, releases, and evidence from one place</h2>
           <p>
-            This workspace is the first implementation pass across the product-improvement lanes:
-            it connects current APIs into one analyst and admin control surface, while exposing the
-            next hardening gaps explicitly.
+            This workspace now connects high-signal command summaries with action drawers, so
+            analysts can validate, approve, replay, and export without losing context.
           </p>
           <div className="chip-row">
             {IMPROVEMENT_LANES.map((lane) => (
@@ -301,6 +168,9 @@ export default function CommandCenter() {
           <button className="btn" type="button" onClick={reload} disabled={loading}>
             {loading ? 'Refreshing...' : 'Refresh Center'}
           </button>
+          <Link className="btn" to="/help?doc=runbooks/command-center.md">
+            Runbook
+          </Link>
           <Link className="btn btn-primary" to="/soc">
             Open SOC
           </Link>
@@ -327,37 +197,50 @@ export default function CommandCenter() {
           value={formatCount(commandMetrics.pendingReviews)}
           detail={`${formatCount(readyRollbacks.length)} rollback proofs ready`}
           tone={commandMetrics.pendingReviews > 0 ? 'badge-warn' : 'badge-ok'}
-          to="/infrastructure"
+          onClick={() => openDrawer('remediation')}
         />
         <MetricCard
           label="Connector gaps"
           value={formatCount(commandMetrics.connectorIssues)}
           detail="Cloud, SaaS, identity, EDR, and syslog lanes"
           tone={commandMetrics.connectorIssues > 0 ? 'badge-warn' : 'badge-ok'}
-          to="/settings"
+          onClick={() => openDrawer('connectors')}
         />
         <MetricCard
           label="Noisy rules"
           value={formatCount(commandMetrics.noisyRules)}
           detail={`${formatCount(commandMetrics.staleRules)} rules need validation`}
           tone={commandMetrics.noisyRules > 0 ? 'badge-warn' : 'badge-ok'}
-          to="/detection"
+          onClick={() => openDrawer('rules')}
         />
         <MetricCard
           label="Release candidates"
           value={formatCount(commandMetrics.releaseCandidates)}
           detail={activeRelease?.version || activeRelease?.tag || 'No release metadata loaded'}
           tone={activeRelease ? 'badge-info' : 'badge-warn'}
-          to="/infrastructure"
+          onClick={() => openDrawer('release')}
         />
         <MetricCard
           label="Compliance packs"
           value={formatCount(commandMetrics.compliancePacks)}
           detail={`Compliance status: ${complianceStatus}`}
           tone={statusBadge(complianceStatus)}
-          to="/reports"
+          onClick={() => openDrawer('evidence')}
         />
       </div>
+
+      <CommandActionDrawers
+        drawer={drawer}
+        connectorRows={connectorRows}
+        reviews={reviews}
+        rules={rules}
+        releases={releases}
+        reportTemplates={reportTemplates}
+        suppressionCount={suppressionCount}
+        data={data}
+        onClose={closeDrawer}
+        onReload={reload}
+      />
 
       <div className="grid-2">
         <CommandSection
@@ -378,26 +261,16 @@ export default function CommandCenter() {
               />
             ))
           ) : (
-            <WorkspaceEmptyState
-              compact
-              title="No active incidents loaded"
-              description="The command center will pin live incident, case, rollback, and report context here as soon as data is available."
-            />
+            <WorkspaceEmptyState compact title="No active incidents loaded" description="Live incident, case, rollback, and report context will appear here as soon as data is available." />
           )}
-          <SummaryGrid
-            data={{
-              queue: data.queueStats || {},
-              response: data.responseStats || {},
-            }}
-            limit={4}
-          />
+          <SummaryGrid data={{ queue: data.queueStats || {}, response: data.responseStats || {} }} limit={4} />
         </CommandSection>
 
         <CommandSection
           eyebrow="Connector Onboarding Wizard"
           title="Guide every collector from setup to proof"
           description="Each lane needs saved config, connection validation, sample event preview, and recent data proof."
-          actions={<Link className="btn btn-sm" to="/settings">Configure connectors</Link>}
+          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('connectors')}>Validate connectors</button>}
         >
           <div className="table-wrap">
             <table className="data-table compact-table">
@@ -412,7 +285,11 @@ export default function CommandCenter() {
               <tbody>
                 {connectorRows.map((connector) => (
                   <tr key={connector.id}>
-                    <td>{connector.label}</td>
+                    <td>
+                      <button className="btn-link command-inline-action" type="button" onClick={() => openDrawer('connectors', connector)}>
+                        {connector.label}
+                      </button>
+                    </td>
                     <td>{connector.category}</td>
                     <td>
                       <span className={`badge ${statusBadge(connector.status)}`}>{connector.status}</span>
@@ -430,8 +307,8 @@ export default function CommandCenter() {
         <CommandSection
           eyebrow="Detection Quality Dashboard"
           title="Track noisy, stale, and suppression-heavy detections"
-          description="This is the operator-facing quality layer for precision, false positives, tuning debt, and ATT&CK coverage work."
-          actions={<Link className="btn btn-sm" to="/detection">Tune rules</Link>}
+          description="Precision, false positives, tuning debt, and ATT&CK coverage work are visible before promotion."
+          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('rules')}>Run replay</button>}
         >
           <SummaryGrid
             data={{
@@ -449,7 +326,7 @@ export default function CommandCenter() {
               detail={`${formatCount(rule.last_test_match_count || 0)} replay hits - ${formatCount(suppressionCount[rule.id] || 0)} suppressions`}
               badge={rule.lifecycle || 'review'}
               tone={statusBadge(rule.lifecycle)}
-              to={buildHref('/detection', { params: { rule: rule.id || undefined, panel: 'efficacy' } })}
+              onClick={() => openDrawer('rules', rule)}
             />
           ))}
           <JsonDetails data={data.efficacySummary} label="Efficacy summary" />
@@ -459,7 +336,7 @@ export default function CommandCenter() {
           eyebrow="Release and Upgrade Center"
           title="Make upgrades auditable before operators click deploy"
           description="The release lane connects version inventory, SBOM, package readiness, and rollback posture."
-          actions={<Link className="btn btn-sm" to="/infrastructure">Open rollout controls</Link>}
+          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('release')}>Check readiness</button>}
         >
           <SummaryGrid
             data={{
@@ -477,6 +354,7 @@ export default function CommandCenter() {
               detail={release.notes || release.summary || compactTimestamp(release.created_at || release.published_at)}
               badge={release.status || 'candidate'}
               tone={statusBadge(release.status)}
+              onClick={() => openDrawer('release', release)}
             />
           ))}
         </CommandSection>
@@ -485,7 +363,7 @@ export default function CommandCenter() {
           eyebrow="Guided Remediation Approval Flow"
           title="Show blast radius before live execution"
           description="Approvals, required approver count, rollback proof, dry-run evidence, and typed-host gates stay together."
-          actions={<Link className="btn btn-sm" to="/infrastructure">Review changes</Link>}
+          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('remediation')}>Review changes</button>}
         >
           {reviews.length > 0 ? (
             reviews.slice(0, 5).map((review) => (
@@ -495,30 +373,19 @@ export default function CommandCenter() {
                 detail={`${review.asset_id || 'unscoped'} - ${review.approvals?.length || 0}/${review.required_approvers || 1} approvals - rollback ${review.rollback_proof ? 'ready' : 'pending'}`}
                 badge={review.approval_status || 'pending'}
                 tone={statusBadge(review.approval_status)}
-                to="/infrastructure"
+                onClick={() => openDrawer('remediation', review)}
               />
             ))
           ) : (
-            <WorkspaceEmptyState
-              compact
-              title="No remediation reviews loaded"
-              description="Live rollback requests will appear here with blast radius, approval chain, and rollback proof state."
-            />
+            <WorkspaceEmptyState compact title="No remediation reviews loaded" description="Live rollback requests will appear here with blast radius, approval chain, and rollback proof state." />
           )}
-          <SummaryGrid
-            data={{
-              pending: pendingReviews.length,
-              approved: approvedReviews.length,
-              rollback_ready: readyRollbacks.length,
-            }}
-            limit={3}
-          />
+          <SummaryGrid data={{ pending: pendingReviews.length, approved: approvedReviews.length, rollback_ready: readyRollbacks.length }} limit={3} />
         </CommandSection>
 
         <CommandSection
           eyebrow="AI Analyst Evidence Boundaries"
           title="Keep assistant answers inside cited evidence"
-          description="Assistant output should declare scope, evidence, confidence, and uncertainty before it becomes action."
+          description="Assistant output declares scope, evidence, confidence, and uncertainty before it becomes action."
           actions={<Link className="btn btn-sm" to="/assistant">Open assistant</Link>}
         >
           <SummaryGrid
@@ -531,14 +398,14 @@ export default function CommandCenter() {
             limit={4}
           />
           {evidenceBoundaryWarnings.map((warning) => (
-            <WorkItem key={warning} title={warning} badge="guardrail" tone="badge-info" />
+            <WorkItem key={warning} title={warning} badge="guardrail" tone={assistantGuardrailTone} />
           ))}
         </CommandSection>
 
         <CommandSection
           eyebrow="Attack Storytelling"
           title="Turn detections into a readable attack narrative"
-          description="Incident storylines and graph pivots should explain initial access, lateral movement, containment, and export-ready impact."
+          description="Incident storylines and graph pivots explain initial access, lateral movement, containment, and impact."
           actions={<Link className="btn btn-sm" to="/attack-graph">Open attack graph</Link>}
         >
           {activeIncidents.slice(0, 4).map((incident) => (
@@ -548,17 +415,11 @@ export default function CommandCenter() {
               detail="Open storyline, graph pivot, and report export context."
               badge="storyline"
               tone="badge-info"
-              to={buildHref('/soc', {
-                params: { incident: incident.id || undefined, incidentPanel: 'storyline' },
-              })}
+              to={buildHref('/soc', { params: { incident: incident.id || undefined, incidentPanel: 'storyline' } })}
             />
           ))}
           {activeIncidents.length === 0 && (
-            <WorkspaceEmptyState
-              compact
-              title="No attack stories queued"
-              description="The next incident with linked evidence will expose storyline and graph pivots here."
-            />
+            <WorkspaceEmptyState compact title="No attack stories queued" description="The next incident with linked evidence will expose storyline and graph pivots here." />
           )}
         </CommandSection>
 
@@ -592,32 +453,26 @@ export default function CommandCenter() {
           eyebrow="Rule Tuning Workflow"
           title="Move from false-positive feedback to safe promotion"
           description="Noisy rule triage, suppression drafts, replay validation, and promotion checklist live in one flow."
-          actions={<Link className="btn btn-sm" to="/detection">Open rule tuning</Link>}
+          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('rules')}>Open checklist</button>}
         >
-          {staleRules.slice(0, 4).map((rule) => (
-            <WorkItem
-              key={`stale-${rule.id || rule.name}`}
-              title={rule.name || rule.title || rule.id}
-              detail="Needs replay validation or promotion evidence before production confidence."
-              badge={rule.lifecycle || 'draft'}
-              tone="badge-warn"
-              to={buildHref('/detection', { params: { rule: rule.id || undefined, panel: 'promotion' } })}
+          {(staleRules.length > 0 ? staleRules : noisyRules).slice(0, 4).map((rule) => (
+            <RuleTuningChecklist
+              key={`checklist-${rule.id || rule.name}`}
+              rule={rule}
+              suppressionCount={suppressionCount[rule.id] || 0}
+              onReplay={(selectedRule) => openDrawer('rules', selectedRule)}
             />
           ))}
-          {staleRules.length === 0 && (
-            <WorkspaceEmptyState
-              compact
-              title="No stale rules detected"
-              description="Rules needing replay, suppression, or promotion evidence will appear here."
-            />
+          {staleRules.length === 0 && noisyRules.length === 0 && (
+            <WorkspaceEmptyState compact title="No stale rules detected" description="Rules needing replay, suppression, or promotion evidence will appear here." />
           )}
         </CommandSection>
 
         <CommandSection
           eyebrow="Evidence-Ready Compliance Packs"
           title="Prepare auditor-ready exports from operational truth"
-          description="Compliance packs should combine incidents, release attestations, config state, and report templates."
-          actions={<Link className="btn btn-sm" to="/reports">Open reports</Link>}
+          description="Compliance packs combine incidents, release attestations, config state, and report templates."
+          actions={<button className="btn btn-sm" type="button" onClick={() => openDrawer('evidence')}>Create evidence pack</button>}
         >
           <SummaryGrid
             data={{
@@ -635,7 +490,7 @@ export default function CommandCenter() {
               detail={template.description || template.scope || 'Ready for compliance evidence export.'}
               badge={template.framework || template.type || 'pack'}
               tone="badge-info"
-              to="/reports"
+              onClick={() => openDrawer('evidence', template)}
             />
           ))}
         </CommandSection>

@@ -6,7 +6,7 @@ info:
     All mutating endpoints and sensitive monitoring endpoints require
     Bearer token authentication via the `Authorization` header.
     Agent-facing enrollment and heartbeat endpoints bypass admin auth.
-  version: "0.53.9"
+  version: "0.54.0"
   contact:
     name: Wardex Project
   license:
@@ -795,7 +795,7 @@ paths:
                   platform: { type: string }
               example:
                 status: ok
-                version: "0.53.9"
+                version: "0.54.0"
                 uptime: "4h 12m 3s"
                 platform: aarch64-apple-darwin
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -1199,7 +1199,7 @@ paths:
                 - agent_id: a1b2c3d4
                   hostname: prod-web-01
                   platform: x86_64-unknown-linux-musl
-                  version: "0.53.9"
+                  version: "0.54.0"
                   status: healthy
                   last_heartbeat: "2026-04-08T12:01:30Z"
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -1498,6 +1498,94 @@ paths:
       responses:
         "200":
           description: Triage applied
+
+  # ── Planned Collectors ─────────────────────────────────────
+  /api/collectors/github:
+    get:
+      tags: [Events]
+      summary: GitHub audit collector setup and validation state
+      responses:
+        "200":
+          description: GitHub collector setup payload
+
+  /api/collectors/github/config:
+    post:
+      tags: [Events]
+      summary: Save GitHub audit collector setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Setup saved
+
+  /api/collectors/github/validate:
+    post:
+      tags: [Events]
+      summary: Validate GitHub audit collector setup and return sample events
+      responses:
+        "200":
+          description: Validation result
+
+  /api/collectors/crowdstrike:
+    get:
+      tags: [Events]
+      summary: CrowdStrike Falcon collector setup and validation state
+      responses:
+        "200":
+          description: CrowdStrike collector setup payload
+
+  /api/collectors/crowdstrike/config:
+    post:
+      tags: [Events]
+      summary: Save CrowdStrike Falcon collector setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Setup saved
+
+  /api/collectors/crowdstrike/validate:
+    post:
+      tags: [Events]
+      summary: Validate CrowdStrike Falcon collector setup and return sample EDR events
+      responses:
+        "200":
+          description: Validation result
+
+  /api/collectors/syslog:
+    get:
+      tags: [Events]
+      summary: Generic syslog collector setup and validation state
+      responses:
+        "200":
+          description: Syslog collector setup payload
+
+  /api/collectors/syslog/config:
+    post:
+      tags: [Events]
+      summary: Save generic syslog collector setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Setup saved
+
+  /api/collectors/syslog/validate:
+    post:
+      tags: [Events]
+      summary: Validate generic syslog collector setup and return parsed sample events
+      responses:
+        "200":
+          description: Validation result
 
   "/api/events/{id}/triage":
     post:
@@ -2219,6 +2307,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WorkbenchOverview" }
+
+  /api/command/summary:
+    get:
+      tags: [Incidents]
+      summary: Command Center lane-health summary
+      responses:
+        "200":
+          description: Lane health across incidents, approvals, connectors, rule tuning, releases, and evidence packs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  metrics: { type: object }
+                  lanes: { type: object }
 
   "/api/reports/{id}":
     get:

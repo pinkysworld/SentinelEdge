@@ -80,6 +80,113 @@ fn status_returns_200_with_expected_keys() {
     assert!(body.get("not_implemented").is_some());
 }
 
+#[test]
+fn command_summary_returns_lane_health() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/command/summary", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("command summary request");
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["generated_at"].as_str().is_some());
+    assert!(body["metrics"]["open_incidents"].as_u64().is_some());
+    assert!(
+        body["metrics"]["pending_remediation_reviews"]
+            .as_u64()
+            .is_some()
+    );
+    assert!(body["metrics"]["connector_issues"].as_u64().is_some());
+    assert_eq!(
+        body["lanes"]["release"]["current_version"]
+            .as_str()
+            .unwrap(),
+        env!("CARGO_PKG_VERSION")
+    );
+    let planned = body["lanes"]["connectors"]["planned"].as_array().unwrap();
+    assert!(planned.iter().any(|entry| entry == "github_audit"));
+    assert!(planned.iter().any(|entry| entry == "crowdstrike_falcon"));
+    assert!(planned.iter().any(|entry| entry == "generic_syslog"));
+}
+
+#[test]
+fn planned_connector_config_and_validation_persist() {
+    let (port, token) = spawn_test_server();
+    let config = serde_json::json!({
+        "enabled": true,
+        "organization": "wardex-labs",
+        "token_ref": "secret://github/audit-token",
+        "webhook_secret_ref": "secret://github/webhook-secret",
+        "poll_interval_secs": 300,
+        "repositories": ["wardex"],
+    });
+    let saved = ureq::post(&format!("{}/api/collectors/github/config", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .set("Content-Type", "application/json")
+        .send_string(&config.to_string())
+        .expect("save github collector setup");
+    assert_eq!(saved.status(), 200);
+    let saved_body: serde_json::Value = saved.into_json().unwrap();
+    assert_eq!(saved_body["provider"].as_str().unwrap(), "github_audit");
+    assert_eq!(
+        saved_body["validation"]["status"].as_str().unwrap(),
+        "ready"
+    );
+    assert_eq!(
+        saved_body["config"]["token_ref"].as_str().unwrap(),
+        "********"
+    );
+    assert_eq!(
+        saved_body["config"]["has_token_ref"].as_bool().unwrap(),
+        true
+    );
+
+    let loaded = ureq::get(&format!("{}/api/collectors/github", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("load github collector setup");
+    let loaded_body: serde_json::Value = loaded.into_json().unwrap();
+    assert_eq!(
+        loaded_body["validation"]["status"].as_str().unwrap(),
+        "ready"
+    );
+    assert_eq!(
+        loaded_body["config"]["organization"].as_str().unwrap(),
+        "wardex-labs"
+    );
+
+    let validated = ureq::post(&format!("{}/api/collectors/github/validate", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .set("Content-Type", "application/json")
+        .send_string("{}")
+        .expect("validate github collector setup");
+    let validation_body: serde_json::Value = validated.into_json().unwrap();
+    assert_eq!(
+        validation_body["provider"].as_str().unwrap(),
+        "github_audit"
+    );
+    assert_eq!(validation_body["success"].as_bool().unwrap(), true);
+    assert!(validation_body["event_count"].as_u64().unwrap() > 0);
+    assert!(
+        validation_body["reliability"]["checkpoint_id"]
+            .as_str()
+            .is_some()
+    );
+
+    let status = ureq::get(&format!("{}/api/collectors/status", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("collector status request");
+    let status_body: serde_json::Value = status.into_json().unwrap();
+    let collectors = status_body["collectors"].as_array().unwrap();
+    assert!(collectors.iter().any(|collector| {
+        collector["provider"] == "github_audit"
+            && collector["label"] == "GitHub Audit Log"
+            && collector["freshness"] == "fresh"
+    }));
+}
+
 // ── GET /api/report ────────────────────────────────────────────
 
 #[test]

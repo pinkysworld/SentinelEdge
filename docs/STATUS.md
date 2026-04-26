@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.53.9`
+- **Version:** `0.54.0`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
-- **Verification:** Rust integration coverage, focused session-cookie exchange tests, collector lifecycle tests, remediation change-review tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
+- **Verification:** Rust integration coverage, focused session-cookie exchange tests, collector lifecycle tests, remediation change-review tests, Command Center summary/action-drawer tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
 - **Production hardening:** 100% (59/59 controls implemented)
 
 ## Shipped in the current platform
@@ -93,20 +93,20 @@ The current release has been verified with:
 - `cargo test` passing across unit and integration suites, including focused support-center parity/docs coverage, OpenAPI support-route coverage, retention-config coverage, and integration-setup persistence coverage
 - targeted admin-console unit coverage for the Help & Docs support center, embedded docs search/load, parity rendering, GraphQL query execution, the analyst assistant, and existing workspace shell flows
 - targeted API regression coverage for session auth routing, hunt/content lifecycle, playbook execution shape, suppressions, storylines, governance, supportability, retention config patching, integration-setup persistence, assistant responses, and enterprise-provider exposure
-- deterministic browser regression coverage of dashboard preset persistence, detection efficacy / ATT&CK gap / suppression / rollout drill-downs, run-hunt routing, hunt-result case promotion, saved-hunt reopen/update behavior, investigation planner start, active investigation progress and handoff workflows, queue-to-hunt pivots, workflow-to-response context handoffs, signed remediation approval and rollback-proof verification, expanded SOC workbench overview, assistant case queries, scoped reporting handoffs, long-retention history search, collector pivots, IdP launch validation, and collector/secrets setup validation
+- deterministic browser regression coverage of dashboard preset persistence, Command Center action drawers and mobile layout, detection efficacy / ATT&CK gap / suppression / rollout drill-downs, run-hunt routing, hunt-result case promotion, saved-hunt reopen/update behavior, investigation planner start, active investigation progress and handoff workflows, queue-to-hunt pivots, workflow-to-response context handoffs, signed remediation approval and rollback-proof verification, expanded SOC workbench overview, assistant case queries, scoped reporting handoffs, long-retention history search, collector pivots, IdP launch validation, and collector/secrets setup validation
 
 ## Current product posture
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
 
-## Recently shipped (v0.53.9)
+## Recently shipped (v0.54.0)
 
-- **Panic-policy floor is now zero** — the remaining production `unwrap`/`expect` calls were removed from core runtime paths, `scripts/check_panic_policy.py` now reports `0`, and clippy runs clean with `-D warnings`.
-- **Higher release confidence gates** — CI now enforces `cargo tarpaulin --fail-under 60.0`, adds a twice-weekly `cargo mutants` matrix, and runs nightly cross-browser Playwright coverage on Firefox and WebKit.
-- **Live rollback is explicitly opt-in** — `remediation.allow_live_rollback` defaults to `false`, so any non-dry-run rollback is rejected with `403` unless an operator has deliberately enabled active recovery.
-- **Typed-host live rollback confirmation** — live rollback requests must include `confirm_hostname` matching the change-review `asset_id`, and the Infrastructure console requires operators to type that hostname before it submits the request.
-- **Product Command Center first slice** — analysts now have a `/command` workspace that federates incidents, cases, connectors, detection quality, release metadata, remediation approvals, assistant guardrails, attack storytelling, RBAC posture, tuning debt, and compliance evidence packs into one operational view.
-- **Release metadata aligned on v0.53.9** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, and installation docs now point to the same release baseline.
+- **Product Command Center action surface** — `/command` is now the analyst default workspace and opens connector validation, remediation approval, rule replay, release readiness, and compliance evidence drawers directly from lane metrics.
+- **Backend command summary** — `GET /api/command/summary` aggregates incidents, cases, remediation reviews, connector gaps, noisy/stale rules, release metadata, report templates, compliance posture, and fleet gaps for the command workspace.
+- **Planned connector onboarding** — GitHub Audit Log, CrowdStrike Falcon, and Generic Syslog now expose setup persistence, validation, sample-event preview, collector status entries, OpenAPI coverage, and console API helpers.
+- **Rule tuning readiness** — noisy/stale rules now render a replay, suppression, and promotion checklist before analysts pivot into the full detection workspace.
+- **Command Center runbook and browser smoke** — the new runbook documents shift-start and escalation workflows, while Playwright covers desktop action drawers and the mobile command layout across Chromium, Firefox, and WebKit.
+- **Release metadata aligned on v0.54.0** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, install docs, reproducibility notes, and website release surfaces now point to the same release baseline.
 
 ## Roadmap completion in progress
 
@@ -115,7 +115,7 @@ Wardex is now positioned as a professional XDR/SIEM control plane with incident-
 - **Expanded production demo lab** — demo seeding now includes cloud, identity, SaaS, UEBA, NDR, and attack-graph evidence alongside case, response, report, and artifact proof.
 - **IdP lifecycle validation depth** — identity-provider summaries now expose launch checks for metadata, callback route alignment, client credentials, group mappings, and test-login paths.
 - **SDK parity continuation** — Python and TypeScript SDKs include collector status, remediation review creation, and signed remediation approval helpers used by console workflows.
-- **Command Center hardening** — the new cross-product workspace is wired to existing API contracts first; next depth targets are direct action drawers, routed Playwright smoke coverage, and richer per-lane backend summaries where the command surface still composes raw data.
+- **Command Center expansion** — the cross-product workspace now has action drawers, routed browser smoke coverage, and a backend summary contract; next depth targets are richer per-lane annotations and broader release-gate coverage as new workflows land.
 
 ## Recently shipped (v0.53.7)
 

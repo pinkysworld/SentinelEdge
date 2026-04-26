@@ -229,6 +229,20 @@ describe('App', () => {
           if (url === '/api/auth/session') {
             return { authenticated: true, role: 'analyst' };
           }
+          if (url === '/api/command/summary') {
+            return {
+              metrics: {
+                open_incidents: 1,
+                active_cases: 1,
+                pending_remediation_reviews: 1,
+                connector_issues: 2,
+                noisy_rules: 1,
+                stale_rules: 1,
+                release_candidates: 1,
+                compliance_packs: 1,
+              },
+            };
+          }
           if (url === '/api/incidents') {
             return {
               incidents: [
@@ -276,6 +290,24 @@ describe('App', () => {
           if (url === '/api/report-templates') {
             return { templates: [{ id: 'soc2', name: 'SOC 2 evidence pack' }] };
           }
+          if (url === '/api/collectors/github') {
+            return {
+              config: { provider: 'github_audit', organization: 'wardex-labs', enabled: true },
+              validation: { status: 'ready', issues: [] },
+            };
+          }
+          if (url === '/api/collectors/crowdstrike') {
+            return {
+              config: { provider: 'crowdstrike_falcon', enabled: true },
+              validation: { status: 'warning', issues: [{ field: 'client_secret_ref' }] },
+            };
+          }
+          if (url === '/api/collectors/syslog') {
+            return {
+              config: { provider: 'generic_syslog', enabled: true },
+              validation: { status: 'ready', issues: [] },
+            };
+          }
           return {};
         },
       };
@@ -287,11 +319,16 @@ describe('App', () => {
     expect(screen.getAllByText('Command Center').length).toBeGreaterThan(0);
     expect((await screen.findAllByText('Credential storm containment')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('AWS CloudTrail').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('GitHub Audit Log').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Guided Remediation Approval Flow').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('button', { name: /Connector gaps/i }));
+    expect(await screen.findByText('Connector Validation')).toBeInTheDocument();
     expect(requestedUrls).toContain('/api/incidents');
+    expect(requestedUrls).toContain('/api/command/summary');
     expect(requestedUrls).toContain('/api/remediation/change-reviews');
     expect(requestedUrls).toContain('/api/content/rules');
     expect(requestedUrls).toContain('/api/onboarding/readiness');
+    expect(requestedUrls).toContain('/api/collectors/github');
   });
 
   it('preserves route scope through mobile help and share actions', async () => {

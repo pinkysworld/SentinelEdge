@@ -565,6 +565,7 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
     OpenApiBuilder::new("Wardex XDR/SIEM API", version)
         .tag("auth", "Authentication, session, and token management")
         .tag("status", "Platform health, status, and diagnostics")
+        .tag("command", "Command Center lane health and operator action surfaces")
         .tag("detection", "Detection engineering, rules, and analysis")
         .tag("alerts", "Alert queue, triage, and analysis")
         .tag("incidents", "Incident and case management")
@@ -1162,6 +1163,15 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
                 &["reports"],
             ),
         )
+        .path(
+            "/api/command/summary",
+            "get",
+            op(
+                "getCommandSummary",
+                "Command Center lane-health summary",
+                &["command"],
+            ),
+        )
         // Config
         .path(
             "/api/config/current",
@@ -1301,6 +1311,82 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
                 "Update event triage state, assignee, tags, and notes",
                 &["telemetry"],
                 "Triage update payload",
+            ),
+        )
+        .path(
+            "/api/collectors/github",
+            "get",
+            op("getGithubCollector", "GitHub audit collector setup", &["telemetry"]),
+        )
+        .path(
+            "/api/collectors/github/config",
+            "post",
+            op_post(
+                "saveGithubCollectorConfig",
+                "Save GitHub audit collector setup",
+                &["telemetry"],
+                "GitHub audit connector setup fields",
+            ),
+        )
+        .path(
+            "/api/collectors/github/validate",
+            "post",
+            op_post_without_body(
+                "validateGithubCollector",
+                "Validate GitHub audit collector setup",
+                &["telemetry"],
+            ),
+        )
+        .path(
+            "/api/collectors/crowdstrike",
+            "get",
+            op(
+                "getCrowdStrikeCollector",
+                "CrowdStrike Falcon collector setup",
+                &["telemetry"],
+            ),
+        )
+        .path(
+            "/api/collectors/crowdstrike/config",
+            "post",
+            op_post(
+                "saveCrowdStrikeCollectorConfig",
+                "Save CrowdStrike Falcon collector setup",
+                &["telemetry"],
+                "CrowdStrike Falcon connector setup fields",
+            ),
+        )
+        .path(
+            "/api/collectors/crowdstrike/validate",
+            "post",
+            op_post_without_body(
+                "validateCrowdStrikeCollector",
+                "Validate CrowdStrike Falcon collector setup",
+                &["telemetry"],
+            ),
+        )
+        .path(
+            "/api/collectors/syslog",
+            "get",
+            op("getSyslogCollector", "Generic syslog collector setup", &["telemetry"]),
+        )
+        .path(
+            "/api/collectors/syslog/config",
+            "post",
+            op_post(
+                "saveSyslogCollectorConfig",
+                "Save generic syslog collector setup",
+                &["telemetry"],
+                "Generic syslog connector setup fields",
+            ),
+        )
+        .path(
+            "/api/collectors/syslog/validate",
+            "post",
+            op_post_without_body(
+                "validateSyslogCollector",
+                "Validate generic syslog collector setup",
+                &["telemetry"],
             ),
         )
         .path(

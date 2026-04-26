@@ -91,8 +91,8 @@ use crate::integration_setup::{
     AwsCollectorSetup, AwsCollectorSetupPatch, AzureCollectorSetup, AzureCollectorSetupPatch,
     EntraCollectorSetup, EntraCollectorSetupPatch, GcpCollectorSetup, GcpCollectorSetupPatch,
     M365CollectorSetup, M365CollectorSetupPatch, OktaCollectorSetup, OktaCollectorSetupPatch,
-    SecretsManagerSetup, SecretsManagerSetupPatch, SetupValidation, WorkspaceCollectorSetup,
-    WorkspaceCollectorSetupPatch,
+    SecretsManagerSetup, SecretsManagerSetupPatch, SetupValidation, SetupValidationIssue,
+    WorkspaceCollectorSetup, WorkspaceCollectorSetupPatch,
 };
 use crate::monitor::Monitor;
 use crate::multi_tenant::MultiTenantManager;
@@ -6822,6 +6822,9 @@ const OKTA_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.okta";
 const ENTRA_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.entra";
 const M365_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.m365";
 const WORKSPACE_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.workspace";
+const GITHUB_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.github";
+const CROWDSTRIKE_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.crowdstrike";
+const SYSLOG_COLLECTOR_SETUP_KEY: &str = "integrations.collectors.syslog";
 const SECRETS_MANAGER_SETUP_KEY: &str = "integrations.secrets.manager";
 const REMEDIATION_CHANGE_REVIEWS_KEY: &str = "remediation.change_reviews";
 
@@ -7697,6 +7700,249 @@ fn load_workspace_collector_setup(storage: &SharedStorage) -> WorkspaceCollector
     load_stored_json(storage, WORKSPACE_COLLECTOR_SETUP_KEY)
 }
 
+fn planned_collector_provider(slug: &str) -> Option<&'static str> {
+    match slug {
+        "github" | "github_audit" => Some("github_audit"),
+        "crowdstrike" | "crowdstrike_falcon" => Some("crowdstrike_falcon"),
+        "syslog" | "generic_syslog" => Some("generic_syslog"),
+        _ => None,
+    }
+}
+
+fn planned_collector_key(provider: &str) -> Option<&'static str> {
+    match provider {
+        "github_audit" => Some(GITHUB_COLLECTOR_SETUP_KEY),
+        "crowdstrike_falcon" => Some(CROWDSTRIKE_COLLECTOR_SETUP_KEY),
+        "generic_syslog" => Some(SYSLOG_COLLECTOR_SETUP_KEY),
+        _ => None,
+    }
+}
+
+fn planned_collector_required_fields(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "github_audit" => &["organization", "token_ref", "webhook_secret_ref"],
+        "crowdstrike_falcon" => &["cloud", "client_id", "client_secret_ref", "customer_id"],
+        "generic_syslog" => &["bind", "port", "protocol"],
+        _ => &[],
+    }
+}
+
+fn planned_collector_default_setup(provider: &str) -> serde_json::Value {
+    match provider {
+        "github_audit" => serde_json::json!({
+            "enabled": true,
+            "organization": "acme-security",
+            "token_ref": "secret://github/audit-token",
+            "webhook_secret_ref": "secret://github/webhook-secret",
+            "poll_interval_secs": 300,
+            "repositories": ["platform", "infra"],
+        }),
+        "crowdstrike_falcon" => serde_json::json!({
+            "enabled": true,
+            "cloud": "us-1",
+            "client_id": "falcon-client-id",
+            "client_secret_ref": "secret://crowdstrike/client-secret",
+            "customer_id": "cid-00000000000000000000000000000000",
+            "poll_interval_secs": 180,
+        }),
+        "generic_syslog" => serde_json::json!({
+            "enabled": true,
+            "bind": "0.0.0.0",
+            "port": 5514,
+            "protocol": "udp",
+            "facility": "local4",
+            "parse_profile": "auto",
+            "poll_interval_secs": 60,
+        }),
+        _ => serde_json::json!({"enabled": false, "poll_interval_secs": 300}),
+    }
+}
+
+fn load_planned_collector_setup(storage: &SharedStorage, provider: &str) -> serde_json::Value {
+    let Some(key) = planned_collector_key(provider) else {
+        return planned_collector_default_setup(provider);
+    };
+    let value: serde_json::Value = load_stored_json(storage, key);
+    if value.is_object() {
+        value
+    } else {
+        planned_collector_default_setup(provider)
+    }
+}
+
+fn planned_collector_enabled(setup: &serde_json::Value) -> bool {
+    setup
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn planned_collector_poll_interval(setup: &serde_json::Value) -> u64 {
+    setup
+        .get("poll_interval_secs")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(300)
+        .clamp(30, 86_400)
+}
+
+fn planned_collector_validation(provider: &str, setup: &serde_json::Value) -> SetupValidation {
+    let enabled = planned_collector_enabled(setup);
+    let issues = planned_collector_required_fields(provider)
+        .iter()
+        .filter(|field| {
+            setup.get(**field).is_none_or(|value| match value {
+                serde_json::Value::String(text) => text.trim().is_empty(),
+                serde_json::Value::Array(items) => items.is_empty(),
+                serde_json::Value::Null => true,
+                _ => false,
+            })
+        })
+        .map(|field| SetupValidationIssue {
+            field: (*field).to_string(),
+            level: "error".to_string(),
+            message: format!("{field} is required before validation can produce sample events."),
+        })
+        .collect::<Vec<_>>();
+    SetupValidation {
+        status: if !enabled {
+            "disabled".to_string()
+        } else if issues.is_empty() {
+            "ready".to_string()
+        } else {
+            "warning".to_string()
+        },
+        issues,
+    }
+}
+
+fn planned_collector_public_view(provider: &str, setup: &serde_json::Value) -> serde_json::Value {
+    let mut view = setup.clone();
+    if let Some(object) = view.as_object_mut() {
+        object.insert("provider".to_string(), serde_json::json!(provider));
+        object.insert(
+            "required_fields".to_string(),
+            serde_json::json!(planned_collector_required_fields(provider)),
+        );
+        let secret_keys = object
+            .keys()
+            .filter(|key| {
+                let lower = key.to_ascii_lowercase();
+                lower.contains("secret") || lower.contains("token")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in secret_keys {
+            let has_value = object
+                .get(&key)
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty());
+            object.insert(format!("has_{key}"), serde_json::json!(has_value));
+            if has_value {
+                object.insert(key, serde_json::json!("********"));
+            }
+        }
+    }
+    view
+}
+
+fn planned_collector_summary(provider: &str, setup: &serde_json::Value) -> serde_json::Value {
+    match provider {
+        "github_audit" => serde_json::json!({
+            "organization": setup.get("organization").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "repository_count": setup.get("repositories").and_then(serde_json::Value::as_array).map(Vec::len).unwrap_or(0),
+            "has_token_ref": setup.get("token_ref").and_then(serde_json::Value::as_str).is_some_and(|value| !value.trim().is_empty()),
+            "has_webhook_secret_ref": setup.get("webhook_secret_ref").and_then(serde_json::Value::as_str).is_some_and(|value| !value.trim().is_empty()),
+        }),
+        "crowdstrike_falcon" => serde_json::json!({
+            "cloud": setup.get("cloud").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "client_id": setup.get("client_id").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "customer_id": setup.get("customer_id").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "has_client_secret_ref": setup.get("client_secret_ref").and_then(serde_json::Value::as_str).is_some_and(|value| !value.trim().is_empty()),
+        }),
+        "generic_syslog" => serde_json::json!({
+            "bind": setup.get("bind").and_then(serde_json::Value::as_str).unwrap_or("0.0.0.0"),
+            "port": setup.get("port").and_then(serde_json::Value::as_u64).unwrap_or(5514),
+            "protocol": setup.get("protocol").and_then(serde_json::Value::as_str).unwrap_or("udp"),
+            "parse_profile": setup.get("parse_profile").and_then(serde_json::Value::as_str).unwrap_or("auto"),
+        }),
+        _ => serde_json::json!({}),
+    }
+}
+
+fn planned_collector_sample_events(
+    provider: &str,
+    setup: &serde_json::Value,
+) -> Vec<serde_json::Value> {
+    match provider {
+        "github_audit" => vec![
+            serde_json::json!({
+                "action": "org.audit_log_export",
+                "actor": "security-admin",
+                "organization": setup.get("organization").and_then(serde_json::Value::as_str).unwrap_or("acme-security"),
+                "route": "soc.identity.saas",
+            }),
+            serde_json::json!({
+                "action": "repo.visibility_change",
+                "actor": "platform-owner",
+                "repository": "platform",
+                "route": "supply_chain",
+            }),
+        ],
+        "crowdstrike_falcon" => vec![
+            serde_json::json!({
+                "event_simple_name": "DetectionSummaryEvent",
+                "hostname": "workstation-17",
+                "severity": "high",
+                "route": "soc.edr",
+            }),
+            serde_json::json!({
+                "event_simple_name": "SensorHeartbeat",
+                "customer_id": setup.get("customer_id").and_then(serde_json::Value::as_str).unwrap_or("cid"),
+                "route": "fleet.health",
+            }),
+        ],
+        "generic_syslog" => vec![
+            serde_json::json!({
+                "facility": setup.get("facility").and_then(serde_json::Value::as_str).unwrap_or("local4"),
+                "severity": "notice",
+                "message": "vpn gateway accepted login for analyst",
+                "route": "soc.syslog",
+            }),
+            serde_json::json!({
+                "facility": "authpriv",
+                "severity": "warning",
+                "message": "sudo authentication failure",
+                "route": "ueba.identity",
+            }),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn planned_collector_config_payload(storage: &SharedStorage, provider: &str) -> serde_json::Value {
+    let setup = load_planned_collector_setup(storage, provider);
+    let validation = planned_collector_validation(provider, &setup);
+    serde_json::json!({
+        "provider": provider,
+        "config": planned_collector_public_view(provider, &setup),
+        "validation": validation,
+    })
+}
+
+fn planned_collector_status_entry(storage: &SharedStorage, provider: &str) -> serde_json::Value {
+    let setup = load_planned_collector_setup(storage, provider);
+    let validation = planned_collector_validation(provider, &setup);
+    collector_status_entry(
+        provider,
+        planned_collector_enabled(&setup),
+        planned_collector_poll_interval(&setup),
+        planned_collector_summary(provider, &setup),
+        validation,
+        load_collector_checkpoint(storage, provider),
+        load_collector_lifecycle(storage, provider),
+    )
+}
+
 fn load_secrets_manager_setup(storage: &SharedStorage) -> SecretsManagerSetup {
     load_stored_json(storage, SECRETS_MANAGER_SETUP_KEY)
 }
@@ -8300,8 +8546,15 @@ fn collector_lane(name: &str) -> &'static str {
     let normalized = name.to_ascii_lowercase();
     if normalized.contains("okta") || normalized.contains("entra") {
         "identity"
-    } else if normalized.contains("m365") || normalized.contains("workspace") {
+    } else if normalized.contains("m365")
+        || normalized.contains("workspace")
+        || normalized.contains("github")
+    {
         "saas"
+    } else if normalized.contains("crowdstrike") {
+        "edr"
+    } else if normalized.contains("syslog") {
+        "network"
     } else {
         "cloud"
     }
@@ -8316,6 +8569,9 @@ fn collector_display_label(name: &str) -> &'static str {
         "entra_identity" => "Microsoft Entra Identity",
         "m365_saas" => "Microsoft 365 Activity",
         "workspace_saas" => "Google Workspace Activity",
+        "github_audit" => "GitHub Audit Log",
+        "crowdstrike_falcon" => "CrowdStrike Falcon",
+        "generic_syslog" => "Generic Syslog",
         _ => "Collector",
     }
 }
@@ -8324,6 +8580,8 @@ fn collector_route_targets(name: &str) -> &'static [&'static str] {
     match collector_lane(name) {
         "identity" => &["SOC Queue", "UEBA"],
         "saas" => &["Assistant", "Reports"],
+        "edr" => &["SOC Queue", "Live Response"],
+        "network" => &["SOC Queue", "Network Detection"],
         _ => &["Infrastructure", "Attack Graph"],
     }
 }
@@ -8578,6 +8836,27 @@ fn collector_readiness_summary(state: &AppState) -> serde_json::Value {
             "workspace_saas",
             load_workspace_collector_setup(&state.storage).enabled,
         ),
+        (
+            "github_audit",
+            planned_collector_enabled(&load_planned_collector_setup(
+                &state.storage,
+                "github_audit",
+            )),
+        ),
+        (
+            "crowdstrike_falcon",
+            planned_collector_enabled(&load_planned_collector_setup(
+                &state.storage,
+                "crowdstrike_falcon",
+            )),
+        ),
+        (
+            "generic_syslog",
+            planned_collector_enabled(&load_planned_collector_setup(
+                &state.storage,
+                "generic_syslog",
+            )),
+        ),
     ];
     let collectors = providers
         .iter()
@@ -8612,6 +8891,165 @@ fn collector_readiness_summary(state: &AppState) -> serde_json::Value {
         "enabled": providers.iter().filter(|(_, enabled)| *enabled).count(),
         "configured": providers.len(),
         "collectors": collectors,
+    })
+}
+
+fn command_summary_payload(state: &mut AppState) -> serde_json::Value {
+    state.agent_registry.refresh_staleness();
+    let open_incidents = state
+        .incident_store
+        .list()
+        .iter()
+        .filter(|incident| {
+            matches!(
+                incident.status,
+                crate::incident::IncidentStatus::Open
+                    | crate::incident::IncidentStatus::Investigating
+            )
+        })
+        .count();
+    let active_cases = state
+        .case_store
+        .list()
+        .iter()
+        .filter(|case| {
+            !matches!(
+                case.status,
+                crate::analyst::CaseStatus::Resolved | crate::analyst::CaseStatus::Closed
+            )
+        })
+        .count();
+    let reviews = load_remediation_change_reviews(&state.storage);
+    let pending_reviews = reviews
+        .iter()
+        .filter(|review| {
+            matches!(
+                review.approval_status.as_str(),
+                "pending_review" | "pending" | "requested"
+            )
+        })
+        .count();
+    let rollback_ready = reviews
+        .iter()
+        .filter(|review| review.rollback_proof.is_some())
+        .count();
+    let rule_metadata = state
+        .enterprise
+        .builtin_rules()
+        .iter()
+        .cloned()
+        .chain(
+            state
+                .enterprise
+                .native_rules()
+                .iter()
+                .map(|rule| rule.metadata.clone()),
+        )
+        .collect::<Vec<_>>();
+    let noisy_rules = rule_metadata
+        .iter()
+        .filter(|rule| rule.enabled && rule.last_test_match_count >= 5)
+        .count()
+        .max(state.enterprise.active_suppression_count());
+    let stale_rules = rule_metadata
+        .iter()
+        .filter(|rule| {
+            rule.enabled
+                && rule.last_test_at.is_none()
+                && rule.last_promotion_at.is_none()
+                && rule.lifecycle != ContentLifecycle::Active
+        })
+        .count();
+    let connectors = collector_readiness_summary(state);
+    let connector_issues = connectors
+        .get("collectors")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| {
+                    item.get("enabled").and_then(serde_json::Value::as_bool) != Some(true)
+                        || item
+                            .get("last_error_at")
+                            .is_some_and(|value| !value.is_null())
+                        || item
+                            .get("error_category")
+                            .is_some_and(|value| !value.is_null())
+                })
+                .count()
+        })
+        .unwrap_or_default();
+    let release_candidates = state.update_manager.list_releases().len();
+    let report_templates = state
+        .support_store
+        .report_templates_filtered(&crate::support::ReportExecutionContextFilter::default());
+    let compliance_report = state
+        .compliance
+        .report(&crate::compliance::Framework::Iec62443);
+    let offline_agents = state
+        .agent_registry
+        .list()
+        .iter()
+        .filter(|agent| {
+            matches!(
+                agent.status,
+                crate::enrollment::AgentStatus::Offline | crate::enrollment::AgentStatus::Stale
+            )
+        })
+        .count();
+
+    serde_json::json!({
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "metrics": {
+            "open_incidents": open_incidents,
+            "active_cases": active_cases,
+            "pending_remediation_reviews": pending_reviews,
+            "rollback_ready_reviews": rollback_ready,
+            "connector_issues": connector_issues,
+            "noisy_rules": noisy_rules,
+            "stale_rules": stale_rules,
+            "release_candidates": release_candidates,
+            "compliance_packs": report_templates.len(),
+            "offline_agents": offline_agents,
+        },
+        "lanes": {
+            "incidents": {
+                "status": if open_incidents > 0 { "attention" } else { "ready" },
+                "count": open_incidents,
+                "href": "/soc",
+            },
+            "remediation": {
+                "status": if pending_reviews > 0 { "approval_required" } else { "ready" },
+                "pending": pending_reviews,
+                "rollback_ready": rollback_ready,
+                "href": "/infrastructure?tab=remediation",
+            },
+            "connectors": {
+                "status": if connector_issues > 0 { "setup_required" } else { "ready" },
+                "issues": connector_issues,
+                "readiness": connectors,
+                "planned": ["github_audit", "crowdstrike_falcon", "generic_syslog"],
+            },
+            "rule_tuning": {
+                "status": if noisy_rules > 0 || stale_rules > 0 { "review_required" } else { "ready" },
+                "noisy": noisy_rules,
+                "stale": stale_rules,
+                "active_suppressions": state.enterprise.active_suppression_count(),
+                "href": "/detection",
+            },
+            "release": {
+                "status": if release_candidates > 0 { "ready" } else { "missing_catalog" },
+                "candidates": release_candidates,
+                "current_version": env!("CARGO_PKG_VERSION"),
+                "href": "/infrastructure?tab=rollouts",
+            },
+            "evidence": {
+                "status": if compliance_report.score >= 80.0 { "ready" } else { "attention" },
+                "score": compliance_report.score,
+                "templates": report_templates.len(),
+                "href": "/reports",
+            }
+        }
     })
 }
 
@@ -9519,6 +9957,7 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/manager/overview")
         || (method == Method::Get && route_path == "/api/manager/queue-digest")
         || (method == Method::Get && route_path == "/api/onboarding/readiness")
+        || (method == Method::Get && route_path == "/api/command/summary")
         || (method == Method::Get && route_path == "/api/hunts")
         || (method == Method::Post && route_path == "/api/hunts")
         || (method == Method::Get && route_path.starts_with("/api/hunts/"))
@@ -9792,6 +10231,15 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/collectors/workspace")
         || (method == Method::Post && route_path == "/api/collectors/workspace/config")
         || (method == Method::Post && route_path == "/api/collectors/workspace/validate")
+        || (method == Method::Get && route_path == "/api/collectors/github")
+        || (method == Method::Post && route_path == "/api/collectors/github/config")
+        || (method == Method::Post && route_path == "/api/collectors/github/validate")
+        || (method == Method::Get && route_path == "/api/collectors/crowdstrike")
+        || (method == Method::Post && route_path == "/api/collectors/crowdstrike/config")
+        || (method == Method::Post && route_path == "/api/collectors/crowdstrike/validate")
+        || (method == Method::Get && route_path == "/api/collectors/syslog")
+        || (method == Method::Post && route_path == "/api/collectors/syslog/config")
+        || (method == Method::Post && route_path == "/api/collectors/syslog/validate")
         || (method == Method::Get && route_path == "/api/secrets/status")
         || (method == Method::Post && route_path == "/api/secrets/config")
         || (method == Method::Post && route_path == "/api/secrets/validate")
@@ -11663,6 +12111,7 @@ fn handle_api(
                 {"method": "POST", "path": "/api/retention/apply", "auth": true, "description": "Apply retention policies to trim old records"},
                 {"method": "GET", "path": "/api/storage/events/historical", "auth": true, "description": "Query ClickHouse-backed long-retention events with time and entity filters"},
                 {"method": "GET", "path": "/api/collectors/status", "auth": true, "description": "Summarize structured collector setup, validation, and ingestion-health timeline checkpoints"},
+                {"method": "GET", "path": "/api/command/summary", "auth": true, "description": "Summarize Command Center lane health across incidents, remediation, connectors, rules, releases, and compliance evidence"},
                 {"method": "GET", "path": "/api/collectors/aws", "auth": true, "description": "Retrieve AWS CloudTrail setup details and validation status"},
                 {"method": "POST", "path": "/api/collectors/aws/config", "auth": true, "description": "Save AWS CloudTrail setup fields while preserving existing secrets when omitted"},
                 {"method": "POST", "path": "/api/collectors/aws/validate", "auth": true, "description": "Run an on-demand AWS CloudTrail validation poll and return sample events"},
@@ -11684,6 +12133,15 @@ fn handle_api(
                 {"method": "GET", "path": "/api/collectors/workspace", "auth": true, "description": "Retrieve Google Workspace collector setup details and validation status"},
                 {"method": "POST", "path": "/api/collectors/workspace/config", "auth": true, "description": "Save Google Workspace collector setup fields while preserving the current credentials blob when omitted"},
                 {"method": "POST", "path": "/api/collectors/workspace/validate", "auth": true, "description": "Run an on-demand Google Workspace validation and return sample audit events"},
+                {"method": "GET", "path": "/api/collectors/github", "auth": true, "description": "Retrieve planned GitHub audit connector setup details and validation status"},
+                {"method": "POST", "path": "/api/collectors/github/config", "auth": true, "description": "Save planned GitHub audit connector setup fields"},
+                {"method": "POST", "path": "/api/collectors/github/validate", "auth": true, "description": "Validate GitHub audit setup and return sample audit events"},
+                {"method": "GET", "path": "/api/collectors/crowdstrike", "auth": true, "description": "Retrieve planned CrowdStrike Falcon connector setup details and validation status"},
+                {"method": "POST", "path": "/api/collectors/crowdstrike/config", "auth": true, "description": "Save planned CrowdStrike Falcon connector setup fields"},
+                {"method": "POST", "path": "/api/collectors/crowdstrike/validate", "auth": true, "description": "Validate CrowdStrike Falcon setup and return sample EDR events"},
+                {"method": "GET", "path": "/api/collectors/syslog", "auth": true, "description": "Retrieve planned generic syslog connector setup details and validation status"},
+                {"method": "POST", "path": "/api/collectors/syslog/config", "auth": true, "description": "Save planned generic syslog connector setup fields"},
+                {"method": "POST", "path": "/api/collectors/syslog/validate", "auth": true, "description": "Validate generic syslog setup and return sample parsed events"},
                 {"method": "GET", "path": "/api/secrets/status", "auth": true, "description": "Retrieve secrets-manager configuration, validation, and resolver status"},
                 {"method": "POST", "path": "/api/secrets/config", "auth": true, "description": "Save secrets-manager setup fields while preserving the current Vault token when omitted"},
                 {"method": "POST", "path": "/api/secrets/validate", "auth": true, "description": "Resolve and validate a secret reference without disclosing the full plaintext"},
@@ -12725,6 +13183,11 @@ fn handle_api(
         }
         (Method::Get, "/api/manager/queue-digest") => handle_manager_queue_digest(state),
         (Method::Get, "/api/onboarding/readiness") => handle_onboarding_readiness(state),
+        (Method::Get, "/api/command/summary") => {
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let payload = command_summary_payload(&mut s);
+            json_response(&payload.to_string(), 200)
+        }
         (Method::Get, "/api/hunts") => {
             let s = state.lock().unwrap_or_else(|e| e.into_inner());
             let items: Vec<serde_json::Value> = s
@@ -17929,6 +18392,9 @@ fn handle_api(
                             load_collector_checkpoint(&s.storage, "workspace_saas"),
                             load_collector_lifecycle(&s.storage, "workspace_saas"),
                         ),
+                        planned_collector_status_entry(&s.storage, "github_audit"),
+                        planned_collector_status_entry(&s.storage, "crowdstrike_falcon"),
+                        planned_collector_status_entry(&s.storage, "generic_syslog"),
                     ],
                 });
                 json_response(&body.to_string(), 200)
@@ -18281,6 +18747,72 @@ fn handle_api(
                 let resolver = build_secrets_resolver(&s.storage);
                 let body = validate_workspace_collector(&setup, &resolver);
                 collector_validation_response(&s.storage, "workspace_saas", body)
+            } else if let Some(slug) = url_path
+                .strip_prefix("/api/collectors/")
+                .and_then(|tail| tail.split('/').next())
+                .filter(|slug| matches!(*slug, "github" | "crowdstrike" | "syslog"))
+            {
+                let Some(provider) = planned_collector_provider(slug) else {
+                    return error_json("unknown planned collector", 404);
+                };
+                let expected_base = format!("/api/collectors/{slug}");
+                let expected_config = format!("/api/collectors/{slug}/config");
+                let expected_validate = format!("/api/collectors/{slug}/validate");
+                if method == Method::Get && url_path == expected_base {
+                    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    let payload = planned_collector_config_payload(&s.storage, provider);
+                    json_response(&payload.to_string(), 200)
+                } else if method == Method::Post && url_path == expected_config {
+                    match read_json_value(body, 32 * 1024) {
+                        Ok(mut setup) => {
+                            if let Some(object) = setup.as_object_mut() {
+                                object.insert("provider".to_string(), serde_json::json!(provider));
+                                object
+                                    .entry("enabled".to_string())
+                                    .or_insert(serde_json::json!(true));
+                            }
+                            let Some(key) = planned_collector_key(provider) else {
+                                return error_json("unknown planned collector", 404);
+                            };
+                            let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                            match save_stored_json(&s.storage, key, &setup) {
+                                Ok(()) => {
+                                    let validation = planned_collector_validation(provider, &setup);
+                                    let payload = serde_json::json!({
+                                        "status": "saved",
+                                        "provider": provider,
+                                        "config": planned_collector_public_view(provider, &setup),
+                                        "validation": validation,
+                                    });
+                                    json_response(&payload.to_string(), 200)
+                                }
+                                Err(error) => error_json(&error, 500),
+                            }
+                        }
+                        Err(error) => error_json(&error, 400),
+                    }
+                } else if method == Method::Post && url_path == expected_validate {
+                    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    let setup = load_planned_collector_setup(&s.storage, provider);
+                    let validation = planned_collector_validation(provider, &setup);
+                    let sample_events = if validation.status == "ready" {
+                        planned_collector_sample_events(provider, &setup)
+                    } else {
+                        Vec::new()
+                    };
+                    let body = serde_json::json!({
+                        "provider": provider,
+                        "success": validation.status == "ready",
+                        "event_count": sample_events.len(),
+                        "sample_events": sample_events,
+                        "summary": planned_collector_summary(provider, &setup),
+                        "validation": validation,
+                        "error": if validation.status == "ready" { serde_json::Value::Null } else { serde_json::json!("Collector configuration is incomplete.") },
+                    });
+                    collector_validation_response(&s.storage, provider, body)
+                } else {
+                    error_json("planned collector route not found", 404)
+                }
 
             // ── Secrets Manager ──────────────────────────────────
             } else if method == Method::Get && url_path == "/api/secrets/status" {

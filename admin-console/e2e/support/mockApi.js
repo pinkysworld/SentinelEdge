@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test';
 
 export const TOKEN = 'playwright-local-token';
-export const VERSION = '0.53.0';
+export const VERSION = '0.54.0';
 
 const NOW = '2026-04-20T06:27:45.809Z';
 
@@ -227,6 +227,22 @@ function buildResponses() {
     'GET /api/swarm/intel': {},
     'GET /api/policy/history': [],
     'GET /api/updates/releases': [],
+    'GET /api/command/summary': {
+      generated_at: NOW,
+      metrics: {
+        open_incidents: 1,
+        active_cases: 1,
+        pending_remediation_reviews: 1,
+        connector_issues: 1,
+        noisy_rules: 1,
+        stale_rules: 1,
+        release_candidates: 1,
+        compliance_packs: 1,
+      },
+      lanes: {
+        connectors: { planned: ['github_audit', 'crowdstrike_falcon', 'generic_syslog'] },
+      },
+    },
     'GET /api/rollout/config': {},
     'GET /api/events': { events: [] },
     'GET /api/events/summary': {},
@@ -298,13 +314,34 @@ function buildResponses() {
             },
           ],
         },
+        {
+          id: 'rule-credential-storm',
+          title: 'Credential storm detection',
+          description: 'Detects clustered authentication failures across identities.',
+          lifecycle: 'test',
+          enabled: true,
+          severity_mapping: 'high',
+          owner: 'detection',
+          last_test_at: null,
+          last_promotion_at: null,
+          last_test_match_count: 8,
+          attack: [
+            {
+              technique_id: 'T1110',
+              technique_name: 'Brute Force',
+              tactic: 'Credential Access',
+            },
+          ],
+        },
       ],
     },
     'GET /api/content/packs': {
       packs: [{ id: 'pack-core-linux', name: 'Core Linux Detections', rules: ['rule-ssh-burst'] }],
     },
     'GET /api/hunts': { hunts: [] },
-    'GET /api/suppressions': { suppressions: [] },
+    'GET /api/suppressions': {
+      suppressions: [{ id: 'suppression-credential-storm', rule_id: 'rule-credential-storm' }],
+    },
     'GET /api/coverage/mitre': {
       tactics: [{ tactic: 'Credential Access', coverage_pct: 86 }],
     },
@@ -344,6 +381,24 @@ function buildResponses() {
         status: 'open',
       },
     ],
+    'GET /api/cases': {
+      cases: [{ id: 1, title: 'Gateway credential storm', status: 'investigating' }],
+    },
+    'GET /api/remediation/change-reviews': {
+      reviews: [
+        {
+          id: 'review-credential-storm-1',
+          title: 'Quarantine gateway session token',
+          asset_id: 'playwright-host.local',
+          change_type: 'malware_containment',
+          approval_status: 'pending_review',
+          recovery_status: 'not_started',
+          required_approvers: 2,
+          approvals: [],
+          evidence: { alert_id: 'alert-ssh-burst' },
+        },
+      ],
+    },
     'GET /api/detection/rules': [
       {
         id: 'rule-ssh-burst',
@@ -443,6 +498,61 @@ function buildResponses() {
     'GET /api/idp/providers': { providers: [] },
     'GET /api/scim/config': { enabled: false },
     'GET /api/sbom': { components: [{ name: 'wardex', version: VERSION }] },
+    'GET /api/compliance/status': { status: 'ready', score: 91 },
+    'GET /api/assistant/status': { mode: 'retrieval-only', model: 'retrieval-only' },
+    'GET /api/collectors/status': {
+      collectors: [
+        { provider: 'aws_cloudtrail', label: 'AWS CloudTrail', enabled: true, freshness: 'fresh' },
+        { provider: 'github_audit', label: 'GitHub Audit Log', enabled: true, freshness: 'fresh' },
+        {
+          provider: 'crowdstrike_falcon',
+          label: 'CrowdStrike Falcon',
+          enabled: true,
+          freshness: 'unknown',
+        },
+        { provider: 'generic_syslog', label: 'Generic Syslog', enabled: true, freshness: 'fresh' },
+      ],
+    },
+    'GET /api/collectors/aws': {
+      config: { provider: 'aws_cloudtrail', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/azure': {
+      config: { provider: 'azure_activity', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/gcp': {
+      config: { provider: 'gcp_audit', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/okta': {
+      config: { provider: 'okta_identity', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/entra': {
+      config: { provider: 'entra_identity', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/m365': {
+      config: { provider: 'm365_saas', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/workspace': {
+      config: { provider: 'workspace_saas', enabled: true },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/github': {
+      config: { provider: 'github_audit', enabled: true, organization: 'wardex-labs' },
+      validation: { status: 'ready', issues: [] },
+    },
+    'GET /api/collectors/crowdstrike': {
+      config: { provider: 'crowdstrike_falcon', enabled: true, cloud: 'us-1' },
+      validation: { status: 'warning', issues: [{ field: 'client_secret_ref' }] },
+    },
+    'GET /api/collectors/syslog': {
+      config: { provider: 'generic_syslog', enabled: true, protocol: 'udp' },
+      validation: { status: 'ready', issues: [] },
+    },
     'GET /api/admin/db/version': { schema_version: 53, app_version: VERSION },
     'GET /api/dlq/stats': { pending: 0 },
     'GET /api/admin/db/sizes': {

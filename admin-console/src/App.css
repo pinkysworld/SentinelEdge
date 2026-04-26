@@ -903,9 +903,19 @@ tr:hover td {
 }
 
 .command-card-link {
+  background: none;
+  border: 0;
   color: inherit;
   display: block;
+  font: inherit;
+  padding: 0;
+  text-align: left;
   text-decoration: none;
+  width: 100%;
+}
+
+.command-button-link {
+  cursor: pointer;
 }
 
 .command-metric-card {
@@ -919,6 +929,12 @@ tr:hover td {
 .command-card-link:hover .row-card {
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+.command-inline-action {
+  color: var(--accent);
+  font-weight: 700;
+  text-align: left;
 }
 
 .command-section {
@@ -966,6 +982,10 @@ tr:hover td {
     transform 0.15s ease;
 }
 
+button.command-card-link .row-card {
+  width: 100%;
+}
+
 .row-primary {
   font-size: 13px;
   font-weight: 700;
@@ -996,10 +1016,98 @@ tr:hover td {
   color: #92400e;
 }
 
+.alert-banner.success {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
 [data-theme='dark'] .alert-banner.warning {
   background: #451a03;
   border-color: #78350f;
   color: #fcd34d;
+}
+
+[data-theme='dark'] .alert-banner.success {
+  background: #052e16;
+  border-color: #166534;
+  color: #bbf7d0;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.field span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.command-checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.command-check-item {
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.command-check-icon {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  flex: 0 0 20px;
+  font-size: 12px;
+  font-weight: 800;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.command-check-icon.ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.command-check-icon.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+[data-theme='dark'] .command-check-icon.ready {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+[data-theme='dark'] .command-check-icon.pending {
+  background: #78350f;
+  color: #fde68a;
 }
 
 .drawer-overlay {

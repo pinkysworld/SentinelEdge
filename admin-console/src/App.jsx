@@ -420,9 +420,9 @@ export default function App() {
         }
       : role === 'analyst'
         ? {
-            label: 'My Queue',
-            path: '/soc',
-            description: 'Open investigations, queue pressure, and response work.',
+            label: 'Command Center',
+            path: '/command',
+            description: 'Incidents, approvals, connector gaps, and evidence actions.',
           }
         : {
             label: 'Live Monitor',

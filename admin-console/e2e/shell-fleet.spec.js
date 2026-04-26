@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 const TOKEN = 'playwright-local-token';
-const VERSION = '0.53.0';
+const VERSION = '0.54.0';
 
 function json(body, status = 200) {
   return {

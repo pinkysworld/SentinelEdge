@@ -149,6 +149,7 @@ export const runDemo = () => post('/api/control/run-demo');
 export const resetBaseline = () => post('/api/control/reset-baseline');
 export const checkpoint = () => post('/api/control/checkpoint');
 export const restoreCheckpoint = (body) => post('/api/control/restore-checkpoint', body);
+export const commandSummary = () => get('/api/command/summary');
 export const checkpoints = () => get('/api/checkpoints');
 export const detectionProfile = () => get('/api/detection/profile');
 export const setDetectionProfile = (body) => put('/api/detection/profile', body);
@@ -365,6 +366,17 @@ export const collectorsWorkspace = () => get('/api/collectors/workspace');
 export const saveWorkspaceCollectorConfig = (body) =>
   post('/api/collectors/workspace/config', body);
 export const validateWorkspaceCollector = () => post('/api/collectors/workspace/validate', {});
+export const collectorsGithub = () => get('/api/collectors/github');
+export const saveGithubCollectorConfig = (body) => post('/api/collectors/github/config', body);
+export const validateGithubCollector = () => post('/api/collectors/github/validate', {});
+export const collectorsCrowdStrike = () => get('/api/collectors/crowdstrike');
+export const saveCrowdStrikeCollectorConfig = (body) =>
+  post('/api/collectors/crowdstrike/config', body);
+export const validateCrowdStrikeCollector = () =>
+  post('/api/collectors/crowdstrike/validate', {});
+export const collectorsSyslog = () => get('/api/collectors/syslog');
+export const saveSyslogCollectorConfig = (body) => post('/api/collectors/syslog/config', body);
+export const validateSyslogCollector = () => post('/api/collectors/syslog/validate', {});
 export const secretsStatus = () => get('/api/secrets/status');
 export const saveSecretsConfig = (body) => post('/api/secrets/config', body);
 export const validateSecretReference = (body) => post('/api/secrets/validate', body);
