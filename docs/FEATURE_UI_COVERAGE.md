@@ -11,6 +11,7 @@ Status legend:
 
 | Capability area | Primary UI surface | Status | Next closure target |
 |---|---|---|---|
+| Cross-product command and workflow federation | `Command Center`, `SOC Workbench`, `Settings`, `Threat Detection`, `Infrastructure`, `Analyst Assistant`, `Reports & Exports` | Partial | Add direct action drawers, routed Playwright smoke, and backend lane summaries so the command workspace can become the default analyst entry point |
 | Detection engineering (rules, hunts, suppressions, packs) | `Threat Detection`, `Dashboard`, `Attack Graph` | Ready | Keep the URL-backed drilldowns, replay-corpus gate, and rule-panel handoffs covered as efficacy, ATT&CK gap, suppression-noise, and rollout workflows continue to evolve |
 | SOC operations (queue, cases, timelines, approvals) | `SOC Workbench`, `Live Monitor` | Implemented | Keep the route-aware queue, case, investigation, and response pivots aligned as deeper escalation, approval, and playbook detail grows |
 | Dashboard customization and shared views | `Dashboard` | Implemented | Keep the new priority-alert-aware report-center handoffs and persisted personal/shared layouts covered as the overview evolves |
@@ -32,5 +33,6 @@ Use `make release-acceptance` before release sign-off. The command builds the sh
 
 ## Immediate execution order
 
-1. Expand deterministic browser coverage into routed Playwright smoke for signed remediation approvals, rollback verification, collector pivots, and IdP launch validation.
-2. Extend dry-run rollback verification into live adapter execution where platform permissions and operator policy allow it.
+1. Add direct Command Center action drawers for connector validation, remediation review, rule replay, release readiness, and evidence-pack export.
+2. Expand deterministic browser coverage into routed Playwright smoke for Command Center lanes, signed remediation approvals, rollback verification, collector pivots, and IdP launch validation.
+3. Extend dry-run rollback verification into live adapter execution where platform permissions and operator policy allow it.

@@ -217,6 +217,83 @@ describe('App', () => {
     expect(screen.getAllByText('Analyst Assistant').length).toBeGreaterThan(0);
   });
 
+  it('renders the command center route for authenticated analysts', async () => {
+    localStorage.setItem('wardex_token', 'persisted-token');
+    const requestedUrls = [];
+    fetchMock.mockImplementation(async (url) => {
+      requestedUrls.push(String(url));
+      return {
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => {
+          if (url === '/api/auth/session') {
+            return { authenticated: true, role: 'analyst' };
+          }
+          if (url === '/api/incidents') {
+            return {
+              incidents: [
+                {
+                  id: 7,
+                  title: 'Credential storm containment',
+                  status: 'investigating',
+                  severity: 'high',
+                },
+              ],
+            };
+          }
+          if (url === '/api/remediation/change-reviews') {
+            return {
+              reviews: [
+                {
+                  id: 'review-1',
+                  title: 'Rollback endpoint package',
+                  asset_id: 'edge-host-1',
+                  approval_status: 'pending_review',
+                  required_approvers: 2,
+                  approvals: [],
+                },
+              ],
+            };
+          }
+          if (url === '/api/content/rules') {
+            return {
+              rules: [
+                {
+                  id: 'rule-1',
+                  name: 'Noisy credential spray',
+                  lifecycle: 'test',
+                  last_test_match_count: 8,
+                },
+              ],
+            };
+          }
+          if (url === '/api/suppressions') {
+            return { suppressions: [{ id: 'sup-1', rule_id: 'rule-1' }] };
+          }
+          if (url === '/api/assistant/status') {
+            return { mode: 'retrieval-only', model: 'retrieval-only' };
+          }
+          if (url === '/api/report-templates') {
+            return { templates: [{ id: 'soc2', name: 'SOC 2 evidence pack' }] };
+          }
+          return {};
+        },
+      };
+    });
+
+    await renderApp('/command');
+
+    expect(await screen.findByRole('heading', { name: /Operate incidents/i })).toBeInTheDocument();
+    expect(screen.getAllByText('Command Center').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Credential storm containment')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('AWS CloudTrail').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Guided Remediation Approval Flow').length).toBeGreaterThan(0);
+    expect(requestedUrls).toContain('/api/incidents');
+    expect(requestedUrls).toContain('/api/remediation/change-reviews');
+    expect(requestedUrls).toContain('/api/content/rules');
+    expect(requestedUrls).toContain('/api/onboarding/readiness');
+  });
+
   it('preserves route scope through mobile help and share actions', async () => {
     localStorage.setItem('wardex_token', 'persisted-token');
     const writeText = vi.fn().mockResolvedValue(undefined);

@@ -105,6 +105,7 @@ Wardex is now positioned as a professional XDR/SIEM control plane with incident-
 - **Higher release confidence gates** — CI now enforces `cargo tarpaulin --fail-under 60.0`, adds a twice-weekly `cargo mutants` matrix, and runs nightly cross-browser Playwright coverage on Firefox and WebKit.
 - **Live rollback is explicitly opt-in** — `remediation.allow_live_rollback` defaults to `false`, so any non-dry-run rollback is rejected with `403` unless an operator has deliberately enabled active recovery.
 - **Typed-host live rollback confirmation** — live rollback requests must include `confirm_hostname` matching the change-review `asset_id`, and the Infrastructure console requires operators to type that hostname before it submits the request.
+- **Product Command Center first slice** — analysts now have a `/command` workspace that federates incidents, cases, connectors, detection quality, release metadata, remediation approvals, assistant guardrails, attack storytelling, RBAC posture, tuning debt, and compliance evidence packs into one operational view.
 - **Release metadata aligned on v0.53.9** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, and installation docs now point to the same release baseline.
 
 ## Roadmap completion in progress
@@ -114,6 +115,7 @@ Wardex is now positioned as a professional XDR/SIEM control plane with incident-
 - **Expanded production demo lab** — demo seeding now includes cloud, identity, SaaS, UEBA, NDR, and attack-graph evidence alongside case, response, report, and artifact proof.
 - **IdP lifecycle validation depth** — identity-provider summaries now expose launch checks for metadata, callback route alignment, client credentials, group mappings, and test-login paths.
 - **SDK parity continuation** — Python and TypeScript SDKs include collector status, remediation review creation, and signed remediation approval helpers used by console workflows.
+- **Command Center hardening** — the new cross-product workspace is wired to existing API contracts first; next depth targets are direct action drawers, routed Playwright smoke coverage, and richer per-lane backend summaries where the command surface still composes raw data.
 
 ## Recently shipped (v0.53.7)
 

@@ -878,6 +878,130 @@ tr:hover td {
   color: var(--text-secondary);
 }
 
+/* ── Product Command Center ───────────────────────────────── */
+.command-center-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.command-hero {
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.command-hero h2 {
+  max-width: 900px;
+  line-height: 1.18;
+}
+
+.command-hero p {
+  max-width: 980px;
+}
+
+.command-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.command-card-link {
+  color: inherit;
+  display: block;
+  text-decoration: none;
+}
+
+.command-metric-card {
+  height: 100%;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.command-card-link:hover .command-metric-card,
+.command-card-link:hover .row-card {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.command-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.command-section .section-header {
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 0;
+}
+
+.command-section .section-header h3 {
+  font-size: 18px;
+  line-height: 1.25;
+  margin-bottom: 6px;
+}
+
+.command-section .section-header p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.command-section .actions {
+  flex-shrink: 0;
+}
+
+.row-card {
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 12px 14px;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.row-primary {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.row-secondary {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.compact-table th,
+.compact-table td {
+  vertical-align: top;
+}
+
+.alert-banner {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.alert-banner.warning {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+[data-theme='dark'] .alert-banner.warning {
+  background: #451a03;
+  border-color: #78350f;
+  color: #fcd34d;
+}
+
 .drawer-overlay {
   position: fixed;
   top: var(--topbar-h);

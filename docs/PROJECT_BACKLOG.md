@@ -354,13 +354,21 @@ This backlog lists the next concrete tasks in build order.
 
 ## Recommended next build order
 
-Phases 0–40 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector lifecycle analytics, remediation change-review history, signed approval-chain proof, rollback verification, collector ingestion pivots, IdP launch validation, and expanded live workflow smoke coverage are all in place.
+Phases 0–40 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector lifecycle analytics, remediation change-review history, signed approval-chain proof, rollback verification, collector ingestion pivots, IdP launch validation, expanded live workflow smoke coverage, and the first Product Command Center slice are all in place.
+
+## Phase 41 — Product Command Center and workflow federation
+
+- [x] T286: Add an analyst-facing `/command` workspace that federates incidents, cases, connectors, detection quality, release metadata, remediation approvals, assistant guardrails, attack storytelling, RBAC posture, rule tuning debt, and compliance evidence packs.
+- [ ] T287: Add direct Command Center action drawers for connector validation, remediation approval review, rule replay, release rollout readiness, and evidence-pack export.
+- [ ] T288: Add routed Playwright smoke coverage for Command Center deep links, mobile layout, lane refresh behavior, and high-risk remediation/release handoffs.
+- [ ] T289: Add backend summary endpoints for Command Center lane health so the UI can reduce client-side fan-out as the workspace becomes the default operator entry point.
 
 Recommended next sequence:
 
-1. Expand deterministic browser coverage into routed Playwright smoke for signed remediation approvals, rollback verification, collector pivots, and IdP launch validation.
-2. Keep admin-console API helpers and generated SDK methods aligned as new workflow endpoints are added.
-3. Extend dry-run rollback verification into live adapter execution where platform permissions and operator policy allow it.
+1. Build the Command Center action drawers and link them to existing SOC, Settings, Detection, Infrastructure, Assistant, Attack Graph, and Reports workflows.
+2. Add routed Playwright smoke for the new Command Center lanes before making it the default analyst landing surface.
+3. Keep admin-console API helpers and generated SDK methods aligned as Command Center summary endpoints are added.
+4. Extend dry-run rollback verification into live adapter execution where platform permissions and operator policy allow it.
 
 See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the broader professional roadmap beyond the current implementation order.
 

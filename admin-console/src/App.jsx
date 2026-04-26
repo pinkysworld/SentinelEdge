@@ -94,6 +94,7 @@ const ThreatDetection = lazy(() => import('./components/ThreatDetection.jsx'));
 const FleetAgents = lazy(() => import('./components/FleetAgents.jsx'));
 const SecurityPolicy = lazy(() => import('./components/SecurityPolicy.jsx'));
 const SOCWorkbench = lazy(() => import('./components/SOCWorkbench.jsx'));
+const CommandCenter = lazy(() => import('./components/CommandCenter.jsx'));
 const AssistantWorkspace = lazy(() => import('./components/AssistantWorkspace.jsx'));
 const Infrastructure = lazy(() => import('./components/Infrastructure.jsx'));
 const ReportsExports = lazy(() => import('./components/ReportsExports.jsx'));
@@ -142,6 +143,13 @@ const SECTIONS = [
     minRole: 'analyst',
   },
   {
+    id: 'command-center',
+    path: '/command',
+    label: 'Command Center',
+    shortLabel: 'CMD',
+    minRole: 'analyst',
+  },
+  {
     id: 'assistant-workspace',
     path: '/assistant',
     label: 'Analyst Assistant',
@@ -183,6 +191,7 @@ const SECTIONS = [
 ];
 
 const WORKFLOW_GROUPS = [
+  { id: 'command', label: 'Command', sections: ['command-center'] },
   { id: 'monitor', label: 'Monitor', sections: ['dashboard', 'live-monitor', 'reports-exports'] },
   {
     id: 'investigate',
@@ -372,6 +381,9 @@ export default function App() {
           break;
         case 's':
           navigate('/soc');
+          break;
+        case 'c':
+          navigate('/command');
           break;
         case 'g':
           navigate('/settings');
@@ -1112,6 +1124,18 @@ export default function App() {
                     <RequireRole minRole="analyst">
                       <Suspense fallback={<div className="loading">Loading…</div>}>
                         <SOCWorkbench />
+                      </Suspense>
+                    </RequireRole>
+                  </ErrorBoundary>
+                }
+              />
+              <Route
+                path="/command"
+                element={
+                  <ErrorBoundary>
+                    <RequireRole minRole="analyst">
+                      <Suspense fallback={<div className="loading">Loading…</div>}>
+                        <CommandCenter />
                       </Suspense>
                     </RequireRole>
                   </ErrorBoundary>
