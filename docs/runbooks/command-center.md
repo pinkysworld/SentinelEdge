@@ -6,6 +6,14 @@ The Command Center is the default analyst workspace for coordinating incident tr
 
 Use `/command` at shift start, during incident response handoff, before approving remediation, and before exporting evidence for leadership or auditors.
 
+## Shareable drawer URLs
+
+Each Command Center drawer is reflected in the URL via the `?drawer=<lane>` query parameter, where `<lane>` is one of `remediation`, `connectors`, `rules`, `release`, or `evidence`. Operators can bookmark or paste the URL into chat to bring another analyst directly into the same drawer state. Reload, browser back/forward, and shared links all preserve the open lane. Item-specific selections (a particular connector or rule) live in the local component and need to be re-clicked after a hard reload.
+
+## Per-lane refreshes
+
+When a drawer needs a focused refresh — for example, after running a remediation approval — the console can call `GET /api/command/lanes/{lane}` instead of the full `GET /api/command/summary`. Supported lanes: `incidents`, `remediation`, `connectors`, `rule_tuning`, `release`, `evidence`. The endpoint returns the lane payload, the headline metric value, and the parent generation timestamp.
+
 ## Shift-start check
 
 1. Open **Command Center** from the primary analyst destination or go to `/command`.

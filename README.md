@@ -6,12 +6,12 @@
 
 Wardex is a Rust-based XDR and SIEM platform for private-cloud and self-hosted security operations. It combines cross-platform telemetry collection, detection engineering, analyst workflows, approval-gated response, agent lifecycle management, SIEM integrations, and tamper-evident evidence handling in a single deployable product.
 
-## What ships in `v0.54.0`
+## What ships in `v0.55.0`
 
 - 139 Rust source modules covering telemetry collection, detection engineering, hunt/search, SOC workflows, fleet operations, governance, and automated incident response.
 - A versioned OpenAPI contract with regenerated Python and TypeScript SDKs for authenticated admin-console workflows, explainability, onboarding readiness, threat-intel enrichment, malware analysis, reports, hunts, investigations, NDR, and enterprise support surfaces.
 - 1500+ automated tests and smoke checks spanning Rust, SDK, admin-console, and Playwright browser coverage.
-- **Product Command Center** — `/command` is the analyst default workspace, bringing incident pressure, cases, connector gaps, remediation approvals, rule tuning debt, release readiness, and compliance evidence into one routed surface with inline action drawers.
+- **Product Command Center** — `/command` is the analyst default workspace, bringing incident pressure, cases, connector gaps, remediation approvals, rule tuning debt, release readiness, and compliance evidence into one routed surface with inline action drawers, drawer deep-links via `?drawer=<lane>`, and a per-lane `GET /api/command/lanes/{lane}` endpoint for focused refreshes.
 - **Guided connector onboarding** — GitHub Audit Log, CrowdStrike Falcon, and Generic Syslog now have saved setup contracts, validation endpoints, sample-event proof, collector status, OpenAPI coverage, and console onboarding flows.
 - **Detection trust and explainability** — model-registry status, shadow-mode inference tracking, rollback visibility, analyst feedback capture, entity-centric risk scoring, campaign intelligence, replay-corpus gates, platform/signal-type drift breakdowns, and explainable alert reasoning are now first-class operator workflows instead of backend-only plumbing.
 - **Operator-readiness onboarding** — onboarding is now driven by server readiness checks that verify token validity, first agent health, telemetry flow, alert visibility, intel-source health, malware scan readiness, and response dry-run coverage.

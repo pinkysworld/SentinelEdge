@@ -111,6 +111,35 @@ fn command_summary_returns_lane_health() {
 }
 
 #[test]
+fn command_lane_endpoint_returns_per_lane_slice() {
+    let (port, token) = spawn_test_server();
+    let resp = ureq::get(&format!("{}/api/command/lanes/release", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call()
+        .expect("command lane release request");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["lane"].as_str().unwrap(), "release");
+    assert!(body["generated_at"].as_str().is_some());
+    assert_eq!(
+        body["payload"]["current_version"].as_str().unwrap(),
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(body["payload"]["status"].as_str().is_some());
+
+    // Unknown lane returns 404.
+    let resp = ureq::get(&format!("{}/api/command/lanes/bogus", base(port)))
+        .set("Authorization", &auth_header(&token))
+        .call();
+    let status = match resp {
+        Ok(r) => r.status(),
+        Err(ureq::Error::Status(code, _)) => code,
+        Err(other) => panic!("unexpected error: {other:?}"),
+    };
+    assert_eq!(status, 404);
+}
+
+#[test]
 fn planned_connector_config_and_validation_persist() {
     let (port, token) = spawn_test_server();
     let config = serde_json::json!({

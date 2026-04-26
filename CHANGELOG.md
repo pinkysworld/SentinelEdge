@@ -4,6 +4,34 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.55.0] — Per-Lane Command APIs, Drawer Deep-Links & CI Hygiene
+
+### Backend
+- **Per-lane Command Center endpoint** — New `GET /api/command/lanes/{lane}` returns a focused slice of the existing summary so drawers and dashboards can refresh a single lane without re-fetching the entire aggregate. Supported lanes: `incidents`, `remediation`, `connectors`, `rule_tuning`, `release`, `evidence`. Returns `404` for unknown lanes.
+- **OpenAPI + endpoint catalog** — The new lane route is published in both the runtime endpoint catalog (`/api/endpoints`) and the static `docs/openapi.yaml` and Rust `openapi.rs` builders.
+
+### Frontend
+- **Drawer deep-links** — Command Center drawers now sync to the URL via `?drawer=<lane>` so SOC analysts can share or bookmark a specific drawer state. The drawer state survives reloads and back/forward navigation. Item-specific context (e.g. a connector or rule selected from a row) is preserved through the local component while the lane lives in the URL.
+- **Wider analyst entrypoints** — Same `/command` default destination, but every action button and drawer entry now produces a copyable URL.
+
+### Continuous integration
+- **Workflow lint job** — New `.github/workflows/actionlint.yml` runs `actionlint` (pinned via SHA-256 of the official `rhysd/actionlint` 1.7.12 release tarball) against every workflow change, catching action-spec regressions like the Node 20 deprecation we shipped a hotfix for in v0.54.0.
+- **Local validation** — Confirmed clean against all existing workflows with `actionlint -shellcheck=` (shellcheck reports are intentionally suppressed for the workflow-spec linter).
+
+### Developer experience
+- **`npm run e2e`** — New script in `admin-console/package.json` aliases `playwright test`, plus `npm run e2e:ui` for the interactive runner.
+- **iCloud-sync workaround** — `CONTRIBUTING.md` now documents the `TMPDIR=/tmp/sentinel-edge-build` workaround for workspaces under `~/Library/Mobile Documents/com~apple~CloudDocs/`.
+- **Changelog reset helper** — New `scripts/changelog_reset_unreleased.py` converts `## [Unreleased]` into a versioned section after a tag, ready for the next cycle.
+
+### Verification
+- `cargo test --test api_integration command_lane_endpoint_returns_per_lane_slice -- --exact`
+- `cargo test --test api_integration command_summary_returns_lane_health -- --exact`
+- `cargo test --test api_integration planned_connector_config_and_validation_persist -- --exact`
+- `npm run lint --prefix admin-console`
+- `npm test --prefix admin-console -- --run src/__tests__/App.test.jsx`
+- `npm run build --prefix admin-console`
+- `actionlint -shellcheck= .github/workflows/*.yml`
+
 ## [0.54.0] — Product Command Center, Action Drawers & Connector Onboarding
 
 ### Command Center

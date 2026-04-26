@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useCallback, useMemo, useState } from 'react';
 import { useApiGroup } from '../hooks.jsx';
 import * as api from '../api.js';
 import { JsonDetails, SummaryGrid, WorkspaceEmptyState } from './operator.jsx';
@@ -19,8 +19,15 @@ import {
 } from './command/helpers.js';
 import { CommandSection, MetricCard, WorkItem } from './command/primitives.jsx';
 
+const VALID_DRAWER_TYPES = ['remediation', 'connectors', 'rules', 'release', 'evidence'];
+
 export default function CommandCenter() {
-  const [drawer, setDrawer] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const drawerParam = searchParams.get('drawer');
+  const [drawerItem, setDrawerItem] = useState(null);
+  const drawer = VALID_DRAWER_TYPES.includes(drawerParam)
+    ? { type: drawerParam, item: drawerItem }
+    : null;
   const { data, loading, errors, reload } = useApiGroup({
     commandSummary: api.commandSummary,
     incidentsData: api.incidents,
@@ -143,8 +150,32 @@ export default function CommandCenter() {
     compliancePacks: summaryMetrics.compliance_packs ?? reportTemplates.length,
   };
 
-  const openDrawer = (type, item = null) => setDrawer({ type, item });
-  const closeDrawer = () => setDrawer(null);
+  const openDrawer = useCallback(
+    (type, item = null) => {
+      if (!VALID_DRAWER_TYPES.includes(type)) return;
+      setDrawerItem(item);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('drawer', type);
+          return next;
+        },
+        { replace: false },
+      );
+    },
+    [setSearchParams, setDrawerItem],
+  );
+  const closeDrawer = useCallback(() => {
+    setDrawerItem(null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('drawer');
+        return next;
+      },
+      { replace: false },
+    );
+  }, [setSearchParams, setDrawerItem]);
 
   return (
     <div className="workspace command-center-workspace">

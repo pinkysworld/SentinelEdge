@@ -1172,6 +1172,15 @@ pub fn wardex_openapi_spec(version: &str) -> OpenApiSpec {
                 &["command"],
             ),
         )
+        .path(
+            "/api/command/lanes/{lane}",
+            "get",
+            op(
+                "getCommandLane",
+                "Per-lane slice of the Command Center summary",
+                &["command"],
+            ),
+        )
         // Config
         .path(
             "/api/config/current",

@@ -6,7 +6,7 @@ info:
     All mutating endpoints and sensitive monitoring endpoints require
     Bearer token authentication via the `Authorization` header.
     Agent-facing enrollment and heartbeat endpoints bypass admin auth.
-  version: "0.54.0"
+  version: "0.55.0"
   contact:
     name: Wardex Project
   license:
@@ -795,7 +795,7 @@ paths:
                   platform: { type: string }
               example:
                 status: ok
-                version: "0.54.0"
+                version: "0.55.0"
                 uptime: "4h 12m 3s"
                 platform: aarch64-apple-darwin
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -1199,7 +1199,7 @@ paths:
                 - agent_id: a1b2c3d4
                   hostname: prod-web-01
                   platform: x86_64-unknown-linux-musl
-                  version: "0.54.0"
+                  version: "0.55.0"
                   status: healthy
                   last_heartbeat: "2026-04-08T12:01:30Z"
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -2323,6 +2323,33 @@ paths:
                   generated_at: { type: string, format: date-time }
                   metrics: { type: object }
                   lanes: { type: object }
+
+  "/api/command/lanes/{lane}":
+    get:
+      tags: [Incidents]
+      summary: Per-lane Command Center slice
+      parameters:
+        - name: lane
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [incidents, remediation, connectors, rule_tuning, release, evidence]
+      responses:
+        "200":
+          description: Single-lane payload with metric key, value, and shared timestamp
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lane: { type: string }
+                  generated_at: { type: string, format: date-time }
+                  metric_key: { type: string, nullable: true }
+                  metric_value: { type: integer, nullable: true }
+                  payload: { type: object }
+        "404":
+          description: Lane not found
 
   "/api/reports/{id}":
     get:

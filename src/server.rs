@@ -9958,6 +9958,7 @@ fn handle_api(
         || (method == Method::Get && route_path == "/api/manager/queue-digest")
         || (method == Method::Get && route_path == "/api/onboarding/readiness")
         || (method == Method::Get && route_path == "/api/command/summary")
+        || (method == Method::Get && route_path.starts_with("/api/command/lanes/"))
         || (method == Method::Get && route_path == "/api/hunts")
         || (method == Method::Post && route_path == "/api/hunts")
         || (method == Method::Get && route_path.starts_with("/api/hunts/"))
@@ -12112,6 +12113,7 @@ fn handle_api(
                 {"method": "GET", "path": "/api/storage/events/historical", "auth": true, "description": "Query ClickHouse-backed long-retention events with time and entity filters"},
                 {"method": "GET", "path": "/api/collectors/status", "auth": true, "description": "Summarize structured collector setup, validation, and ingestion-health timeline checkpoints"},
                 {"method": "GET", "path": "/api/command/summary", "auth": true, "description": "Summarize Command Center lane health across incidents, remediation, connectors, rules, releases, and compliance evidence"},
+                {"method": "GET", "path": "/api/command/lanes/{lane}", "auth": true, "description": "Per-lane slice of the Command Center summary (incidents, remediation, connectors, rule_tuning, release, evidence)"},
                 {"method": "GET", "path": "/api/collectors/aws", "auth": true, "description": "Retrieve AWS CloudTrail setup details and validation status"},
                 {"method": "POST", "path": "/api/collectors/aws/config", "auth": true, "description": "Save AWS CloudTrail setup fields while preserving existing secrets when omitted"},
                 {"method": "POST", "path": "/api/collectors/aws/validate", "auth": true, "description": "Run an on-demand AWS CloudTrail validation poll and return sample events"},
@@ -20689,6 +20691,53 @@ fn handle_api(
                     json_response(r#"{"status":"deleted"}"#, 200)
                 } else {
                     error_json("webhook not found", 404)
+                }
+            } else if method == Method::Get && url_path.starts_with("/api/command/lanes/") {
+                // Per-lane Command Center slice: returns just one lane plus shared metadata.
+                let lane = &url_path["/api/command/lanes/".len()..];
+                if lane.is_empty() || lane.contains('/') {
+                    error_json("invalid lane name", 400)
+                } else {
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut payload = command_summary_payload(&mut s);
+                    let lane_value = payload
+                        .get("lanes")
+                        .and_then(|lanes| lanes.get(lane))
+                        .cloned();
+                    let metric_key = match lane {
+                        "incidents" => Some("open_incidents"),
+                        "remediation" => Some("pending_remediation_reviews"),
+                        "connectors" => Some("connector_issues"),
+                        "rule_tuning" => Some("noisy_rules"),
+                        "release" => Some("release_candidates"),
+                        "evidence" => Some("compliance_packs"),
+                        _ => None,
+                    };
+                    let metric_value = metric_key.and_then(|k| {
+                        payload
+                            .get("metrics")
+                            .and_then(|metrics| metrics.get(k))
+                            .cloned()
+                    });
+                    match lane_value {
+                        Some(lane_payload) => {
+                            let generated_at = payload
+                                .get_mut("generated_at")
+                                .map(|v| v.take())
+                                .unwrap_or_else(|| {
+                                    serde_json::Value::String(chrono::Utc::now().to_rfc3339())
+                                });
+                            let body = serde_json::json!({
+                                "lane": lane,
+                                "generated_at": generated_at,
+                                "metric_key": metric_key,
+                                "metric_value": metric_value,
+                                "payload": lane_payload,
+                            });
+                            json_response(&body.to_string(), 200)
+                        }
+                        None => error_json("lane not found", 404),
+                    }
                 }
             } else {
                 error_json("not found", 404)

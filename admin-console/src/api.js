@@ -150,6 +150,7 @@ export const resetBaseline = () => post('/api/control/reset-baseline');
 export const checkpoint = () => post('/api/control/checkpoint');
 export const restoreCheckpoint = (body) => post('/api/control/restore-checkpoint', body);
 export const commandSummary = () => get('/api/command/summary');
+export const commandLane = (lane) => get(`/api/command/lanes/${encodeURIComponent(lane)}`);
 export const checkpoints = () => get('/api/checkpoints');
 export const detectionProfile = () => get('/api/detection/profile');
 export const setDetectionProfile = (body) => put('/api/detection/profile', body);

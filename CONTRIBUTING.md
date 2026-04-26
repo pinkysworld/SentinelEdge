@@ -83,9 +83,19 @@ When changing the admin console (`admin-console/`):
 4. Use the shared test utilities in `src/__tests__/test-utils.js` for mocking and render wrappers.
 5. Add ARIA attributes to interactive elements (see existing patterns in `LiveMonitor.jsx` and `SearchPalette.jsx`).
 6. Run `npm run lint && npm run format:check && npm test -- --run` before submitting.
-7. For E2E tests, install Playwright: `npx playwright install chromium` then `npx playwright test`.
+7. For E2E tests, install Playwright once with `npx playwright install chromium`, then run `npm run e2e` (alias for `playwright test`).
 8. Route components are lazy-loaded via `React.lazy()` in `App.jsx`.
 9. State management uses React Context — see `hooks.jsx` for `useAuth`, `useRole`, `useTheme`, `useToast`, `useApi`.
+
+### iCloud / cloud-synced workspaces
+
+If your workspace lives under `~/Library/Mobile Documents/com~apple~CloudDocs/` (iCloud Drive), Vite's
+file watchers and Playwright's `output/` paths can stall on metadata sync. Workarounds:
+
+- Export `TMPDIR=/tmp/sentinel-edge-build` before running `npm run dev`, `npm run build`, or `npm run e2e`
+  so build artefacts land on a non-synced filesystem.
+- Disable iCloud "Optimize Mac Storage" for the project folder so Vite's lockfile reads are not paged out.
+- Prefer cloning the repository to `~/src/` and symlinking it into iCloud if you need both worlds.
 
 ### Commit Messages
 

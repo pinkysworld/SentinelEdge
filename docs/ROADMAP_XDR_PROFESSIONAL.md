@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.54.0` delivers the current private-cloud XDR and SIEM control-plane baseline:
+`v0.55.0` delivers the current private-cloud XDR and SIEM control-plane baseline:
 
 - SOC Workbench for queue, cases, investigations, guided workflows, response approvals, escalation management, and incident-first case/incident drawers
 - Product Command Center for incidents, cases, connector gaps, remediation approvals, rule tuning debt, release readiness, and compliance evidence packs with inline action drawers
@@ -52,7 +52,7 @@
 
 ## Success criteria
 
-| Metric | Current (`v0.54.0`) | Target |
+| Metric | Current (`v0.55.0`) | Target |
 |---|---|---|
 | Automated tests | 1413 lib + 212+ integration + focused browser/admin regressions | maintained and expanded on every release |
 | OpenAPI and SDK contract | versioned OpenAPI plus generated Python and TypeScript SDKs | kept in lockstep on every release |

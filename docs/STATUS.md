@@ -2,7 +2,7 @@
 
 ## Current release
 
-- **Version:** `0.54.0`
+- **Version:** `0.55.0`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
@@ -99,14 +99,21 @@ The current release has been verified with:
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
 
+## Recently shipped (v0.55.0)
+
+- **Per-lane Command Center API** — `GET /api/command/lanes/{lane}` returns a focused slice of the cross-product summary (incidents, remediation, connectors, rule_tuning, release, evidence), so drawers can refresh a single lane without re-pulling the full aggregate. Catalog, OpenAPI, Rust builder, console helper, and integration test all updated.
+- **Drawer deep-links** — Command Center drawers now sync to the URL via `?drawer=<lane>`, making the analyst's current view bookmarkable and shareable while preserving local item context.
+- **Workflow lint gate** — `.github/workflows/actionlint.yml` runs SHA-pinned `actionlint` 1.7.12 on every workflow change, catching action-spec regressions at PR time.
+- **DX scripts** — `npm run e2e` (and `e2e:ui`) alias `playwright test`, `scripts/changelog_reset_unreleased.py` automates the `## [Unreleased]` reset after tagging, and `CONTRIBUTING.md` documents the iCloud Drive `TMPDIR` workaround.
+- **Release metadata aligned on v0.55.0** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, install docs, reproducibility notes, and website release surfaces now point to the same release baseline.
+
 ## Recently shipped (v0.54.0)
 
-- **Product Command Center action surface** — `/command` is now the analyst default workspace and opens connector validation, remediation approval, rule replay, release readiness, and compliance evidence drawers directly from lane metrics.
+- **Product Command Center action surface** — `/command` is the analyst default workspace and opens connector validation, remediation approval, rule replay, release readiness, and compliance evidence drawers directly from lane metrics.
 - **Backend command summary** — `GET /api/command/summary` aggregates incidents, cases, remediation reviews, connector gaps, noisy/stale rules, release metadata, report templates, compliance posture, and fleet gaps for the command workspace.
 - **Planned connector onboarding** — GitHub Audit Log, CrowdStrike Falcon, and Generic Syslog now expose setup persistence, validation, sample-event preview, collector status entries, OpenAPI coverage, and console API helpers.
 - **Rule tuning readiness** — noisy/stale rules now render a replay, suppression, and promotion checklist before analysts pivot into the full detection workspace.
-- **Command Center runbook and browser smoke** — the new runbook documents shift-start and escalation workflows, while Playwright covers desktop action drawers and the mobile command layout across Chromium, Firefox, and WebKit.
-- **Release metadata aligned on v0.54.0** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, install docs, reproducibility notes, and website release surfaces now point to the same release baseline.
+- **Command Center runbook and browser smoke** — the runbook documents shift-start and escalation workflows, while Playwright covers desktop action drawers and the mobile command layout across Chromium, Firefox, and WebKit.
 
 ## Roadmap completion in progress
 
