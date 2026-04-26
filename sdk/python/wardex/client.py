@@ -618,6 +618,17 @@ class WardexClient:
             payload,
         )
 
+    def execute_remediation_rollback(
+        self,
+        review_id: str,
+        dry_run: bool = True,
+        platform: str = "linux",
+    ) -> dict[str, Any]:
+        return self._post(
+            f"/api/remediation/change-reviews/{quote(review_id, safe='')}/rollback",
+            {"dry_run": dry_run, "platform": platform},
+        )
+
     # ── threat hunting ───────────────────────────────────────────────
 
     def hunt(self, query: str) -> dict[str, Any]:

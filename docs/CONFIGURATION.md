@@ -88,6 +88,22 @@ auto_update = false
 channel = "stable"             # "stable", "beta", or "nightly"
 ```
 
+### `[remediation]`
+
+```toml
+[remediation]
+allow_live_rollback = false    # default; reject any dry_run = false rollback with 403
+```
+
+When `allow_live_rollback = false` (the default), `POST /api/remediation/change-reviews/:id/rollback` rejects any
+request with `dry_run = false` and emits a `remediation.rollback.live_blocked … reason=allow_live_rollback_disabled`
+audit-warn log. To enable live recovery, set the flag to `true` **and** require operators to confirm the target
+by including `confirm_hostname` in the request body — the value must equal the change-review's `asset_id`
+(case-insensitive). Mismatches are rejected with `400` and audit-logged as
+`remediation.rollback.live_blocked … reason=hostname_confirmation_mismatch`. Accepted live rollbacks emit
+`remediation.rollback.live`. The Infrastructure console enforces the same handshake via the "Live Rollback…"
+button, which prompts for the hostname before issuing the request.
+
 ## API Versioning
 
 All API endpoints support both `/api/` and `/api/v1/` prefixes. For example:

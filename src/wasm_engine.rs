@@ -552,12 +552,14 @@ fn compile_tokens(tokens: &[Token]) -> Result<Vec<Opcode>, String> {
             }
             _ if is_operator(tok) => {
                 // Pop operators with higher or equal precedence
-                while let Some(&top) = op_stack.last() {
+                while let Some(popped) = op_stack.last().copied().and_then(|top| {
                     if is_operator(top) && precedence(top) >= precedence(tok) {
-                        output.push(token_to_opcode(op_stack.pop().unwrap()));
+                        op_stack.pop()
                     } else {
-                        break;
+                        None
                     }
+                }) {
+                    output.push(token_to_opcode(popped));
                 }
                 op_stack.push(tok);
             }

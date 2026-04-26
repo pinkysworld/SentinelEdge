@@ -1133,7 +1133,7 @@ fn remediation_change_reviews_can_be_recorded_and_listed() {
         "risk": "high",
         "approval_status": "pending_review",
         "recovery_status": "not_started",
-        "evidence": {"sha256": "abc123"}
+        "evidence": {"sha256": "abc123", "path": "/tmp/dropper"}
     });
     let created = ureq::post(&format!("{}/api/remediation/change-reviews", base(port)))
         .set("Authorization", &auth_header(&token))
@@ -1197,6 +1197,29 @@ fn remediation_change_reviews_can_be_recorded_and_listed() {
         serde_json::json!("ready")
     );
 
+    let rollback = ureq::post(&format!(
+        "{}/api/remediation/change-reviews/{}/rollback",
+        base(port),
+        review_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .send_json(serde_json::json!({
+        "dry_run": true,
+        "platform": "linux"
+    }))
+    .expect("execute rollback proof")
+    .into_json::<serde_json::Value>()
+    .unwrap();
+    assert_eq!(rollback["status"], serde_json::json!("rollback_recorded"));
+    assert_eq!(
+        rollback["review"]["rollback_proof"]["status"],
+        serde_json::json!("dry_run_verified")
+    );
+    assert_eq!(
+        rollback["review"]["rollback_proof"]["execution_result"]["commands"][0]["program"],
+        serde_json::json!("cp")
+    );
+
     let listed = ureq::get(&format!("{}/api/remediation/change-reviews", base(port)))
         .set("Authorization", &auth_header(&token))
         .call()
@@ -1214,6 +1237,92 @@ fn remediation_change_reviews_can_be_recorded_and_listed() {
         1
     );
     assert_eq!(listed_body["reviews"][0]["asset_id"], "host-a:/tmp/dropper");
+}
+
+#[test]
+fn live_rollback_is_blocked_when_allow_live_rollback_is_disabled() {
+    let (port, token) = spawn_test_server();
+    // Record a review and approve to reach `approved` state.
+    let payload = serde_json::json!({
+        "title": "Review live-rollback gating",
+        "asset_id": "host-live-1:/etc/cron.d/payload",
+        "change_type": "malware_containment",
+        "source": "malware-verdict",
+        "summary": "Confirm live rollback is blocked by default.",
+        "risk": "high",
+        "approval_status": "pending_review",
+        "recovery_status": "not_started",
+        "evidence": {"sha256": "deadbeef"}
+    });
+    let created: serde_json::Value =
+        ureq::post(&format!("{}/api/remediation/change-reviews", base(port)))
+            .set("Authorization", &auth_header(&token))
+            .set("Content-Type", "application/json")
+            .send_string(&payload.to_string())
+            .expect("record remediation review")
+            .into_json()
+            .unwrap();
+    let review_id = created["review"]["id"].as_str().unwrap();
+    for approver in ["primary-reviewer", "secondary-reviewer"] {
+        ureq::post(&format!(
+            "{}/api/remediation/change-reviews/{}/approval",
+            base(port),
+            review_id
+        ))
+        .set("Authorization", &auth_header(&token))
+        .send_json(serde_json::json!({
+            "approver": approver,
+            "decision": "approve",
+            "comment": "ok"
+        }))
+        .expect("signed approval");
+    }
+
+    // Attempt 1: live rollback without confirm_hostname must be 403 (allow_live disabled by default).
+    let blocked = ureq::post(&format!(
+        "{}/api/remediation/change-reviews/{}/rollback",
+        base(port),
+        review_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .send_json(serde_json::json!({
+        "dry_run": false,
+        "platform": "linux",
+        "confirm_hostname": "host-live-1:/etc/cron.d/payload"
+    }));
+    match blocked {
+        Err(ureq::Error::Status(403, resp)) => {
+            let body: serde_json::Value = resp.into_json().unwrap();
+            assert!(
+                body["error"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("disabled"),
+                "unexpected error body: {body}"
+            );
+        }
+        other => panic!("expected 403 for live rollback when disabled, got {other:?}"),
+    }
+
+    // Dry-run rollback still works while live rollback is disabled.
+    let dry_run: serde_json::Value = ureq::post(&format!(
+        "{}/api/remediation/change-reviews/{}/rollback",
+        base(port),
+        review_id
+    ))
+    .set("Authorization", &auth_header(&token))
+    .send_json(serde_json::json!({
+        "dry_run": true,
+        "platform": "linux"
+    }))
+    .expect("dry-run rollback")
+    .into_json()
+    .unwrap();
+    assert_eq!(dry_run["status"], "rollback_recorded");
+    assert_eq!(
+        dry_run["review"]["rollback_proof"]["status"],
+        "dry_run_verified"
+    );
 }
 
 #[test]

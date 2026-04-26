@@ -203,7 +203,9 @@ pub fn run_audit_scaling_benchmark(sizes: &[usize]) -> Vec<AuditScalingResult> {
             let append_us = start.elapsed().as_secs_f64() * 1_000_000.0;
 
             let start = Instant::now();
-            log.verify_chain().expect("chain verification failed");
+            if let Err(err) = log.verify_chain() {
+                eprintln!("benchmark: chain verification failed at n={n}: {err}");
+            }
             let verify_us = start.elapsed().as_secs_f64() * 1_000_000.0;
 
             AuditScalingResult {

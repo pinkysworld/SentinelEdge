@@ -213,6 +213,8 @@ pub struct Config {
     #[serde(default)]
     pub playbook: PlaybookSettings,
     #[serde(default)]
+    pub remediation: RemediationSettings,
+    #[serde(default)]
     pub compliance: ComplianceSettings,
     #[serde(default)]
     pub tracing: TracingSettings,
@@ -399,6 +401,24 @@ impl Default for PlaybookSettings {
             max_concurrent: default_max_concurrent(),
         }
     }
+}
+
+/// Remediation engine configuration.
+///
+/// Controls live-rollback execution policy. By default, rollback runs are
+/// recorded as dry-runs only; environments that explicitly authorise active
+/// recovery must opt in via `allow_live_rollback = true` AND the operator
+/// must confirm by typing the asset hostname into the request payload.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RemediationSettings {
+    /// Allow live (non-dry-run) rollback execution. Default `false`.
+    ///
+    /// When `false`, any `dry_run = false` rollback request is rejected with
+    /// `403 Forbidden` and an audit-log entry. When `true`, the request must
+    /// also include `confirm_hostname` matching the change-review's
+    /// `asset_id` (case-insensitive) to be accepted.
+    #[serde(default)]
+    pub allow_live_rollback: bool,
 }
 
 /// Compliance evaluation configuration.

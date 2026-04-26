@@ -123,7 +123,9 @@ impl IncidentStore {
         self.next_id += 1;
         self.incidents.push(incident);
         self.persist();
-        self.incidents.last().unwrap()
+        // We just pushed, so incidents is non-empty; index avoids unwrap/expect.
+        let last = self.incidents.len() - 1;
+        &self.incidents[last]
     }
 
     pub fn get(&self, id: u64) -> Option<&Incident> {

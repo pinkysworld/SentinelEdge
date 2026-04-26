@@ -452,6 +452,14 @@ export class WardexClient {
     );
   }
 
+  async executeRemediationRollback(id: string, request: unknown): Promise<unknown> {
+    return this.request(
+      "POST",
+      `/api/remediation/change-reviews/${encodeURIComponent(id)}/rollback`,
+      request,
+    );
+  }
+
   async malwareImport(data: string): Promise<{ imported: number }> {
     return this.request("POST", "/api/malware/signatures/import", { data });
   }

@@ -349,16 +349,18 @@ This backlog lists the next concrete tasks in build order.
 - [x] T281: Expand production demo lab proof across cloud, identity, SaaS, UEBA, NDR, and attack-graph evidence surfaces.
 - [x] T282: Surface IdP launch-validation checks for metadata, callback route alignment, credentials, mappings, and test-login paths.
 - [x] T283: Extend Python and TypeScript SDK helpers for collector status, remediation reviews, and signed remediation approvals.
+- [x] T284: Add deterministic browser regression coverage for signed remediation approvals, rollback verification, collector pivots, and IdP launch validation.
+- [x] T285: Add adapter-backed rollback verification for approved remediation change reviews with dry-run-first execution records.
 
 ## Recommended next build order
 
-Phases 0–40 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector lifecycle analytics, remediation change-review history, signed approval-chain proof, collector ingestion pivots, IdP launch validation, and expanded live workflow smoke coverage are all in place.
+Phases 0–40 are complete. Routed browser regression coverage, the repeatable release-acceptance gate, admin-console API contract audit, entity-centric explainability, campaign clustering, replay-corpus promotion gates, replay delta analysis, collector lifecycle analytics, remediation change-review history, signed approval-chain proof, rollback verification, collector ingestion pivots, IdP launch validation, and expanded live workflow smoke coverage are all in place.
 
 Recommended next sequence:
 
-1. Add browser regression coverage for signed remediation approvals, rollback-proof display, collector pivots, and IdP launch validation.
+1. Expand deterministic browser coverage into routed Playwright smoke for signed remediation approvals, rollback verification, collector pivots, and IdP launch validation.
 2. Keep admin-console API helpers and generated SDK methods aligned as new workflow endpoints are added.
-3. Expand rollback proof from planned recovery evidence into adapter-backed execution where platform permissions allow it.
+3. Extend dry-run rollback verification into live adapter execution where platform permissions and operator policy allow it.
 
 See `docs/ROADMAP_XDR_PROFESSIONAL.md` for the broader professional roadmap beyond the current implementation order.
 

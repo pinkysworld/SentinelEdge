@@ -294,4 +294,16 @@ describe('POST endpoints', () => {
       expect.objectContaining({ case_id: '42', source: 'case' }),
     );
   });
+
+  it('executeRemediationRollback() posts to the review rollback endpoint', async () => {
+    mockFetch.mockResolvedValueOnce(jsonOk({ status: 'rollback_recorded' }));
+    await api.executeRemediationRollback('review-1', { dry_run: true, platform: 'linux' });
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      '/api/remediation/change-reviews/review-1/rollback',
+    );
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      dry_run: true,
+      platform: 'linux',
+    });
+  });
 });

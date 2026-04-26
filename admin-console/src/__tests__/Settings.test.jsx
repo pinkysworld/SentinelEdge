@@ -37,6 +37,14 @@ describe('Settings', () => {
             ],
             mapping_count: 0,
           },
+          launch_validation: {
+            metadata_configured: true,
+            callback_configured: true,
+            callback_matches_console_route: true,
+            client_credentials_present: true,
+            group_mappings: 0,
+            test_login_path: '/api/auth/sso/login?provider_id=idp-1',
+          },
         },
       ],
       count: 1,
@@ -273,6 +281,20 @@ describe('Settings', () => {
           checkpoint_id: 'aws-checkpoint-123456',
           lag_seconds: 45,
           total_collected: 2,
+          ingestion_evidence: {
+            pivots: [
+              {
+                surface: 'SOC Workbench',
+                href: '/soc?collector=aws&lane=cloud',
+                label: 'Open SOC collector context',
+              },
+              {
+                surface: 'Infrastructure',
+                href: '/infrastructure?tab=observability&collector=aws',
+                label: 'Open infrastructure evidence',
+              },
+            ],
+          },
           timeline: [
             {
               stage: 'Configuration',
@@ -1261,6 +1283,9 @@ describe('Settings', () => {
     expect(within(providerRow).getByText('OIDC')).toBeInTheDocument();
     expect(within(providerRow).getByText('Review')).toBeInTheDocument();
     expect(within(providerRow).getByText('1 issue • 0 mappings')).toBeInTheDocument();
+    expect(within(providerRow).getByText('Callback matches • credentials present')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'SOC Workbench' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'Infrastructure' }).length).toBeGreaterThan(0);
     expect(
       screen.getByText(
         'No group-to-role mappings configured; users may fall back to viewer access.',

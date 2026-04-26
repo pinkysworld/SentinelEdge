@@ -146,8 +146,9 @@ impl CaseStore {
         self.next_id += 1;
         self.cases.push(case);
         self.persist();
-        // SAFETY: we just pushed, so last() is always Some
-        self.cases.last().expect("cases: just pushed")
+        // We just pushed, so cases is non-empty; index avoids unwrap/expect.
+        let last = self.cases.len() - 1;
+        &self.cases[last]
     }
 
     pub fn get(&self, id: u64) -> Option<&Case> {

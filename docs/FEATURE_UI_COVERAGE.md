@@ -16,7 +16,7 @@ Status legend:
 | Dashboard customization and shared views | `Dashboard` | Implemented | Keep the new priority-alert-aware report-center handoffs and persisted personal/shared layouts covered as the overview evolves |
 | UEBA, NDR, graph analytics | `UEBA`, `NDR`, `Attack Graph` | Ready | Broaden regression coverage around the shipped entity/network playbooks, enriched explainability scoring, and stored-event campaign clustering, then keep tightening deeper evidence correlation and analyst narrative quality |
 | Fleet, rollout, and release operations | `Fleet & Agents` | Ready | Keep the route-aware rollout history, recovery watchlists, and deployment-health actions aligned as fleet workflows deepen and live release telemetry expands |
-| Vulnerability, exposure, drift, certificates, assets | `Infrastructure` | Ready | Keep the shipped malware verdict, guided remediation, signed approval-chain, rollback-proof, and recovery-history workflows covered while expanding adapter-backed rollback execution |
+| Vulnerability, exposure, drift, certificates, assets | `Infrastructure` | Ready | Keep the shipped malware verdict, guided remediation, signed approval-chain, rollback-proof verification, and recovery-history workflows covered while expanding live rollback execution |
 | Security policy and advanced controls | `Security Policy` | Implemented | Structured policy composition, digital twin simulation, adversarial harness, deception deployment, and enforcement quarantine workflows are available in the browser console |
 | Enterprise controls (RBAC, SSO, SCIM, settings) | `Settings`, login shell | Ready | Keep the new federated sign-in readiness center, launch validation, and SCIM handoff coverage aligned as broader IdP lifecycle validation evolves |
 | Supportability, documentation, and contract verification | `Help & Docs` | Implemented | Keep the shipped parity diagnostics, embedded docs index/content, and operator API/GraphQL explorer aligned with future runtime and SDK releases |
@@ -32,5 +32,5 @@ Use `make release-acceptance` before release sign-off. The command builds the sh
 
 ## Immediate execution order
 
-1. Add browser regression coverage for signed remediation approvals, rollback-proof display, collector pivots, and IdP launch validation.
-2. Expand rollback proof from planned recovery evidence into adapter-backed execution where platform permissions allow it.
+1. Expand deterministic browser coverage into routed Playwright smoke for signed remediation approvals, rollback verification, collector pivots, and IdP launch validation.
+2. Extend dry-run rollback verification into live adapter execution where platform permissions and operator policy allow it.

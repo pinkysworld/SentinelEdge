@@ -4,6 +4,26 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.53.9] — Quality Ratchets, Cross-Browser CI & Live Rollback Hardening
+
+### Quality gates
+- **Panic baseline 6 → 0** — Eliminated the remaining production `unwrap`/`expect` calls in `analyst.rs`, `incident.rs`, `benchmark.rs`, `main.rs`, `spool.rs`, and `wasm_engine.rs`. The `scripts/panic-baseline.txt` floor is now `0`, blocking any new non-test panic-bearing API from landing.
+- **Coverage gate 56.5 → 60** — `cargo tarpaulin` `--fail-under` raised to 60.0 in CI to lock in the additional coverage gained from defensive-error rewrites.
+- **Cargo-mutants nightly matrix** — New `.github/workflows/mutation-testing.yml` runs `cargo mutants` twice weekly across detector / policy / velocity / entropy / correlation modules with `continue-on-error` so escaped mutants surface without blocking releases.
+- **Cross-browser nightly matrix** — New `.github/workflows/cross-browser.yml` exercises the full Playwright suite against Firefox and WebKit nightly with artifact upload on failure, complementing the per-PR Chromium runs.
+
+### Live rollback hardening
+- **`remediation.allow_live_rollback` gate** — New config flag (default `false`). Live (`dry_run = false`) rollback requests are rejected with `403` and an audit-warn log unless the operator opts in.
+- **Typed-host confirmation** — When live rollback is enabled, requests must include `confirm_hostname` matching the change-review's `asset_id` (case-insensitive); mismatches are rejected with `400`. The Infrastructure console adds a "Live Rollback…" danger button that prompts the operator to type the hostname before submitting.
+
+### Verification
+- `python3 scripts/check_panic_policy.py` (reports `0`)
+- `cargo clippy --lib -- -D warnings`
+- `cargo test --lib` (1413 passing)
+- `cargo test --test api_integration` (212 passing, including new `live_rollback_is_blocked_when_allow_live_rollback_is_disabled`)
+- `npm run lint --prefix admin-console`
+- `npm test --prefix admin-console -- --run` (210 passing)
+
 ## [0.53.8] — Session Hardening, Collector Lifecycle & Release Readiness
 
 ### Security and session handling

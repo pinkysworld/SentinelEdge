@@ -637,6 +637,58 @@ export default function Infrastructure() {
     }
   };
 
+  const executeRollbackProof = async (review) => {
+    if (!review?.id) return;
+    try {
+      await api.executeRemediationRollback(review.id, {
+        dry_run: true,
+        platform: 'linux',
+      });
+      await reloadRemediationReviews();
+      toast('Rollback proof verified.', 'success');
+    } catch {
+      toast('Unable to verify rollback proof.', 'error');
+    }
+  };
+
+  const executeLiveRollback = async (review) => {
+    if (!review?.id) return;
+    const assetId = String(review.asset_id || '').trim();
+    if (!assetId) {
+      toast('Live rollback requires the change-review asset_id to be set.', 'error');
+      return;
+    }
+    const typed = window.prompt(
+      `LIVE rollback will execute recovery commands against ${assetId}.\n\n` +
+        `Type the asset hostname exactly to confirm:`,
+      '',
+    );
+    if (typed == null) return; // cancelled
+    if (typed.trim().toLowerCase() !== assetId.toLowerCase()) {
+      toast('Hostname confirmation did not match. Live rollback cancelled.', 'warning');
+      return;
+    }
+    try {
+      await api.executeRemediationRollback(review.id, {
+        dry_run: false,
+        platform: 'linux',
+        confirm_hostname: assetId,
+      });
+      await reloadRemediationReviews();
+      toast('Live rollback executed.', 'success');
+    } catch (err) {
+      const status = err?.status;
+      if (status === 403) {
+        toast(
+          'Live rollback is disabled. Set remediation.allow_live_rollback = true in server config.',
+          'error',
+        );
+      } else {
+        toast('Unable to execute live rollback.', 'error');
+      }
+    }
+  };
+
   const runDeepMalwareScan = async () => {
     if (!String(scanSample || '').trim()) {
       toast('Paste a sample or command trace before running a deep malware scan.', 'warning');
@@ -840,15 +892,39 @@ export default function Infrastructure() {
                         Rollback: {review.rollback_proof.recovery_plan[0]}
                       </div>
                     )}
-                    {review.approval_status === 'pending_review' && (
+                    {(review.approval_status === 'pending_review' ||
+                      review.rollback_proof?.status === 'ready' ||
+                      review.rollback_proof?.status === 'dry_run_verified') && (
                       <div className="btn-group" style={{ marginTop: 8 }}>
-                        <button
-                          className="btn btn-sm btn-primary"
-                          type="button"
-                          onClick={() => approveChangeReview(review)}
-                        >
-                          Sign Approval
-                        </button>
+                        {review.approval_status === 'pending_review' && (
+                          <button
+                            className="btn btn-sm btn-primary"
+                            type="button"
+                            onClick={() => approveChangeReview(review)}
+                          >
+                            Sign Approval
+                          </button>
+                        )}
+                        {review.rollback_proof?.status === 'ready' && (
+                          <button
+                            className="btn btn-sm"
+                            type="button"
+                            onClick={() => executeRollbackProof(review)}
+                          >
+                            Verify Rollback
+                          </button>
+                        )}
+                        {(review.rollback_proof?.status === 'ready' ||
+                          review.rollback_proof?.status === 'dry_run_verified') && (
+                          <button
+                            className="btn btn-sm btn-danger"
+                            type="button"
+                            onClick={() => executeLiveRollback(review)}
+                            title="Execute live rollback (requires server allow_live_rollback + typed hostname)"
+                          >
+                            Live Rollback…
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

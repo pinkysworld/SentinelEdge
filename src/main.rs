@@ -54,7 +54,13 @@ fn main() {
             .and_then(|mut f| std::io::Write::write_all(&mut f, crash_info.as_bytes()));
     }));
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(err) => {
+            eprintln!("fatal: failed to create tokio runtime: {err}");
+            process::exit(1);
+        }
+    };
     if let Err(error) = rt.block_on(run()) {
         eprintln!("error: {error}");
         process::exit(1);

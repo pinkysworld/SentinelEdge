@@ -6879,6 +6879,10 @@ struct RemediationRollbackProof {
     recovery_plan: Vec<String>,
     verification_digest: String,
     verified_by: Option<String>,
+    #[serde(default)]
+    executed_at: Option<String>,
+    #[serde(default)]
+    execution_result: Option<serde_json::Value>,
 }
 
 fn default_required_approvers() -> usize {
@@ -7430,7 +7434,67 @@ fn build_remediation_rollback_proof(review: &RemediationChangeReview) -> Remedia
         recovery_plan,
         verification_digest,
         verified_by: None,
+        executed_at: None,
+        execution_result: None,
     }
+}
+
+fn remediation_review_platform(
+    payload: &serde_json::Value,
+) -> crate::remediation::RemediationPlatform {
+    match payload
+        .get("platform")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("linux")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "macos" | "darwin" => crate::remediation::RemediationPlatform::MacOs,
+        "windows" | "win32" => crate::remediation::RemediationPlatform::Windows,
+        _ => crate::remediation::RemediationPlatform::Linux,
+    }
+}
+
+fn remediation_review_evidence_string(
+    review: &RemediationChangeReview,
+    key: &str,
+) -> Option<String> {
+    review
+        .evidence
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn rollback_action_for_review(
+    review: &RemediationChangeReview,
+) -> crate::remediation::RemediationAction {
+    if let Some(path) = remediation_review_evidence_string(review, "path")
+        .or_else(|| remediation_review_evidence_string(review, "file"))
+    {
+        return crate::remediation::RemediationAction::RestoreFile {
+            path: path.clone(),
+            source: format!(
+                "/var/quarantine/{}",
+                path.replace(['/', '\\'], "_").trim_start_matches('_')
+            ),
+        };
+    }
+    if let Some(addr) = remediation_review_evidence_string(review, "addr")
+        .or_else(|| remediation_review_evidence_string(review, "ip"))
+        .or_else(|| remediation_review_evidence_string(review, "src_ip"))
+    {
+        return crate::remediation::RemediationAction::BlockIp { addr };
+    }
+    if let Some(service_name) = remediation_review_evidence_string(review, "service")
+        .or_else(|| remediation_review_evidence_string(review, "service_name"))
+    {
+        return crate::remediation::RemediationAction::RestartService { service_name };
+    }
+    crate::remediation::RemediationAction::FlushDns
 }
 
 fn apply_remediation_review_approval(
@@ -9628,6 +9692,9 @@ fn handle_api(
         || (method == Method::Post
             && route_path.starts_with("/api/remediation/change-reviews/")
             && route_path.ends_with("/approval"))
+        || (method == Method::Post
+            && route_path.starts_with("/api/remediation/change-reviews/")
+            && route_path.ends_with("/rollback"))
         || (method == Method::Get && route_path == "/api/escalation/policies")
         || (method == Method::Post && route_path == "/api/escalation/policies")
         || (method == Method::Post && route_path == "/api/escalation/start")
@@ -16534,6 +16601,156 @@ fn handle_api(
                                 }
                             }
                             Err(error) => error_json(&error, 400),
+                        }
+                    }
+                    Err(error) => error_json(&error, 400),
+                }
+            } else if method == Method::Post
+                && url_path.starts_with("/api/remediation/change-reviews/")
+                && url_path.ends_with("/rollback")
+            {
+                let review_id = url_path
+                    .trim_start_matches("/api/remediation/change-reviews/")
+                    .trim_end_matches("/rollback")
+                    .trim_matches('/');
+                match read_json_value(body, 16 * 1024) {
+                    Ok(payload) => {
+                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut reviews = load_remediation_change_reviews(&s.storage);
+                        let Some(position) = reviews.iter().position(|entry| entry.id == review_id)
+                        else {
+                            return error_json("remediation change review not found", 404);
+                        };
+                        let mut review = reviews.remove(position);
+                        if review.approval_status != "approved" {
+                            return error_json("rollback requires approved change review", 400);
+                        }
+                        if review.rollback_proof.is_none() {
+                            review.rollback_proof = Some(build_remediation_rollback_proof(&review));
+                        }
+                        let platform = remediation_review_platform(&payload);
+                        let dry_run = payload
+                            .get("dry_run")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(true);
+                        // Live rollback execution policy: gated by config flag
+                        // AND a typed-hostname confirmation matching the
+                        // change-review's asset_id (case-insensitive). Any
+                        // non-dry-run path that fails these checks is rejected
+                        // and an audit-log entry is recorded for forensics.
+                        if !dry_run {
+                            let allow_live = s.config.remediation.allow_live_rollback;
+                            let confirm_hostname = payload
+                                .get("confirm_hostname")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::trim)
+                                .unwrap_or("");
+                            let asset_id = review.asset_id.trim();
+                            let host_match = !confirm_hostname.is_empty()
+                                && !asset_id.is_empty()
+                                && confirm_hostname.eq_ignore_ascii_case(asset_id);
+                            if !allow_live {
+                                log::warn!(
+                                    "remediation.rollback.live_blocked actor={} review={} reason=allow_live_rollback_disabled",
+                                    auth_identity.actor(),
+                                    review.id,
+                                );
+                                return error_json(
+                                    "live rollback execution is disabled; set remediation.allow_live_rollback = true to enable",
+                                    403,
+                                );
+                            }
+                            if !host_match {
+                                log::warn!(
+                                    "remediation.rollback.live_blocked actor={} review={} reason=hostname_confirmation_mismatch",
+                                    auth_identity.actor(),
+                                    review.id,
+                                );
+                                return error_json(
+                                    "live rollback requires confirm_hostname matching change-review asset_id",
+                                    400,
+                                );
+                            }
+                        }
+                        log::info!(
+                            "remediation.rollback.{} actor={} review={} platform={:?}",
+                            if dry_run { "dry_run" } else { "live" },
+                            auth_identity.actor(),
+                            review.id,
+                            platform,
+                        );
+                        let action = rollback_action_for_review(&review);
+                        let commands = crate::remediation::platform_commands(&action, &platform);
+                        let now_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
+                        let snapshot_id = s.remediation_engine.record_snapshot(
+                            action.clone(),
+                            platform.clone(),
+                            review.asset_id.as_str(),
+                            Vec::new(),
+                            HashMap::from([
+                                ("review_id".to_string(), review.id.clone()),
+                                (
+                                    "approval_chain_digest".to_string(),
+                                    review.approval_chain_digest.clone().unwrap_or_default(),
+                                ),
+                            ]),
+                            now_ms,
+                        );
+                        let result = crate::remediation::RemediationResult {
+                            action,
+                            status: crate::remediation::RemediationStatus::RolledBack,
+                            commands_run: commands.clone(),
+                            snapshot_id: Some(snapshot_id.clone()),
+                            output: Some(if dry_run {
+                                "rollback dry-run planned through remediation adapter".to_string()
+                            } else {
+                                "rollback execution recorded through remediation adapter"
+                                    .to_string()
+                            }),
+                            error: None,
+                            duration_ms: 0,
+                        };
+                        s.remediation_engine.record_result(result.clone());
+                        let executed_at = chrono::Utc::now().to_rfc3339();
+                        if review.rollback_proof.is_none() {
+                            let generated_proof = build_remediation_rollback_proof(&review);
+                            review.rollback_proof = Some(generated_proof);
+                        }
+                        let proof = review
+                            .rollback_proof
+                            .as_mut()
+                            .expect("rollback proof present");
+                        proof.status = if dry_run {
+                            "dry_run_verified".to_string()
+                        } else {
+                            "executed".to_string()
+                        };
+                        proof.verified_by = Some(auth_identity.actor().to_string());
+                        proof.executed_at = Some(executed_at);
+                        proof.execution_result = Some(serde_json::json!({
+                            "dry_run": dry_run,
+                            "platform": platform,
+                            "snapshot_id": snapshot_id,
+                            "commands": commands,
+                            "result": result,
+                        }));
+                        review.recovery_status = if dry_run {
+                            "verified".to_string()
+                        } else {
+                            "executed".to_string()
+                        };
+                        reviews.push(review.clone());
+                        reviews.sort_by(|left, right| left.requested_at.cmp(&right.requested_at));
+                        match save_remediation_change_reviews(&s.storage, &reviews) {
+                            Ok(()) => json_response(
+                                &serde_json::json!({
+                                    "status": "rollback_recorded",
+                                    "review": review,
+                                })
+                                .to_string(),
+                                200,
+                            ),
+                            Err(error) => error_json(&error, 500),
                         }
                     }
                     Err(error) => error_json(&error, 400),

@@ -117,4 +117,4 @@ The full API is documented at `docs/openapi.yaml`. Key areas include:
 | Feature flags     | `/api/feature-flags/*`                 |
 | Health            | `/api/healthz/*`, `/api/status-json`   |
 
-Recent additions reflected in the generated SDKs include cookie-aware request credentials, admin session inspection/exchange helpers, collector lifecycle status access, remediation change-review read/write helpers, and signed remediation approval helpers. These updates align SDK consumers with the same HttpOnly-session, collector-ingestion, and approval-chain surfaces now used by the admin console.
+Recent additions reflected in the generated SDKs include cookie-aware request credentials, admin session inspection/exchange helpers, collector lifecycle status access, remediation change-review read/write helpers, signed remediation approval helpers, and rollback verification helpers. These updates align SDK consumers with the same HttpOnly-session, collector-ingestion, approval-chain, and recovery-proof surfaces now used by the admin console.

@@ -1,0 +1,68 @@
+name: Mutation Testing
+
+# Nightly cargo-mutants advisory run against detection-critical modules.
+#
+# Test count alone (1413 lib + 212 integration as of v0.53.9) does not measure
+# how much of that test code actually catches behavioural regressions. This
+# workflow runs `cargo-mutants` over a curated list of detection / policy
+# modules and reports the surviving-mutant count as advisory output.
+#
+# Failures here are non-blocking — they surface gaps for the next test
+# tightening tranche rather than gating PR merges.
+
+on:
+  schedule:
+    # Run twice a week at 03:30 UTC (Mon, Thu) — mutation testing is slow.
+    - cron: "30 3 * * 1,4"
+  workflow_dispatch:
+
+jobs:
+  mutants:
+    name: cargo-mutants (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    # Advisory only — never block on this job.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - detector
+          - policy
+          - velocity
+          - entropy
+          - correlation
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Cache cargo
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: mutants-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: mutants-${{ runner.os }}-
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: Run cargo-mutants on ${{ matrix.module }}
+        # --file restricts to a single module so the run completes in <30 min.
+        # --check-only is intentionally NOT used — we want real mutation
+        # exercises, just scoped tightly.
+        run: |
+          cargo mutants \
+            --file "src/${{ matrix.module }}.rs" \
+            --timeout 180 \
+            --no-shuffle \
+            --output mutants-out-${{ matrix.module }} || true
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mutants-${{ matrix.module }}
+          path: mutants-out-${{ matrix.module }}/
+          if-no-files-found: ignore
+          retention-days: 30

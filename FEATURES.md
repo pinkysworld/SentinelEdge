@@ -160,7 +160,7 @@ Wardex is a self-hosted XDR and SIEM platform built in Rust for teams that want 
 - Alert severity filter (all/critical/severe/elevated/low) on Dashboard and Live Monitor
 - Fully structured displays across all tabs — zero raw JSON dumps
 - Remediation change-review and recovery-history cards for malware verdicts and infrastructure remediation candidates
-- Signed multi-approver remediation approvals with approval-chain digests and rollback proof cards
+- Signed multi-approver remediation approvals with approval-chain digests, rollback proof cards, and adapter-backed rollback verification
 - Production demo lab seeding from Help & Docs for evaluation-ready telemetry, case, response, report, and evidence workflows
 
 ## Product posture

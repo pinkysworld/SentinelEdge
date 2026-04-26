@@ -235,6 +235,37 @@ pub fn platform_commands(
                 )]
             }
         },
+        RemediationAction::RestoreFile { path, source } => match platform {
+            RemediationPlatform::Linux | RemediationPlatform::MacOs => {
+                vec![RemediationCommand::new(
+                    "cp",
+                    vec![source.clone(), path.clone()],
+                    true,
+                )]
+            }
+            RemediationPlatform::Windows => vec![RemediationCommand::new(
+                "copy",
+                vec![source.clone(), path.clone()],
+                true,
+            )],
+        },
+        RemediationAction::RestartService { service_name } => match platform {
+            RemediationPlatform::Linux => vec![RemediationCommand::new(
+                "systemctl",
+                vec!["restart".into(), service_name.clone()],
+                true,
+            )],
+            RemediationPlatform::MacOs => vec![RemediationCommand::new(
+                "launchctl",
+                vec!["kickstart".into(), format!("system/{service_name}")],
+                true,
+            )],
+            RemediationPlatform::Windows => vec![RemediationCommand::new(
+                "sc",
+                vec!["start".into(), service_name.clone()],
+                true,
+            )],
+        },
         RemediationAction::RemoveScheduledTask { task_name } => match platform {
             RemediationPlatform::Linux => {
                 vec![] // cron handled via RemovePersistence
@@ -563,6 +594,15 @@ fn prerequisite_checks(action: &RemediationAction, _platform: &RemediationPlatfo
                 format!("Account {username} is not a service account"),
             ]
         }
+        RemediationAction::RestoreFile { path, source } => {
+            vec![
+                format!("Backup source {source} exists"),
+                format!("Restore target {path} is writable"),
+            ]
+        }
+        RemediationAction::RestartService { service_name } => {
+            vec![format!("Service {service_name} exists")]
+        }
         _ => vec![],
     }
 }
@@ -720,6 +760,28 @@ mod tests {
         });
         let stats = engine.stats();
         assert_eq!(stats.succeeded, 1);
+    }
+
+    #[test]
+    fn restore_file_and_restart_service_are_adapter_backed() {
+        let restore = platform_commands(
+            &RemediationAction::RestoreFile {
+                path: "/tmp/dropper".into(),
+                source: "/var/quarantine/tmp_dropper".into(),
+            },
+            &RemediationPlatform::Linux,
+        );
+        assert_eq!(restore[0].program, "cp");
+        assert_eq!(restore[0].args[0], "/var/quarantine/tmp_dropper");
+
+        let restart = platform_commands(
+            &RemediationAction::RestartService {
+                service_name: "wardex-agent".into(),
+            },
+            &RemediationPlatform::Linux,
+        );
+        assert_eq!(restart[0].program, "systemctl");
+        assert!(restart[0].args.contains(&"restart".to_string()));
     }
 
     #[test]
