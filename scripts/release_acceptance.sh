@@ -152,6 +152,15 @@ PY
 write_managed_config() {
   local source_config="$ROOT_DIR/var/wardex.toml"
 
+  if [[ ! -f "$source_config" ]]; then
+    # In CI checkouts the var/ directory is gitignored and the operator-managed
+    # base config is absent. Seed a clean default via the binary's init-config
+    # subcommand so managed release acceptance can rewrite the loopback bits below.
+    mkdir -p "$ROOT_DIR/var"
+    (cd "$ROOT_DIR" && cargo run --quiet --release -- init-config "$source_config" >/dev/null) \
+      || require_file "$source_config" "Managed release acceptance needs a base config at $source_config."
+  fi
+
   require_file "$source_config" "Managed release acceptance needs a base config at $source_config."
 
   python3 - "$source_config" "$MANAGED_CONFIG_PATH" "$BASE_URL" <<'PY'
