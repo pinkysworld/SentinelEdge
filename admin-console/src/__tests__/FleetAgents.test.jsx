@@ -289,6 +289,7 @@ describe('FleetAgents', () => {
     });
 
     expect(screen.getByText('Recovery Watchlist')).toBeInTheDocument();
+    expect(screen.getAllByText('db-01')).toHaveLength(1);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open Offline Agents' }));

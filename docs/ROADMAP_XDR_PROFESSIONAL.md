@@ -2,7 +2,7 @@
 
 ## Current release baseline
 
-`v0.55.0` delivers the current private-cloud XDR and SIEM control-plane baseline:
+`v0.55.1` delivers the current private-cloud XDR and SIEM control-plane baseline:
 
 - SOC Workbench for queue, cases, investigations, guided workflows, response approvals, escalation management, and incident-first case/incident drawers
 - Product Command Center for incidents, cases, connector gaps, remediation approvals, rule tuning debt, release readiness, and compliance evidence packs with inline action drawers
@@ -13,6 +13,7 @@
 - unified asset inventory, fleet release operations, rollout history, and per-agent activity context
 - enterprise controls for RBAC, SCIM, OIDC/SAML SSO, session management, audit, retention, diagnostics, and routed collector/secrets readiness workflows, including GitHub Audit Log, CrowdStrike Falcon, and Generic Syslog planned onboarding lanes
 - authenticated WebSocket event streaming, ClickHouse-backed long-retention integration foundations, and execution-context-aware reporting across reports, runs, schedules, templates, stored artifacts, persisted exports, and response-approval snapshots
+- hardened release operations with Node 22 CI alignment, release-asset checksums, package install smoke coverage, strict a11y gates, and shared request-ID generation
 
 ## Next priorities
 
@@ -52,7 +53,7 @@
 
 ## Success criteria
 
-| Metric | Current (`v0.55.0`) | Target |
+| Metric | Current (`v0.55.1`) | Target |
 |---|---|---|
 | Automated tests | 1413 lib + 212+ integration + focused browser/admin regressions | maintained and expanded on every release |
 | OpenAPI and SDK contract | versioned OpenAPI plus generated Python and TypeScript SDKs | kept in lockstep on every release |

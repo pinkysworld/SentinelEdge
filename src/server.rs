@@ -129,6 +129,7 @@ use crate::response::{
 use crate::sigma::SigmaEngine;
 use crate::spool::EncryptedSpool;
 use crate::storage::SharedStorage;
+use crate::structured_log::generate_request_id;
 use crate::support::{InboxItem, ReportExecutionContext, SupportStore};
 use sha2::Digest;
 
@@ -2499,14 +2500,10 @@ fn respond_api(
     auth_used: bool,
     response: Response<Body>,
 ) -> Response<Body> {
-    // Generate a short request ID for tracing
-    let req_id = {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let mut buf = [0u8; 8];
-        rng.fill(&mut buf);
-        hex::encode(buf)
-    };
+    let request_id = generate_request_id().unwrap_or_else(|_| {
+        let random_suffix = rand::random::<u64>();
+        format!("req-fallback-{random_suffix:016x}")
+    });
     let status_code = response.status().as_u16();
     {
         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -2517,7 +2514,7 @@ fn respond_api(
             .record(method.as_str(), url, remote_addr, status_code, auth_used);
     }
     let (mut parts, body) = response.into_parts();
-    if let Ok(hv) = req_id.parse() {
+    if let Ok(hv) = request_id.parse() {
         parts.headers.insert("X-Request-Id", hv);
     }
     Response::from_parts(parts, body)

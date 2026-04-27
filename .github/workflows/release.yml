@@ -240,6 +240,31 @@ jobs:
           path: "*.rpm"
           if-no-files-found: error
 
+  # ── Install package smoke ─────────────────────────────────────────
+  linux-package-smoke:
+    name: Linux Package Install Smoke
+    needs: [linux-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download deb package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: wardex-deb
+          path: packages
+
+      - name: Install deb package
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ./packages/*.deb
+
+      - name: Smoke test installed binary
+        run: |
+          set -euo pipefail
+          command -v wardex
+          wardex --help >/tmp/wardex-help.txt
+          test -s /tmp/wardex-help.txt
+
   # ── Container image vulnerability scan ───────────────────────────────
   container-scan:
     name: Container Image Scan
@@ -323,7 +348,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [build, sbom, helm-lint, linux-packages]
+    needs: [build, sbom, helm-lint, linux-packages, linux-package-smoke]
     runs-on: ubuntu-latest
     if: success()
 
@@ -341,12 +366,33 @@ jobs:
       - name: List assets
         run: ls -lh release-assets/
 
-      # Extract the first ## section from CHANGELOG.md as the release body
-      - name: Extract release notes
+      - name: Generate and verify checksums
         run: |
-          awk '/^## \[/{found++} found==1{print} found==2{exit}' CHANGELOG.md \
-            | tail -n +2 > release_notes.md
+          set -euo pipefail
+          cd release-assets
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      # Extract the changelog section matching the pushed tag as the release body
+      - name: Extract release notes
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_VERSION#v}"
+          awk -v version="$version" '
+            $0 == "## [" version "]" || index($0, "## [" version "] ") == 1 { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+          if [[ ! -s release_notes.md ]]; then
+            echo "No changelog section found for ${RELEASE_VERSION}" >&2
+            exit 1
+          fi
           echo "=== Release notes ==="
+          printf '\nChecksums: see the SHA256SUMS release asset.\n' >> release_notes.md
           cat release_notes.md
 
       - name: Create GitHub Release

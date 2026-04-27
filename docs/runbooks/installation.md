@@ -65,7 +65,7 @@ helm repo update
 helm install wardex wardex/wardex \
   --namespace wardex \
   --create-namespace \
-  --set image.tag=0.55.0
+  --set image.tag=0.55.1
 ```
 
 Custom values:

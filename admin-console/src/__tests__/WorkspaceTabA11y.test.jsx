@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import EmailSecurity from '../components/EmailSecurity.jsx';
 import NDRDashboard from '../components/NDRDashboard.jsx';
@@ -15,18 +15,22 @@ function jsonOk(data) {
   };
 }
 
-function renderWithProviders(node, route = '/') {
-  return render(
-    <MemoryRouter initialEntries={[route]}>
-      <AuthProvider>
-        <RoleProvider>
-          <ThemeProvider>
-            <ToastProvider>{node}</ToastProvider>
-          </ThemeProvider>
-        </RoleProvider>
-      </AuthProvider>
-    </MemoryRouter>,
-  );
+async function renderWithProviders(node, route = '/') {
+  let view;
+  await act(async () => {
+    view = render(
+      <MemoryRouter initialEntries={[route]}>
+        <AuthProvider>
+          <RoleProvider>
+            <ThemeProvider>
+              <ToastProvider>{node}</ToastProvider>
+            </ThemeProvider>
+          </RoleProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+  });
+  return view;
 }
 
 describe('Workspace tab strip a11y', () => {
@@ -37,27 +41,31 @@ describe('Workspace tab strip a11y', () => {
     globalThis.fetch = vi.fn(() => Promise.resolve(jsonOk({})));
   });
 
-  it('exposes EmailSecurity tab strip as a labeled tablist with aria-selected tabs', () => {
-    renderWithProviders(<EmailSecurity />);
+  it('exposes EmailSecurity tab strip as a labeled tablist with aria-selected tabs', async () => {
+    await renderWithProviders(<EmailSecurity />);
 
-    const tablist = screen.getByRole('tablist', { name: 'Email security sections' });
+    const tablist = await screen.findByRole('tablist', { name: 'Email security sections' });
     expect(tablist).toBeInTheDocument();
 
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.length).toBeGreaterThanOrEqual(3);
-    const selected = tabs.filter((t) => t.getAttribute('aria-selected') === 'true');
-    expect(selected.length).toBe(1);
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab');
+      expect(tabs.length).toBeGreaterThanOrEqual(3);
+      const selected = tabs.filter((t) => t.getAttribute('aria-selected') === 'true');
+      expect(selected.length).toBe(1);
+    });
   });
 
-  it('exposes NDRDashboard tab strip as a labeled tablist with aria-selected tabs', () => {
-    renderWithProviders(<NDRDashboard />, '/ndr');
+  it('exposes NDRDashboard tab strip as a labeled tablist with aria-selected tabs', async () => {
+    await renderWithProviders(<NDRDashboard />, '/ndr');
 
-    const tablist = screen.getByRole('tablist', { name: 'NDR sections' });
+    const tablist = await screen.findByRole('tablist', { name: 'NDR sections' });
     expect(tablist).toBeInTheDocument();
 
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.length).toBeGreaterThanOrEqual(6);
-    const selected = tabs.filter((t) => t.getAttribute('aria-selected') === 'true');
-    expect(selected.length).toBe(1);
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab');
+      expect(tabs.length).toBeGreaterThanOrEqual(6);
+      const selected = tabs.filter((t) => t.getAttribute('aria-selected') === 'true');
+      expect(selected.length).toBe(1);
+    });
   });
 });

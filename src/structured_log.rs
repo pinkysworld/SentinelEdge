@@ -453,15 +453,33 @@ impl Default for TracingConfig {
     }
 }
 
-/// Generate a unique request ID (hex-encoded random bytes).
-pub fn generate_request_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    // Simple: timestamp + random suffix for uniqueness
-    format!("req-{:x}-{:04x}", ts, rand::random::<u16>())
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestIdError {
+    SystemClockBeforeUnixEpoch(String),
+}
+
+impl std::fmt::Display for RequestIdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RequestIdError::SystemClockBeforeUnixEpoch(source) => {
+                write!(f, "system clock is before UNIX epoch: {source}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RequestIdError {}
+
+fn request_id_timestamp_nanos(now: std::time::SystemTime) -> Result<u128, RequestIdError> {
+    now.duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .map_err(|err| RequestIdError::SystemClockBeforeUnixEpoch(err.to_string()))
+}
+
+/// Generate a request ID with a wall-clock prefix and random suffix.
+pub fn generate_request_id() -> Result<String, RequestIdError> {
+    let timestamp = request_id_timestamp_nanos(std::time::SystemTime::now())?;
+    Ok(format!("req-{timestamp:x}-{:04x}", rand::random::<u16>()))
 }
 
 /// Build a pre-configured SharedLogger from TracingConfig.
@@ -556,6 +574,25 @@ mod tests {
         logger.info("test");
         let entries = sink.entries();
         assert_eq!(entries[0].fields.get("service").unwrap(), "wardex");
+    }
+
+    #[test]
+    fn request_id_includes_timestamp_prefix_and_random_suffix() {
+        let id = generate_request_id().expect("request id should generate");
+        let parts: Vec<_> = id.split('-').collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], "req");
+        assert!(!parts[1].is_empty());
+        assert_eq!(parts[2].len(), 4);
+        assert!(u128::from_str_radix(parts[1], 16).is_ok());
+        assert!(u16::from_str_radix(parts[2], 16).is_ok());
+    }
+
+    #[test]
+    fn request_id_timestamp_rejects_clock_before_unix_epoch() {
+        let before_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_nanos(1);
+        let err = request_id_timestamp_nanos(before_epoch).expect_err("clock error is surfaced");
+        assert!(matches!(err, RequestIdError::SystemClockBeforeUnixEpoch(_)));
     }
 
     #[test]

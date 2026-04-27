@@ -242,6 +242,19 @@ export default function FleetAgents() {
       ),
     [agentArr, nowMs],
   );
+  const recoveryWatchlistAgents = useMemo(() => {
+    const offlinePreview = offlineAgents.slice(0, 3);
+    const seen = new Set(offlinePreview.map((agent) => agent.id || agent.hostname));
+    const stalePreview = staleAgents
+      .filter((agent) => {
+        const key = agent.id || agent.hostname;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 3);
+    return [...offlinePreview, ...stalePreview];
+  }, [offlineAgents, staleAgents]);
   const rolloutHistory = useMemo(
     () =>
       Array.isArray(rollout?.recent_history)
@@ -1180,7 +1193,7 @@ export default function FleetAgents() {
                     No endpoints currently need rollout recovery attention.
                   </div>
                 ) : (
-                  [...offlineAgents.slice(0, 3), ...staleAgents.slice(0, 3)].map((agent) => (
+                  recoveryWatchlistAgents.map((agent) => (
                     <div
                       key={`${agent.id}-${agent.status}`}
                       style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}

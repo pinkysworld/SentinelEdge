@@ -2,11 +2,11 @@
 
 ## Current release
 
-- **Version:** `0.55.0`
+- **Version:** `0.55.1`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 139 Rust source modules
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, and generated SDK parity diagnostics that surface alignment drift directly in the operator console
-- **Verification:** Rust integration coverage, focused session-cookie exchange tests, collector lifecycle tests, remediation change-review tests, Command Center summary/action-drawer tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
+- **Verification:** Rust integration coverage, focused session-cookie exchange tests, collector lifecycle tests, remediation change-review tests, Command Center summary/action-drawer tests, Help & Docs unit coverage, assistant/ticketing/enterprise API regression tests, SDK regeneration checks, release-contract validation, strict Playwright a11y smoke coverage, and focused admin-console regression coverage for auth routing, dashboard presets, detection drill-downs, workbench overview, assistant/reporting handoffs, scoped report artifacts/templates, persisted artifact downloads, response snapshots, long-retention history, and collector/secrets setup flows
 - **Production hardening:** 100% (59/59 controls implemented)
 
 ## Shipped in the current platform
@@ -98,6 +98,16 @@ The current release has been verified with:
 ## Current product posture
 
 Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, and context-preserving reporting. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, and deployment readiness.
+
+## Recently shipped (v0.55.1)
+
+- **Release asset trust** — Tagged releases now publish a verified `SHA256SUMS` asset and include checksum guidance in release notes.
+- **Package install smoke** — The release workflow installs the generated Debian package and verifies the `wardex` command before publishing.
+- **Node baseline aligned** — Admin-console and TypeScript SDK metadata now require Node `>=20.19.0`, `.nvmrc` points contributors at Node 22, and the site quality workflow runs on Node 22.
+- **Strict a11y coverage expanded** — Playwright axe checks treat onboarding and welcome screens as strict gates by default, with Settings covered in the browser smoke.
+- **Request-ID hardening** — Server responses now share the structured-log request ID generator, with typed clock-error handling and a safe response-boundary fallback.
+- **Console reliability cleanup** — Fleet recovery watchlists de-duplicate stale/offline agents, workspace tab tests avoid React act warnings, and Settings configuration rendering is split into a focused component.
+- **Release metadata aligned on v0.55.1** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, install docs, reproducibility notes, and website release surfaces now point to the same release baseline.
 
 ## Recently shipped (v0.55.0)
 

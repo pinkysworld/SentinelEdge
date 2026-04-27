@@ -6,11 +6,16 @@ import {
   seedAuthenticatedSession,
 } from './support/mockApi.js';
 
+const DEFAULT_STRICT_A11Y_LABELS = new Set(['welcome', 'onboarding']);
+const STRICT_A11Y_ENV = globalThis.process?.env?.WARDEX_A11Y_STRICT || '';
+
 const STRICT_A11Y_LABELS = new Set(
-  (process.env.WARDEX_A11Y_STRICT || '')
-    .split(',')
-    .map((label) => label.trim())
-    .filter(Boolean),
+  [
+    ...DEFAULT_STRICT_A11Y_LABELS,
+    ...STRICT_A11Y_ENV.split(',')
+      .map((label) => label.trim())
+      .filter(Boolean),
+  ].filter(Boolean),
 );
 
 function strictFor(label) {
@@ -23,9 +28,8 @@ function strictFor(label) {
 // Accessibility smoke tests (advisory)
 // ─────────────────────────────────────────────────────────────────────
 // Runs axe-core against high-traffic screens that do NOT require a live
-// backend. Violations are logged to the CI output so regressions are
-// visible, but the test is intentionally advisory: it never fails the
-// build. Raise to strict mode once the baseline is clean.
+// backend. Screens in DEFAULT_STRICT_A11Y_LABELS fail on serious or critical
+// violations; newer coverage starts advisory and is promoted once clean.
 // ════════════════════════════════════════════════════════════════════
 
 async function report(page, label) {
@@ -49,17 +53,13 @@ async function report(page, label) {
         html: node.html,
       })),
     }));
-    // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] ${summary.length} total, ${blocking.length} serious/critical`);
-    // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] details:`, JSON.stringify(summary, null, 2));
-    // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] nodes:`, JSON.stringify(nodeDetails, null, 2));
     if (strictFor(label)) {
       expect(blocking, `strict a11y violations for ${label}`).toEqual([]);
     }
   } else {
-    // eslint-disable-next-line no-console
     console.log(`[a11y:${label}] clean`);
   }
 
@@ -82,5 +82,17 @@ test.describe('Accessibility (axe-core, advisory)', () => {
     await seedAuthenticatedSession(page, { onboarded: false });
     await expect(page.getByText('Set up the Wardex admin console')).toBeVisible({ timeout: 15000 });
     await report(page, 'onboarding');
+  });
+
+  test('settings workspace', async ({ page }) => {
+    await installAppMocks(page);
+    await seedAuthenticatedSession(page);
+
+    await page.getByTitle('Settings').click();
+    await expect(page.locator('.topbar-title')).toHaveText('Settings');
+    await expect(page.locator('button.tab').filter({ hasText: 'Config' })).toBeVisible({
+      timeout: 15000,
+    });
+    await report(page, 'settings');
   });
 });

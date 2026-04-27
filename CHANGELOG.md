@@ -4,6 +4,38 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [0.55.1] — Release Guardrails, A11y Strictness & Node Baseline
+
+### Release engineering
+- **Checksummed release assets** — The GitHub release workflow now creates and verifies a `SHA256SUMS` asset for every published binary/package artifact.
+- **Debian package smoke** — Release publishing now depends on a Linux package install smoke that installs the generated `.deb`, verifies `wardex` is on `PATH`, and checks the help command produces output.
+- **Release notes by tag** — Release-body extraction now selects the changelog section matching the pushed tag, so the published notes are not taken from an empty `Unreleased` block.
+
+### Tooling and documentation
+- **Node baseline aligned** — `.nvmrc`, admin-console metadata, TypeScript SDK metadata, contributor docs, and site-quality CI now converge on Node 22 / Node `>=20.19.0` to match current Vite/jsdom/undici requirements.
+- **Admin dependency audit clean** — The admin-console lockfile now resolves PostCSS to a patched release for the moderate CSS stringify advisory.
+- **Release metadata refresh** — Rust, admin-console, Python SDK, TypeScript SDK, Helm, OTLP, OpenAPI, runbooks, reproducibility docs, website status data, and browser fixtures now point to `0.55.1`.
+
+### Backend
+- **Request-ID hardening** — Structured request ID generation now returns a typed clock error, includes timestamp/randomness tests, and the HTTP response boundary falls back safely if the system clock is invalid.
+- **Request-ID consolidation** — API responses now use the shared structured logging request ID helper instead of carrying a second formatting path.
+
+### Frontend
+- **Strict a11y smoke expansion** — Playwright axe checks now treat the welcome and onboarding screens as strict by default, add Settings workspace coverage, and keep additional strict labels configurable via `WARDEX_A11Y_STRICT`.
+- **Console warning cleanup** — Fleet recovery watchlists now de-duplicate stale/offline agents, and workspace tab accessibility tests use async render/wait flows that avoid React `act(...)` noise.
+- **Settings split** — The Settings configuration tab is extracted into a focused component while preserving JSON, form, diff, reload, and reset-to-default workflows.
+
+### Verification
+- `cargo fmt --check`
+- `cargo test --all`
+- `npm test --prefix admin-console -- --run --coverage`
+- `npm run build --prefix admin-console`
+- `npm audit --prefix admin-console --audit-level=moderate`
+- `npx playwright test e2e/a11y.spec.js --project=chromium`
+- `scripts/validate_release_docs.py`
+- `scripts/check_contract_parity.py`
+- `bash scripts/validate_container_build_contract.sh`
+
 ## [0.55.0] — Per-Lane Command APIs, Drawer Deep-Links & CI Hygiene
 
 ### Backend
