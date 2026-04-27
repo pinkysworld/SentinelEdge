@@ -12,6 +12,7 @@ function json(body, status = 200) {
 }
 
 async function installShellFleetMocks(page) {
+  let sessionAuthenticated = false;
   const localAgent = {
     id: 'local-console',
     hostname: 'playwright-host.local',
@@ -108,7 +109,6 @@ async function installShellFleetMocks(page) {
 
   const routeMap = new Map([
     ['GET /api/auth/check', { ok: true }],
-    ['GET /api/auth/session', { role: 'admin', username: 'playwright' }],
     ['GET /api/health', { status: 'ok', version: VERSION }],
     ['GET /api/inbox', { items: [] }],
     ['GET /api/fleet/status', { status: 'healthy', collectors: 1 }],
@@ -157,6 +157,33 @@ async function installShellFleetMocks(page) {
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+
+    if (key === 'GET /api/auth/session') {
+      await route.fulfill(
+        json({
+          authenticated: sessionAuthenticated,
+          role: sessionAuthenticated ? 'admin' : 'viewer',
+          username: sessionAuthenticated ? 'playwright' : 'anonymous',
+          user_id: sessionAuthenticated ? 'playwright' : 'anonymous',
+          source: sessionAuthenticated ? 'session' : 'anonymous',
+          groups: [],
+        }),
+      );
+      return;
+    }
+
+    if (key === 'POST /api/auth/session') {
+      sessionAuthenticated = true;
+      await route.fulfill(json({ authenticated: true, role: 'admin', username: 'playwright' }));
+      return;
+    }
+
+    if (key === 'POST /api/auth/logout') {
+      sessionAuthenticated = false;
+      await route.fulfill(json({ ok: true }));
+      return;
+    }
+
     await route.fulfill(json(routeMap.get(key) ?? {}));
   });
 }
@@ -168,6 +195,10 @@ async function loginThroughForm(page) {
     localStorage.setItem('wardex_onboarded', '1');
   });
   await page.reload({ waitUntil: 'load' });
+  if (await page.locator('.auth-badge').filter({ hasText: 'Connected' }).count()) {
+    await expect(page.locator('.role-badge')).toContainText('admin');
+    return;
+  }
   await page.getByLabel('API token').fill(TOKEN);
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.locator('.auth-badge')).toContainText('Connected');

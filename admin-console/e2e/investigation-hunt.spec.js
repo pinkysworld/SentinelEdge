@@ -10,6 +10,7 @@ function json(data, status = 200) {
 }
 
 async function installApiMocks(page, overrides = {}) {
+  let sessionAuthenticated = false;
   const rule = {
     id: 'rule-credential-storm',
     title: 'Credential Storm Analytics',
@@ -56,7 +57,6 @@ async function installApiMocks(page, overrides = {}) {
 
   const routes = {
     'GET /api/auth/check': { ok: true },
-    'GET /api/auth/session': { role: 'admin', username: 'playwright' },
     'GET /api/health': { status: 'ok', version: TEST_APP_VERSION },
     'GET /api/inbox': { items: [] },
     'GET /api/detection/profile': {
@@ -132,6 +132,33 @@ async function installApiMocks(page, overrides = {}) {
     const request = route.request();
     const url = new URL(request.url());
     const key = `${request.method()} ${url.pathname}`;
+
+    if (key === 'GET /api/auth/session') {
+      await route.fulfill(
+        json({
+          authenticated: sessionAuthenticated,
+          role: sessionAuthenticated ? 'admin' : 'viewer',
+          username: sessionAuthenticated ? 'playwright' : 'anonymous',
+          user_id: sessionAuthenticated ? 'playwright' : 'anonymous',
+          source: sessionAuthenticated ? 'session' : 'anonymous',
+          groups: [],
+        }),
+      );
+      return;
+    }
+
+    if (key === 'POST /api/auth/session') {
+      sessionAuthenticated = true;
+      await route.fulfill(json({ authenticated: true, role: 'admin', username: 'playwright' }));
+      return;
+    }
+
+    if (key === 'POST /api/auth/logout') {
+      sessionAuthenticated = false;
+      await route.fulfill(json({ ok: true }));
+      return;
+    }
+
     const handler = overrides[key] ?? routes[key];
 
     if (typeof handler === 'function') {

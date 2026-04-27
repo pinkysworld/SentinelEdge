@@ -421,11 +421,11 @@ export function useInterval(callback, delayMs) {
 /**
  * Real-time event stream via native WebSocket with long-poll fallback.
  * Bearer-token sessions skip native WebSocket because browsers cannot attach
- * Authorization headers to the handshake, so they connect directly to the
- * authenticated polling transport.
+ * Authorization headers to the handshake, and session-backed consoles only
+ * attempt native WebSocket when the backend advertises support.
  * Returns connection metadata plus { events, connected, transport, clearEvents, reconnect }.
  */
-export function useWebSocket(pollIntervalMs = 2000) {
+export function useWebSocket(pollIntervalMs = 2000, { nativeSupported = true } = {}) {
   const [events, setEvents] = useState([]);
   const [connected, setConnected] = useState(false);
   const [transport, setTransport] = useState('connecting');
@@ -668,7 +668,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
       }, pollIntervalMs);
     };
 
-    if (getToken()) {
+    if (getToken() || !nativeSupported) {
       connectPolling();
     } else {
       tryNativeWebSocket();
@@ -684,7 +684,7 @@ export function useWebSocket(pollIntervalMs = 2000) {
       }
       stopPolling(true);
     };
-  }, [pollIntervalMs, reconnectToken]);
+  }, [nativeSupported, pollIntervalMs, reconnectToken]);
 
   const clearEvents = useCallback(() => setEvents([]), []);
 

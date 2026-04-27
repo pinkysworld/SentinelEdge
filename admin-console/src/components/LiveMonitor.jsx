@@ -220,6 +220,8 @@ function MobileAlertCard({ alert, index, active, onPreview, onOpen, onMarkFP }) 
 export default function LiveMonitor() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { data: wsStats, reload: reloadWsStats } = useApi(api.wsStats);
+  const nativeStreamSupported = Boolean(wsStats?.native_websocket_supported);
   const {
     events: streamEvents,
     connected: streamConnected,
@@ -233,14 +235,13 @@ export default function LiveMonitor() {
     lastError,
     clearEvents: clearStreamEvents,
     reconnect: reconnectStream,
-  } = useWebSocket(2000);
+  } = useWebSocket(2000, { nativeSupported: nativeStreamSupported });
   const { data: alertData, loading, reload } = useApi(api.alerts);
   const { data: alertSummaryData, reload: reloadAlertSummary } = useApiGroup({
     countData: api.alertsCount,
     grouped: api.alertsGrouped,
   });
   const { countData, grouped } = alertSummaryData;
-  const { data: wsStats, reload: reloadWsStats } = useApi(api.wsStats);
   const { data: hp } = useApi(api.health);
   const { data: processData, reload: reloadProcessData } = useApiGroup({
     procData: api.processesLive,

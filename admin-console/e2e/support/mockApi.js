@@ -132,8 +132,6 @@ function json(body, status = 200) {
 function buildResponses() {
   return {
     'GET /api/auth/check': { ok: true },
-    'GET /api/auth/session': { role: 'admin', username: 'playwright' },
-    'GET /api/session/info': { authenticated: true, role: 'admin' },
     'GET /api/health': { status: 'ok', version: VERSION },
     'GET /api/status': {
       version: VERSION,
@@ -576,6 +574,15 @@ export async function installAppMocks(page, options = {}) {
     ...buildResponses(),
     ...(options.responses || {}),
   };
+  let sessionAuthenticated = Boolean(options.sessionAuthenticated);
+  const sessionPayload = () => ({
+    authenticated: sessionAuthenticated,
+    role: sessionAuthenticated ? 'admin' : 'viewer',
+    username: sessionAuthenticated ? 'playwright' : 'anonymous',
+    user_id: sessionAuthenticated ? 'playwright' : 'anonymous',
+    source: sessionAuthenticated ? 'session' : 'anonymous',
+    groups: sessionAuthenticated ? [] : [],
+  });
 
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -587,6 +594,28 @@ export async function installAppMocks(page, options = {}) {
       if (handled) {
         return;
       }
+    }
+
+    if (key === 'GET /api/auth/session') {
+      await route.fulfill(json(sessionPayload()));
+      return;
+    }
+
+    if (key === 'GET /api/session/info') {
+      await route.fulfill(json({ authenticated: sessionAuthenticated, role: sessionPayload().role }));
+      return;
+    }
+
+    if (key === 'POST /api/auth/session') {
+      sessionAuthenticated = true;
+      await route.fulfill(json(sessionPayload()));
+      return;
+    }
+
+    if (key === 'POST /api/auth/logout') {
+      sessionAuthenticated = false;
+      await route.fulfill(json({ ok: true }));
+      return;
     }
 
     if (Object.prototype.hasOwnProperty.call(responses, key)) {
@@ -644,6 +673,10 @@ export async function seedAuthenticatedSession(page, { token = TOKEN, onboarded 
 
 export async function loginThroughForm(page, { token = TOKEN, onboarded = true } = {}) {
   await resetStoredSession(page, { onboarded });
+  if (await page.locator('.auth-badge').filter({ hasText: 'Connected' }).count()) {
+    await expect(page.locator('.role-badge')).toContainText('admin');
+    return;
+  }
   await page.getByLabel('API token').fill(token);
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.locator('.auth-badge')).toContainText('Connected');

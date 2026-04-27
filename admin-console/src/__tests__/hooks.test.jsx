@@ -184,8 +184,10 @@ describe('useWebSocket', () => {
     delete globalThis.WebSocket;
   });
 
-  function WebSocketProbe({ interval = 2000 }) {
-    const { connected, events, status, recoveryAttempts } = useWebSocket(interval);
+  function WebSocketProbe({ interval = 2000, nativeSupported = true }) {
+    const { connected, events, status, recoveryAttempts } = useWebSocket(interval, {
+      nativeSupported,
+    });
     return (
       <>
         <div data-testid="ws-connected">{String(connected)}</div>
@@ -368,6 +370,31 @@ describe('useWebSocket', () => {
 
     await act(async () => {
       render(<WebSocketProbe interval={10_000} />);
+      await Promise.resolve();
+    });
+
+    expect(sockets).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ws/connect')).toBe(true);
+  });
+
+  it('skips native websocket when the backend has not advertised support', async () => {
+    const sockets = [];
+
+    globalThis.WebSocket = class MockWebSocket {
+      constructor() {
+        sockets.push(this);
+      }
+    };
+
+    fetchMock.mockImplementation((url) => {
+      if (url === '/api/ws/connect') return Promise.resolve(jsonOk({ subscriber_id: 23 }));
+      if (url === '/api/ws/poll') return Promise.resolve(jsonOk([]));
+      if (url === '/api/ws/disconnect') return Promise.resolve(jsonOk({ ok: true }));
+      return Promise.resolve(jsonOk({}));
+    });
+
+    await act(async () => {
+      render(<WebSocketProbe interval={10_000} nativeSupported={false} />);
       await Promise.resolve();
     });
 
