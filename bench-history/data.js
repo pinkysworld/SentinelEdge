@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781932680967,
+  "lastUpdate": 1781979908046,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -17209,6 +17209,114 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 35714,
             "range": "± 397",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c8e66ead67213d4b91808e473d43ee5376d54c5c",
+          "message": "fix(ci): repair systemic CI failures blocking all PRs (#118)\n\n* fix(storage): read SQLite COUNT as i64 for rusqlite 0.32+ compatibility\n\nrusqlite >=0.32 removed the FromSql impl for usize/isize. alert_counts and count_table read COUNT(*) directly into usize, which fails to compile on newer rusqlite. Read as i64 (SQLite's integer type) and cast to usize. Compatible with the current 0.31 pin and unblocks the rusqlite 0.40 bump in #116.\n\n* fix(server): allow dead_code for process_basename on Windows\n\nprocess_basename is only called from the macOS- and Linux-gated process-detail builders; on Windows it has no callers. CI's RUSTFLAGS=-D warnings promotes the resulting dead_code warning to a hard error, failing the windows test job. Gate the lint with cfg_attr(target_os = windows).\n\n* fix(sdk): construct live-test client lazily so the unit run skips cleanly\n\nvitest evaluates describe.skip callbacks during collection, so the eager top-level new WardexClient({ baseUrl: liveBaseUrl! }) threw when WDX_BASE_URL was unset, failing the whole typescript-sdk job. Move client construction into the test bodies so the live suite skips without throwing; sdk-live-smoke still runs it with a server.\n\n* fix(openapi): add missing {id} path parameter to recovery-actions\n\nGET /api/playbook/execution/{id}/recovery-actions declared an {id} placeholder with no parameters block, so openapi-generator spec validation aborted the sdk-generation job. Add the path parameter matching every other {id} route. Regeneration produces no SDK model drift.\n\n* docs(readme): restore support and security contact emails\n\nCommit a25b970 removed support@wardex.dev / security@wardex.dev from the License and Support section, but release_facts.json still defines them and check_release_facts.py requires the support email in README (they also remain canonical in STATUS.md, SECURITY.md, COMPLIANCE.md, Cargo.toml). Restore both to fix the release-docs gate.\n\n* chore(deps): bump transitive undici to patch high-severity advisories\n\nnpm audit flagged undici 7.27.0 (via jsdom) for multiple high-severity advisories, failing the frontend job's npm audit --audit-level=high. npm audit fix bumps it to a patched release; 0 vulnerabilities remain.\n\n* fix(enforcement): real Windows process kill via taskkill, not stubbed success\n\nProcessEnforcer::os_signal returned a fabricated Ok on non-Unix platforms ('simulated on non-Unix platform'). On Windows a KillProcess against a nonexistent PID therefore reported success, failing execution_audit_records_command_transcript and response_execution_audit_endpoint_links_request_approval_and_execution on windows-latest (these only ran once the dead_code compile error was fixed).\n\nImplement real termination via 'taskkill /F /PID' (honest failure for missing PIDs); suspend/resume report no Windows backend instead of faking success; other non-Unix targets return an honest error. Verified by cross-compiling and clippy-checking x86_64-pc-windows-gnu.",
+          "timestamp": "2026-06-20T20:16:36+02:00",
+          "tree_id": "1b87ef4f91def2130f5db9caaac9bf9bde03e3bc",
+          "url": "https://github.com/pinkysworld/Wardex/commit/c8e66ead67213d4b91808e473d43ee5376d54c5c"
+        },
+        "date": 1781979907342,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 49059,
+            "range": "± 177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 411690,
+            "range": "± 5260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1896690,
+            "range": "± 18151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17850524,
+            "range": "± 46567",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 622,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_window_stream_256",
+            "value": 851148,
+            "range": "± 1817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_observed_schema_read",
+            "value": 136,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_4_threads_64_alerts",
+            "value": 145447,
+            "range": "± 1833",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 238,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 18285618,
+            "range": "± 1237658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 108586,
+            "range": "± 324",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 87791,
+            "range": "± 1156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 50,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 34837,
+            "range": "± 186",
             "unit": "ns/iter"
           }
         ]
