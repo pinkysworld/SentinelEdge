@@ -153,4 +153,4 @@ Wardex is dual-licensed:
 
 Support details are available on the [Wardex support page](https://minh.systems/Wardex/support/) and through [GitHub Sponsors](https://github.com/sponsors/pinkysworld).
 
-For production deployment, licensing, operator support, or responsible security disclosure, use the support page or the private GitHub advisory flow.
+For production deployment, licensing, or operator support, contact support@wardex.dev. For responsible security disclosure, email security@wardex.dev or use the private GitHub advisory flow.

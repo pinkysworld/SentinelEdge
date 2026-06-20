@@ -152,11 +152,37 @@ impl ProcessEnforcer {
                 Err(e) => Err(format!("exec error: {e}")),
             }
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            let _ = (pid, signal);
-            Ok(format!(
-                "signal {signal} to {pid} (simulated on non-Unix platform)"
+            use std::process::Command;
+            // Windows has no POSIX signals. Termination maps to `taskkill /F`;
+            // suspend/resume (STOP/CONT) need Win32 APIs we do not link, so they
+            // report no backend rather than fabricating success.
+            match signal {
+                "KILL" => {
+                    let output = Command::new("taskkill")
+                        .args(["/F", "/PID", &pid.to_string()])
+                        .output();
+                    match output {
+                        Ok(o) if o.status.success() => {
+                            Ok(format!("process {pid} terminated via taskkill"))
+                        }
+                        Ok(o) => Err(format!(
+                            "taskkill failed: {}",
+                            String::from_utf8_lossy(&o.stderr).trim()
+                        )),
+                        Err(e) => Err(format!("taskkill exec error: {e}")),
+                    }
+                }
+                other => Err(format!(
+                    "signal {other} has no supported Windows backend for pid {pid}"
+                )),
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            Err(format!(
+                "signal {signal} to {pid}: no process-control backend on this platform"
             ))
         }
     }

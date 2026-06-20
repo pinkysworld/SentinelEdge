@@ -9035,6 +9035,13 @@ paths:
       operationId: getPlaybookExecutionRecoveryActions
       tags:
       - response
+      parameters:
+      - name: id
+        in: path
+        description: Path parameter `id`
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Playbook execution recovery actions response

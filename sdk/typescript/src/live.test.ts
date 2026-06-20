@@ -11,8 +11,6 @@ const describeLive = liveBaseUrl ? describe : describe.skip;
 const itAuthenticated = liveApiKey ? it : it.skip;
 
 describeLive("WardexClient live smoke", () => {
-  const publicClient = new WardexClient({ baseUrl: liveBaseUrl! });
-
   itAuthenticated("reads authenticated health endpoints", async () => {
     const authenticatedClient = new WardexClient({
       baseUrl: liveBaseUrl!,
@@ -31,6 +29,7 @@ describeLive("WardexClient live smoke", () => {
   });
 
   it("fetches the live OpenAPI document", async () => {
+    const publicClient = new WardexClient({ baseUrl: liveBaseUrl! });
     const spec = await publicClient.openApiSpec();
     expect(spec.openapi.startsWith("3.")).toBe(true);
     expect(spec.paths).toHaveProperty("/api/health");
