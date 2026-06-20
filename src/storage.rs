@@ -709,8 +709,9 @@ impl StorageBackend {
             let _ = stmt
                 .query_map(params_ref.as_slice(), |row| {
                     let level: String = row.get(0)?;
-                    let count: usize = row.get(1)?;
-                    Ok((level, count))
+                    // rusqlite >=0.32 dropped FromSql for usize; SQLite COUNT(*) is i64.
+                    let count: i64 = row.get(1)?;
+                    Ok((level, count as usize))
                 })
                 .map(|rows| {
                     for r in rows.flatten() {
@@ -1220,8 +1221,9 @@ impl StorageBackend {
         // table names are hardcoded constants, not user input
         let sql = format!("SELECT COUNT(*) FROM {table}");
         self.conn
-            .query_row(&sql, [], |row| row.get::<_, usize>(0))
-            .unwrap_or(0)
+            // rusqlite >=0.32 dropped FromSql for usize; SQLite COUNT(*) returns i64.
+            .query_row(&sql, [], |row| row.get::<_, i64>(0))
+            .unwrap_or(0) as usize
     }
 
     /// Get storage statistics.
