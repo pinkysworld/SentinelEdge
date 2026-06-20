@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781979908046,
+  "lastUpdate": 1781984497194,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -17317,6 +17317,114 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 34837,
             "range": "± 186",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "25ad4b3626fd61e03e9bc8f236267010e557e37d",
+          "message": "CI reliability: close soft-failed gates, add agent-client tests, fix test-server port race (#117)\n\n* test(agent-client): cover HTTP client paths with a mock server\n\nThe agent-side client (enroll, heartbeat, event/log forwarding, policy and update polling) had only 5 tests and was the weakest-covered module (~28% region coverage) despite being the code that runs on endpoints.\n\nAdd a std TcpListener mock server (mirroring oidc.rs's spawn_jwks_server) that serves canned HTTP/1.1 responses and captures requests, then exercise the real ureq paths: identity population, auth-header propagation (X-Wardex-Agent-Id/Token), 200/204 handling, JSON decoding, checksum-mismatch detection, and the not-enrolled/empty-batch guards.\n\n5 -> 18 tests.\n\n* ci: enforce no-default-features gate and drop inapplicable semver-check\n\nThe feature-flags job swallowed 'cargo check --no-default-features' failures with '|| echo'. That build now compiles cleanly (the prior cross-dependency issue is gone), so make it a real gate (--all-targets).\n\nRemove the semver-check job. wardex is a binary application, never published to crates.io, so its pub items are an internal cross-module surface rather than a downstream contract. cargo-semver-checks against a git baseline (v1.0.26) flags routine evolution -- adding a field to a pub config struct, an ApprovalStatus enum variant -- as 'requires new major version', so the job could only ever soft-fail. The real consumer contracts (REST/OpenAPI + generated SDKs) are gated by contract-parity and sdk-generation. Drop it from the ci-status needs list too.\n\n* fix(test): hand bound listener to test server to fix port TOCTOU race\n\nspawn_test_server_with_state bound 127.0.0.1:0, recorded the port, dropped the listener, then re-bound the same port inside the server thread. A concurrent test could claim the freed port in that window, intermittently panicking at 'bind test listener' (server_runtime.rs) — observed flaking server::tests and the api_* integration gate on CI.\n\nKeep the bound socket and adopt it via tokio TcpListener::from_std, eliminating the drop/re-bind gap. Verified locally: server lib tests + api_core_detection_auth (39 concurrent) x2 + concurrent_smoke pass; clippy --all-targets and fmt clean.",
+          "timestamp": "2026-06-20T21:31:29+02:00",
+          "tree_id": "632771e3923afc582e19783de6b09b79ab6d8d21",
+          "url": "https://github.com/pinkysworld/Wardex/commit/25ad4b3626fd61e03e9bc8f236267010e557e37d"
+        },
+        "date": 1781984496017,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 49454,
+            "range": "± 1783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 409448,
+            "range": "± 1461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1884672,
+            "range": "± 19542",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17203931,
+            "range": "± 87108",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 703,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_window_stream_256",
+            "value": 889492,
+            "range": "± 4252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_observed_schema_read",
+            "value": 127,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_4_threads_64_alerts",
+            "value": 165727,
+            "range": "± 2738",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 239,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 17425156,
+            "range": "± 97064",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 112754,
+            "range": "± 395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 97052,
+            "range": "± 742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 55,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 36038,
+            "range": "± 459",
             "unit": "ns/iter"
           }
         ]
