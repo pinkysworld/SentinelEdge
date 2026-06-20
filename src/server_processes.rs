@@ -8,6 +8,9 @@
 #[allow(unused_imports)]
 use super::*;
 
+// Only called from the macOS and Linux process-detail builders below; on
+// Windows it has no callers, so silence the `-D warnings` dead_code error there.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 fn process_basename(value: &str) -> &str {
     value
         .rsplit(['/', '\\'])
