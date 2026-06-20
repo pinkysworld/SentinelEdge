@@ -281,20 +281,16 @@ jobs:
         if: failure()
         run: cat /tmp/wardex-sdk-live-server.log
 
-  semver-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-      - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - name: Install cargo-semver-checks
-        run: cargo install cargo-semver-checks --locked
-      - name: Check semver compatibility
-        run: cargo semver-checks check-release || echo "semver baseline not yet published — skipping"
+  # ── Rust-level semver checks intentionally omitted ────────────────────
+  # `wardex` is a binary application, not a published library crate (it is
+  # never `cargo publish`ed). Its `pub` items are an internal cross-module
+  # surface, not a downstream consumer contract, so `cargo semver-checks`
+  # flags routine internal evolution as "breaking" — e.g. a 1.0.26→1.0.29
+  # patch range reports "requires new major version" merely for adding a
+  # field to a pub config struct or an enum variant. The contracts external
+  # consumers actually depend on — the REST/OpenAPI surface and the
+  # generated Python/TypeScript SDKs — are gated by the `contract-parity`
+  # and `sdk-generation` jobs instead.
 
   fuzz:
     if: github.event_name == 'schedule'
@@ -435,7 +431,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - name: Check with no default features
-        run: cargo check --no-default-features || echo "Feature-gated modules have cross-deps — tracked for future cleanup"
+        run: cargo check --no-default-features --all-targets
       - name: Check with all features
         run: cargo check --all-features
 
@@ -566,7 +562,6 @@ jobs:
       - container-build-contract
       - msrv
       - python-sdk
-      - semver-check
       - typescript-sdk
       - frontend
       - managed-release-acceptance

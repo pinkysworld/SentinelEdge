@@ -664,9 +664,15 @@ pub async fn run_server(
 pub(crate) fn spawn_test_server_with_state() -> (u16, String, Arc<Mutex<AppState>>) {
     let (tx, rx) = std::sync::mpsc::channel();
     // Find a free port
+    // Bind the ephemeral port and keep the listener: handing the already-bound
+    // socket straight to the server (via `from_std` below) avoids a drop/re-bind
+    // gap during which a concurrent test could claim the same port — a TOCTOU
+    // race that intermittently panicked at "bind test listener".
     let tmp_listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
     let port = tmp_listener.local_addr().expect("local addr").port();
-    drop(tmp_listener);
+    tmp_listener
+        .set_nonblocking(true)
+        .expect("set test listener nonblocking");
     let token = generate_token();
     let state_root = PathBuf::from(format!("/tmp/wardex_test_{port}"));
     let _ = std::fs::remove_dir_all(&state_root);
@@ -908,9 +914,8 @@ pub(crate) fn spawn_test_server_with_state() -> (u16, String, Arc<Mutex<AppState
                 },
             );
 
-            let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
-                .await
-                .expect("bind test listener");
+            let listener =
+                tokio::net::TcpListener::from_std(tmp_listener).expect("adopt test listener");
             tx.send(()).ok();
             let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
             axum::serve(listener, app)
