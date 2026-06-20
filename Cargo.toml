@@ -34,7 +34,7 @@ ml-dsa = "0.1"
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "limit", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "limit", "fs"] }
 # Structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
