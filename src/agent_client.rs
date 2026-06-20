@@ -1033,4 +1033,338 @@ mod tests {
         assert!(saved.contains("agent_token = \"agent-secret\""));
         assert!(saved.contains("enrollment_token = \"\""));
     }
+
+    // ── HTTP client behaviour against a local mock server ──────────────
+    //
+    // These tests exercise the real `ureq` request/response paths — URL
+    // construction, auth-header propagation, status handling, and JSON
+    // decoding — by pointing the client at an ephemeral `TcpListener` that
+    // serves canned HTTP/1.1 responses, mirroring the `spawn_jwks_server`
+    // pattern in `oidc.rs`.
+
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread::JoinHandle;
+
+    /// A canned HTTP response served by the mock server.
+    struct MockResponse {
+        status: u16,
+        content_type: &'static str,
+        body: Vec<u8>,
+    }
+
+    impl MockResponse {
+        fn json(status: u16, body: &str) -> Self {
+            Self {
+                status,
+                content_type: "application/json",
+                body: body.as_bytes().to_vec(),
+            }
+        }
+
+        fn bytes(status: u16, body: &[u8]) -> Self {
+            Self {
+                status,
+                content_type: "application/octet-stream",
+                body: body.to_vec(),
+            }
+        }
+
+        fn empty(status: u16) -> Self {
+            Self {
+                status,
+                content_type: "application/json",
+                body: Vec::new(),
+            }
+        }
+    }
+
+    /// A request captured by the mock server so tests can assert on it.
+    struct CapturedRequest {
+        method: String,
+        path: String,
+        headers: Vec<(String, String)>,
+        body: String,
+    }
+
+    impl CapturedRequest {
+        fn header(&self, name: &str) -> Option<&str> {
+            self.headers
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                .map(|(_, value)| value.as_str())
+        }
+    }
+
+    fn reason_phrase(status: u16) -> &'static str {
+        match status {
+            204 => "No Content",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            500 => "Internal Server Error",
+            _ => "OK",
+        }
+    }
+
+    /// Serve one request on `stream`, returning what the client sent.
+    fn serve_one(stream: TcpStream, response: &MockResponse) -> CapturedRequest {
+        let read_half = stream.try_clone().expect("clone mock stream");
+        let mut reader = BufReader::new(read_half);
+
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .expect("read request line");
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or_default().to_string();
+        let path = parts.next().unwrap_or_default().to_string();
+
+        let mut headers = Vec::new();
+        let mut content_length = 0usize;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read header line");
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                break;
+            }
+            if let Some((name, value)) = trimmed.split_once(':') {
+                let name = name.trim().to_string();
+                let value = value.trim().to_string();
+                if name.eq_ignore_ascii_case("content-length") {
+                    content_length = value.parse().unwrap_or(0);
+                }
+                headers.push((name, value));
+            }
+        }
+
+        let mut body = vec![0u8; content_length];
+        if content_length > 0 {
+            reader.read_exact(&mut body).expect("read request body");
+        }
+
+        let mut writer = stream;
+        let header = format!(
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            response.status,
+            reason_phrase(response.status),
+            response.content_type,
+            response.body.len(),
+        );
+        writer
+            .write_all(header.as_bytes())
+            .expect("write response header");
+        writer
+            .write_all(&response.body)
+            .expect("write response body");
+        writer.flush().expect("flush response");
+
+        CapturedRequest {
+            method,
+            path,
+            headers,
+            body: String::from_utf8_lossy(&body).into_owned(),
+        }
+    }
+
+    /// Bind an ephemeral mock server that serves `responses` in order and
+    /// returns the captured requests once all have been served.
+    fn spawn_mock_server(
+        responses: Vec<MockResponse>,
+    ) -> (String, JoinHandle<Vec<CapturedRequest>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let port = listener.local_addr().expect("mock server addr").port();
+        let handle = thread::spawn(move || {
+            let mut captured = Vec::with_capacity(responses.len());
+            for response in &responses {
+                let (stream, _) = listener.accept().expect("accept mock connection");
+                captured.push(serve_one(stream, response));
+            }
+            captured
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    fn enrolled_client(server_url: &str) -> AgentClient {
+        let mut client = AgentClient::new(server_url);
+        client.agent_id = Some("agent-test".to_string());
+        client.agent_token = Some("token-secret".to_string());
+        client
+    }
+
+    #[test]
+    fn enroll_populates_identity_and_sends_request() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::json(
+            200,
+            r#"{"agent_id":"agent-xyz","agent_token":"secret-abc","server_version":"1.0.29","heartbeat_interval_secs":45,"policy_poll_interval_secs":90}"#,
+        )]);
+
+        let mut client = AgentClient::new(&url);
+        let resp = client
+            .enroll("enroll-token", "host-1", "linux")
+            .expect("enroll should succeed");
+
+        assert_eq!(resp.agent_id, "agent-xyz");
+        assert_eq!(client.agent_id.as_deref(), Some("agent-xyz"));
+        assert_eq!(client.agent_token.as_deref(), Some("secret-abc"));
+        assert_eq!(client.heartbeat_interval, 45);
+        assert_eq!(client.policy_poll_interval, 90);
+
+        let requests = handle.join().expect("mock server thread");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/api/agents/enroll");
+        assert!(requests[0].body.contains("\"hostname\":\"host-1\""));
+        assert!(
+            requests[0]
+                .body
+                .contains("\"enrollment_token\":\"enroll-token\"")
+        );
+    }
+
+    #[test]
+    fn enroll_surfaces_server_error() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::empty(500)]);
+        let mut client = AgentClient::new(&url);
+        let result = client.enroll("t", "h", "linux");
+        assert!(result.is_err());
+        handle.join().expect("mock server thread");
+    }
+
+    #[test]
+    fn heartbeat_sends_auth_headers_and_returns_target_version() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::json(
+            200,
+            r#"{"heartbeat_interval_secs":30,"update_assigned":true,"target_version":"1.0.30"}"#,
+        )]);
+
+        let client = enrolled_client(&url);
+        let target = client.heartbeat().expect("heartbeat should succeed");
+        assert_eq!(target.as_deref(), Some("1.0.30"));
+
+        let requests = handle.join().expect("mock server thread");
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/api/agents/agent-test/heartbeat");
+        assert_eq!(requests[0].header("X-Wardex-Agent-Id"), Some("agent-test"));
+        assert_eq!(
+            requests[0].header("X-Wardex-Agent-Token"),
+            Some("token-secret")
+        );
+    }
+
+    #[test]
+    fn heartbeat_requires_enrollment() {
+        let client = AgentClient::new("http://127.0.0.1:1");
+        let err = client
+            .heartbeat()
+            .expect_err("heartbeat without enrollment must fail");
+        assert_eq!(err, "not enrolled");
+    }
+
+    #[test]
+    fn fetch_policy_returns_none_on_204() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::empty(204)]);
+        let client = enrolled_client(&url);
+        let policy = client.fetch_policy().expect("fetch_policy should succeed");
+        assert!(policy.is_none());
+        handle.join().expect("mock server thread");
+    }
+
+    #[test]
+    fn fetch_policy_parses_payload() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::json(
+            200,
+            r#"{"version":7,"alert_threshold":3.5,"interval_secs":15,"watch_paths":["/etc"]}"#,
+        )]);
+        let client = enrolled_client(&url);
+        let policy = client
+            .fetch_policy()
+            .expect("fetch_policy should succeed")
+            .expect("policy present");
+        assert_eq!(policy.version, 7);
+        assert_eq!(policy.alert_threshold, Some(3.5));
+        assert_eq!(policy.interval_secs, Some(15));
+
+        let requests = handle.join().expect("mock server thread");
+        assert_eq!(requests[0].method, "GET");
+        assert_eq!(requests[0].path, "/api/policy/current");
+    }
+
+    #[test]
+    fn check_update_returns_none_on_204() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::empty(204)]);
+        let client = enrolled_client(&url);
+        let update = client.check_update().expect("check_update should succeed");
+        assert!(update.is_none());
+        handle.join().expect("mock server thread");
+    }
+
+    #[test]
+    fn check_update_parses_update_info() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::json(
+            200,
+            r#"{"version":"1.0.30","download_url":"/d","sha256":"abc","release_notes":"n","mandatory":true}"#,
+        )]);
+        let client = enrolled_client(&url);
+        let info = client
+            .check_update()
+            .expect("check_update should succeed")
+            .expect("update present");
+        assert_eq!(info.version, "1.0.30");
+        assert!(info.mandatory);
+
+        let requests = handle.join().expect("mock server thread");
+        assert_eq!(requests[0].method, "GET");
+        assert!(requests[0].path.starts_with("/api/agents/update"));
+        assert!(requests[0].path.contains("current_version="));
+    }
+
+    #[test]
+    fn download_update_detects_checksum_mismatch() {
+        let (url, handle) = spawn_mock_server(vec![MockResponse::bytes(200, b"not a real binary")]);
+        let client = enrolled_client(&url);
+        let info: UpdateInfo = serde_json::from_str(
+            r#"{"version":"1.0.30","download_url":"/api/agents/update/download","sha256":"00","release_notes":"n","mandatory":false}"#,
+        )
+        .expect("parse update info");
+
+        let err = client
+            .download_update(&info)
+            .expect_err("checksum mismatch must fail");
+        assert!(err.contains("checksum mismatch"), "unexpected error: {err}");
+        handle.join().expect("mock server thread");
+    }
+
+    #[test]
+    fn forward_events_short_circuits_when_empty() {
+        // No mock server: an empty batch must return early without any request.
+        let client = enrolled_client("http://127.0.0.1:1");
+        assert!(client.forward_events(&[]).is_ok());
+    }
+
+    #[test]
+    fn forward_events_requires_enrollment() {
+        let client = AgentClient::new("http://127.0.0.1:1");
+        let err = client
+            .forward_events(&[])
+            .expect_err("forwarding without enrollment must fail");
+        assert_eq!(err, "not enrolled");
+    }
+
+    #[test]
+    fn forward_logs_short_circuits_when_empty() {
+        let client = enrolled_client("http://127.0.0.1:1");
+        assert!(client.forward_logs(&[]).is_ok());
+    }
+
+    #[test]
+    fn forward_logs_requires_enrollment() {
+        let client = AgentClient::new("http://127.0.0.1:1");
+        let err = client
+            .forward_logs(&[])
+            .expect_err("forwarding without enrollment must fail");
+        assert_eq!(err, "not enrolled");
+    }
 }
