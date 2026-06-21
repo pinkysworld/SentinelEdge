@@ -1,3 +1,4 @@
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -59,7 +60,8 @@ pub struct Case {
 pub struct CaseStore {
     cases: Vec<Case>,
     next_id: u64,
-    store_path: String,
+    db_path: String,
+    legacy_json_path: String,
 }
 
 impl CaseStore {
@@ -77,20 +79,73 @@ impl CaseStore {
         } else {
             store_path.to_string()
         };
+        // Cases now live in a sibling SQLite database (`<name>.db`) rather than
+        // a loose JSON file; the historical JSON path is migrated in on first
+        // load. The public API is unchanged.
+        let db_path = Path::new(&safe_path)
+            .with_extension("db")
+            .to_string_lossy()
+            .to_string();
         let mut store = CaseStore {
             cases: Vec::new(),
             next_id: 1,
-            store_path: safe_path,
+            db_path,
+            legacy_json_path: safe_path,
         };
         store.load();
         store
     }
 
+    /// Open the backing SQLite connection, ensuring pragmas and schema exist.
+    fn open_db(&self) -> Option<Connection> {
+        let conn = Connection::open(&self.db_path).ok()?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+             CREATE TABLE IF NOT EXISTS case_records (
+                 id INTEGER PRIMARY KEY,
+                 payload TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );",
+        )
+        .ok()?;
+        Some(conn)
+    }
+
     fn load(&mut self) {
-        let path = Path::new(&self.store_path);
-        if path.exists()
-            && let Ok(content) = std::fs::read_to_string(path)
+        let Some(conn) = self.open_db() else {
+            return;
+        };
+        let loaded: Vec<Case> = conn
+            .prepare("SELECT payload FROM case_records ORDER BY id")
+            .ok()
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .map(|rows| {
+                        rows.filter_map(Result::ok)
+                            .filter_map(|p| serde_json::from_str::<Case>(&p).ok())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        if !loaded.is_empty() {
+            self.next_id = loaded
+                .iter()
+                .map(|c| c.id)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.cases = loaded;
+            return;
+        }
+
+        // Empty database — migrate a legacy JSON store on first run, if present.
+        let legacy = Path::new(&self.legacy_json_path);
+        if legacy.exists()
+            && let Ok(content) = std::fs::read_to_string(legacy)
             && let Ok(cases) = serde_json::from_str::<Vec<Case>>(&content)
+            && !cases.is_empty()
         {
             self.next_id = cases
                 .iter()
@@ -99,21 +154,40 @@ impl CaseStore {
                 .unwrap_or(0)
                 .saturating_add(1);
             self.cases = cases;
+            self.persist();
+            // Preserve the old file as a one-time backup instead of deleting.
+            let _ = std::fs::rename(legacy, format!("{}.migrated", self.legacy_json_path));
         }
     }
 
     fn persist(&self) {
-        let path = Path::new(&self.store_path);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(&self.cases) {
-            let tmp = format!("{}.tmp", self.store_path);
-            if std::fs::write(&tmp, &json).is_ok()
-                && let Err(e) = std::fs::rename(&tmp, path)
-            {
-                eprintln!("[WARN] case persist rename failed: {e}");
+        let Some(mut conn) = self.open_db() else {
+            eprintln!("[WARN] case persist: cannot open {}", self.db_path);
+            return;
+        };
+        let now = chrono::Utc::now().to_rfc3339();
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!("[WARN] case persist: begin transaction failed: {e}");
+                return;
             }
+        };
+        if let Err(e) = tx.execute("DELETE FROM case_records", []) {
+            eprintln!("[WARN] case persist: clear failed: {e}");
+            return;
+        }
+        for case in &self.cases {
+            let Ok(payload) = serde_json::to_string(case) else {
+                continue;
+            };
+            let _ = tx.execute(
+                "INSERT INTO case_records (id, payload, updated_at) VALUES (?1, ?2, ?3)",
+                params![case.id as i64, payload, now],
+            );
+        }
+        if let Err(e) = tx.commit() {
+            eprintln!("[WARN] case persist: commit failed: {e}");
         }
     }
 
@@ -814,6 +888,53 @@ mod tests {
         assert_eq!(case.status, CaseStatus::New);
         assert!(store.get(1).is_some());
         assert!(store.get(99).is_none());
+    }
+
+    #[test]
+    fn case_store_persists_via_sqlite_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_str = dir.path().join("cases.json").to_string_lossy().to_string();
+        {
+            let mut store = CaseStore::new(&path_str);
+            store.create(
+                "Persisted".into(),
+                "desc".into(),
+                CasePriority::High,
+                vec![1],
+                vec![2, 3],
+                vec!["t".into()],
+            );
+        }
+        // Data lives in the SQLite database, not a loose JSON file.
+        assert!(
+            !dir.path().join("cases.json").exists(),
+            "no JSON file should be written"
+        );
+        // Re-open and confirm the case round-tripped from SQLite.
+        let store = CaseStore::new(&path_str);
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(store.list()[0].title, "Persisted");
+        assert_eq!(store.list()[0].event_ids, vec![2, 3]);
+    }
+
+    #[test]
+    fn case_store_migrates_legacy_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let json_path = dir.path().join("cases.json");
+        let legacy = r#"[{"id":7,"title":"Legacy","description":"d","status":"New","priority":"Low","assignee":null,"created_at":"t","updated_at":"t","incident_ids":[],"event_ids":[],"tags":[],"comments":[],"evidence":[],"mitre_techniques":[]}]"#;
+        std::fs::write(&json_path, legacy).unwrap();
+
+        let store = CaseStore::new(&json_path.to_string_lossy());
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(store.list()[0].id, 7);
+        assert_eq!(store.list()[0].title, "Legacy");
+        // New ids continue after the migrated maximum.
+        assert_eq!(store.next_id, 8);
+        // The legacy JSON is renamed to a backup rather than left in place.
+        assert!(
+            !json_path.exists(),
+            "legacy JSON should be migrated and renamed"
+        );
     }
 
     #[test]

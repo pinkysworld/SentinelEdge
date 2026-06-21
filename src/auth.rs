@@ -3,6 +3,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
+use rusqlite::{Connection, params};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -87,7 +88,10 @@ struct PersistedSessionEnvelope {
 /// Thread-safe session store with optional file-backed persistence.
 pub struct SessionStore {
     sessions: Mutex<HashMap<String, Session>>,
+    /// SQLite database holding the signed session envelope (None = in-memory).
     store_path: Option<String>,
+    /// Legacy JSON path migrated into SQLite on first load, if present.
+    legacy_json_path: Option<String>,
     persistence_key: Option<Vec<u8>>,
 }
 
@@ -102,6 +106,7 @@ impl SessionStore {
         Self {
             sessions: Mutex::new(HashMap::new()),
             store_path: None,
+            legacy_json_path: None,
             persistence_key: None,
         }
     }
@@ -114,24 +119,69 @@ impl SessionStore {
     /// Create a session store that persists to disk at the given path and
     /// seals the persisted payload with the provided key.
     pub fn with_persistence_key(path: &str, key: Option<Vec<u8>>) -> Self {
+        // Sessions now persist in a sibling SQLite database (`<name>.db`); a
+        // legacy JSON store is migrated in on first load.
+        let db_path = Path::new(path)
+            .with_extension("db")
+            .to_string_lossy()
+            .to_string();
         let store = Self {
             sessions: Mutex::new(HashMap::new()),
-            store_path: Some(path.to_string()),
+            store_path: Some(db_path),
+            legacy_json_path: Some(path.to_string()),
             persistence_key: key,
         };
         store.load();
         store
     }
 
+    /// Open the backing SQLite database. Uses the default rollback journal so
+    /// the entire signed envelope lives in one permission-hardened file.
+    fn open_db(path: &str) -> Option<Connection> {
+        let conn = Connection::open(path).ok()?;
+        conn.execute_batch(
+            "PRAGMA busy_timeout=5000;
+             CREATE TABLE IF NOT EXISTS session_state (
+                 id INTEGER PRIMARY KEY,
+                 payload TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );",
+        )
+        .ok()?;
+        Some(conn)
+    }
+
     /// Load sessions from disk, discarding any expired entries.
     fn load(&self) {
-        let Some(ref path) = self.store_path else {
+        let Some(ref db_path) = self.store_path else {
             return;
         };
-        let Ok(data) = std::fs::read_to_string(path) else {
+        // Prefer the SQLite store.
+        let from_db = Self::open_db(db_path).and_then(|conn| {
+            conn.query_row(
+                "SELECT payload FROM session_state WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+        });
+        if let Some(data) = from_db {
+            self.apply_envelope(&data);
             return;
-        };
-        let map = if let Ok(envelope) = serde_json::from_str::<PersistedSessionEnvelope>(&data) {
+        }
+        // No row yet — migrate a legacy JSON store on first run, if present.
+        if let Some(ref legacy) = self.legacy_json_path
+            && let Ok(data) = std::fs::read_to_string(legacy)
+        {
+            self.apply_envelope(&data);
+            self.save();
+            let _ = std::fs::rename(legacy, format!("{legacy}.migrated"));
+        }
+    }
+
+    /// Verify, expire-filter, and install a persisted session envelope.
+    fn apply_envelope(&self, data: &str) {
+        let map = if let Ok(envelope) = serde_json::from_str::<PersistedSessionEnvelope>(data) {
             let expected = self.session_signature(&envelope.sessions);
             if !constant_time_eq(envelope.signature.as_bytes(), expected.as_bytes()) {
                 return;
@@ -139,7 +189,7 @@ impl SessionStore {
             envelope.sessions
         } else if production_env() {
             return;
-        } else if let Ok(legacy_map) = serde_json::from_str::<HashMap<String, Session>>(&data) {
+        } else if let Ok(legacy_map) = serde_json::from_str::<HashMap<String, Session>>(data) {
             legacy_map
         } else {
             return;
@@ -163,7 +213,7 @@ impl SessionStore {
 
     /// Persist current sessions to disk (best-effort).
     fn save(&self) {
-        let Some(ref path) = self.store_path else {
+        let Some(ref db_path) = self.store_path else {
             return;
         };
         let sessions = {
@@ -178,21 +228,26 @@ impl SessionStore {
             signature: self.session_signature(&sessions),
             sessions,
         };
-        if let Ok(json) = serde_json::to_string(&envelope) {
-            if let Some(parent) = Path::new(path).parent()
-                && !parent.as_os_str().is_empty()
-                && std::fs::create_dir_all(parent).is_err()
-            {
-                return;
-            }
-            let tmp = format!("{path}.tmp");
-            if std::fs::write(&tmp, &json).is_ok() {
-                harden_session_file_permissions(&tmp);
-                if std::fs::rename(&tmp, path).is_ok() {
-                    harden_session_file_permissions(path);
-                }
-            }
+        let Ok(json) = serde_json::to_string(&envelope) else {
+            return;
+        };
+        if let Some(parent) = Path::new(db_path).parent()
+            && !parent.as_os_str().is_empty()
+            && std::fs::create_dir_all(parent).is_err()
+        {
+            return;
         }
+        let Some(conn) = Self::open_db(db_path) else {
+            return;
+        };
+        let now = Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO session_state (id, payload, updated_at) VALUES (1, ?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
+            params![json, now],
+        );
+        // Restrict the session database to the owner.
+        harden_session_file_permissions(db_path);
     }
 
     fn session_signature(&self, sessions: &HashMap<String, Session>) -> String {
@@ -445,8 +500,8 @@ mod tests {
 
     #[test]
     fn session_persistence_round_trip() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("wardex_test_sessions.json");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.json");
         let path_str = path.to_string_lossy().to_string();
         let key = b"session-persistence-test-key".to_vec();
 
@@ -470,9 +525,6 @@ mod tests {
         assert_eq!(session.email, "u1@example.com");
         assert_eq!(session.role, "admin");
         assert_eq!(session.groups, vec!["soc-admins"]);
-        drop(sessions);
-
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -487,7 +539,14 @@ mod tests {
             store.create_session("u2", "u2@example.com", "admin", &[], 8);
         }
 
-        let contents = std::fs::read_to_string(&path).expect("read persisted sessions");
+        // Tamper with the persisted payload inside the SQLite store.
+        let db_path = path.with_extension("db");
+        let conn = Connection::open(&db_path).expect("open session db");
+        let contents: String = conn
+            .query_row("SELECT payload FROM session_state WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .expect("read persisted sessions");
         let mut envelope: PersistedSessionEnvelope =
             serde_json::from_str(&contents).expect("parse persisted envelope");
         let session = envelope
@@ -496,11 +555,12 @@ mod tests {
             .next()
             .expect("persisted session");
         session.email = "tampered@example.com".into();
-        std::fs::write(
-            &path,
-            serde_json::to_string(&envelope).expect("serialize tampered envelope"),
+        conn.execute(
+            "UPDATE session_state SET payload = ?1 WHERE id = 1",
+            params![serde_json::to_string(&envelope).expect("serialize tampered envelope")],
         )
         .expect("rewrite tampered envelope");
+        drop(conn);
 
         let reloaded = SessionStore::with_persistence_key(&path_str, Some(key));
         assert!(reloaded.sessions.lock().unwrap().is_empty());
@@ -619,9 +679,8 @@ mod tests {
             store.create_session("u9", "u9@example.com", "admin", &[], 8);
         }
 
-        assert!(path.exists());
+        assert!(path.with_extension("db").exists());
 
-        let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -640,7 +699,7 @@ mod tests {
         );
         store.create_session("u10", "u10@example.com", "admin", &[], 8);
 
-        let mode = std::fs::metadata(&path)
+        let mode = std::fs::metadata(path.with_extension("db"))
             .expect("session file metadata")
             .permissions()
             .mode()
