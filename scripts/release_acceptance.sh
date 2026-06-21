@@ -281,8 +281,13 @@ run_live_smokes() {
   cd "$ROOT_DIR"
   PLAYWRIGHT_HTML_OUTPUT_DIR="${PLAYWRIGHT_HTML_OUTPUT_DIR:-$ROOT_DIR/playwright-report}" \
   PLAYWRIGHT_HTML_OPEN="${PLAYWRIGHT_HTML_OPEN:-never}" \
+  # This run executes from the repo root, where no playwright.config.js applies,
+  # so Playwright's default retries=0 would let a single flaky browser assertion
+  # (e.g. a mobile route-scope timing race) fail the whole gate. Retry failed
+  # tests, matching the retries convention in admin-console/playwright.config.js.
   node "$PLAYWRIGHT_CLI" test \
     --workers="${WARDEX_PLAYWRIGHT_WORKERS:-1}" \
+    --retries="${WARDEX_PLAYWRIGHT_RETRIES:-2}" \
     --reporter=list,html \
     tests/playwright/live_release_smoke.spec.js \
     tests/playwright/detection_quality_thread_smoke.spec.js \
