@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782019947596,
+  "lastUpdate": 1782059279825,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -17531,6 +17531,114 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 35855,
             "range": "± 178",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9a9848db4a57e860c66bb32ba6516eddb451eba0",
+          "message": "feat(storage): consolidate runtime persistence onto SQLite (no more JSON data files) (#120)\n\n* feat(storage): persist SOC cases in SQLite instead of cases.json\n\nCaseStore now stores cases in a sibling SQLite database (cases.db) via a case_records table, replacing the loose cases.json file. The in-memory cache and the entire public API are unchanged; only load()/persist() switch backends, and a pre-existing cases.json is migrated into SQLite on first load (then renamed to .migrated as a backup). Writes are transactional. First step of consolidating runtime persistence onto the SQLite engine.\n\nAdds round-trip and legacy-JSON-migration tests. fmt + clippy -D warnings clean; all case tests pass.\n\n* feat(storage): persist fleet agents and enrollment tokens in SQLite\n\nAgentRegistry now stores agents and enrollment tokens in a sibling SQLite database (agent_records + enrollment_tokens tables) instead of agents.json. The token-hash hardening on save (raw token cleared, hash retained) and the public API are preserved; a legacy agents.json is migrated in on first load (renamed .migrated). Writes are transactional.\n\nUpdated the token-persistence test to verify via reload. All enrollment tests pass.\n\n* feat(storage): persist admin-console sessions in SQLite\n\nSessionStore now stores its signed session envelope in a sibling SQLite database (sessions.db, single session_state row) instead of sessions.json, using the default rollback journal so the whole store stays in one owner-only (0600) file. The tamper-evident signature, expiry filtering, key sealing, and legacy/unsigned handling are all preserved; a legacy sessions.json is migrated in on first load (renamed .migrated).\n\nPersistence tests updated to target the SQLite store (tamper rejection, parent-dir creation, owner-only permissions, round-trip via tempdir). All 34 auth tests pass.\n\n* feat(storage): persist forwarded events in SQLite instead of events.json\n\nEventStore now stores events in a sibling SQLite database (event_records rows + an event_meta next_id counter) instead of events.json. The in-memory ring buffer, correlation, triage, retention, and public API are unchanged; persist() writes a transactional snapshot (comparable to the previous whole-file JSON rewrite, which also ran once per ingest batch). A legacy events.json is migrated in on first load (renamed .migrated).\n\nAdds round-trip and legacy-migration tests. Completes the JSON->SQLite persistence consolidation (cases, agents, sessions, events).",
+          "timestamp": "2026-06-21T18:19:39+02:00",
+          "tree_id": "ff45425bc0a3e69e910a4c5851a8b099e3a23133",
+          "url": "https://github.com/pinkysworld/Wardex/commit/9a9848db4a57e860c66bb32ba6516eddb451eba0"
+        },
+        "date": 1782059278796,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 48761,
+            "range": "± 166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 406771,
+            "range": "± 1444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1880874,
+            "range": "± 31198",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17735725,
+            "range": "± 43695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 631,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_window_stream_256",
+            "value": 855451,
+            "range": "± 9517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_observed_schema_read",
+            "value": 136,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_4_threads_64_alerts",
+            "value": 143424,
+            "range": "± 1936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 235,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 17890734,
+            "range": "± 43210",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 108732,
+            "range": "± 339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 88717,
+            "range": "± 547",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 50,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 32232,
+            "range": "± 66",
             "unit": "ns/iter"
           }
         ]
