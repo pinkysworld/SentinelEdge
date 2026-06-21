@@ -1,3 +1,4 @@
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -179,22 +180,50 @@ pub struct EnrollResponse {
 pub struct AgentRegistry {
     agents: HashMap<String, AgentIdentity>,
     tokens: Vec<EnrollmentToken>,
-    store_path: String,
+    db_path: String,
+    legacy_json_path: String,
     heartbeat_interval: u64,
     staleness_multiplier: u64,
 }
 
 impl AgentRegistry {
     pub fn new(store_path: &str) -> Self {
+        // Agents/tokens now live in a sibling SQLite database (`<name>.db`);
+        // a pre-existing JSON store is migrated in on first load.
+        let db_path = Path::new(store_path)
+            .with_extension("db")
+            .to_string_lossy()
+            .to_string();
         let mut reg = Self {
             agents: HashMap::new(),
             tokens: Vec::new(),
-            store_path: store_path.to_string(),
+            db_path,
+            legacy_json_path: store_path.to_string(),
             heartbeat_interval: 30,
             staleness_multiplier: 3,
         };
         reg.load();
         reg
+    }
+
+    /// Open the backing SQLite connection, ensuring pragmas and schema exist.
+    fn open_db(&self) -> Option<Connection> {
+        let conn = Connection::open(&self.db_path).ok()?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+             CREATE TABLE IF NOT EXISTS agent_records (
+                 agent_id TEXT PRIMARY KEY,
+                 payload TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS enrollment_tokens (
+                 seq INTEGER PRIMARY KEY,
+                 payload TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );",
+        )
+        .ok()?;
+        Some(conn)
     }
 
     pub fn heartbeat_interval(&self) -> u64 {
@@ -377,38 +406,98 @@ impl AgentRegistry {
             }
             token.token.clear();
         }
-        let data = RegistryData {
-            agents: self.agents.clone(),
-            tokens,
+        let Some(mut conn) = self.open_db() else {
+            eprintln!("[WARN] agent registry save: cannot open {}", self.db_path);
+            return;
         };
-        if let Ok(json) = serde_json::to_string_pretty(&data) {
-            let path = Path::new(&self.store_path);
-            if let Some(parent) = path.parent() {
-                let _ = fs::create_dir_all(parent);
+        let now = chrono::Utc::now().to_rfc3339();
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!("[WARN] agent registry save: transaction failed: {e}");
+                return;
             }
-            let tmp = format!("{}.tmp", self.store_path);
-            if fs::write(&tmp, &json).is_ok() {
-                let _ = fs::rename(&tmp, path);
+        };
+        if tx.execute("DELETE FROM agent_records", []).is_err()
+            || tx.execute("DELETE FROM enrollment_tokens", []).is_err()
+        {
+            eprintln!("[WARN] agent registry save: clear failed");
+            return;
+        }
+        for (agent_id, identity) in &self.agents {
+            if let Ok(payload) = serde_json::to_string(identity) {
+                let _ = tx.execute(
+                    "INSERT INTO agent_records (agent_id, payload, updated_at) VALUES (?1, ?2, ?3)",
+                    params![agent_id, payload, now],
+                );
             }
+        }
+        for token in &tokens {
+            if let Ok(payload) = serde_json::to_string(token) {
+                let _ = tx.execute(
+                    "INSERT INTO enrollment_tokens (payload, updated_at) VALUES (?1, ?2)",
+                    params![payload, now],
+                );
+            }
+        }
+        if let Err(e) = tx.commit() {
+            eprintln!("[WARN] agent registry save: commit failed: {e}");
         }
     }
 
     fn load(&mut self) {
-        let path = Path::new(&self.store_path);
-        if let Ok(raw) = fs::read_to_string(path)
+        let Some(conn) = self.open_db() else {
+            return;
+        };
+        let agents: HashMap<String, AgentIdentity> = conn
+            .prepare("SELECT payload FROM agent_records")
+            .ok()
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .map(|rows| {
+                        rows.filter_map(Result::ok)
+                            .filter_map(|p| serde_json::from_str::<AgentIdentity>(&p).ok())
+                            .map(|a| (a.id.clone(), a))
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        let tokens: Vec<EnrollmentToken> = conn
+            .prepare("SELECT payload FROM enrollment_tokens ORDER BY seq")
+            .ok()
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .map(|rows| {
+                        rows.filter_map(Result::ok)
+                            .filter_map(|p| serde_json::from_str::<EnrollmentToken>(&p).ok())
+                            .map(normalize_loaded_token)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        if !agents.is_empty() || !tokens.is_empty() {
+            self.agents = agents;
+            self.tokens = tokens;
+            return;
+        }
+
+        // Empty database — migrate a legacy JSON store on first run, if present.
+        let legacy = Path::new(&self.legacy_json_path);
+        if let Ok(raw) = fs::read_to_string(legacy)
             && let Ok(data) = serde_json::from_str::<RegistryData>(&raw)
+            && (!data.agents.is_empty() || !data.tokens.is_empty())
         {
             self.agents = data.agents;
             self.tokens = data
                 .tokens
                 .into_iter()
-                .map(|mut token| {
-                    if token.token_hash.is_empty() && !token.token.is_empty() {
-                        token.token_hash = enrollment_token_hash(&token.token);
-                    }
-                    token
-                })
+                .map(normalize_loaded_token)
                 .collect();
+            self.save();
+            let _ = fs::rename(legacy, format!("{}.migrated", self.legacy_json_path));
         }
     }
 }
@@ -417,6 +506,15 @@ impl AgentRegistry {
 struct RegistryData {
     agents: HashMap<String, AgentIdentity>,
     tokens: Vec<EnrollmentToken>,
+}
+
+/// Recompute a token's hash from any legacy plaintext, matching the persistence
+/// transform applied on save.
+fn normalize_loaded_token(mut token: EnrollmentToken) -> EnrollmentToken {
+    if token.token_hash.is_empty() && !token.token.is_empty() {
+        token.token_hash = enrollment_token_hash(&token.token);
+    }
+    token
 }
 
 fn generate_agent_id() -> String {
@@ -602,17 +700,24 @@ mod tests {
     #[test]
     fn registry_persists_token_hash_not_raw_token() {
         let dir = std::env::temp_dir().join("wardex_test_enrollment_token_hash");
+        let _ = fs::remove_dir_all(&dir);
         let _ = fs::create_dir_all(&dir);
         let store = dir.join("agents.json");
-        let _ = fs::remove_file(&store);
 
         let mut reg = AgentRegistry::new(store.to_str().unwrap());
         let token = reg.create_token(1);
-        let raw = fs::read_to_string(&store).expect("registry saved");
-        assert!(!raw.contains(&token.token));
-        assert!(raw.contains(&token.token_hash));
 
+        // Reload from the persisted SQLite store: the raw token must never be
+        // retained, only its hash.
         let mut reloaded = AgentRegistry::new(store.to_str().unwrap());
+        assert_eq!(reloaded.tokens.len(), 1);
+        assert!(
+            reloaded.tokens[0].token.is_empty(),
+            "raw token must not be persisted"
+        );
+        assert_eq!(reloaded.tokens[0].token_hash, token.token_hash);
+
+        // The reloaded token is still usable for enrollment.
         let req = EnrollRequest {
             enrollment_token: token.token,
             hostname: "persisted-token-host".into(),
