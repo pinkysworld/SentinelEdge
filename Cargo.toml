@@ -19,7 +19,7 @@ chrono = { version = "0.4", features = ["serde"] }
 rand = "0.9"
 ureq = { version = "2", default-features = false, features = ["json"] }
 ctrlc = "3"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 notify = "8"
 flate2 = "1"
 log = "0.4"
@@ -34,7 +34,7 @@ ml-dsa = "0.1"
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "limit", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "limit", "fs"] }
 # Structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
