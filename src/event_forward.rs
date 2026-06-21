@@ -1,3 +1,4 @@
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -78,6 +79,8 @@ pub struct EventStore {
     next_id: u64,
     max_events: usize,
     store_path: Option<String>,
+    /// Legacy JSON path migrated into SQLite on first load, if present.
+    legacy_json_path: Option<String>,
     /// Correlation windows: group events by (reason, time_window) across agents
     correlation_window_secs: i64,
 }
@@ -92,11 +95,24 @@ impl EventStore {
     }
 
     fn new_with_path(max_events: usize, store_path: Option<String>) -> Self {
+        // Events now persist in a sibling SQLite database (`<name>.db`); a legacy
+        // JSON snapshot is migrated in on first load.
+        let (db_path, legacy_json_path) = match store_path {
+            Some(path) => {
+                let db = Path::new(&path)
+                    .with_extension("db")
+                    .to_string_lossy()
+                    .to_string();
+                (Some(db), Some(path))
+            }
+            None => (None, None),
+        };
         let mut store = Self {
             events: Vec::new(),
             next_id: 1,
             max_events,
-            store_path,
+            store_path: db_path,
+            legacy_json_path,
             correlation_window_secs: 60,
         };
         store.load();
@@ -104,11 +120,64 @@ impl EventStore {
         store
     }
 
+    fn open_db(path: &str) -> Option<Connection> {
+        let conn = Connection::open(path).ok()?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+             CREATE TABLE IF NOT EXISTS event_records (
+                 id INTEGER PRIMARY KEY,
+                 payload TEXT NOT NULL,
+                 received_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS event_meta (
+                 key TEXT PRIMARY KEY,
+                 value TEXT NOT NULL
+             );",
+        )
+        .ok()?;
+        Some(conn)
+    }
+
     fn load(&mut self) {
-        let Some(path) = self.store_path.as_deref() else {
+        let Some(db_path) = self.store_path.as_deref() else {
             return;
         };
-        let Ok(raw) = fs::read_to_string(path) else {
+        if let Some(conn) = Self::open_db(db_path) {
+            let events: Vec<StoredEvent> = conn
+                .prepare("SELECT payload FROM event_records ORDER BY id")
+                .ok()
+                .map(|mut stmt| {
+                    stmt.query_map([], |row| row.get::<_, String>(0))
+                        .map(|rows| {
+                            rows.filter_map(Result::ok)
+                                .filter_map(|p| serde_json::from_str::<StoredEvent>(&p).ok())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            if !events.is_empty() {
+                let stored_next_id: u64 = conn
+                    .query_row(
+                        "SELECT value FROM event_meta WHERE key = 'next_id'",
+                        [],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+                self.next_id =
+                    stored_next_id.max(events.iter().map(|event| event.id).max().unwrap_or(0) + 1);
+                self.events = events;
+                return;
+            }
+        }
+
+        // Empty database — migrate a legacy JSON snapshot on first run, if present.
+        let Some(legacy) = self.legacy_json_path.as_deref() else {
+            return;
+        };
+        let Ok(raw) = fs::read_to_string(legacy) else {
             return;
         };
         let Ok(snapshot) = serde_json::from_str::<EventStoreSnapshot>(&raw) else {
@@ -118,27 +187,45 @@ impl EventStore {
         self.next_id = snapshot
             .next_id
             .max(self.events.iter().map(|event| event.id).max().unwrap_or(0) + 1);
+        self.persist();
+        let _ = fs::rename(legacy, format!("{legacy}.migrated"));
     }
 
     fn persist(&self) {
-        let Some(path) = self.store_path.as_deref() else {
+        let Some(db_path) = self.store_path.as_deref() else {
             return;
         };
-        let snapshot = EventStoreSnapshot {
-            events: self.events.clone(),
-            next_id: self.next_id,
+        if let Some(parent) = Path::new(db_path).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let Some(mut conn) = Self::open_db(db_path) else {
+            return;
         };
-        if let Ok(json) = serde_json::to_string_pretty(&snapshot) {
-            let path_ref = Path::new(path);
-            if let Some(parent) = path_ref.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            // Atomic write: write to temp file then rename to prevent corruption on crash
-            let tmp_path = format!("{path}.tmp");
-            if fs::write(&tmp_path, &json).is_ok() {
-                let _ = fs::rename(&tmp_path, path_ref);
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(_) => return,
+        };
+        if tx.execute("DELETE FROM event_records", []).is_err() {
+            return;
+        }
+        {
+            let Ok(mut stmt) = tx.prepare(
+                "INSERT INTO event_records (id, payload, received_at) VALUES (?1, ?2, ?3)",
+            ) else {
+                return;
+            };
+            for event in &self.events {
+                if let Ok(payload) = serde_json::to_string(event) {
+                    let _ = stmt.execute(params![event.id as i64, payload, event.received_at]);
+                }
             }
         }
+        let _ = tx.execute(
+            "INSERT INTO event_meta (key, value) VALUES ('next_id', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![self.next_id.to_string()],
+        );
+        let _ = tx.commit();
     }
 
     fn trim_to_limit(&mut self) {
@@ -729,6 +816,51 @@ mod tests {
             mitre: vec![],
             narrative: None,
         }
+    }
+
+    #[test]
+    fn event_store_persists_via_sqlite_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("events.json").to_string_lossy().to_string();
+        {
+            let mut store = EventStore::with_persistence(100, &path);
+            store.ingest(&EventBatch {
+                agent_id: "agent-1".into(),
+                events: vec![make_alert(&["persisted-event"])],
+            });
+            assert_eq!(store.count(), 1);
+        }
+        // Data lives in the SQLite database, not a loose JSON file.
+        assert!(!dir.path().join("events.json").exists());
+        // Re-open and confirm the event round-tripped from SQLite.
+        let store = EventStore::with_persistence(100, &path);
+        assert_eq!(store.count(), 1);
+        assert_eq!(store.events[0].agent_id, "agent-1");
+        assert_eq!(store.next_id, 2);
+    }
+
+    #[test]
+    fn event_store_migrates_legacy_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let json_path = dir.path().join("events.json");
+        let snapshot = EventStoreSnapshot {
+            events: vec![StoredEvent {
+                id: 41,
+                agent_id: "legacy-agent".into(),
+                received_at: chrono::Utc::now().to_rfc3339(),
+                alert: make_alert(&["legacy"]),
+                correlated: false,
+                triage: EventTriage::default(),
+            }],
+            next_id: 42,
+        };
+        std::fs::write(&json_path, serde_json::to_string(&snapshot).unwrap()).unwrap();
+
+        let store = EventStore::with_persistence(100, json_path.to_string_lossy());
+        assert_eq!(store.count(), 1);
+        assert_eq!(store.events[0].id, 41);
+        assert_eq!(store.next_id, 42);
+        assert!(!json_path.exists(), "legacy events.json should be migrated");
     }
 
     #[test]
