@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782796723812,
+  "lastUpdate": 1782883234161,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -18701,6 +18701,112 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 36817,
             "range": "± 454",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "pinkysworld",
+            "username": "pinkysworld",
+            "email": "85413447+pinkysworld@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "c1e90cf4b03964815170907f8e616fe6f53b013d",
+          "message": "chore(deps): batch-update all dependencies (supersedes 13 dependabot PRs) (#121)\n\n* chore(deps): batch-update cargo dependencies\n\nSupersedes dependabot PRs #116 #115 #114 #113 #112 #111: rusqlite 0.31->0.40.1, tower-http 0.6->0.7.0, log 0.4.32, chrono 0.4.45, zeroize 1.9.0, ml-dsa 0.1.1. Verified: cargo check/clippy --all-targets -D warnings clean, 1587 lib tests + api integration (alerts/events, detection/auth, concurrent_smoke) pass with the new persistence layer.\n\n* chore(deps-dev): batch-update admin-console dev dependencies\n\nSupersedes dependabot PRs #106 #105 #103: happy-dom 20.10.6, @types/react 19.2.17, knip 6.17.1. Verified: tsc typecheck, knip dead-code audit, and 330 vitest unit tests all pass.\n\n* chore(deps-dev): batch-update sdk/typescript dev dependencies\n\nSupersedes dependabot PRs #110 #109: @types/node 26.0.0, vitest 4.1.9. Verified: tsc build and 274 vitest tests pass (live suite skipped without a server).\n\n* chore(deps): batch-update GitHub Actions pins (checkout v7, gitleaks v3)\n\nSupersedes dependabot PRs #99 #98: actions/checkout 6.0.2->7.0.0 (all 13 workflows), gitleaks/gitleaks-action 2.3.9->3.0.0 (secret-scan). gitleaks v3 is a Node 20->24 runtime migration with no input/output/behavior changes; checkout v7 is CI-gated by every job. YAML + actionlint (CI mode) clean.",
+          "timestamp": "2026-06-21T16:53:11Z",
+          "url": "https://github.com/pinkysworld/Wardex/commit/c1e90cf4b03964815170907f8e616fe6f53b013d"
+        },
+        "date": 1782883232986,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 49772,
+            "range": "± 269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 414912,
+            "range": "± 3096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1908710,
+            "range": "± 39767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17237165,
+            "range": "± 53771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 708,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_window_stream_256",
+            "value": 856444,
+            "range": "± 3431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_observed_schema_read",
+            "value": 127,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_4_threads_64_alerts",
+            "value": 168565,
+            "range": "± 2603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 246,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 17266470,
+            "range": "± 111361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 112647,
+            "range": "± 635",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 98089,
+            "range": "± 395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 55,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 35584,
+            "range": "± 221",
             "unit": "ns/iter"
           }
         ]
