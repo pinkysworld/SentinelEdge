@@ -526,10 +526,15 @@ jobs:
       - name: Dispatch Pages publish
         env:
           GH_TOKEN: ${{ secrets.RELEASE_WORKFLOW_TOKEN || github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          # Dispatch on the default branch, not the release tag: the
+          # github-pages environment protection rules reject deploys from tag
+          # refs, so a tag-ref dispatch builds but cannot deploy the apt repo.
+          # The tag input still selects the correct release .deb for the index.
           gh workflow run pages.yml \
             -R "${{ github.repository }}" \
-            --ref "${GITHUB_REF_NAME}" \
+            --ref "${DEFAULT_BRANCH}" \
             -f tag="${GITHUB_REF_NAME}"
 
       - name: Dispatch Homebrew tap sync
@@ -718,6 +723,10 @@ jobs:
         run: |
           brew untap pinkysworld/wardex >/dev/null 2>&1 || true
           brew tap pinkysworld/wardex
+          # Recent Homebrew refuses to load formulae from non-official taps
+          # until they are explicitly trusted. Older Homebrew lacks `brew
+          # trust`, so tolerate its absence.
+          brew trust --tap pinkysworld/wardex 2>/dev/null || true
           brew install wardex
 
       - name: Smoke Homebrew installation
