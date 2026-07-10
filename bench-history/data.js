@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783660362883,
+  "lastUpdate": 1783670256828,
   "repoUrl": "https://github.com/pinkysworld/Wardex",
   "entries": {
     "Wardex criterion benches": [
@@ -19761,6 +19761,114 @@ window.BENCHMARK_DATA = {
             "name": "sigma_evaluate_20_rules",
             "value": 35609,
             "range": "± 1900",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85413447+pinkysworld@users.noreply.github.com",
+            "name": "pinkysworld",
+            "username": "pinkysworld"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "68c36db8b2be91fc6f63dfbe19a9d350b710ec88",
+          "message": "chore(release): bump Wardex to v1.0.30 (#141)\n\n* chore(release): bump Wardex to v1.0.30\n\nPersistence-consolidation and reliability patch.\n\n- Runtime persistence consolidated onto SQLite .db files (case, agent\n  registry + enrollment tokens, session, event stores) with migrate-on-\n  first-load from legacy JSON; transactional writes, WAL journaling,\n  0600-hardened signed session store.\n- Windows ProcessEnforcer now issues a real taskkill /F /PID for KILL and\n  returns honest errors for unsupported STOP/CONT (was a fake success).\n- server_runtime bind path keeps the bound socket (TcpListener::from_std),\n  closing a TOCTOU port-allocation race that flaked CI.\n- AgentClient mock-server test coverage raised 5 -> 18.\n- Dependency refresh (rusqlite 0.40, tower-http 0.7, +patch/minor); the\n  container image now builds with the pinned rust-toolchain (1.95) since\n  libsqlite3-sys needs cfg_select!.\n- Previously soft-failed CI gates promoted to hard gates.\n\nAll 15 release version fields aligned; release-facts, release-docs,\ndocs-freshness, product-identity, trust-gate, and contract-parity gates\npass. Release binary builds clean with rusqlite 0.40.1.\n\n* fix(deps): bump crossbeam-epoch 0.9.18 -> 0.9.20 for RUSTSEC-2026-0204\n\nNewly published advisory (2026-07-06): invalid pointer dereference in the\nfmt::Pointer impl. Transitive via tantivy -> rayon -> crossbeam-deque.\nSolution is a semver-compatible patch (>=0.9.20); cargo audit and\ncargo deny check advisories both pass after the bump.\n\n* fix(homebrew): use post_install_steps DSL for runtime dir creation\n\nbrew audit --strict --new now enforces FormulaAudit/InstallSteps, which\nflags a def post_install that only does simple file preparation. Convert\nthe var-dir mkpath calls to the declarative post_install_steps block\n(mkdir_p), matching rubocop's own autocorrection. Behaviour is identical:\nvar/wardex, var/wardex/backups, and var/log/wardex are still created post\ninstall. wardex/backups is not a service-managed dir, so the block does\nnot trip the redundant-service-path-dirs cop.",
+          "timestamp": "2026-07-10T09:47:31+02:00",
+          "tree_id": "a99e1a44f55c5591eb9d8e4eb1954f2d567bff70",
+          "url": "https://github.com/pinkysworld/Wardex/commit/68c36db8b2be91fc6f63dfbe19a9d350b710ec88"
+        },
+        "date": 1783670255644,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "full_pipeline/5",
+            "value": 49729,
+            "range": "± 248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/50",
+            "value": 408927,
+            "range": "± 2211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/200",
+            "value": 1869556,
+            "range": "± 29643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "full_pipeline/1000",
+            "value": 17122837,
+            "range": "± 485133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_evaluate_single",
+            "value": 632,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "detector_window_stream_256",
+            "value": 857595,
+            "range": "± 2034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_observed_schema_read",
+            "value": 127,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "shared_storage_4_threads_64_alerts",
+            "value": 166749,
+            "range": "± 3476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "policy_evaluate_single",
+            "value": 241,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "throughput/1000_samples",
+            "value": 17587176,
+            "range": "± 246535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_500_events",
+            "value": 113785,
+            "range": "± 492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "hunt_field_query",
+            "value": 95176,
+            "range": "± 1477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ml_triage_rf",
+            "value": 55,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sigma_evaluate_20_rules",
+            "value": 35851,
+            "range": "± 290",
             "unit": "ns/iter"
           }
         ]
