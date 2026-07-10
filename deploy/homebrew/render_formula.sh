@@ -49,10 +49,10 @@ class Wardex < Formula
     doc.install "README.md", "LICENSE"
   end
 
-  def post_install
-    (var/"wardex").mkpath
-    (var/"wardex/backups").mkpath
-    (var/"log/wardex").mkpath
+  post_install_steps do
+    mkdir_p "wardex"
+    mkdir_p "wardex/backups"
+    mkdir_p "log/wardex"
   end
 
   service do
