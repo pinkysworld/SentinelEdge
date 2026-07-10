@@ -4,13 +4,19 @@
 #   docker run -p 9077:9077 -v wardex-data:/app/var wardex
 
 # ── Stage 1: Build ────────────────────────────────────────────────
-FROM rust:1.88-bookworm AS builder
+# Base image tracks the pinned toolchain in rust-toolchain.toml (1.95.x). A
+# newer rustc than the MSRV is required by transitive deps (e.g. libsqlite3-sys
+# uses the `cfg_select!` macro), so the release binary is built with the pinned
+# toolchain rather than the MSRV.
+FROM rust:1.95-bookworm AS builder
 COPY --from=node:22-bookworm /usr/local/ /usr/local/
 
 WORKDIR /build
 
 # Copy the full build inputs so Cargo and build.rs see a consistent project.
-COPY Cargo.toml Cargo.lock* ./
+# rust-toolchain.toml is copied so the build uses the exact pinned toolchain
+# (important for reproducible release binaries).
+COPY Cargo.toml Cargo.lock* rust-toolchain.toml ./
 COPY build.rs ./
 COPY src/ src/
 COPY scripts/ scripts/
