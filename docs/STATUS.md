@@ -2,7 +2,7 @@
 
 ## Current release
 
-- **Version:** `1.0.29`
+- **Version:** `1.0.30`
 - **Positioning:** private-cloud XDR and SIEM platform with enterprise detection engineering, malware scanning, analyst workflows, fleet operations, behavioural analytics, and automated incident response
 - **Source footprint:** 174 Rust source modules (`server.rs` decomposition target met — `server.rs` is now 7,600 lines after extracting dedicated `server_*` modules including dynamic fallback route delegation)
 - **API contract:** versioned OpenAPI surface with REST, GraphQL, live `/api/openapi.json` export, generated SDK parity diagnostics, authenticated-by-default API route classification, cursor page contracts, release observability/preflight proof APIs, production assurance endpoints, malware scan and response-action contracts, source-aware alert analysis, operator-trust workspaces, alert feedback/evidence-chain contracts, Detection Trust scoring and draft-only tuning APIs, detection validation lab APIs, response safety preview/verification APIs with execution-audit continuity, agent enrollment-token flows, connector marketplace summaries, operations health snapshots, and release verification readiness endpoints with evidence freshness metadata
@@ -101,7 +101,15 @@ The current release has been verified with:
 
 ## Current product posture
 
-Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, context-preserving reporting, operator-visible recovery posture, and explicit shift-lead surfaces for ownership, handoff, and detection-review pressure. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, deployment readiness, clean release verification, and freshness-gated evidence. The current release strengthens structural maintainability, release hygiene, dependency freshness, safe lint conformance, and coverage trend visibility.
+Wardex is now positioned as a professional XDR/SIEM control plane with incident-first analyst workflows, explainable detections, context-preserving reporting, operator-visible recovery posture, and explicit shift-lead surfaces for ownership, handoff, and detection-review pressure. The runtime, admin console, release process, and website are aligned around operator trust, workflow closure, deployment readiness, clean release verification, and freshness-gated evidence. The current release consolidates runtime persistence onto SQLite, hardens Windows response enforcement, refreshes dependencies, and repairs CI and release-container reliability.
+
+## Recently shipped (v1.0.30)
+
+- **Runtime persistence consolidated onto SQLite** — SOC cases, fleet agents and enrollment tokens, admin-console sessions, and forwarded events now persist in SQLite databases instead of loose JSON files, with migrate-on-first-load from the previous JSON and preserved store APIs, session signing, and owner-only permissions.
+- **Real Windows process enforcement** — process termination now runs a real `taskkill` instead of a stubbed always-success path, and the test-server port-allocation TOCTOU race that intermittently failed CI is eliminated.
+- **CI and release hygiene** — systemic CI failures were repaired, `cargo check --no-default-features` is an enforced gate, the inapplicable `semver-check` job was removed, flaky Playwright acceptance retries were added, and the release container image now builds with the pinned `rust-toolchain.toml` toolchain.
+- **Dependency refresh** — rusqlite 0.40, tower-http 0.7, and other Cargo, npm, and GitHub Actions updates were batch-applied and verified.
+- **Agent-client coverage** — the agent-side HTTP client gained a mock-server test harness (5 → 18 tests) covering enrollment, heartbeats, forwarding, and update polling.
 
 ## Recently shipped (v1.0.29)
 

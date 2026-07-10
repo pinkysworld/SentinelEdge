@@ -14,14 +14,14 @@ Wardex (`pinkysworld/Wardex`) is a Rust-based XDR and SIEM platform for private-
 - **Scan across platforms:** malware, virus, trojan, and rootkit workflows cover Linux, macOS, and Windows with local engines plus optional open-source signature presets.
 - **Ship verifiably:** releases include checksums, SBOMs, provenance, signed artifacts, and documented verification gates.
 
-## Current Release: `v1.0.29`
+## Current Release: `v1.0.30`
 
-This release is a structural hardening and release-hygiene baseline: it completes the Wardex decomposition sweep, refreshes patch/minor dependencies, tightens safe Clippy pedantic findings, and publishes the first cargo-llvm-cov coverage baseline.
+This release is a persistence-consolidation and reliability patch: every embedded store now persists to a durable SQLite `.db` file (migrating legacy JSON in place on first load), the dependency surface is refreshed, and several correctness edges in enforcement and server startup are hardened.
 
-- **Server decomposition complete** — `src/server.rs` is now below the release target, with exact routing preserved through focused `server_*` modules including dynamic fallback route delegation.
-- **API test suite split** — the former monolithic API integration file is divided into domain files with shared fixtures, keeping navigation and compile units manageable.
-- **Dependency and lint hygiene** — Cargo/admin-console patch and minor dependency updates are applied, and safe Clippy pedantic fixes remove mechanical noise without changing behavior.
-- **Coverage baseline** — `docs/COVERAGE_BASELINE.md` records a real cargo-llvm-cov baseline with `76.16%` line coverage for future trend tracking.
+- **SQLite persistence consolidation** — case, agent-registry, session, and event stores now persist to per-store SQLite `.db` files with WAL journaling and transactions, replacing the previous JSON snapshots; existing JSON state is migrated automatically on first load.
+- **Enforcement correctness** — the Windows process-signal path issues a real `taskkill /F /PID` for KILL and returns honest errors for unsupported STOP/CONT instead of reporting a fake success.
+- **Server startup hardening** — the listener bind path removes a TOCTOU race by keeping the bound socket instead of binding, dropping, and rebinding.
+- **Dependency and CI refresh** — `rusqlite 0.40`, `tower-http 0.7`, and a batch of patch/minor bumps are applied; the container build tracks the pinned `1.95` toolchain and previously soft-failed CI gates now run as hard gates.
 
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
@@ -103,7 +103,7 @@ The public website lives in [site/](site/) and mirrors the main product, release
 
 ## Documentation Surfaces
 
-The GitHub docs and the public website now share the same `v1.0.29` release surface for operator guides and API reference.
+The GitHub docs and the public website now share the same `v1.0.30` release surface for operator guides and API reference.
 
 ![Wardex documentation hub](site/media/insights/resources-live.png)
 

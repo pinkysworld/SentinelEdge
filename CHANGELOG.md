@@ -4,6 +4,25 @@ All notable changes to Wardex are documented in this file.
 
 ## [Unreleased]
 
+## [1.0.30] — 2026-07-10
+
+### Added
+- **SQLite-backed runtime persistence**: SOC cases, fleet agents + enrollment tokens, admin-console sessions, and forwarded events now persist in SQLite databases instead of loose JSON files. Each store keeps its public API and in-memory model; only load/persist switched backends, and any pre-existing JSON file is migrated in on first load (renamed `.migrated` as a backup). Writes are transactional; the session store remains signed and owner-only (`0600`).
+- **Agent-side HTTP client coverage**: `AgentClient` (enrollment, heartbeats, event/log forwarding, policy and update polling) gains a mock-server test harness, raising its coverage from 5 to 18 tests and asserting auth-header propagation, status handling, and JSON decoding.
+
+### Fixed
+- **Real Windows process termination**: `ProcessEnforcer` previously returned a fabricated success on non-Unix platforms; process kills now run a real `taskkill /F /PID` (honest failure for missing PIDs), and suspend/resume report no Windows backend rather than faking success.
+- **Test-server port-allocation race**: `spawn_test_server` bound an ephemeral port, dropped the listener, then re-bound it — a TOCTOU window that intermittently failed CI. The bound socket is now handed straight to the server via `TcpListener::from_std`.
+- **Systemic CI failures**: fixed a TypeScript SDK live test that ran during unit collection, restored the support/security emails required by the release-facts contract, added a missing `{id}` path parameter to the OpenAPI spec, silenced a Windows-only dead-code error, patched a transitive `undici` advisory, and read SQLite `COUNT(*)` as `i64` for rusqlite ≥ 0.32.
+
+### Changed
+- **Dependencies**: rusqlite 0.31 → 0.40, tower-http 0.6 → 0.7, plus log, chrono, zeroize, and ml-dsa; admin-console and TypeScript SDK dev dependencies; and GitHub Actions pins (`actions/checkout` v7, `gitleaks-action` v3).
+- **Container build uses the pinned toolchain**: the release image now builds with the `rust-toolchain.toml` toolchain (required by newer transitive dependencies) rather than the MSRV base image.
+- **CI hygiene**: `cargo check --no-default-features` is now an enforced gate, the inapplicable `semver-check` job was removed (Wardex is a binary, not a published library), and the managed release-acceptance Playwright run now retries transient browser flakes.
+
+### Documentation
+- README, status, roadmap, release facts, website metadata, OpenAPI, Helm, OTLP, and SDK package metadata now point at the `v1.0.30` release surface.
+
 ## [1.0.29] — 2026-06-03 — Structural hardening and coverage baseline
 
 ### Added
